@@ -1,0 +1,369 @@
+openapi: 3.0.3
+info:
+  title: polaris-email API
+  version: 0.1.0
+  description: |
+    HMAC-authenticated REST surface for polaris-email. All requests are signed with
+    `X-Polaris-Sig: v1=<hex(HMAC-SHA256(secret, canonical))>` where canonical is
+    `polaris-api.v1\n<METHOD>\n<path>\n<canonical-query>\n<X-Polaris-Ts>\n<X-Polaris-Nonce>\n<sha256-hex(body)>`.
+servers:
+  - url: https://polaris-email-api.workers.dev
+security:
+  - HMACAuth: []
+components:
+  securitySchemes:
+    HMACAuth:
+      type: apiKey
+      in: header
+      name: X-Polaris-Sig
+  parameters:
+    KeyId:
+      name: X-Polaris-Key-Id
+      in: header
+      required: true
+      schema: { type: string, pattern: "^[0-9A-HJKMNP-TV-Z]{26}$" }
+    Ts:
+      name: X-Polaris-Ts
+      in: header
+      required: true
+      schema: { type: string }
+    Nonce:
+      name: X-Polaris-Nonce
+      in: header
+      required: true
+      schema: { type: string, minLength: 16, maxLength: 128 }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      schema: { type: string, pattern: "^[A-Za-z0-9_-]{8,128}$" }
+  schemas:
+    SendMessageRequest:
+      type: object
+      required: [from, to, subject, category]
+      properties:
+        from: { type: string, format: email }
+        to:
+          type: array
+          items: { type: string, format: email }
+          minItems: 1
+          maxItems: 50
+        cc:
+          type: array
+          items: { type: string, format: email }
+        bcc:
+          type: array
+          items: { type: string, format: email }
+        replyTo: { type: string, format: email }
+        subject: { type: string, maxLength: 998 }
+        html: { type: string }
+        text: { type: string }
+        headers: { type: object, additionalProperties: { type: string } }
+        attachments:
+          type: array
+          items:
+            type: object
+            required: [filename, contentType, contentB64]
+            properties:
+              filename: { type: string }
+              contentType: { type: string }
+              contentB64: { type: string }
+        category: { type: string, pattern: "^[a-z0-9.-]{1,64}$" }
+        mode: { type: string, enum: [live, test], default: live }
+    SendMessageResponse:
+      type: object
+      required: [messageId, queuedAt, mode]
+      properties:
+        messageId: { type: string }
+        queuedAt: { type: integer, format: int64 }
+        mode: { type: string, enum: [live, test] }
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message, retryable, request_id]
+          properties:
+            code:
+              type: string
+              enum:
+                - bad_request
+                - bad_signature
+                - key_propagating
+                - clock_skew
+                - key_revoked
+                - scope_violation
+                - nonce_replay
+                - idempotency_conflict
+                - domain_not_verified
+                - recipient_rejected
+                - rate_limited
+                - cf_upstream
+                - degraded
+                - not_found
+                - unauthorized
+                - forbidden
+                - conflict
+            message: { type: string }
+            retryable: { type: boolean }
+            request_id: { type: string }
+    IssueApiKeyRequest:
+      type: object
+      required: [service_id, sender_scopes]
+      properties:
+        service_id: { type: string, pattern: "^[a-z][a-z0-9-]{0,63}$" }
+        sender_scopes:
+          type: array
+          minItems: 1
+          items:
+            oneOf:
+              - { type: object, required: [kind, pattern], properties: { kind: { const: exact }, pattern: { type: string } } }
+              - { type: object, required: [kind, pattern], properties: { kind: { const: glob }, pattern: { type: string } } }
+              - { type: object, required: [kind, pattern], properties: { kind: { const: regex }, pattern: { type: string } } }
+        scopes:
+          type: array
+          items: { type: string, enum: [send, "admin:rotate", "admin:read", "forensic:request"] }
+        rate_limit_per_min: { type: integer, default: 1000 }
+    IssueApiKeyResponse:
+      type: object
+      required: [key_id, key_secret, prefix, created_at]
+      properties:
+        key_id: { type: string }
+        key_secret: { type: string }
+        prefix: { type: string }
+        created_at: { type: integer, format: int64 }
+    RotateRequest:
+      type: object
+      required: [mode]
+      properties:
+        mode: { type: string, enum: [planned, emergency] }
+        reason: { type: string, maxLength: 500 }
+        new_label: { type: string }
+    RotateResponse:
+      type: object
+      properties:
+        new_key_id: { type: string }
+        new_key_secret: { type: string }
+        prev_status: { type: string }
+    CreateMailboxRequest:
+      type: object
+      required: [address]
+      properties:
+        address: { type: string, format: email }
+        display_name: { type: string }
+        service_id: { type: string }
+        retain_imap: { type: boolean, default: false }
+        retention_days: { type: integer, default: 90 }
+        max_inbound_bytes: { type: integer }
+    CreateWebhookSubRequest:
+      type: object
+      required: [url, kind, events]
+      properties:
+        mailbox_id: { type: string }
+        service_id: { type: string }
+        url: { type: string, format: uri }
+        kind: { type: string, enum: [external, tailnet, bridge] }
+        local_target_id: { type: string }
+        events:
+          type: array
+          items:
+            type: string
+            enum:
+              - message.received
+              - message.bounced
+              - message.sent
+              - message.delivered
+              - message.failed
+              - credential.rotated
+              - credential.revoked
+paths:
+  /healthz:
+    get:
+      summary: Liveness probe
+      security: []
+      responses:
+        '200':
+          description: ok
+  /v1/messages:
+    post:
+      summary: Send outbound message
+      parameters:
+        - { $ref: '#/components/parameters/KeyId' }
+        - { $ref: '#/components/parameters/Ts' }
+        - { $ref: '#/components/parameters/Nonce' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SendMessageRequest' }
+      responses:
+        '202':
+          description: queued
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SendMessageResponse' }
+        '400': { description: bad request, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '401': { description: signature failure, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '403': { description: scope violation, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '409': { description: idempotency conflict or nonce replay, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '422': { description: domain not verified, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '429': { description: rate limited, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+  /v1/admin/api-keys:
+    post:
+      summary: Issue an api key
+      parameters:
+        - { $ref: '#/components/parameters/KeyId' }
+        - { $ref: '#/components/parameters/Ts' }
+        - { $ref: '#/components/parameters/Nonce' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/IssueApiKeyRequest' }
+      responses:
+        '201':
+          description: issued
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IssueApiKeyResponse' }
+  /v1/admin/api-keys/{id}/rotate:
+    post:
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+        - { $ref: '#/components/parameters/KeyId' }
+        - { $ref: '#/components/parameters/Ts' }
+        - { $ref: '#/components/parameters/Nonce' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - in: query
+          name: dry_run
+          required: false
+          schema: { type: string, enum: ['1'] }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RotateRequest' }
+      responses:
+        '200':
+          description: rotated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RotateResponse' }
+  /v1/admin/api-keys/{id}/revoke:
+    post:
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+        - { $ref: '#/components/parameters/KeyId' }
+        - { $ref: '#/components/parameters/Ts' }
+        - { $ref: '#/components/parameters/Nonce' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RotateRequest' }
+      responses:
+        '200':
+          description: revoked
+  /v1/admin/mailboxes:
+    post:
+      parameters:
+        - { $ref: '#/components/parameters/KeyId' }
+        - { $ref: '#/components/parameters/Ts' }
+        - { $ref: '#/components/parameters/Nonce' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateMailboxRequest' }
+      responses:
+        '201':
+          description: created
+  /v1/admin/mailboxes/{id}/imap-credential/rotate:
+    post:
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+        - { $ref: '#/components/parameters/KeyId' }
+        - { $ref: '#/components/parameters/Ts' }
+        - { $ref: '#/components/parameters/Nonce' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RotateRequest' }
+      responses:
+        '200':
+          description: rotated
+  /v1/admin/webhook-subs:
+    post:
+      parameters:
+        - { $ref: '#/components/parameters/KeyId' }
+        - { $ref: '#/components/parameters/Ts' }
+        - { $ref: '#/components/parameters/Nonce' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateWebhookSubRequest' }
+      responses:
+        '201':
+          description: created
+  /v1/admin/bulk/revoke-service:
+    post:
+      summary: Quarantine a service — revoke all its api keys, rotate all its mailbox passwords
+      parameters:
+        - { $ref: '#/components/parameters/KeyId' }
+        - { $ref: '#/components/parameters/Ts' }
+        - { $ref: '#/components/parameters/Nonce' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [service_id, mode, confirmation, incident_ticket_id]
+              properties:
+                service_id: { type: string }
+                mode: { type: string, enum: [emergency] }
+                confirmation: { type: string }
+                incident_ticket_id: { type: string }
+      responses:
+        '200':
+          description: quarantined
+  /v1/bridge/config:
+    get:
+      summary: Bridge sidecar configuration
+      parameters:
+        - { $ref: '#/components/parameters/KeyId' }
+        - { $ref: '#/components/parameters/Ts' }
+        - { $ref: '#/components/parameters/Nonce' }
+      responses:
+        '200':
+          description: bridge config
+  /admin/bootstrap:
+    post:
+      summary: One-time seed of the first admin key. Signed with POLARIS_SECRET_A.
+      security: []
+      parameters:
+        - { $ref: '#/components/parameters/Ts' }
+        - { $ref: '#/components/parameters/Nonce' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object }
+      responses:
+        '200':
+          description: seeded
+        '409':
+          description: already consumed

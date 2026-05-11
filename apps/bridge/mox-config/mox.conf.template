@@ -1,0 +1,46 @@
+# polaris-email Mox config template. The sidecar renders this at boot from the result of
+# `GET /v1/bridge/config`. Mox config docs: https://www.xmox.nl/config/
+#
+# This file is a template — `${...}` are replaced by the sidecar.
+HostName polaris-email.${TS_TAILNET}.ts.net
+
+# TLS — cert is provisioned by the cert-init container via `tailscale cert`.
+TLS {
+  Cert /etc/mox/certs/mox.crt
+  Key /etc/mox/certs/mox.key
+}
+
+# Implicit-TLS submission only. STARTTLS submission is NOT enabled.
+Listener public {
+  Hostname polaris-email.${TS_TAILNET}.ts.net
+  IMAPS { Enabled true Port 993 }
+  Submissions { Enabled true Port 465 }
+  JMAP { Enabled true Port 443 PathPrefix /jmap/ }
+  AutoconfigHTTPS { Enabled false }
+  MTASTSHTTPS { Enabled false }
+}
+
+# SASL throttle.
+LoginAttempts {
+  Window 1m
+  Limit 5
+  Lockout 10m
+}
+
+# Account stanzas are appended by the sidecar from per-mailbox config; format example:
+#
+# Accounts {
+#   support {
+#     Domain support.example.com
+#     Destinations { support@support.example.com {} }
+#     QuotaMessageSize 25M
+#     LoginDisabled false
+#   }
+# }
+
+# Outgoing webhook fires on every successful submission so the sidecar forwards to the api.
+OutgoingWebhook {
+  URL http://127.0.0.1:8088/mox/outgoing-webhook
+  Method POST
+  Events submitted,delivered,suppressed
+}

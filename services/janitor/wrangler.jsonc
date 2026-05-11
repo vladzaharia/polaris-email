@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema",
+  "name": "polaris-email-janitor",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-01-01",
+  "observability": { "enabled": true },
+  "triggers": { "crons": ["0 3 * * *"] },
+  "d1_databases": [{ "binding": "DB", "database_name": "polaris-email", "database_id": "REPLACE_WITH_LOCAL" }],
+  "r2_buckets": [{ "binding": "R2", "bucket_name": "polaris-email" }]
+}

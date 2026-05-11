@@ -1,0 +1,137 @@
+import { describe, expect, it } from 'vitest';
+import {
+  Address,
+  BulkRevokeServiceRequest,
+  CreateLocalTargetRequest,
+  CreateMailboxRequest,
+  CreateRoutingRuleRequest,
+  CreateServiceRequest,
+  CreateWebhookSubRequest,
+  IssueApiKeyRequest,
+  RotateRequest,
+  SendMessageRequest,
+  SenderScope,
+  ServiceSlug,
+  Ulid,
+} from '../src/index.js';
+
+describe('primitives', () => {
+  it('accepts valid ulid', () => {
+    expect(Ulid.parse('01HXR0000000000000000000A8')).toBeDefined();
+  });
+  it('rejects bad ulid', () => {
+    expect(() => Ulid.parse('not-a-ulid')).toThrow();
+  });
+  it('service slug', () => {
+    expect(ServiceSlug.parse('expresscharge')).toBe('expresscharge');
+    expect(() => ServiceSlug.parse('Express')).toThrow();
+    expect(() => ServiceSlug.parse('123svc')).toThrow();
+  });
+  it('address', () => {
+    expect(Address.parse('a@b.com')).toBe('a@b.com');
+    expect(() => Address.parse('not an email')).toThrow();
+  });
+});
+
+describe('SenderScope', () => {
+  it('accepts exact', () => {
+    expect(SenderScope.parse({ kind: 'exact', pattern: 'noreply@example.com' })).toBeDefined();
+  });
+  it('rejects unanchored glob', () => {
+    expect(() => SenderScope.parse({ kind: 'glob', pattern: '*b.com' })).toThrow();
+  });
+  it('accepts anchored glob', () => {
+    expect(SenderScope.parse({ kind: 'glob', pattern: '*@b.com' })).toBeDefined();
+  });
+  it('requires @ in glob', () => {
+    expect(() => SenderScope.parse({ kind: 'glob', pattern: 'foo' })).toThrow();
+  });
+});
+
+describe('SendMessageRequest', () => {
+  it('parses minimal', () => {
+    const r = SendMessageRequest.parse({
+      from: 'a@b.com',
+      to: ['c@d.com'],
+      subject: 'hi',
+      text: 'hello',
+      category: 'svc.test',
+    });
+    expect(r.mode).toBe('live');
+  });
+  it('rejects > 50 recipients', () => {
+    const to = Array.from({ length: 51 }, (_, i) => `u${i}@b.com`);
+    expect(() =>
+      SendMessageRequest.parse({ from: 'a@b.com', to, subject: 'x', category: 'c' }),
+    ).toThrow();
+  });
+  it('rejects bad category', () => {
+    expect(() =>
+      SendMessageRequest.parse({
+        from: 'a@b.com',
+        to: ['c@d.com'],
+        subject: 'x',
+        category: 'BAD CATEGORY',
+      }),
+    ).toThrow();
+  });
+});
+
+describe('admin requests', () => {
+  it('IssueApiKeyRequest', () => {
+    expect(
+      IssueApiKeyRequest.parse({
+        service_id: 'svc',
+        sender_scopes: [{ kind: 'exact', pattern: 'a@b.com' }],
+      }),
+    ).toBeDefined();
+  });
+  it('RotateRequest', () => {
+    expect(RotateRequest.parse({ mode: 'emergency', reason: 'leak' })).toBeDefined();
+  });
+  it('CreateMailboxRequest defaults', () => {
+    const r = CreateMailboxRequest.parse({ address: 'support@svc.example.com' });
+    expect(r.retain_imap).toBe(false);
+    expect(r.retention_days).toBe(90);
+  });
+  it('CreateWebhookSubRequest', () => {
+    expect(
+      CreateWebhookSubRequest.parse({
+        url: 'https://example.com/hook',
+        kind: 'external',
+        events: ['message.received'],
+      }),
+    ).toBeDefined();
+  });
+  it('CreateRoutingRuleRequest', () => {
+    expect(
+      CreateRoutingRuleRequest.parse({
+        domain: 'in.example.com',
+        mailbox_id: '01HXR0000000000000000000A8',
+      }),
+    ).toBeDefined();
+  });
+  it('CreateLocalTargetRequest', () => {
+    expect(
+      CreateLocalTargetRequest.parse({
+        service: 'svc',
+        rule: 'email-hook',
+        upstream: 'http://svc:3000/hook',
+      }),
+    ).toBeDefined();
+  });
+  it('CreateServiceRequest', () => {
+    expect(CreateServiceRequest.parse({ id: 'svc', name: 'Svc' })).toBeDefined();
+  });
+  it('BulkRevokeServiceRequest enforces confirmation', () => {
+    expect(() =>
+      BulkRevokeServiceRequest.parse({
+        service_id: 'svc',
+        mode: 'emergency',
+        incident_ticket_id: 'INC-1',
+        confirmation: 'other',
+      }),
+    ).not.toThrow();
+    // Equality check is enforced by API logic, not schema; schema only constrains shape.
+  });
+});

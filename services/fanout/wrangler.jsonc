@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema",
+  "name": "polaris-email-fanout",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-01-01",
+  "observability": { "enabled": true },
+  "logpush": true,
+  "d1_databases": [{ "binding": "DB", "database_name": "polaris-email", "database_id": "REPLACE_WITH_LOCAL" }],
+  "queues": {
+    "consumers": [
+      {
+        "queue": "polaris-email-fanout",
+        "max_batch_size": 50,
+        "max_batch_timeout": 5,
+        "max_retries": 6,
+        "dead_letter_queue": "polaris-email-fanout-dlq"
+      }
+    ]
+  },
+  "vars": {
+    "BRIDGE_TAILNET_HOST": "polaris-email.example.ts.net"
+  }
+}

@@ -1,0 +1,339 @@
+// Minimal in-memory mocks for D1, KV, R2, Queues. Just enough for unit tests.
+import type { Env, InboundQueueMessage, OutboundQueueMessage } from '../src/env.js';
+
+export class MockKV {
+  private map = new Map<string, { v: string; expiresAt: number | null }>();
+  async get(k: string, type?: string): Promise<string | unknown | null> {
+    const e = this.map.get(k);
+    if (!e) return null;
+    if (e.expiresAt && Date.now() > e.expiresAt) {
+      this.map.delete(k);
+      return null;
+    }
+    if (type === 'json') return JSON.parse(e.v);
+    return e.v;
+  }
+  async put(k: string, v: string, opts?: { expirationTtl?: number }): Promise<void> {
+    const expiresAt = opts?.expirationTtl ? Date.now() + opts.expirationTtl * 1000 : null;
+    this.map.set(k, { v, expiresAt });
+  }
+  async delete(k: string): Promise<void> {
+    this.map.delete(k);
+  }
+  size() {
+    return this.map.size;
+  }
+}
+
+interface TableRow {
+  [col: string]: unknown;
+}
+
+export class MockD1 {
+  tables: Map<string, TableRow[]> = new Map();
+  constructor() {
+    // Pre-create tables we use in tests.
+    this.tables.set('services', []);
+    this.tables.set('domains', []);
+    this.tables.set('mailboxes', []);
+    this.tables.set('api_keys', []);
+    this.tables.set('webhook_subs', []);
+    this.tables.set('routing_rules', []);
+    this.tables.set('messages', []);
+    this.tables.set('message_deliveries', []);
+    this.tables.set('audit_log', [
+      {
+        id: 0,
+        actor: 'system',
+        action: 'schema.migration',
+        target: '0001_init',
+        meta_json: '{"genesis":true}',
+        prev_hash: '0'.repeat(64),
+        row_hash: '0'.repeat(64),
+        at: 0,
+      },
+    ]);
+    this.tables.set('audit_anchors', []);
+    this.tables.set('api_key_usage', []);
+    this.tables.set('local_webhook_targets', []);
+    this.tables.set('bootstrap', []);
+  }
+  prepare(sql: string) {
+    return new MockStatement(this, sql);
+  }
+}
+
+interface MockMeta {
+  changes: number;
+}
+
+class MockStatement {
+  private params: unknown[] = [];
+  constructor(
+    private db: MockD1,
+    private sql: string,
+  ) {}
+  bind(...params: unknown[]): MockStatement {
+    this.params = params;
+    return this;
+  }
+  async first<T = unknown>(): Promise<T | null> {
+    const r = await this.run();
+    return ((r.results[0] as T) ?? null) as T | null;
+  }
+  async all<T = unknown>(): Promise<{ results: T[]; meta: MockMeta }> {
+    return this.run() as Promise<{ results: T[]; meta: MockMeta }>;
+  }
+  async run<T = unknown>(): Promise<{ results: T[]; meta: MockMeta }> {
+    return executeSql<T>(this.db, this.sql, this.params);
+  }
+}
+
+function executeSql<T>(
+  db: MockD1,
+  sql: string,
+  params: unknown[],
+): { results: T[]; meta: MockMeta } {
+  const trimmed = sql.trim();
+  const lower = trimmed.toLowerCase();
+  if (lower.startsWith('insert ')) {
+    const m = trimmed.match(/insert\s+(?:or\s+(replace|ignore)\s+)?into\s+(\w+)/i);
+    if (!m) throw new Error('mock: bad insert ' + trimmed);
+    const conflict = m[1]?.toLowerCase();
+    const table = m[2]!;
+    const colsM = trimmed.match(/\(([^)]+)\)\s*VALUES/i);
+    if (!colsM) throw new Error('mock: insert columns ' + trimmed);
+    const cols = colsM[1]!.split(',').map((x) => x.trim());
+    const row: TableRow = {};
+    cols.forEach((c, i) => (row[c] = params[i]));
+    const rows = db.tables.get(table);
+    if (!rows) throw new Error('mock: unknown table ' + table);
+    // Crude UNIQUE/PK handling: id column conflicts.
+    if (conflict !== 'ignore' && conflict !== 'replace') {
+      // Detect simple unique columns
+      const uniqueCols = ['id', 'address', 'imap_username'];
+      for (const u of uniqueCols) {
+        if (row[u] !== undefined && rows.some((r) => r[u] !== undefined && r[u] === row[u])) {
+          throw new Error(`mock: UNIQUE constraint failed (${table}.${u})`);
+        }
+      }
+    } else if (conflict === 'replace') {
+      const idx = rows.findIndex((r) => r['id'] !== undefined && r['id'] === row['id']);
+      if (idx >= 0) rows.splice(idx, 1);
+    } else if (conflict === 'ignore') {
+      if (rows.some((r) => r['id'] !== undefined && r['id'] === row['id'])) {
+        return { results: [], meta: { changes: 0 } };
+      }
+    }
+    // For audit_log auto-increment, assign id if not given
+    if (table === 'audit_log' && row['id'] === undefined) {
+      const maxId = rows.reduce((m, r) => Math.max(m, Number(r['id'] ?? 0)), 0);
+      row['id'] = maxId + 1;
+    }
+    if (table === 'api_key_usage' && row['id'] === undefined) {
+      const maxId = rows.reduce((m, r) => Math.max(m, Number(r['id'] ?? 0)), 0);
+      row['id'] = maxId + 1;
+    }
+    rows.push(row);
+    return { results: [], meta: { changes: 1 } };
+  }
+  if (lower.startsWith('update ')) {
+    const m = trimmed.match(/update\s+(\w+)\s+set\s+(.+?)\s+where\s+(.+)$/is);
+    if (!m) throw new Error('mock: bad update ' + trimmed);
+    const table = m[1]!;
+    const setClause = m[2]!;
+    const whereClause = m[3]!;
+    const rows = db.tables.get(table);
+    if (!rows) throw new Error('mock: unknown table ' + table);
+    // Bound parameters fill SET first, then WHERE
+    let pi = 0;
+    const setOps: Array<{ col: string; idx: number | null; literal?: unknown }> = [];
+    for (const part of setClause.split(',')) {
+      const setM = part.trim().match(/^(\w+)\s*=\s*(.+)$/);
+      if (!setM) continue;
+      const col = setM[1]!;
+      const val = setM[2]!.trim();
+      if (val === '?') {
+        setOps.push({ col, idx: pi++ });
+      } else if (rows.length && val.match(/^[A-Za-z_]\w*$/) && val in rows[0]!) {
+        // column-to-column copy (e.g. imap_pw_bcrypt_prev = imap_pw_bcrypt)
+        setOps.push({ col, idx: null, literal: val });
+      } else if (val.toLowerCase() === 'null') {
+        setOps.push({ col, idx: null, literal: null });
+      } else if (val.startsWith("'") && val.endsWith("'")) {
+        setOps.push({ col, idx: null, literal: val.slice(1, -1) });
+      } else {
+        setOps.push({ col, idx: null, literal: val });
+      }
+    }
+    // WHERE: support patterns we use (col = ?, col = literal, col IS NOT NULL, col <> 'lit')
+    const whereParams = params.slice(pi);
+    const whereMatches = (row: TableRow): boolean => {
+      let wp = 0;
+      for (const cond of whereClause.split(/\s+and\s+/i)) {
+        const cm =
+          cond.trim().match(/^(\w+)\s*=\s*\?$/) ??
+          cond.trim().match(/^(\w+)\s*<>\s*'([^']+)'$/) ??
+          cond.trim().match(/^(\w+)\s+IS NOT NULL$/i) ??
+          cond.trim().match(/^(\w+)\s+IS NULL$/i) ??
+          cond.trim().match(/^(\w+)\s*=\s*'([^']+)'$/);
+        if (!cm) throw new Error('mock: where part ' + cond);
+        const col = cm[1]!;
+        if (/IS NOT NULL/i.test(cond)) {
+          if (row[col] == null) return false;
+        } else if (/IS NULL/i.test(cond)) {
+          if (row[col] != null) return false;
+        } else if (cm[2] !== undefined) {
+          const lit = cm[2];
+          if (cond.includes('<>')) {
+            if (row[col] == lit) return false;
+          } else {
+            if (row[col] != lit) return false;
+          }
+        } else {
+          const wantedParam = whereParams[wp++];
+          if (row[col] != wantedParam) return false;
+        }
+      }
+      return true;
+    };
+    let changes = 0;
+    for (const row of rows) {
+      if (whereMatches(row)) {
+        for (const s of setOps) {
+          if (s.idx != null) row[s.col] = params[s.idx];
+          else if (typeof s.literal === 'string' && s.literal in row) {
+            row[s.col] = row[s.literal];
+          } else {
+            row[s.col] = s.literal;
+          }
+        }
+        changes++;
+      }
+    }
+    return { results: [], meta: { changes } };
+  }
+  if (lower.startsWith('select ')) {
+    // Very limited: extract table and where eq params.
+    const m = trimmed.match(/from\s+(\w+)/i);
+    if (!m) throw new Error('mock: bad select ' + trimmed);
+    const table = m[1]!;
+    const rows = db.tables.get(table) ?? [];
+    let filtered = rows;
+    const whereM = trimmed.match(/where\s+(.+?)(?:\s+order\s+by|\s+limit|$)/is);
+    if (whereM) {
+      const conds = whereM[1]!.split(/\s+and\s+/i);
+      let pi = 0;
+      filtered = filtered.filter((row) => {
+        let wp = pi;
+        for (const cond of conds) {
+          const t = cond.trim();
+          if (/^(\w+)\s+IS\s+NULL$/i.test(t)) {
+            const cm = t.match(/^(\w+)\s+IS\s+NULL$/i)!;
+            if (row[cm[1]!] != null) return false;
+          } else if (/^(\w+)\s+IS\s+NOT\s+NULL$/i.test(t)) {
+            const cm = t.match(/^(\w+)\s+IS\s+NOT\s+NULL$/i)!;
+            if (row[cm[1]!] == null) return false;
+          } else if (/^\(\s*[^)]+\s*\)$/.test(t)) {
+            // parenthesised disjunction — accept if any param matches by simple equality
+            const inner = t.slice(1, -1);
+            const ors = inner.split(/\s+or\s+/i);
+            let any = false;
+            for (const orC of ors) {
+              const eq = orC.trim().match(/^(\w+)\s*=\s*'([^']+)'$/);
+              if (eq && row[eq[1]!] == eq[2]) {
+                any = true;
+                break;
+              }
+            }
+            if (!any) return false;
+          } else {
+            const eq = t.match(/^(\w+)\s*=\s*\?$/);
+            const neq = t.match(/^(\w+)\s*<>\s*'([^']+)'$/);
+            if (eq) {
+              if (row[eq[1]!] != params[wp++]) return false;
+            } else if (neq) {
+              if (row[neq[1]!] == neq[2]) return false;
+            } else {
+              throw new Error('mock: where cond ' + t);
+            }
+          }
+        }
+        pi = wp;
+        return true;
+      });
+    }
+    if (/order\s+by\s+id\s+desc/i.test(trimmed)) {
+      filtered = [...filtered].sort((a, b) => Number(b['id']) - Number(a['id']));
+    }
+    if (/order\s+by\s+created_at\s+desc/i.test(trimmed)) {
+      filtered = [...filtered].sort(
+        (a, b) => Number(b['created_at']) - Number(a['created_at']),
+      );
+    }
+    if (/order\s+by\s+id\s+asc/i.test(trimmed)) {
+      filtered = [...filtered].sort((a, b) => Number(a['id']) - Number(b['id']));
+    }
+    const limitM = trimmed.match(/limit\s+(\d+)/i);
+    const limit = limitM ? Number(limitM[1]) : undefined;
+    if (limit != null) filtered = filtered.slice(0, limit);
+    return { results: filtered as T[], meta: { changes: 0 } };
+  }
+  if (lower.startsWith('delete from ')) {
+    return { results: [], meta: { changes: 0 } };
+  }
+  throw new Error('mock: unsupported sql: ' + trimmed.slice(0, 120));
+}
+
+export class MockR2 {
+  private map = new Map<string, { body: string; meta: Record<string, string> }>();
+  async put(key: string, body: string, opts?: { httpMetadata?: { contentType?: string } }) {
+    this.map.set(key, { body, meta: { contentType: opts?.httpMetadata?.contentType ?? '' } });
+    return { key } as unknown;
+  }
+  async get(key: string) {
+    const e = this.map.get(key);
+    if (!e) return null;
+    return {
+      text: async () => e.body,
+      arrayBuffer: async () => new TextEncoder().encode(e.body).buffer,
+    } as unknown;
+  }
+  async head(key: string) {
+    return this.map.has(key) ? ({} as unknown) : null;
+  }
+}
+
+export class MockQueue<T> {
+  sent: T[] = [];
+  async send(msg: T) {
+    this.sent.push(msg);
+  }
+  async sendBatch(msgs: { body: T }[]) {
+    for (const m of msgs) this.sent.push(m.body);
+  }
+}
+
+export function mkEnv(overrides: Partial<Env> = {}): Env {
+  const env = {
+    DB: new MockD1() as unknown as D1Database,
+    R2: new MockR2() as unknown as R2Bucket,
+    KV_NONCE: new MockKV() as unknown as KVNamespace,
+    KV_IDEMPOTENCY: new MockKV() as unknown as KVNamespace,
+    KV_RATE_LIMIT: new MockKV() as unknown as KVNamespace,
+    KV_KEY_CACHE: new MockKV() as unknown as KVNamespace,
+    OUTBOUND_QUEUE: new MockQueue<OutboundQueueMessage>() as unknown as Queue<OutboundQueueMessage>,
+    INBOUND_QUEUE: new MockQueue<InboundQueueMessage>() as unknown as Queue<InboundQueueMessage>,
+    FORENSIC: {
+      fetch: async () => new Response('not-implemented', { status: 501 }),
+    } as unknown as Fetcher,
+    VERIFY_ALGORITHMS: 'v1',
+    API_BASE_URL: 'https://polaris-email-api.workers.dev',
+    BRIDGE_TAILNET_HOST: 'polaris-email.example.ts.net',
+    FANOUT_TAG: 'tag:polaris-workers',
+    POLARIS_SECRET_A: 'test-control-plane-secret',
+    ARGON2_PEPPER: 'test-pepper',
+    ...overrides,
+  };
+  return env as unknown as Env;
+}

@@ -1,0 +1,6 @@
+packages:
+  - "packages/*"
+  - "services/*"
+  - "apps/*"
+  - "apps/bridge/sidecar"
+  - "apps/panel"

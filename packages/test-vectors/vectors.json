@@ -1,0 +1,112 @@
+{
+  "version": 1,
+  "vectors": [
+    {
+      "name": "api/POST/messages/happy",
+      "direction": "polaris-api.v1",
+      "method": "POST",
+      "path": "/v1/messages",
+      "query": "mode=test",
+      "ts": "1700000000000",
+      "nonce": "AAAABBBBCCCCDDDD",
+      "secret": "XBNRJYZ8WS5KQDVPM7T4F2H6CG3A1E9N",
+      "body": "{\"from\":\"a@b.com\",\"to\":[\"c@d.com\"],\"subject\":\"hi\",\"category\":\"svc.test\"}",
+      "must_verify": true,
+      "expected_sig": "v1=e7b5e111569d994ffefe9d4db59d1e8e6af08b4060d1d633b12df8ee53158284"
+    },
+    {
+      "name": "api/POST/messages/empty-query",
+      "direction": "polaris-api.v1",
+      "method": "POST",
+      "path": "/v1/messages",
+      "query": "",
+      "ts": "1700000000000",
+      "nonce": "AAAABBBBCCCCDDDD",
+      "secret": "XBNRJYZ8WS5KQDVPM7T4F2H6CG3A1E9N",
+      "body": "{\"x\":1}",
+      "must_verify": true,
+      "expected_sig": "v1=15ecf4ca90a43dec50abd15ef208ae1e39a04bbfd3b5746efc11ef2d861fc7a8"
+    },
+    {
+      "name": "api/POST/messages/multi-value-query",
+      "direction": "polaris-api.v1",
+      "method": "POST",
+      "path": "/v1/messages",
+      "query": "b=2&a=1&a=2",
+      "ts": "1700000000000",
+      "nonce": "AAAABBBBCCCCDDDD",
+      "secret": "XBNRJYZ8WS5KQDVPM7T4F2H6CG3A1E9N",
+      "body": "",
+      "must_verify": true,
+      "expected_sig": "v1=1e03380082b528fc01fb6e51a68f5bca01923442da71a385e2a4195919e79a1d"
+    },
+    {
+      "name": "api/GET/admin/list/happy",
+      "direction": "polaris-api.v1",
+      "method": "GET",
+      "path": "/v1/admin/api-keys",
+      "query": "service=expresscharge",
+      "ts": "1700000000000",
+      "nonce": "GHIJKLMNOPQRSTUV",
+      "secret": "XBNRJYZ8WS5KQDVPM7T4F2H6CG3A1E9N",
+      "body": "",
+      "must_verify": true,
+      "expected_sig": "v1=cad302f0d9c4eb05264e58fa841d45114bb913678ad93e2021bb2c88eca036a0"
+    },
+    {
+      "name": "webhook/POST/external/happy",
+      "direction": "polaris-webhook.v1",
+      "method": "POST",
+      "path": "/email-hook",
+      "query": "",
+      "ts": "1700000000000",
+      "nonce": "WEBHOOKNONCEAAAA",
+      "secret": "XBNRJYZ8WS5KQDVPM7T4F2H6CG3A1E9N",
+      "body": "{\"event\":\"message.received\",\"event_id\":\"01HXR0000000000000000000A8\"}",
+      "must_verify": true,
+      "expected_sig": "v1=ede8a17eb82c727f7963025bd8c7a074a02569ed2fb289f76bfdeb8f9dc9f0ab"
+    },
+    {
+      "name": "negative/algorithm-not-allowed",
+      "direction": "polaris-api.v1",
+      "method": "POST",
+      "path": "/v1/messages",
+      "query": "",
+      "ts": "1700000000000",
+      "nonce": "AAAABBBBCCCCDDDD",
+      "secret": "XBNRJYZ8WS5KQDVPM7T4F2H6CG3A1E9N",
+      "body": "{}",
+      "expected_sig": "v2=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "must_verify": false,
+      "expected_error": "algorithm_rejected"
+    },
+    {
+      "name": "negative/crlf-in-nonce",
+      "direction": "polaris-api.v1",
+      "method": "POST",
+      "path": "/v1/messages",
+      "query": "",
+      "ts": "1700000000000",
+      "nonce": "AAAABBBBCCCC\r\nDD",
+      "secret": "XBNRJYZ8WS5KQDVPM7T4F2H6CG3A1E9N",
+      "body": "{}",
+      "expected_sig": "v1=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "must_verify": false,
+      "expected_error": "header_invalid"
+    },
+    {
+      "name": "negative/truncated-sig",
+      "direction": "polaris-api.v1",
+      "method": "POST",
+      "path": "/v1/messages",
+      "query": "",
+      "ts": "1700000000000",
+      "nonce": "AAAABBBBCCCCDDDD",
+      "secret": "XBNRJYZ8WS5KQDVPM7T4F2H6CG3A1E9N",
+      "body": "{}",
+      "expected_sig": "v1=ab",
+      "must_verify": false,
+      "expected_error": "bad_signature"
+    }
+  ]
+}
