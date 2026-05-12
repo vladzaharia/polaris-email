@@ -97,6 +97,9 @@ jobs:
           SHA: ${{ github.sha }}
         uses: docker/build-push-action@v6
         with:
-          context: apps/bridge/sidecar
+          context: .
+          file: apps/bridge/sidecar/Dockerfile
           push: true
-          tags: ghcr.io/${{ env.OWNER }}/polaris-email-bridge-sidecar:${{ env.SHA }}
+          tags: |
+            ghcr.io/${{ env.OWNER }}/polaris-email-bridge-sidecar:${{ env.SHA }}
+            ghcr.io/${{ env.OWNER }}/polaris-email-bridge-sidecar:latest
