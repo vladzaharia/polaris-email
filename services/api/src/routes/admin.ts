@@ -18,10 +18,18 @@ import { buildError } from '../errors.js';
 import { hashSecret, sha256Hex } from '../hashing.js';
 import { ulid } from '../ids.js';
 import { generateSecret } from '@polaris-email/hmac';
+import { outboundDomains } from './admin/outbound-domains.js';
+import { senders as sendersRoutes } from './admin/senders.js';
 
 export const admin = new Hono<{ Bindings: Env }>();
 
 admin.use('/v1/admin/*', hmacAuth('polaris-api.v1'));
+// /v1/bridge/* lives below; also auth-required (admin:read scope).
+admin.use('/v1/bridge/*', hmacAuth('polaris-api.v1'));
+
+// Sub-routers for v2 admin surfaces. Both rely on the admin middleware above.
+admin.route('/', outboundDomains);
+admin.route('/', sendersRoutes);
 
 // ---------- services ----------
 
@@ -602,6 +610,65 @@ admin.get('/v1/bridge/config', requireScope('admin:read'), async (c) => {
   const targets = await c.env.DB.prepare(
     `SELECT service, rule, upstream FROM local_webhook_targets WHERE disabled_at IS NULL`,
   ).all<{ service: string; rule: string; upstream: string }>();
+  // Senders + SMTP credential hashes for the sidecar's Mox sync.
+  // Best-effort: outbound_domains may not yet have rows (fresh deploy). Empty array OK.
+  type SenderRowB = {
+    id: string;
+    domain_id: string;
+    local_part: string;
+    display_name: string | null;
+    disabled_at: number | null;
+  };
+  type DomainRowB = { id: string; domain: string };
+  type CredRowB = {
+    id: string;
+    sender_id: string;
+    username: string;
+    password_argon2id: string;
+    disabled_at: number | null;
+  };
+  let senderRows: { results: SenderRowB[] } = { results: [] };
+  let domainRows: { results: DomainRowB[] } = { results: [] };
+  let credRows: { results: CredRowB[] } = { results: [] };
+  try {
+    senderRows = await c.env.DB.prepare(
+      `SELECT id, domain_id, local_part, display_name, disabled_at FROM email_senders`,
+    ).all<SenderRowB>();
+    domainRows = await c.env.DB.prepare(
+      `SELECT id, domain FROM outbound_domains`,
+    ).all<DomainRowB>();
+    credRows = await c.env.DB.prepare(
+      `SELECT id, sender_id, username, password_argon2id, disabled_at FROM smtp_credentials`,
+    ).all<CredRowB>();
+  } catch {
+    // Tables absent (test mocks without 0002 migration). Treat as empty.
+  }
+  const domainById = new Map<string, string>();
+  for (const d of domainRows.results) domainById.set(d.id, d.domain);
+  const credsBySender = new Map<string, CredRowB[]>();
+  for (const cr of credRows.results) {
+    const arr = credsBySender.get(cr.sender_id) ?? [];
+    arr.push(cr);
+    credsBySender.set(cr.sender_id, arr);
+  }
+  const sendersOut = senderRows.results
+    .map((s) => {
+      const dom = domainById.get(s.domain_id);
+      if (!dom) return null;
+      return {
+        id: s.id,
+        address: `${s.local_part}@${dom}`,
+        display_name: s.display_name,
+        disabled: s.disabled_at != null,
+        smtp_credentials: (credsBySender.get(s.id) ?? []).map((cr) => ({
+          id: cr.id,
+          username: cr.username,
+          password_hash: cr.password_argon2id,
+          disabled: cr.disabled_at != null,
+        })),
+      };
+    })
+    .filter((x): x is NonNullable<typeof x> => x !== null);
   return c.json({
     mailboxes: mailboxes.results.map((m) => ({
       id: m.id,
@@ -612,6 +679,7 @@ admin.get('/v1/bridge/config', requireScope('admin:read'), async (c) => {
       retain_imap: m.retain_imap === 1,
     })),
     local_webhook_targets: targets.results,
+    senders: sendersOut,
     rate_limits: {
       inbound_per_mailbox_per_min: 120,
       inbound_per_source_ip_per_min: 60,

@@ -12,7 +12,7 @@ BIN  := $(ROOT)/bin
 
 .PHONY: help preflight configure bootstrap deploy deploy-all deploy-changed \
         rollback smoke issue-key register-consumer bridge-up bridge-down \
-        dns rotate-secret doctor tag-deployed state-rebuild
+        dns onboard onboard-plan sync-bindings rotate-secret doctor tag-deployed state-rebuild
 
 help: ## Show this help.
 	@awk 'BEGIN {FS = ":.*##"; printf "Usage: make \033[36m<target>\033[0m [VAR=value...]\n\nTargets:\n"} \
@@ -61,9 +61,18 @@ bridge-up: ## Bring the Mox+sidecar bridge up on this host (requires Tailscale a
 bridge-down: ## Stop the bridge containers without removing volumes.
 	@cd apps/bridge && docker compose stop
 
-dns: ## Print (or with APPLY=1, apply) the DNS records for DOMAIN. usage: make dns DOMAIN=example.com [APPLY=1].
-	@if [ -z "$(DOMAIN)" ]; then echo "usage: make dns DOMAIN=example.com" >&2; exit 2; fi
-	@$(BIN)/dns-records.sh $(if $(filter 1,$(APPLY)),--apply) $(DOMAIN)
+dns: ## DEPRECATED: alias for onboard-plan. Use `make onboard` / `make onboard-plan`.
+	@echo "[deprecated] 'make dns' → 'make onboard-plan'." >&2
+	@if [ -z "$(DOMAIN)" ]; then $(BIN)/onboard.sh --plan; else $(BIN)/onboard.sh --plan --domain $(DOMAIN); fi
+
+onboard: ## Converge outbound domains end-to-end. [DOMAIN=name] [NEW=1 to create row if missing].
+	@$(BIN)/onboard.sh $(if $(DOMAIN),--domain $(DOMAIN)) $(if $(filter 1,$(NEW)),--create)
+
+onboard-plan: ## Print the per-record diff without writes. [DOMAIN=name].
+	@$(BIN)/onboard.sh --plan $(if $(DOMAIN),--domain $(DOMAIN))
+
+sync-bindings: ## Re-render services/out send_email bindings from D1 (admin API).
+	@$(BIN)/render-send-email-bindings.sh
 
 rotate-secret: ## Two-phase rotation of POLARIS_SECRET_A. NAME=POLARIS_SECRET_A.
 	@if [ -z "$(NAME)" ]; then echo "usage: make rotate-secret NAME=POLARIS_SECRET_A" >&2; exit 2; fi

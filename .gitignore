@@ -1,8 +1,8 @@
 node_modules/
 dist/
 # Override any global gitignore that swallows services/out (common: `out/` in user gitignore).
+# Negate the directory itself so git descends; sub-rules (node_modules/, dist/, etc.) still apply.
 !services/out/
-!services/out/**
 .wrangler/
 .dev.vars
 .dev.vars.*

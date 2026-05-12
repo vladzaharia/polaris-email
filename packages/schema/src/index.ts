@@ -252,7 +252,90 @@ export const MessageDelivery = z.object({
   failed_at: z.number().int().nullable(),
 });
 
+// ---------- outbound domains + senders + SMTP credentials ----------
+
+export const OutboundDomainStatus = z.enum(['pending', 'verified', 'active', 'disabled']);
+export type OutboundDomainStatus = z.infer<typeof OutboundDomainStatus>;
+
+export const DmarcPolicy = z.enum(['none', 'quarantine', 'reject']);
+
+export const OutboundDomain = z.object({
+  id: Ulid,
+  domain: DomainName,
+  dkim_selector: z.string().min(1).max(63),
+  status: OutboundDomainStatus,
+  cf_zone_id: z.string().nullable(),
+  is_default: z.number().int().min(0).max(1),
+  dmarc_policy: DmarcPolicy,
+  dmarc_rua: z.string().nullable(),
+  binding_tag: z.string().nullable(),
+  last_verified_at: z.number().int().nullable(),
+  created_at: z.number().int(),
+  updated_at: z.number().int(),
+  disabled_at: z.number().int().nullable(),
+});
+export type OutboundDomain = z.infer<typeof OutboundDomain>;
+
+export const CreateOutboundDomainRequest = z.object({
+  domain: DomainName,
+  dkim_selector: z.string().min(1).max(63).optional(),
+  is_default: z.boolean().optional(),
+  dmarc_policy: DmarcPolicy.optional(),
+  dmarc_rua: z.string().max(320).optional(),
+  binding_tag: z.string().regex(/^[A-Z][A-Z0-9_]{0,62}$/).optional(),
+});
+
+export const UpdateOutboundDomainRequest = z.object({
+  cf_zone_id: z.string().max(64).optional(),
+  status: OutboundDomainStatus.optional(),
+  is_default: z.boolean().optional(),
+  dmarc_policy: DmarcPolicy.optional(),
+  dmarc_rua: z.string().max(320).optional(),
+  binding_tag: z.string().regex(/^[A-Z][A-Z0-9_]{0,62}$/).optional(),
+  dkim_selector: z.string().min(1).max(63).optional(),
+});
+
+export const EmailSender = z.object({
+  id: Ulid,
+  domain_id: Ulid,
+  local_part: z.string().regex(/^[a-z0-9._+-]{1,64}$/),
+  display_name: z.string().nullable(),
+  default_for_domain: z.number().int().min(0).max(1),
+  created_at: z.number().int(),
+  disabled_at: z.number().int().nullable(),
+});
+export type EmailSender = z.infer<typeof EmailSender>;
+
+export const CreateEmailSenderRequest = z.object({
+  local_part: z.string().regex(/^[a-z0-9._+-]{1,64}$/),
+  display_name: z.string().min(1).max(120).optional(),
+  default_for_domain: z.boolean().optional(),
+});
+
+export const CreateSmtpCredentialRequest = z.object({
+  label: z.string().min(1).max(120).optional(),
+});
+
+export const SmtpCredential = z.object({
+  id: Ulid,
+  sender_id: Ulid,
+  username: Address,
+  label: z.string().nullable(),
+  last_used_at: z.number().int().nullable(),
+  disabled_at: z.number().int().nullable(),
+  created_at: z.number().int(),
+});
+export type SmtpCredential = z.infer<typeof SmtpCredential>;
+
 export const AuditAction = z.enum([
+  'outbound_domain.create',
+  'outbound_domain.update',
+  'outbound_domain.verify',
+  'outbound_domain.disable',
+  'email_sender.create',
+  'email_sender.disable',
+  'smtp_credential.issue',
+  'smtp_credential.disable',
   'api_key.issue',
   'api_key.rotate',
   'api_key.rotate.emergency',
@@ -401,6 +484,22 @@ export const BridgeMailboxConfig = z.object({
   api_key_secret: z.string(),
 });
 
+export const BridgeSmtpCredential = z.object({
+  id: Ulid,
+  username: Address,
+  password_hash: z.string(),
+  disabled: z.boolean(),
+});
+
+export const BridgeSenderConfig = z.object({
+  id: Ulid,
+  address: Address,
+  display_name: z.string().nullable(),
+  disabled: z.boolean(),
+  smtp_credentials: z.array(BridgeSmtpCredential),
+});
+export type BridgeSenderConfig = z.infer<typeof BridgeSenderConfig>;
+
 export const BridgeConfig = z.object({
   mailboxes: z.array(BridgeMailboxConfig),
   local_webhook_targets: z.array(
@@ -410,6 +509,7 @@ export const BridgeConfig = z.object({
       upstream: z.string().url(),
     }),
   ),
+  senders: z.array(BridgeSenderConfig).default([]),
   rate_limits: z.object({
     inbound_per_mailbox_per_min: z.number().int().nonnegative().default(120),
     inbound_per_source_ip_per_min: z.number().int().nonnegative().default(60),

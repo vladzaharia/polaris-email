@@ -67,6 +67,21 @@ if [[ -f "$ENV_FILE" ]]; then
   else
     printf '  ok   .env.deploy has required keys\n'
   fi
+
+  # Best-effort scope check: CF_API_TOKEN must have Email Routing:Edit if we want
+  # `make onboard` to enable routing and write rules. A GET on the addresses list
+  # for the account returns 403 with bad scopes and 200 (empty result allowed) otherwise.
+  if [[ -n "${CF_API_TOKEN:-}" && -n "${CF_ACCOUNT_ID:-}" ]] && command -v curl >/dev/null 2>&1; then
+    er_code="$(curl -s -o /dev/null -w '%{http_code}' \
+      -H "Authorization: Bearer ${CF_API_TOKEN}" \
+      "https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/email/routing/addresses?per_page=1" || echo "000")"
+    case "$er_code" in
+      200|404) printf '  ok   CF_API_TOKEN has Email Routing scope\n' ;;
+      403)     printf '  FAIL CF_API_TOKEN lacks Email Routing:Edit\n       fix: re-issue the token with Email Routing scopes (Read + Edit)\n'
+               FAIL=1 ;;
+      *)       printf '  warn CF_API_TOKEN Email Routing scope check inconclusive (HTTP %s)\n' "$er_code" ;;
+    esac
+  fi
 else
   printf '  warn .env.deploy missing — run `make configure` before `make bootstrap`\n'
 fi

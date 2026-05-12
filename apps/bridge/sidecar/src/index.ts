@@ -20,10 +20,23 @@ async function main() {
   const localTargets = new Map<string, string>();
   const mailboxes = new Map<string, { account: string }>();
 
+  interface BridgeSenderRow {
+    id: string;
+    address: string;
+    display_name: string | null;
+    disabled: boolean;
+    smtp_credentials: {
+      id: string;
+      username: string;
+      password_hash: string;
+      disabled: boolean;
+    }[];
+  }
   async function loadConfig() {
     const r = await polaris.request<{
       mailboxes: { id: string; address: string }[];
       local_webhook_targets: { service: string; rule: string; upstream: string }[];
+      senders?: BridgeSenderRow[];
     }>('GET', '/v1/bridge/config');
     if (r.status !== 200) throw new Error('config fetch failed ' + r.status);
     const conf = r.body;
@@ -34,6 +47,35 @@ async function main() {
       // Mox account name = local part of the address.
       const account = m.address.split('@')[0];
       if (account) mailboxes.set(m.id, { account });
+    }
+    // Reconcile Mox accounts for each sender. Best-effort: one bad sender should
+    // not halt sync. We use the SMTP credential password hash directly so the
+    // operator only ever sees the plaintext at issuance time.
+    for (const sender of conf.senders ?? []) {
+      const account = sender.address;
+      if (sender.disabled) {
+        await mox.disableAccount(account).catch(() => false);
+        continue;
+      }
+      // If the sender has no active credentials, disable its Mox account.
+      const active = sender.smtp_credentials.find((c) => !c.disabled);
+      if (!active) {
+        await mox.disableAccount(account).catch(() => false);
+        continue;
+      }
+      await mox
+        .ensureAccount({
+          account,
+          address: sender.address,
+          passwordHash: active.password_hash,
+        })
+        .catch((e: unknown) => {
+          // eslint-disable-next-line no-console
+          console.warn(
+            `bridge: ensureAccount failed for ${account}: ${e instanceof Error ? e.message : 'unknown'}`,
+          );
+          return false;
+        });
     }
   }
   await loadConfig();
