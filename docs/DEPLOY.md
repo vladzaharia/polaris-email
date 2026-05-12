@@ -142,7 +142,11 @@ curl -X POST .../v1/admin/outbound-domains/<id>/senders -d '{"local_part":"norep
 curl -X POST .../v1/admin/senders/<sender_id>/smtp-credentials -d '{"label":"app-prod"}'
 ```
 
-The bridge sidecar polls `/v1/bridge/config` every 5s and converges Mox accounts + credential hashes accordingly. Single-selector DKIM (`cf2024-1`) covers Worker-originated mail; a separate `mox._domainkey` selector for Mox-originated SMTPS mail is tracked in the open-questions section of the design doc and will land in a follow-up.
+The bridge sidecar polls `/v1/bridge/config` every 5s and converges **Mox account existence** accordingly. It does NOT push password hashes (Mox's admin RPC accepts plaintext only — see `apps/bridge/sidecar/README.md`).
+
+**SMTP credential plaintext hand-off** — at credential issuance, the api Worker fires a one-time Tailnet webhook to the sidecar carrying the plaintext, which is relayed to Mox via the `SetPassword` admin RPC and immediately forgotten. The Worker stores only the PBKDF2-SHA256 hash in `smtp_credentials.password_hash`. Plaintext therefore exists in three places for the duration of one request (operator terminal, api Worker response, sidecar HTTP handler) and is never persisted server-side. See `apps/bridge/sidecar/README.md` for the rationale and trade-off.
+
+Single-selector DKIM (`cf2024-1`) covers Worker-originated mail; a separate `mox._domainkey` selector for Mox-originated SMTPS mail is tracked in the open-questions section of the design doc and will land in a follow-up.
 
 ---
 

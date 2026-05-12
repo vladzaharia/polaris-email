@@ -52,7 +52,7 @@ CREATE TABLE IF NOT EXISTS smtp_credentials (
   id                TEXT PRIMARY KEY,
   sender_id         TEXT NOT NULL REFERENCES email_senders(id),
   username          TEXT NOT NULL UNIQUE,
-  password_argon2id TEXT NOT NULL,
+  password_hash     TEXT NOT NULL,
   label             TEXT,
   last_used_at      INTEGER,
   last_used_ip      TEXT,

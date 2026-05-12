@@ -30,6 +30,11 @@ RUN pnpm --filter "@polaris-email/hmac" build \
 RUN pnpm --filter "@polaris-email/bridge-sidecar" --prod deploy /out
 
 FROM node:22-alpine AS runtime
+# OCI source labels — auto-link the GHCR package to the repository so package
+# visibility can be inherited. License intentionally omitted: the repo's LICENSE
+# is "All rights reserved (internal use only)", not an SPDX-recognised id.
+LABEL org.opencontainers.image.source="https://github.com/vladzaharia/polaris-email"
+LABEL org.opencontainers.image.description="Polaris email bridge sidecar"
 WORKDIR /app
 COPY --from=build /out/dist ./dist
 COPY --from=build /out/node_modules ./node_modules

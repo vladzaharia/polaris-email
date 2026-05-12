@@ -28,7 +28,9 @@ async function main() {
     smtp_credentials: {
       id: string;
       username: string;
-      password_hash: string;
+      // password_hash is included by the api Worker but the sidecar does not
+      // consume it for Mox sync (Mox needs plaintext; see mox-client.ts).
+      password_hash?: string;
       disabled: boolean;
     }[];
   }
@@ -49,26 +51,22 @@ async function main() {
       if (account) mailboxes.set(m.id, { account });
     }
     // Reconcile Mox accounts for each sender. Best-effort: one bad sender should
-    // not halt sync. We use the SMTP credential password hash directly so the
-    // operator only ever sees the plaintext at issuance time.
+    // not halt sync.
+    //
+    // Mox's admin API does NOT accept pre-hashed passwords (see mox-client.ts).
+    // We therefore only manage account existence here. Passwords are pushed
+    // via a separate one-time webhook (POST /bridge/credential-set) at the
+    // moment of credential issuance; the api Worker holds plaintext exactly
+    // long enough to fire that webhook, then stores only the hash at rest.
     for (const sender of conf.senders ?? []) {
       const account = sender.address;
-      if (sender.disabled) {
-        await mox.disableAccount(account).catch(() => false);
-        continue;
-      }
-      // If the sender has no active credentials, disable its Mox account.
-      const active = sender.smtp_credentials.find((c) => !c.disabled);
-      if (!active) {
-        await mox.disableAccount(account).catch(() => false);
+      const hasActive = sender.smtp_credentials.some((cred) => !cred.disabled);
+      if (sender.disabled || !hasActive) {
+        await mox.removeAccount(account).catch(() => false);
         continue;
       }
       await mox
-        .ensureAccount({
-          account,
-          address: sender.address,
-          passwordHash: active.password_hash,
-        })
+        .ensureAccount({ account, address: sender.address })
         .catch((e: unknown) => {
           // eslint-disable-next-line no-console
           console.warn(

@@ -331,6 +331,7 @@ export const AuditAction = z.enum([
   'outbound_domain.create',
   'outbound_domain.update',
   'outbound_domain.verify',
+  'outbound_domain.verify_incomplete',
   'outbound_domain.disable',
   'email_sender.create',
   'email_sender.disable',

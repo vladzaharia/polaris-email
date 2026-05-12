@@ -179,7 +179,93 @@ outboundDomains.patch('/v1/admin/outbound-domains/:id', requireScope('admin:rota
   return c.json({ id, updated_at: now });
 });
 
-// ---------- verify (re-checks zone state) ----------
+// ---------- verify (real DNS check via DoH + CF Email Routing) ----------
+//
+// Resolves the domain's expected DKIM CNAME target from Cloudflare Email Routing's
+// /zones/:zone_id/email/routing/dns endpoint, then verifies via Cloudflare DoH
+// (https://cloudflare-dns.com/dns-query) that:
+//   • The DKIM CNAME(s) point at the expected `*.cf-email-routing.com` host.
+//   • The MX records resolve to `routeN.mx.cloudflare.net`.
+// On full success, flips status to 'verified'. On partial/failed, leaves status
+// unchanged and returns a diagnostic 200 with per-check detail.
+//
+// The Worker has no DNS resolver of its own; DoH (RFC 8484 / JSON variant) is the
+// only outbound DNS path inside a Worker.
+interface DohAnswer {
+  name: string;
+  type: number;
+  TTL?: number;
+  data: string;
+}
+interface DohResponse {
+  Status: number;
+  Answer?: DohAnswer[];
+}
+interface VerifyCheck {
+  name: string;
+  ok: boolean;
+  expected: string;
+  actual: string;
+}
+
+// DNS record type codes.
+const DNS_CNAME = 5;
+const DNS_MX = 15;
+
+async function dohResolve(host: string, type: 'CNAME' | 'MX'): Promise<DohAnswer[]> {
+  const url = `https://cloudflare-dns.com/dns-query?name=${encodeURIComponent(host)}&type=${type}`;
+  const res = await fetch(url, {
+    method: 'GET',
+    headers: { accept: 'application/dns-json' },
+    // 5s timeout via AbortSignal so a slow resolver doesn't hang the verify call.
+    signal: AbortSignal.timeout(5_000),
+  });
+  if (!res.ok) return [];
+  const j = (await res.json()) as DohResponse;
+  // NXDOMAIN / NODATA → Answer may be absent. Treat as empty.
+  if (!j.Answer || !Array.isArray(j.Answer)) return [];
+  const want = type === 'CNAME' ? DNS_CNAME : DNS_MX;
+  return j.Answer.filter((a) => a.type === want);
+}
+
+function stripDot(s: string): string {
+  return s.endsWith('.') ? s.slice(0, -1) : s;
+}
+
+interface RoutingDnsRecord {
+  type: string;
+  name: string;
+  content: string;
+  priority?: number;
+}
+interface CfEnvelope<T> {
+  success: boolean;
+  result?: T;
+}
+
+async function fetchExpectedRoutingDns(
+  accountId: string,
+  zoneId: string,
+  apiToken: string,
+): Promise<RoutingDnsRecord[]> {
+  // Cloudflare API: GET /zones/:zone_id/email/routing/dns returns the canonical
+  // set of MX + DKIM CNAME records that Email Routing wants on this zone.
+  const url = `https://api.cloudflare.com/client/v4/zones/${zoneId}/email/routing/dns`;
+  const res = await fetch(url, {
+    method: 'GET',
+    headers: {
+      authorization: `Bearer ${apiToken}`,
+      'cf-account-id': accountId,
+      accept: 'application/json',
+    },
+    signal: AbortSignal.timeout(8_000),
+  });
+  if (!res.ok) return [];
+  const j = (await res.json()) as CfEnvelope<RoutingDnsRecord[]>;
+  if (!j.success || !Array.isArray(j.result)) return [];
+  return j.result;
+}
+
 outboundDomains.post(
   '/v1/admin/outbound-domains/:id/verify',
   requireScope('admin:rotate'),
@@ -187,29 +273,119 @@ outboundDomains.post(
     const key = c.get('apiKey');
     const id = c.req.param('id');
     const row = await c.env.DB.prepare(
-      `SELECT id, domain, status FROM outbound_domains WHERE id = ?`,
+      `SELECT id, domain, status, cf_zone_id FROM outbound_domains WHERE id = ?`,
     )
       .bind(id)
-      .first<{ id: string; domain: string; status: string }>();
+      .first<{ id: string; domain: string; status: string; cf_zone_id: string | null }>();
     if (!row) return buildError(c, 'not_found', 'outbound_domain not found');
-    // The actual verification (DKIM resolves, Email Routing zone enabled) is performed by
-    // bin/onboard.sh which has the CF API token. This endpoint is the *flip* step: the
-    // caller passes the verification result via a PATCH-style update. Here we simply
-    // promote pending -> verified if the operator has indicated the records are in place.
-    // Real DKIM lookup from a Worker would require DNS-over-HTTPS; out of scope for v1.
+
+    // Env access for CF API token + account id. These may not be present in test
+    // environments — degrade gracefully with a check-level error rather than 500.
+    const env = c.env as unknown as { CF_API_TOKEN?: string; CF_ACCOUNT_ID?: string };
+    const apiToken = env.CF_API_TOKEN;
+    const accountId = env.CF_ACCOUNT_ID;
+
+    const checks: VerifyCheck[] = [];
+
+    // 1) Pull expected records from CF Email Routing (DKIM CNAMEs + MX list).
+    //    Without CF API credentials or a cached zone id, we cannot self-discover
+    //    the expected DKIM CNAME target — return a diagnostic without any
+    //    outbound network calls (lets the operator know what's missing).
+    let expected: RoutingDnsRecord[] = [];
+    const haveCfCreds = !!(apiToken && accountId && row.cf_zone_id);
+    if (!haveCfCreds) {
+      checks.push({
+        name: 'cf-email-routing-dns',
+        ok: false,
+        expected: 'CF API token + cached zone id',
+        actual: 'missing CF_API_TOKEN, CF_ACCOUNT_ID or cf_zone_id',
+      });
+      await audit(c.env, {
+        actor: `key:${key.key_id}`,
+        action: 'outbound_domain.verify_incomplete',
+        target: id,
+        meta: { domain: row.domain, reason: 'no-cf-creds' },
+      });
+      return c.json({
+        id,
+        status: row.status,
+        message: 'verification incomplete',
+        checks,
+      });
+    }
+    expected = await fetchExpectedRoutingDns(accountId!, row.cf_zone_id!, apiToken!).catch(
+      () => [],
+    );
+
+    // 2) Check each expected DKIM CNAME via DoH.
+    for (const rec of expected.filter((r) => r.type.toUpperCase() === 'CNAME')) {
+      const want = stripDot(rec.content).toLowerCase();
+      const got = await dohResolve(rec.name, 'CNAME').catch(() => []);
+      const seen = got.map((a) => stripDot(a.data).toLowerCase());
+      checks.push({
+        name: `cname:${rec.name}`,
+        ok: seen.includes(want),
+        expected: want,
+        actual: seen.join(',') || '(empty)',
+      });
+    }
+
+    // 3) Check MX records resolve to routeN.mx.cloudflare.net.
+    //    DoH "data" for MX has the form: "<priority> <exchange>."
+    const mxAnswers = await dohResolve(row.domain, 'MX').catch(() => []);
+    const seenMxHosts = mxAnswers
+      .map((a) => stripDot(a.data.split(/\s+/).pop() ?? '').toLowerCase())
+      .filter((h) => h.length > 0);
+    const expectedMxHosts = expected
+      .filter((r) => r.type.toUpperCase() === 'MX')
+      .map((r) => stripDot(r.content).toLowerCase());
+    // If CF didn't return MX expectations, fall back to the canonical Cloudflare set.
+    const fallbackMx = ['route1.mx.cloudflare.net', 'route2.mx.cloudflare.net', 'route3.mx.cloudflare.net'];
+    const wantMxSet = (expectedMxHosts.length > 0 ? expectedMxHosts : fallbackMx).sort();
+    const haveMxSet = [...new Set(seenMxHosts)].sort();
+    const mxOk =
+      wantMxSet.length > 0 &&
+      wantMxSet.every((h) => haveMxSet.includes(h));
+    checks.push({
+      name: 'mx',
+      ok: mxOk,
+      expected: wantMxSet.join(','),
+      actual: haveMxSet.join(',') || '(empty)',
+    });
+
+    const allOk = checks.length > 0 && checks.every((ch) => ch.ok);
     const now = Date.now();
-    await c.env.DB.prepare(
-      `UPDATE outbound_domains SET status = 'verified', last_verified_at = ?, updated_at = ? WHERE id = ?`,
-    )
-      .bind(now, now, id)
-      .run();
+
+    if (allOk) {
+      await c.env.DB.prepare(
+        `UPDATE outbound_domains SET status = 'verified', last_verified_at = ?, updated_at = ? WHERE id = ?`,
+      )
+        .bind(now, now, id)
+        .run();
+      await audit(c.env, {
+        actor: `key:${key.key_id}`,
+        action: 'outbound_domain.verify',
+        target: id,
+        meta: { domain: row.domain, checks: checks.map((c2) => c2.name) },
+      });
+      return c.json({ id, status: 'verified', verified_at: now, checks });
+    }
+
     await audit(c.env, {
       actor: `key:${key.key_id}`,
-      action: 'outbound_domain.verify',
+      action: 'outbound_domain.verify_incomplete',
       target: id,
-      meta: { domain: row.domain },
+      meta: {
+        domain: row.domain,
+        failures: checks.filter((ch) => !ch.ok).map((ch) => ch.name),
+      },
     });
-    return c.json({ id, status: 'verified', verified_at: now });
+    return c.json({
+      id,
+      status: row.status,
+      message: 'verification incomplete',
+      checks,
+    });
   },
 );
 
