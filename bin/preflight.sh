@@ -68,6 +68,19 @@ if [[ -f "$ENV_FILE" ]]; then
     printf '  ok   .env.deploy has required keys\n'
   fi
 
+  # Tailscale credential format: hard cutover from one-time auth keys to OAuth.
+  # Optional (bridge isn't required for cold-start), but if present it must be OAuth.
+  if [[ -n "${TS_OAUTH_CLIENT_SECRET:-}" ]]; then
+    if [[ "$TS_OAUTH_CLIENT_SECRET" == tskey-auth-* ]]; then
+      printf '  FAIL TS_OAUTH_CLIENT_SECRET looks like a one-time auth key (tskey-auth-...)\n       fix: create an OAuth client at Tailscale admin → Settings → OAuth clients (scope: devices:write, tag: tag:mail-bridge); paste the tskey-client-... secret via `make configure`.\n'
+      FAIL=1
+    elif [[ "$TS_OAUTH_CLIENT_SECRET" != tskey-client-* ]]; then
+      printf '  warn TS_OAUTH_CLIENT_SECRET does not look like a Tailscale OAuth secret (expected tskey-client-...). bridge-up will refuse this value.\n'
+    else
+      printf '  ok   TS_OAUTH_CLIENT_SECRET is an OAuth client secret\n'
+    fi
+  fi
+
   # Best-effort scope check: CF_API_TOKEN must have Email Routing:Edit if we want
   # `make onboard` to enable routing and write rules. A GET on the addresses list
   # for the account returns 403 with bad scopes and 200 (empty result allowed) otherwise.

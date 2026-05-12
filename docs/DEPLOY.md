@@ -14,7 +14,7 @@ step asks you to do something manual, the *why* is called out in section 9.
 
 - [ ] Cloudflare account with an API token scoped: **Workers:Edit, D1:Edit, R2:Edit, Queues:Edit, KV:Edit, Email Routing:Edit, Zone:Read, DNS:Edit**.
 - [ ] At least one domain on Cloudflare DNS for inbound mail.
-- [ ] (Optional) A Tailscale tailnet + a reusable, tagged auth key (`tag:mail-bridge`) for the bridge host.
+- [ ] (Optional) A Tailscale tailnet + an **OAuth client** for the bridge host. Create at Tailscale admin → Settings → OAuth clients → New OAuth client. **Scopes:** `devices:write`. **Tags:** `tag:mail-bridge`. Copy the secret — it's shown once. (One-time `tskey-auth-` keys are rejected by preflight; OAuth is the only supported path.)
 - [ ] (Optional) An OIDC provider client for the admin panel (`apps/panel`).
 - [ ] Local tools: `git`, `pnpm` ≥ 9, `wrangler` (installed via `pnpm install`), `jq`, `openssl`, `curl`.
 
@@ -84,6 +84,8 @@ make bridge-up
 ```
 
 Wraps `apps/bridge/docker-compose.yml`: pulls images, brings up `ts`, runs `cert-init`, brings up `mox` + `sidecar`, polls `http://${BRIDGE_HOST}:8088/health` for up to 60s. The first run issues a dedicated bridge API key (`scopes=bridge:read,bridge:write`) via the admin key and writes it to `apps/bridge/.env`.
+
+The rendered `apps/bridge/.env` contains `TS_AUTHKEY=<tskey-client-…>?preauthorized=true&ephemeral=false` — the Tailscale container reads `TS_AUTHKEY` regardless of whether the value is a one-time auth-key or an OAuth client secret, and exchanges OAuth secrets for a fresh auth key on each cold boot. The `preauthorized` + `ephemeral=false` params let the minted device skip admin approval and survive container restarts via the `ts-state/` volume.
 
 To stop without destroying volumes: `make bridge-down`.
 
@@ -232,7 +234,7 @@ Runs `preflight` + `smoke` + a non-destructive check of `POLARIS_SECRET_A` rotat
 These cannot be fully automated from this repo and are intentionally left as checklist items:
 
 - **DNS at your registrar / authoritative DNS**: only the records inside Cloudflare zones we own can be applied via `make dns DOMAIN=… APPLY=1`. Anything else (e.g., a customer's own DNS) is theirs to add.
-- **Tailscale auth key minting**: tailnet credentials live in your Tailscale admin console, not in this repo.
+- **Tailscale OAuth client creation**: the OAuth client + its `devices:write` scope + the `tag:mail-bridge` permission live in the Tailscale admin console; the OAuth API doesn't expose client creation. Rotate the OAuth client there when you need to roll the secret (single-phase rotation, not the dual-slot pattern used for `POLARIS_SECRET_A`).
 - **Cloudflare Email Routing enablement** (per domain): the dashboard flow needs human confirmation. Workers can only react once routing is on.
 - **OIDC client creation** for the panel: the IdP is outside our control plane.
 - **First-time WebAuthn enrollment** for the admin panel: by design, must happen on a trusted device.

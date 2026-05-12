@@ -9,9 +9,16 @@ need docker
 need curl
 load_env_deploy
 
-for k in TS_AUTHKEY TS_TAILNET BRIDGE_HOST POLARIS_API_HOSTNAME; do
+for k in TS_OAUTH_CLIENT_SECRET TS_TAILNET BRIDGE_HOST POLARIS_API_HOSTNAME; do
   if [[ -z "${!k:-}" ]]; then die "bridge-up: $k is required in .env.deploy"; fi
 done
+
+# Hard cutover from one-time auth keys to OAuth. The tskey-auth- format is rejected here
+# rather than silently working, because OAuth-minted devices have a real provenance trail
+# in the Tailscale admin and the OAuth client is rotateable in place.
+if [[ "$TS_OAUTH_CLIENT_SECRET" != tskey-client-* ]]; then
+  die "TS_OAUTH_CLIENT_SECRET must begin with 'tskey-client-' (OAuth client secret, not a one-time auth key). Create one at Tailscale admin → Settings → OAuth clients with scope 'devices:write' and tag 'tag:mail-bridge', then paste the secret via \`make configure\`."
+fi
 
 BRIDGE_DIR="$ROOT/apps/bridge"
 [[ -d "$BRIDGE_DIR" ]] || die "no $BRIDGE_DIR — repo layout broken"
@@ -44,8 +51,12 @@ if [[ ! -f "$BRIDGE_DIR/.env" ]]; then
   bk_id="$(printf '%s' "$bk" | sed -n '1p')"
   bk_secret="$(printf '%s' "$bk" | sed -n '2p')"
   umask 077
+  # The Tailscale container reads TS_AUTHKEY regardless of whether the value is an
+  # auth-key or an OAuth client secret. We append ?preauthorized=true&ephemeral=false
+  # so the device the OAuth client mints is non-ephemeral (survives container restart
+  # via ts-state/) and doesn't require manual approval in the admin console.
   cat > "$BRIDGE_DIR/.env" <<EOF
-TS_AUTHKEY=$TS_AUTHKEY
+TS_AUTHKEY=${TS_OAUTH_CLIENT_SECRET}?preauthorized=true&ephemeral=false
 TS_TAILNET=$TS_TAILNET
 POLARIS_EMAIL_URL=https://$POLARIS_API_HOSTNAME
 POLARIS_BRIDGE_KEY_ID=$bk_id
