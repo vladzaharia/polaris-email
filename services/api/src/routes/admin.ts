@@ -687,6 +687,105 @@ admin.get('/v1/bridge/config', requireScope('admin:read'), async (c) => {
   });
 });
 
+// ---------- bridge mox-ops queue ----------
+//
+// The sidecar drains pending Mox operations (set_password, remove_account) on
+// every config-poll tick. These rows briefly carry plaintext password material
+// (payload_b64). NEVER log payload_b64 — see the redaction below.
+
+interface MoxPendingOpRow {
+  id: string;
+  op: string;
+  username: string;
+  payload_b64: string | null;
+  attempts: number;
+}
+
+admin.get('/v1/bridge/mox-ops', requireScope('admin:read'), async (c) => {
+  const rows = await c.env.DB.prepare(
+    `SELECT id, op, username, payload_b64, attempts
+     FROM mox_pending_ops
+     WHERE applied_at IS NULL
+     ORDER BY created_at ASC
+     LIMIT 50`,
+  ).all<MoxPendingOpRow>();
+  return c.json({ ops: rows.results });
+});
+
+admin.post('/v1/bridge/mox-ops/:id/ack', requireScope('admin:read'), async (c) => {
+  const id = c.req.param('id');
+  let body: { ok: boolean; error?: string };
+  try {
+    const parsed = JSON.parse(bodyText(c) || '{}');
+    if (typeof parsed !== 'object' || parsed == null || typeof parsed.ok !== 'boolean') {
+      return buildError(c, 'bad_request', 'expected {ok: boolean, error?: string}');
+    }
+    body = parsed as { ok: boolean; error?: string };
+  } catch (e) {
+    return buildError(c, 'bad_request', e instanceof Error ? e.message : 'invalid body');
+  }
+  const now = Date.now();
+  const existing = await c.env.DB.prepare(
+    `SELECT id, username, op, attempts, applied_at FROM mox_pending_ops WHERE id = ?`,
+  )
+    .bind(id)
+    .first<{
+      id: string;
+      username: string;
+      op: string;
+      attempts: number;
+      applied_at: number | null;
+    }>();
+  if (!existing) return buildError(c, 'not_found', 'op not found');
+  if (existing.applied_at != null) {
+    // Idempotent ack: already applied. Return 200 so the sidecar moves on.
+    return c.json({ id, status: 'already_applied' });
+  }
+  if (body.ok) {
+    await c.env.DB.prepare(
+      `UPDATE mox_pending_ops SET applied_at = ?, last_error = NULL WHERE id = ?`,
+    )
+      .bind(now, id)
+      .run();
+    await audit(c.env, {
+      actor: 'bridge',
+      action: 'mox_pending_op.acked',
+      target: id,
+      // NOTE: we never include payload_b64 or its decoded value in audit meta.
+      meta: { op: existing.op, username: existing.username, attempts: existing.attempts },
+    });
+    return c.json({ id, status: 'acked' });
+  }
+  const truncated = (body.error ?? 'unknown').slice(0, 200);
+  const newAttempts = existing.attempts + 1;
+  await c.env.DB.prepare(
+    `UPDATE mox_pending_ops SET attempts = ?, last_error = ? WHERE id = ?`,
+  )
+    .bind(newAttempts, truncated, id)
+    .run();
+  if (newAttempts >= 5) {
+    // Persistent failure: leave the row for an operator to investigate. The
+    // janitor will eventually scrub it after a 1-hour grace window.
+    await audit(c.env, {
+      actor: 'bridge',
+      action: 'mox_pending_op.failed',
+      target: id,
+      meta: {
+        op: existing.op,
+        username: existing.username,
+        attempts: newAttempts,
+        // last_error is operator-visible by design; we never include payload_b64.
+        last_error: truncated,
+      },
+    });
+    // eslint-disable-next-line no-console
+    console.warn(
+      `mox-ops: persistent failure id=${id} op=${existing.op} username=${existing.username} attempts=${newAttempts}`,
+    );
+  }
+  return c.json({ id, status: 'recorded_failure', attempts: newAttempts });
+});
+
 // ---------- audit chain status ----------
 
 admin.get('/v1/admin/audit/chain-status', requireScope('admin:read'), async (c) => {

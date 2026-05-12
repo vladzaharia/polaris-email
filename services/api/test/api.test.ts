@@ -634,6 +634,16 @@ describe('outbound_domains + senders', () => {
     expect(cred.username).toBe('noreply@plrs.im');
     expect(cred.secret.length).toBeGreaterThan(20);
 
+    // Issuing the credential must also enqueue a Mox set_password op so the
+    // sidecar can push the plaintext into Mox on its next config-poll tick.
+    // Without this the credential exists in D1 but Mox SMTPS auth would fail.
+    const mockDb = env.DB as unknown as { tables: Map<string, Record<string, unknown>[]> };
+    const ops = mockDb.tables.get('mox_pending_ops') ?? [];
+    const opForUser = ops.find((o) => o['username'] === 'noreply@plrs.im' && o['op'] === 'set_password');
+    expect(opForUser).toBeTruthy();
+    expect(opForUser?.['payload_b64']).toBe(btoa(cred.secret));
+    expect(opForUser?.['applied_at']).toBeFalsy();
+
     // Verify endpoint: with no CF_API_TOKEN / no cf_zone_id in test env, the
     // verifier returns a 200 diagnostic envelope leaving status unchanged.
     res = await app.fetch(

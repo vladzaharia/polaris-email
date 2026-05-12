@@ -61,9 +61,23 @@ export class MockD1 {
     this.tables.set('email_senders', []);
     this.tables.set('smtp_credentials', []);
     this.tables.set('sender_key_scopes', []);
+    this.tables.set('mox_pending_ops', []);
   }
   prepare(sql: string) {
     return new MockStatement(this, sql);
+  }
+  // Minimal D1 .batch() shim: execute prepared statements sequentially.
+  // Real D1 runs the batch as an implicit transaction; for the in-memory mock
+  // there is no concurrency, so sequential execution is observationally
+  // equivalent (the first failure throws and aborts the batch).
+  async batch<T = unknown>(
+    statements: MockStatement[],
+  ): Promise<{ results: T[]; meta: MockMeta }[]> {
+    const out: { results: T[]; meta: MockMeta }[] = [];
+    for (const stmt of statements) {
+      out.push((await stmt.run<T>()) as { results: T[]; meta: MockMeta });
+    }
+    return out;
   }
 }
 

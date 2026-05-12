@@ -4,6 +4,7 @@ import { makeClient } from './polaris-client.js';
 import { makeMoxClient } from './mox-client.js';
 import { createServer } from './server.js';
 import { runSyncLoop } from './sync-loop.js';
+import { drainMoxOpsOnce } from './mox-ops.js';
 
 async function main() {
   const env = envOrThrow();
@@ -127,6 +128,10 @@ async function main() {
     mailboxes,
     signal: ac.signal,
     intervalMs: Number.parseInt(env.POLL_INTERVAL_MS ?? '5000', 10),
+    // Drain the pending-Mox-ops queue on every tick. This is how plaintext SMTP
+    // passwords issued by the api Worker actually make it into Mox. Failures
+    // here never halt the inbound sync loop (runSyncLoop catches).
+    drainMoxOps: () => drainMoxOpsOnce({ polaris, mox }).then(() => undefined),
   }).catch((e) => console.error('sync loop crashed', e));
 }
 

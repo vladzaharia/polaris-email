@@ -13,6 +13,12 @@ export interface SyncDeps {
   intervalMs: number;
   /** Optional callback for tests / observability. */
   onCycle?: (cycle: { imported: number; failed: number; errors: string[] }) => void;
+  /**
+   * Optional per-tick drain of the api Worker's pending-Mox-ops queue.
+   * Runs after syncOnce. Exceptions are swallowed so the inbound loop never
+   * halts because of an admin-side op failure.
+   */
+  drainMoxOps?: () => Promise<void>;
 }
 
 interface PendingMessage {
@@ -73,6 +79,14 @@ export async function runSyncLoop(deps: SyncDeps): Promise<void> {
     } catch (e) {
       // eslint-disable-next-line no-console
       console.error('sync-loop error', e);
+    }
+    if (deps.drainMoxOps) {
+      try {
+        await deps.drainMoxOps();
+      } catch (e) {
+        // eslint-disable-next-line no-console
+        console.error('mox-ops drain error', e);
+      }
     }
     await new Promise<void>((resolve) => setTimeout(resolve, deps.intervalMs));
   }

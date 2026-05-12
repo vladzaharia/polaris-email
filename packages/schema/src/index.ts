@@ -378,6 +378,8 @@ export const AuditAction = z.enum([
   'panel.step_up',
   'schema.migration',
   'bootstrap.consume',
+  'mox_pending_op.acked',
+  'mox_pending_op.failed',
 ]);
 export type AuditAction = z.infer<typeof AuditAction>;
 
@@ -500,6 +502,29 @@ export const BridgeSenderConfig = z.object({
   smtp_credentials: z.array(BridgeSmtpCredential),
 });
 export type BridgeSenderConfig = z.infer<typeof BridgeSenderConfig>;
+
+// Pending Mox operations enqueued by the api Worker and drained by the sidecar.
+// payload_b64 holds base64-encoded plaintext password material for set_password
+// ops and MUST NEVER be logged. See services/api/migrations/0005_*.sql.
+export const MoxPendingOp = z.object({
+  id: Ulid,
+  op: z.enum(['set_password', 'remove_account']),
+  username: Address,
+  payload_b64: z.string().nullable(),
+  attempts: z.number().int().nonnegative(),
+});
+export type MoxPendingOp = z.infer<typeof MoxPendingOp>;
+
+export const MoxPendingOpsResponse = z.object({
+  ops: z.array(MoxPendingOp),
+});
+export type MoxPendingOpsResponse = z.infer<typeof MoxPendingOpsResponse>;
+
+export const MoxPendingOpAckRequest = z.object({
+  ok: z.boolean(),
+  error: z.string().max(500).optional(),
+});
+export type MoxPendingOpAckRequest = z.infer<typeof MoxPendingOpAckRequest>;
 
 export const BridgeConfig = z.object({
   mailboxes: z.array(BridgeMailboxConfig),

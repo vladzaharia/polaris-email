@@ -42,5 +42,37 @@ export default {
       // eslint-disable-next-line no-console
       console.log('janitor: anonymised', count);
     }
+    // Scrub the mox_pending_ops queue. Two rules:
+    //   1. Successfully-applied rows older than 5 minutes are no longer needed
+    //      by the sidecar and may have carried plaintext password material in
+    //      payload_b64 (now redundant — Mox holds the bcrypt). Delete promptly
+    //      to minimise the at-rest plaintext window.
+    //   2. Persistently-failed rows (attempts ≥ 5) get a 1-hour grace window
+    //      so an operator can notice and intervene before they vanish.
+    const fiveMinAgo = now - 5 * 60 * 1000;
+    const oneHourAgo = now - 60 * 60 * 1000;
+    try {
+      const appliedDeleted = await env.DB.prepare(
+        `DELETE FROM mox_pending_ops WHERE applied_at IS NOT NULL AND applied_at < ?`,
+      )
+        .bind(fiveMinAgo)
+        .run();
+      const failedDeleted = await env.DB.prepare(
+        `DELETE FROM mox_pending_ops
+         WHERE applied_at IS NULL AND attempts >= 5 AND created_at < ?`,
+      )
+        .bind(oneHourAgo)
+        .run();
+      const a = appliedDeleted.meta?.changes ?? 0;
+      const f = failedDeleted.meta?.changes ?? 0;
+      if (a || f) {
+        // eslint-disable-next-line no-console
+        console.log('janitor: mox_pending_ops scrubbed applied=' + a + ' failed=' + f);
+      }
+    } catch (e) {
+      // Table may not exist on older deploys; harmless.
+      // eslint-disable-next-line no-console
+      console.warn('janitor: mox_pending_ops scrub error', e instanceof Error ? e.message : e);
+    }
   },
 };
