@@ -1,5 +1,8 @@
 node_modules/
 dist/
+# Override any global gitignore that swallows services/out (common: `out/` in user gitignore).
+!services/out/
+!services/out/**
 .wrangler/
 .dev.vars
 .dev.vars.*
@@ -22,3 +25,9 @@ __pycache__/
 *.pyc
 .pytest_cache/
 go.sum.local
+.env.deploy
+.deploy-state.json
+.deploy-state.last-sha
+.bootstrap-output.json
+secrets.created.json
+.wrangler.merged.json

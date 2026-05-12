@@ -1,0 +1,105 @@
+name: deploy
+
+# Routine redeploy of the Workers control plane.
+# Triggered manually, or on push-to-main after CI is green.
+on:
+  workflow_dispatch:
+    inputs:
+      all:
+        description: 'Deploy every service (true) or only changed since deployed/main (false)'
+        required: false
+        default: 'false'
+  workflow_run:
+    workflows: ['ci']
+    types: [completed]
+    branches: [main]
+
+concurrency:
+  group: polaris-email-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # to push the deployed/main tag
+    env:
+      DEPLOY_ALL: ${{ github.event.inputs.all }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # need full history to diff against deployed/main
+
+      - uses: pnpm/action-setup@v4
+        with: { version: 9 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Restore deploy config from secrets
+        env:
+          CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+          CF_API_TOKEN:  ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          POLARIS_DOMAIN: ${{ vars.POLARIS_DOMAIN }}
+          POLARIS_API_HOSTNAME: ${{ vars.POLARIS_API_HOSTNAME }}
+          BRIDGE_HOST: ${{ vars.BRIDGE_HOST }}
+          ALERT_WEBHOOK: ${{ vars.ALERT_WEBHOOK }}
+          SYNTHETIC_FROM: ${{ vars.SYNTHETIC_FROM }}
+          SYNTHETIC_TO:   ${{ vars.SYNTHETIC_TO }}
+          DEPLOY_STATE_JSON: ${{ secrets.DEPLOY_STATE_JSON }}
+          BOOTSTRAP_OUTPUT_JSON: ${{ secrets.BOOTSTRAP_OUTPUT_JSON }}
+        run: |
+          umask 077
+          cat > .env.deploy <<EOF
+          CF_ACCOUNT_ID="$CF_ACCOUNT_ID"
+          CF_API_TOKEN="$CF_API_TOKEN"
+          POLARIS_DOMAIN="$POLARIS_DOMAIN"
+          POLARIS_API_HOSTNAME="$POLARIS_API_HOSTNAME"
+          BRIDGE_HOST="$BRIDGE_HOST"
+          ALERT_WEBHOOK="$ALERT_WEBHOOK"
+          SYNTHETIC_FROM="$SYNTHETIC_FROM"
+          SYNTHETIC_TO="$SYNTHETIC_TO"
+          EOF
+          printf '%s' "$DEPLOY_STATE_JSON"     > .deploy-state.json
+          printf '%s' "$BOOTSTRAP_OUTPUT_JSON" > .bootstrap-output.json
+          chmod 0600 .env.deploy .deploy-state.json .bootstrap-output.json
+
+      - name: Render wrangler.local.jsonc files
+        run: bin/render-wrangler-local.sh
+
+      - name: Resolve base SHA from deployed/main tag
+        id: base
+        run: |
+          if git rev-parse --verify deployed/main >/dev/null 2>&1; then
+            echo "sha=$(git rev-parse deployed/main)" >> "$GITHUB_OUTPUT"
+          else
+            echo "sha=" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Deploy
+        env:
+          BASE_SHA: ${{ steps.base.outputs.sha }}
+        run: |
+          if [ -n "$BASE_SHA" ]; then
+            echo "$BASE_SHA" > .deploy-state.last-sha
+          fi
+          if [ "$DEPLOY_ALL" = "true" ]; then
+            bin/deploy.sh --all
+          else
+            bin/deploy.sh --changed
+          fi
+
+      - name: Smoke
+        run: bin/smoke.sh
+
+      - name: Tag deployed/main at HEAD
+        if: success()
+        run: |
+          git config user.name  'polaris-email-bot'
+          git config user.email 'polaris-email-bot@users.noreply.github.com'
+          git tag -f deployed/main HEAD
+          git push -f origin deployed/main

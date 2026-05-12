@@ -33,17 +33,33 @@ pnpm build
 ```
 
 Each Worker has a `wrangler.jsonc` (committed, placeholder IDs) and expects a gitignored
-`wrangler.local.jsonc` with real D1/R2/KV/Queue IDs. `bin/deploy.sh` merges the two before
-`wrangler deploy`.
+`wrangler.local.jsonc` with real D1/R2/KV/Queue IDs. Those are generated automatically from
+`services/*/wrangler.local.template.jsonc` + `.deploy-state.json` by
+`bin/render-wrangler-local.sh`; `bin/deploy.sh` then merges the public + local configs before
+`wrangler deploy`. Do not hand-edit the materialized files.
 
-## Bootstrap a fresh install
+## Quick start
+
+The full deploy flow is wrapped behind a single Makefile. See [`docs/DEPLOY.md`](docs/DEPLOY.md)
+for the ordered runbook.
 
 ```sh
-bin/bootstrap.sh
+make preflight       # check tools + auth
+make configure       # write .env.deploy interactively
+make bootstrap       # cold-start: create CF resources, deploy, mint admin key
+make dns DOMAIN=…    # print DNS records to add
+make bridge-up       # (optional) bring up the Mox+sidecar bridge on the Tailnet
+make smoke           # end-to-end health probe
 ```
 
-Idempotent. Creates D1/R2/KV/Queues, deploys Workers, seeds the first admin key (revealed once
-via a WebAuthn-gated URL), prints the DNS records and `tailscale cert` invocation needed.
+Routine redeploys after the cold-start:
+
+```sh
+make deploy-changed                     # only services whose code (or deps) changed
+make rollback SERVICE=api               # revert one service to its previous version
+make issue-key NAME=acme SCOPES=mail:send
+make register-consumer NAME=acme WEBHOOK=https://… KIND=external EVENTS=delivered,bounced
+```
 
 ## Security
 

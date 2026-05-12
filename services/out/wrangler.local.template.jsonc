@@ -1,0 +1,21 @@
+// Template merged on top of wrangler.jsonc by bin/deploy.sh.
+// Placeholders are substituted by bin/render-wrangler-local.sh from .deploy-state.json + .env.deploy.
+// Do NOT hand-edit the materialized wrangler.local.jsonc — re-run `make configure` (or bin/render-wrangler-local.sh) instead.
+//
+// To add a new outbound sending domain:
+//   1. `make dns DOMAIN=newdomain.example` and add the printed records
+//   2. Add a `{ "name": "EMAIL_<TAG>", "destination_address": "outbound@newdomain.example" }` entry
+//      to the `send_email` array below
+//   3. `make deploy SERVICE=services/out`
+{
+  "account_id": "${CF_ACCOUNT_ID}",
+  "d1_databases": [
+    { "binding": "DB", "database_name": "polaris-email", "database_id": "${D1_ID}" }
+  ],
+  "r2_buckets": [
+    { "binding": "R2", "bucket_name": "polaris-email", "jurisdiction": "eu" }
+  ],
+  "send_email": [
+    { "name": "EMAIL_DEFAULT" }
+  ]
+}

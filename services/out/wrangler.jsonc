@@ -1,0 +1,31 @@
+// polaris-email-out Worker — queue consumer + send_email bindings.
+{
+  "$schema": "https://json-schema.org/draft-07/schema",
+  "name": "polaris-email-out",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-01-01",
+  "observability": { "enabled": true },
+  "logpush": true,
+  "d1_databases": [
+    { "binding": "DB", "database_name": "polaris-email", "database_id": "REPLACE_WITH_LOCAL" }
+  ],
+  "r2_buckets": [{ "binding": "R2", "bucket_name": "polaris-email" }],
+  "queues": {
+    "consumers": [
+      {
+        "queue": "polaris-email-outbound",
+        "max_batch_size": 10,
+        "max_batch_timeout": 5,
+        "max_retries": 5,
+        "dead_letter_queue": "polaris-email-outbound-dlq"
+      }
+    ],
+    "producers": [
+      { "binding": "FANOUT_QUEUE", "queue": "polaris-email-fanout" }
+    ]
+  },
+  // send_email bindings — one per verified outbound domain. Real names live in wrangler.local.jsonc.
+  "send_email": [
+    { "name": "EMAIL_DEFAULT" }
+  ]
+}
