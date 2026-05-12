@@ -262,7 +262,9 @@ rm -f "$ROOT/.bootstrap-secret-a"
 log "8/8 next steps"
 cat <<EOF
 Remaining manual steps (see docs/DEPLOY.md):
-  - Add DNS records for each sending domain:    make dns DOMAIN=$POLARIS_DOMAIN
+  - Onboard each sending/receiving domain:      make onboard DOMAIN=<yourdomain> NEW=1
+    (creates a D1 row, applies DNS records, enables Email Routing,
+     wires the send_email binding, optionally adds senders/SMTP creds)
   - (Optional) Stand up the bridge on Tailnet:  make bridge-up
   - Smoke test the stack:                       make smoke
   - Issue your first consumer key:              make issue-key NAME=acme SCOPES=mail:send

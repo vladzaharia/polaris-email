@@ -267,6 +267,8 @@ If you lose `.deploy-state.json`, run `make state-rebuild` (or `make state-rebui
 
 And these repo-level *variables* (non-secret):
 
-- `POLARIS_DOMAIN`, `POLARIS_API_HOSTNAME`, `BRIDGE_HOST`, `ALERT_WEBHOOK`, `SYNTHETIC_FROM`, `SYNTHETIC_TO`.
+- `POLARIS_API_HOSTNAME`, `BRIDGE_HOST`, `SYNTHETIC_MONITOR_DOMAIN`, `ALERT_WEBHOOK`, `SYNTHETIC_FROM`, `SYNTHETIC_TO`.
+
+> Multi-domain note: `SYNTHETIC_MONITOR_DOMAIN` is *only* the home domain for the synthetic test mailbox; it does not enumerate which domains your stack can send or receive on. Sending and receiving domains live in D1's `outbound_domains` table and are managed via `make onboard DOMAIN=… NEW=1`.
 
 Workflow-dispatch with `all=true` forces `make deploy-all` instead of `--changed`.

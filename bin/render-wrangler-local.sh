@@ -31,7 +31,7 @@ fi
 
 # Variables we will substitute. Anything not listed is left intact (a literal $VAR
 # in the template will become empty if undeclared — that's why we require above).
-VARS='${CF_ACCOUNT_ID} ${D1_ID} ${KV_NONCE_ID} ${KV_IDEMPOTENCY_ID} ${KV_RATE_LIMIT_ID} ${KV_KEY_CACHE_ID} ${POLARIS_API_HOSTNAME} ${BRIDGE_HOST} ${ALERT_WEBHOOK} ${SYNTHETIC_FROM} ${SYNTHETIC_TO} ${POLARIS_DOMAIN}'
+VARS='${CF_ACCOUNT_ID} ${D1_ID} ${KV_NONCE_ID} ${KV_IDEMPOTENCY_ID} ${KV_RATE_LIMIT_ID} ${KV_KEY_CACHE_ID} ${POLARIS_API_HOSTNAME} ${BRIDGE_HOST} ${ALERT_WEBHOOK} ${SYNTHETIC_FROM} ${SYNTHETIC_TO} ${SYNTHETIC_MONITOR_DOMAIN}'
 
 rendered=0
 for svc in "${POLARIS_SERVICES[@]}"; do

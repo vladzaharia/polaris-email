@@ -58,7 +58,10 @@ if [[ -f "$ENV_FILE" ]]; then
   miss=()
   # shellcheck disable=SC1090
   source "$ENV_FILE"
-  for k in CF_ACCOUNT_ID POLARIS_DOMAIN POLARIS_API_HOSTNAME; do
+  # SYNTHETIC_MONITOR_DOMAIN is intentionally NOT required — it only default-builds the
+  # synthetic monitor's from/to addresses. A stack without synthetic monitoring doesn't
+  # need it. Multi-domain configuration lives in D1's outbound_domains table via `make onboard`.
+  for k in CF_ACCOUNT_ID POLARIS_API_HOSTNAME; do
     if [[ -z "${!k:-}" ]]; then miss+=("$k"); fi
   done
   if [[ ${#miss[@]} -gt 0 ]]; then

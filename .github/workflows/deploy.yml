@@ -44,7 +44,7 @@ jobs:
         env:
           CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
           CF_API_TOKEN:  ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          POLARIS_DOMAIN: ${{ vars.POLARIS_DOMAIN }}
+          SYNTHETIC_MONITOR_DOMAIN: ${{ vars.SYNTHETIC_MONITOR_DOMAIN }}
           POLARIS_API_HOSTNAME: ${{ vars.POLARIS_API_HOSTNAME }}
           BRIDGE_HOST: ${{ vars.BRIDGE_HOST }}
           ALERT_WEBHOOK: ${{ vars.ALERT_WEBHOOK }}
@@ -57,7 +57,7 @@ jobs:
           cat > .env.deploy <<EOF
           CF_ACCOUNT_ID="$CF_ACCOUNT_ID"
           CF_API_TOKEN="$CF_API_TOKEN"
-          POLARIS_DOMAIN="$POLARIS_DOMAIN"
+          SYNTHETIC_MONITOR_DOMAIN="$SYNTHETIC_MONITOR_DOMAIN"
           POLARIS_API_HOSTNAME="$POLARIS_API_HOSTNAME"
           BRIDGE_HOST="$BRIDGE_HOST"
           ALERT_WEBHOOK="$ALERT_WEBHOOK"

@@ -17,10 +17,10 @@ fi
 # Single source of truth for what gets written to .env.deploy and in what order.
 # Adding a field: append the name here and add a matching `ask` call below.
 ENV_VARS=(
-  CF_ACCOUNT_ID CF_API_TOKEN CF_ZONE_ID
-  POLARIS_DOMAIN POLARIS_API_HOSTNAME
-  TS_TAILNET TS_OAUTH_CLIENT_SECRET BRIDGE_HOST
-  ALERT_WEBHOOK SYNTHETIC_FROM SYNTHETIC_TO
+  CF_ACCOUNT_ID POLARIS_API_HOSTNAME
+  CF_API_TOKEN CF_ZONE_ID
+  TS_TAILNET BRIDGE_HOST TS_OAUTH_CLIENT_SECRET
+  SYNTHETIC_MONITOR_DOMAIN ALERT_WEBHOOK SYNTHETIC_FROM SYNTHETIC_TO
   OIDC_ISSUER OIDC_CLIENT_ID
   SIDECAR_TAG
 )
@@ -80,14 +80,14 @@ echo "polaris-email configure — values are saved to .env.deploy (gitignored) a
 echo "Press enter to keep current values shown in [brackets]. Leave optional fields blank to skip."
 echo
 
-# Required (preflight enforces).
+# Required (preflight enforces). Sending/receiving domains are managed separately
+# in D1 via `make onboard` — this stack-level config doesn't enumerate them.
 ask CF_ACCOUNT_ID         "Cloudflare account ID"
-ask POLARIS_DOMAIN        "primary domain (e.g. example.com)"
 ask POLARIS_API_HOSTNAME  "API hostname"                                  "${POLARIS_API_HOSTNAME:-polaris-email-api.workers.dev}"
 
 # Cloudflare automation — optional, but make onboard --apply needs them.
 ask CF_API_TOKEN          "Cloudflare API token (optional; needed for make onboard --apply)" "" 1
-ask CF_ZONE_ID            "Cloudflare zone ID for POLARIS_DOMAIN (optional)"
+ask CF_ZONE_ID            "Cloudflare zone ID for ad-hoc bin/dns-records.sh use (optional)"
 
 # Bridge (Tailscale + Mox + sidecar) — optional, only for SMTPS/IMAP/JMAP.
 ask TS_TAILNET            "Tailscale tailnet, e.g. tail-scales.ts.net (optional; skip if no bridge)"
@@ -95,10 +95,13 @@ ask TS_TAILNET            "Tailscale tailnet, e.g. tail-scales.ts.net (optional;
 ask BRIDGE_HOST           "Bridge FQDN on the tailnet (optional)" "${BRIDGE_HOST:-${TS_TAILNET:+polaris-email.${TS_TAILNET}}}"
 ask TS_OAUTH_CLIENT_SECRET "Tailscale OAuth client secret, tskey-client-... (optional; needed for make bridge-up)" "" 1
 
-# Synthetic monitoring — optional; sane defaults only if POLARIS_DOMAIN is set.
+# Synthetic monitoring — optional. SYNTHETIC_MONITOR_DOMAIN is the home domain for the
+# synthetic test mailbox; it default-builds the FROM/TO addresses below. Sending and
+# receiving domains for real mail are tracked in D1 via `make onboard`, not here.
+ask SYNTHETIC_MONITOR_DOMAIN "Home domain for the synthetic monitor mailbox (optional, e.g. polaris.video)"
 ask ALERT_WEBHOOK         "Alert webhook URL (optional; synthetic + staleness post failures here)"
-ask SYNTHETIC_FROM        "Synthetic monitor from-address (optional)" "${SYNTHETIC_FROM:-${POLARIS_DOMAIN:+synthetic@${POLARIS_DOMAIN}}}"
-ask SYNTHETIC_TO          "Synthetic monitor to-address (optional)"   "${SYNTHETIC_TO:-${POLARIS_DOMAIN:+synthetic@in.${POLARIS_DOMAIN}}}"
+ask SYNTHETIC_FROM        "Synthetic monitor from-address (optional)" "${SYNTHETIC_FROM:-${SYNTHETIC_MONITOR_DOMAIN:+synthetic@${SYNTHETIC_MONITOR_DOMAIN}}}"
+ask SYNTHETIC_TO          "Synthetic monitor to-address (optional)"   "${SYNTHETIC_TO:-${SYNTHETIC_MONITOR_DOMAIN:+synthetic@in.${SYNTHETIC_MONITOR_DOMAIN}}}"
 
 # Panel OIDC — optional, only if you front the admin panel.
 ask OIDC_ISSUER           "Panel OIDC issuer URL (optional)"
