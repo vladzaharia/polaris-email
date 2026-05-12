@@ -52,9 +52,9 @@ services:
 
   sidecar:
     build:
-      context: ./sidecar
-      dockerfile: Dockerfile
-    image: ghcr.io/polaris-email/bridge-sidecar:${SIDECAR_TAG:-dev}
+      context: ../..
+      dockerfile: apps/bridge/sidecar/Dockerfile
+    image: ghcr.io/vladzaharia/polaris-email-bridge-sidecar:${SIDECAR_TAG:-latest}
     container_name: polaris-email-sidecar
     network_mode: service:ts
     cap_drop: [ALL]
