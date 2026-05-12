@@ -57,6 +57,10 @@ export class MockD1 {
     this.tables.set('api_key_usage', []);
     this.tables.set('local_webhook_targets', []);
     this.tables.set('bootstrap', []);
+    this.tables.set('outbound_domains', []);
+    this.tables.set('email_senders', []);
+    this.tables.set('smtp_credentials', []);
+    this.tables.set('sender_key_scopes', []);
   }
   prepare(sql: string) {
     return new MockStatement(this, sql);
@@ -111,7 +115,7 @@ function executeSql<T>(
     // Crude UNIQUE/PK handling: id column conflicts.
     if (conflict !== 'ignore' && conflict !== 'replace') {
       // Detect simple unique columns
-      const uniqueCols = ['id', 'address', 'imap_username'];
+      const uniqueCols = ['id', 'address', 'imap_username', 'domain', 'username'];
       for (const u of uniqueCols) {
         if (row[u] !== undefined && rows.some((r) => r[u] !== undefined && r[u] === row[u])) {
           throw new Error(`mock: UNIQUE constraint failed (${table}.${u})`);

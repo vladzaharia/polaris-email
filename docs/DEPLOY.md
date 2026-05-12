@@ -51,24 +51,27 @@ make bootstrap       # runs preflight, then bin/bootstrap.sh end-to-end
 
 ---
 
-## 3. DNS records (manual)
+## 3. Onboarding a domain
 
-For every domain you want to receive or send mail from:
-
-```sh
-make dns DOMAIN=example.com
-```
-
-Prints the exact MX / SPF / DKIM / DMARC records to add. With `APPLY=1` and `CF_API_TOKEN` + `CF_ZONE_ID` in `.env.deploy`, the script pushes MX / SPF / DMARC via the CF API; DKIM CNAMEs still require the **Email Routing** dashboard to enable, since they are account-scoped.
+The single converge command is **`make onboard`** — Terraform-style. With no arguments it reconciles every outbound domain in D1 against Cloudflare. Pass `DOMAIN=name` to scope to one. Pass `NEW=1` together with `DOMAIN=name` to create the D1 row first.
 
 ```sh
-make dns DOMAIN=example.com APPLY=1
+make onboard-plan                          # dry-run: prints + CREATE / - DELETE / ~ UPDATE lines
+make onboard                               # apply: same diff, then writes
+make onboard DOMAIN=plrs.im NEW=1          # add a new domain end-to-end
 ```
 
-Then in the Cloudflare dashboard:
+Per domain, `bin/onboard.sh` will:
 
-- [ ] Email Routing → Routes: target `polaris-email-in.workers.dev`.
-- [ ] Email Routing → DNS Records: copy DKIM CNAMEs from the dashboard (selector `cf2024-1`) into your authoritative DNS if not already pushed.
+1. Resolve (and cache to D1) the Cloudflare zone id.
+2. List current zone DNS records.
+3. Compute desired MX (`route{1,2,3}.mx.cloudflare.net`), SPF (`v=spf1 include:_spf.mx.cloudflare.net -all`), DKIM CNAMEs (from CF Email Routing for the zone), and DMARC at `p=none` by default.
+4. Plan/apply only records tagged `comment: "polaris-email"` — never touches operator-managed records.
+5. Enable Cloudflare Email Routing on the zone (idempotent).
+6. Ensure a catch-all rule named `polaris-email-catchall` pointing at the `polaris-email-in` Worker.
+7. Call `bin/render-send-email-bindings.sh` so `services/out/wrangler.local.jsonc` gets a fresh `send_email` array. Operator then runs `make deploy SERVICE=services/out`.
+
+Manual fallback — the deprecated `make dns DOMAIN=…` now just forwards to `make onboard-plan`.
 
 ---
 
@@ -121,11 +124,25 @@ make register-consumer NAME=acme \
 
 ## 7. Adding a new sending domain
 
-1. `make dns DOMAIN=newdomain.example` — add the printed records to DNS.
-2. Edit `services/out/wrangler.local.template.jsonc` and add a `send_email` binding entry of the form
-   `{ "name": "EMAIL_<TAG>", "destination_address": "outbound@newdomain.example" }`.
-3. `bin/render-wrangler-local.sh` — regenerate `services/out/wrangler.local.jsonc`.
-4. `make deploy SERVICE=services/out` (or `make deploy-changed` if the template change is committed).
+Single command, no template editing:
+
+```sh
+make onboard DOMAIN=newdomain.example NEW=1
+make deploy SERVICE=services/out
+```
+
+`onboard` creates the `outbound_domains` row in D1 (via the admin API), converges DNS + Email Routing on Cloudflare, and re-renders `services/out/wrangler.local.jsonc` with the new `EMAIL_<TAG>` binding (e.g. `EMAIL_NEWDOMAIN_EXAMPLE`). The `make deploy` pushes the binding to the Worker.
+
+To attach senders + SMTP credentials (for the bridge / SMTPS submission path):
+
+```sh
+# Add a sender under the domain (returns its id).
+curl -X POST .../v1/admin/outbound-domains/<id>/senders -d '{"local_part":"noreply","default_for_domain":true}'
+# Issue an SMTP credential. Plaintext is returned once.
+curl -X POST .../v1/admin/senders/<sender_id>/smtp-credentials -d '{"label":"app-prod"}'
+```
+
+The bridge sidecar polls `/v1/bridge/config` every 5s and converges Mox accounts + credential hashes accordingly. Single-selector DKIM (`cf2024-1`) covers Worker-originated mail; a separate `mox._domainkey` selector for Mox-originated SMTPS mail is tracked in the open-questions section of the design doc and will land in a follow-up.
 
 ---
 

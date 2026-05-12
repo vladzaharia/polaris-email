@@ -9,9 +9,27 @@ export interface MoxImportInput {
   flags?: string[];
 }
 
+export interface MoxAccountSpec {
+  /** Mox account name (typically the address local-part or the full address). */
+  account: string;
+  /** Primary address (used as login). */
+  address: string;
+  /** Pre-hashed password material (Argon2id / PBKDF2 PHC string). */
+  passwordHash: string;
+}
+
 export interface MoxClient {
   messageImport(input: MoxImportInput): Promise<{ uid: number; uidvalidity: number }>;
   reloadConfig(): Promise<void>;
+  /**
+   * Ensure a Mox account exists with the given hashed password material. Idempotent.
+   * Returns true on success, false if the Mox WebAPI rejected the call (e.g. it does
+   * not accept hash-based password set — see DKIM key custody discussion). Callers
+   * should log and continue with the next sender rather than aborting the cycle.
+   */
+  ensureAccount(spec: MoxAccountSpec): Promise<boolean>;
+  /** Disable a Mox account (idempotent). */
+  disableAccount(account: string): Promise<boolean>;
   /** Inspect outgoing-message webhook payload from Mox. */
   parseOutgoingWebhook(payload: unknown): {
     account: string;
@@ -69,6 +87,47 @@ export function makeMoxClient(opts: { sockPath?: string; baseUrl?: string }): Mo
     },
     async reloadConfig() {
       await call('ConfigReload');
+    },
+    async ensureAccount(spec) {
+      // Mox WebAPI exposes Account / AccountAdd / SetPassword endpoints. Some Mox
+      // versions accept a pre-hashed password (`PasswordHash`), others only accept
+      // plaintext. We try the hash-aware path first; on rejection we log and return
+      // false rather than fail the whole sync cycle.
+      try {
+        await call<unknown>('AccountAdd', {
+          Account: spec.account,
+          Address: spec.address,
+          PasswordHash: spec.passwordHash,
+        });
+      } catch {
+        // AccountAdd may legitimately fail with "already exists" — fall through to
+        // SetPassword.
+      }
+      try {
+        await call<unknown>('SetPasswordHash', {
+          Account: spec.account,
+          PasswordHash: spec.passwordHash,
+        });
+        return true;
+      } catch (e) {
+        // eslint-disable-next-line no-console
+        console.warn(
+          `mox: SetPasswordHash failed for ${spec.account}: ${e instanceof Error ? e.message : 'unknown'}`,
+        );
+        return false;
+      }
+    },
+    async disableAccount(account) {
+      try {
+        await call<unknown>('AccountDisable', { Account: account });
+        return true;
+      } catch (e) {
+        // eslint-disable-next-line no-console
+        console.warn(
+          `mox: AccountDisable failed for ${account}: ${e instanceof Error ? e.message : 'unknown'}`,
+        );
+        return false;
+      }
     },
     parseOutgoingWebhook(payload) {
       const p = payload as {

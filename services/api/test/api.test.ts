@@ -548,3 +548,106 @@ describe('webhook subs', () => {
     expect(res.status).toBe(400);
   });
 });
+
+describe('outbound_domains + senders', () => {
+  it('full create→sender→smtp-credential flow', async () => {
+    const { env, admin } = await bootstrapEnv();
+
+    // Create outbound domain
+    let res = await app.fetch(
+      await signedRequest(
+        'https://x/v1/admin/outbound-domains',
+        JSON.stringify({ domain: 'plrs.im', is_default: true }),
+        'POST',
+        admin.admin_key_secret,
+        admin.admin_key_id,
+      ),
+      env,
+      ctx,
+    );
+    expect(res.status).toBe(201);
+    const dom = (await res.json()) as { id: string; binding_tag: string; status: string };
+    expect(dom.binding_tag).toBe('PLRS_IM');
+    expect(dom.status).toBe('pending');
+
+    // Duplicate → 409
+    res = await app.fetch(
+      await signedRequest(
+        'https://x/v1/admin/outbound-domains',
+        JSON.stringify({ domain: 'plrs.im' }),
+        'POST',
+        admin.admin_key_secret,
+        admin.admin_key_id,
+      ),
+      env,
+      ctx,
+    );
+    expect(res.status).toBe(409);
+
+    // List
+    res = await app.fetch(
+      await signedRequest(
+        'https://x/v1/admin/outbound-domains',
+        '',
+        'GET',
+        admin.admin_key_secret,
+        admin.admin_key_id,
+      ),
+      env,
+      ctx,
+    );
+    expect(res.status).toBe(200);
+    const list = (await res.json()) as { data: { domain: string; is_default: number }[] };
+    expect(list.data[0]?.domain).toBe('plrs.im');
+    expect(list.data[0]?.is_default).toBe(1);
+
+    // Add sender
+    res = await app.fetch(
+      await signedRequest(
+        `https://x/v1/admin/outbound-domains/${dom.id}/senders`,
+        JSON.stringify({ local_part: 'noreply', default_for_domain: true }),
+        'POST',
+        admin.admin_key_secret,
+        admin.admin_key_id,
+      ),
+      env,
+      ctx,
+    );
+    expect(res.status).toBe(201);
+    const sender = (await res.json()) as { id: string; address: string };
+    expect(sender.address).toBe('noreply@plrs.im');
+
+    // Issue SMTP cred
+    res = await app.fetch(
+      await signedRequest(
+        `https://x/v1/admin/senders/${sender.id}/smtp-credentials`,
+        JSON.stringify({ label: 'expresscharge-prod' }),
+        'POST',
+        admin.admin_key_secret,
+        admin.admin_key_id,
+      ),
+      env,
+      ctx,
+    );
+    expect(res.status).toBe(201);
+    const cred = (await res.json()) as { id: string; username: string; secret: string };
+    expect(cred.username).toBe('noreply@plrs.im');
+    expect(cred.secret.length).toBeGreaterThan(20);
+
+    // Verify endpoint flips status
+    res = await app.fetch(
+      await signedRequest(
+        `https://x/v1/admin/outbound-domains/${dom.id}/verify`,
+        '{}',
+        'POST',
+        admin.admin_key_secret,
+        admin.admin_key_id,
+      ),
+      env,
+      ctx,
+    );
+    expect(res.status).toBe(200);
+    const verified = (await res.json()) as { status: string };
+    expect(verified.status).toBe('verified');
+  });
+});
