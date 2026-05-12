@@ -159,7 +159,7 @@ senders.post(
     try {
       await c.env.DB.prepare(
         `INSERT INTO smtp_credentials
-           (id, sender_id, username, password_argon2id, label, created_at)
+           (id, sender_id, username, password_hash, label, created_at)
          VALUES (?, ?, ?, ?, ?, ?)`,
       )
         .bind(id, senderId, username, hashed, body.label ?? null, now)

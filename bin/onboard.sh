@@ -331,6 +331,32 @@ while IFS= read -r row; do
   fi
 
   converge_domain "$id" "$domain" "$zid" "$dmarc_policy" "$dmarc_rua"
+
+  # After applying records, call the admin API's /verify endpoint to run the
+  # real DoH-backed checks (DKIM CNAME + MX). Report per-check status to the
+  # operator. We skip in --plan mode since no records were written.
+  if [[ "$PLAN" -eq 0 ]]; then
+    verify_resp="$(polaris_api_call POST "/v1/admin/outbound-domains/${id}/verify" '{}' 1 || true)"
+    if [[ -n "$verify_resp" ]]; then
+      v_status="$(printf '%s' "$verify_resp" | jq -r '.status // "unknown"')"
+      log "    verify status: $v_status"
+      # Per-check breakdown.
+      while IFS= read -r chk; do
+        [[ -z "$chk" ]] && continue
+        ok="$(printf '%s' "$chk" | jq -r '.ok')"
+        name="$(printf '%s' "$chk" | jq -r '.name')"
+        if [[ "$ok" == "true" ]]; then
+          printf '      OK  %s\n' "$name"
+        else
+          exp="$(printf '%s' "$chk" | jq -r '.expected // ""')"
+          act="$(printf '%s' "$chk" | jq -r '.actual // ""')"
+          printf '      FAIL %s  expected=%s  actual=%s\n' "$name" "$exp" "$act"
+        fi
+      done < <(printf '%s' "$verify_resp" | jq -c '.checks[]?' 2>/dev/null || true)
+      v_msg="$(printf '%s' "$verify_resp" | jq -r '.message // empty')"
+      [[ -n "$v_msg" ]] && warn "    $v_msg"
+    fi
+  fi
 done <<< "$selected_rows"
 
 # Re-render the send_email bindings now that the D1 list is the source of truth.

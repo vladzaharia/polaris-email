@@ -634,7 +634,8 @@ describe('outbound_domains + senders', () => {
     expect(cred.username).toBe('noreply@plrs.im');
     expect(cred.secret.length).toBeGreaterThan(20);
 
-    // Verify endpoint flips status
+    // Verify endpoint: with no CF_API_TOKEN / no cf_zone_id in test env, the
+    // verifier returns a 200 diagnostic envelope leaving status unchanged.
     res = await app.fetch(
       await signedRequest(
         `https://x/v1/admin/outbound-domains/${dom.id}/verify`,
@@ -647,7 +648,13 @@ describe('outbound_domains + senders', () => {
       ctx,
     );
     expect(res.status).toBe(200);
-    const verified = (await res.json()) as { status: string };
-    expect(verified.status).toBe('verified');
+    const verified = (await res.json()) as {
+      status: string;
+      checks?: { name: string; ok: boolean }[];
+      message?: string;
+    };
+    expect(verified.status).toBe('pending');
+    expect(verified.message).toBe('verification incomplete');
+    expect(Array.isArray(verified.checks)).toBe(true);
   });
 });

@@ -26,15 +26,54 @@ messages.post('/v1/messages', async (c) => {
   } catch (e) {
     return buildError(c, 'bad_request', e instanceof Error ? e.message : 'invalid body');
   }
-  // Sender scope check
-  let scopes;
+  // Sender scope check.
+  //
+  // Dual-read transition (see migration 0004): the new model joins
+  // sender_key_scopes → email_senders → outbound_domains to derive
+  // "<local_part>@<domain>" addresses this key may send from. We consult that
+  // first; if it has no rows for this key, we fall back to the legacy JSON
+  // array on api_keys.sender_scopes (kept until all keys are migrated).
+  let scopedByJoin = false;
+  let joinAllowed = false;
   try {
-    scopes = JSON.parse(key.sender_scopes_raw);
+    type JoinRow = { addr: string };
+    const joinRows = await c.env.DB.prepare(
+      `SELECT (es.local_part || '@' || od.domain) AS addr
+         FROM sender_key_scopes sks
+         JOIN email_senders es ON es.id = sks.sender_id
+         JOIN outbound_domains od ON od.id = es.domain_id
+        WHERE sks.key_id = ?`,
+    )
+      .bind(key.key_id)
+      .all<JoinRow>();
+    if (joinRows.results.length > 0) {
+      scopedByJoin = true;
+      const fromLower = parsed.from.toLowerCase();
+      joinAllowed = joinRows.results.some((r) => r.addr.toLowerCase() === fromLower);
+    }
   } catch {
-    return buildError(c, 'forbidden', 'sender_scopes parse failed');
+    // sender_key_scopes table missing (pre-0002 / test mocks without it).
+    // Fall through to legacy check.
   }
-  if (!matchesSenderScope(parsed.from, scopes)) {
-    return buildError(c, 'scope_violation', `from address ${parsed.from} outside sender_scopes`);
+  if (scopedByJoin) {
+    if (!joinAllowed) {
+      return buildError(
+        c,
+        'scope_violation',
+        `from address ${parsed.from} outside sender_scopes`,
+      );
+    }
+  } else {
+    // Legacy fallback: free-form JSON array on api_keys.sender_scopes.
+    let scopes;
+    try {
+      scopes = JSON.parse(key.sender_scopes_raw);
+    } catch {
+      return buildError(c, 'forbidden', 'sender_scopes parse failed');
+    }
+    if (!matchesSenderScope(parsed.from, scopes)) {
+      return buildError(c, 'scope_violation', `from address ${parsed.from} outside sender_scopes`);
+    }
   }
   // Domain verified?
   const fromDomain = parsed.from.split('@')[1]?.toLowerCase() ?? '';

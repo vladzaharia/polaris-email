@@ -624,7 +624,7 @@ admin.get('/v1/bridge/config', requireScope('admin:read'), async (c) => {
     id: string;
     sender_id: string;
     username: string;
-    password_argon2id: string;
+    password_hash: string;
     disabled_at: number | null;
   };
   let senderRows: { results: SenderRowB[] } = { results: [] };
@@ -638,7 +638,7 @@ admin.get('/v1/bridge/config', requireScope('admin:read'), async (c) => {
       `SELECT id, domain FROM outbound_domains`,
     ).all<DomainRowB>();
     credRows = await c.env.DB.prepare(
-      `SELECT id, sender_id, username, password_argon2id, disabled_at FROM smtp_credentials`,
+      `SELECT id, sender_id, username, password_hash, disabled_at FROM smtp_credentials`,
     ).all<CredRowB>();
   } catch {
     // Tables absent (test mocks without 0002 migration). Treat as empty.
@@ -663,7 +663,7 @@ admin.get('/v1/bridge/config', requireScope('admin:read'), async (c) => {
         smtp_credentials: (credsBySender.get(s.id) ?? []).map((cr) => ({
           id: cr.id,
           username: cr.username,
-          password_hash: cr.password_argon2id,
+          password_hash: cr.password_hash,
           disabled: cr.disabled_at != null,
         })),
       };
