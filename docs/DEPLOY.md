@@ -77,13 +77,15 @@ Manual fallback — the deprecated `make dns DOMAIN=…` now just forwards to `m
 
 ## 4. (Optional) Bring up the bridge
 
-Only needed if you want SMTPS/IMAP/JMAP for legacy clients. Run on the bridge host (must have Docker + access to your tailnet):
+Only needed if you want SMTPS/IMAP for legacy clients. Run on the bridge host (must have Docker + access to your tailnet). Mox does NOT speak JMAP, so JMAP retrieval is not an option here — use IMAP4 (incl. v0.0.15 extensions: NOTIFY, UIDONLY, MULTISEARCH, PREVIEW, REPLACE, METADATA) or the webapi (`MessageGet`/`MessageRawGet`/etc.).
 
 ```sh
 make bridge-up
 ```
 
-Wraps `apps/bridge/docker-compose.yml`: pulls images, brings up `ts`, runs `cert-init`, brings up `mox` + `sidecar`, polls `http://${BRIDGE_HOST}:8088/health` for up to 60s. The first run issues a dedicated bridge API key (`scopes=bridge:read,bridge:write`) via the admin key and writes it to `apps/bridge/.env`.
+Wraps `apps/bridge/docker-compose.yml`: renders `mox-config/mox.conf` from `mox.conf.template` and `mox-config/adminpasswd` (bcrypt of `MOX_ADMIN_PASSWORD`), pulls images, brings up `ts`, brings up `cert-issuer` (lego + Cloudflare DNS-01) and waits for the first cert, then brings up `mox` + `sidecar`. The first run issues a dedicated bridge API key (`scopes=bridge:read,bridge:write`) via the admin key and writes it to `apps/bridge/.env`.
+
+Certs: lego writes Let's Encrypt-issued certs to a shared `cert-vol` volume; Mox reads them via `Listeners.public.TLS.KeyCerts`. Mox loads non-ACME `KeyCerts` eagerly at startup and does not auto-reload them, so renewals require a Mox container restart (the cert-issuer container touches `/certs/.renewed` after each successful renewal; an operator should `docker compose restart mox` in a low-traffic window — automation TBD).
 
 The rendered `apps/bridge/.env` contains `TS_AUTHKEY=<tskey-client-…>?preauthorized=true&ephemeral=false` — the Tailscale container reads `TS_AUTHKEY` regardless of whether the value is a one-time auth-key or an OAuth client secret, and exchanges OAuth secrets for a fresh auth key on each cold boot. The `preauthorized` + `ephemeral=false` params let the minted device skip admin approval and survive container restarts via the `ts-state/` volume.
 

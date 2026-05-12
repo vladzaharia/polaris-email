@@ -13,10 +13,12 @@
   "dependencies": {
     "@polaris-email/hmac": "workspace:*",
     "@polaris-email/schema": "workspace:*",
-    "fastify": "^4.28.0"
+    "fastify": "^4.28.0",
+    "nodemailer": "^6.9.14"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
+    "@types/nodemailer": "^6.4.15",
     "typescript": "^5.5.0",
     "vitest": "^2.0.0"
   }

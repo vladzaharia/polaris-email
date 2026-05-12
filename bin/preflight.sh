@@ -71,6 +71,21 @@ if [[ -f "$ENV_FILE" ]]; then
     printf '  ok   .env.deploy has required keys\n'
   fi
 
+  # Bridge config consistency: if BRIDGE_HOST is set, we expect a matching
+  # BRIDGE_ZONE_ID (so bin/bridge-up.sh can upsert the A record via the
+  # Cloudflare API) and a CF_API_TOKEN with DNS:Edit on that zone for the
+  # lego cert-issuer's DNS-01 challenge.
+  if [[ -n "${BRIDGE_HOST:-}" ]]; then
+    if [[ -z "${BRIDGE_ZONE_ID:-}" ]]; then
+      printf '  warn BRIDGE_HOST is set but BRIDGE_ZONE_ID is empty — bridge-up will not be able to upsert the A record or drive cert-issuer DNS-01\n'
+    else
+      printf '  ok   BRIDGE_HOST + BRIDGE_ZONE_ID consistent\n'
+    fi
+    if [[ -z "${CF_API_TOKEN:-}" ]]; then
+      printf '  warn BRIDGE_HOST is set but CF_API_TOKEN is empty — lego DNS-01 will fail\n'
+    fi
+  fi
+
   # Tailscale credential format: hard cutover from one-time auth keys to OAuth.
   # Optional (bridge isn't required for cold-start), but if present it must be OAuth.
   if [[ -n "${TS_OAUTH_CLIENT_SECRET:-}" ]]; then

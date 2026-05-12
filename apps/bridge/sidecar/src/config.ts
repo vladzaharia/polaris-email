@@ -3,8 +3,16 @@ export interface SidecarEnv {
   POLARIS_EMAIL_URL: string;
   POLARIS_BRIDGE_KEY_ID: string;
   POLARIS_BRIDGE_KEY_SECRET: string;
-  MOX_WEBAPI_SOCK?: string;
+  /** Base URL of Mox's admin HTTP listener, e.g. http://127.0.0.1:80 */
+  MOX_ADMIN_URL?: string;
+  /** Base URL of Mox's webapi HTTP listener (typically same host:port as admin). */
   MOX_WEBAPI_URL?: string;
+  /** Plaintext admin password (matches the bcrypt hash in mox.conf's AdminPasswordFile). */
+  MOX_ADMIN_PASSWORD?: string;
+  /** Hostname for SMTPS submission (defaults to 127.0.0.1 in-netns). */
+  MOX_SUBMIT_HOST?: string;
+  /** Port for SMTPS submission (defaults to 465). */
+  MOX_SUBMIT_PORT?: string;
   MOX_CONFIG_PATH?: string;
   LISTEN_PORT?: string;
   POLL_INTERVAL_MS?: string;
@@ -22,8 +30,11 @@ export function envOrThrow(): SidecarEnv {
     POLARIS_BRIDGE_KEY_SECRET: need('POLARIS_BRIDGE_KEY_SECRET'),
   };
   for (const opt of [
-    'MOX_WEBAPI_SOCK',
+    'MOX_ADMIN_URL',
     'MOX_WEBAPI_URL',
+    'MOX_ADMIN_PASSWORD',
+    'MOX_SUBMIT_HOST',
+    'MOX_SUBMIT_PORT',
     'MOX_CONFIG_PATH',
     'LISTEN_PORT',
     'POLL_INTERVAL_MS',

@@ -1,12 +1,14 @@
-// Inbound sync loop: poll polaris-email for new messages, MessageImport into Mox.
+// Inbound sync loop: poll polaris-email for new messages, deliver them
+// into Mox via local SMTPS submission (Mox v0.0.15 has no JSON-RPC
+// MessageImport — see mox-client.ts).
 import type { MoxClient } from './mox-client.js';
 import type { PolarisClient } from './polaris-client.js';
 
 export interface SyncDeps {
   polaris: PolarisClient;
   mox: MoxClient;
-  /** Mailbox id → mox account name. */
-  mailboxes: Map<string, { account: string }>;
+  /** Mailbox id → mox account name + plaintext password (held in-memory only). */
+  mailboxes: Map<string, { account: string; password?: string; address?: string }>;
   /** Cancel signal for shutdown. */
   signal: AbortSignal;
   /** Poll interval ms. */
@@ -35,7 +37,7 @@ export async function syncOnce(deps: SyncDeps): Promise<{ imported: number; fail
   let imported = 0;
   let failed = 0;
   const errors: string[] = [];
-  for (const [mailboxId, { account }] of deps.mailboxes) {
+  for (const [mailboxId, m] of deps.mailboxes) {
     const r = await deps.polaris.request<PendingResponse>(
       'GET',
       `/v1/mailboxes/${mailboxId}/messages`,
@@ -45,6 +47,14 @@ export async function syncOnce(deps: SyncDeps): Promise<{ imported: number; fail
     if (r.status === 200 && Array.isArray((r.body as PendingResponse | undefined)?.data)) {
       for (const msg of (r.body as PendingResponse).data) {
         try {
+          if (!m.password || !m.address) {
+            // Without plaintext we cannot SMTPS-submit into Mox. Skip
+            // silently; ops queue will populate the password when an
+            // operator issues credentials.
+            failed++;
+            errors.push(`${msg.id}: no smtp credential for ${m.account}`);
+            continue;
+          }
           const bytes = await fetch(msg.r2_signed_url, {
             signal: AbortSignal.timeout(30_000),
           });
@@ -54,11 +64,17 @@ export async function syncOnce(deps: SyncDeps): Promise<{ imported: number; fail
             continue;
           }
           const buf = Buffer.from(await bytes.arrayBuffer());
-          const imp = await deps.mox.messageImport({ account, rfc822: buf });
+          await deps.mox.submitMessage({
+            account: m.address,
+            password: m.password,
+            rfc822: buf,
+            from: m.address,
+            to: [m.address],
+          });
           await deps.polaris.request(
             'POST',
             `/v1/messages/${msg.id}/imap-delivered`,
-            { uid: imp.uid, uidvalidity: imp.uidvalidity },
+            { delivered_via: 'smtps_local' },
           );
           imported++;
         } catch (e) {

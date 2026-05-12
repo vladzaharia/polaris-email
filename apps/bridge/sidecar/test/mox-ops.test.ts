@@ -38,11 +38,8 @@ interface MoxCallRecord {
 function mockMox(overrides: Partial<MoxClient> = {}): { mox: MoxClient; calls: MoxCallRecord[] } {
   const calls: MoxCallRecord[] = [];
   const mox: MoxClient = {
-    async messageImport() {
+    async submitMessage() {
       throw new Error('unused');
-    },
-    async reloadConfig() {
-      /* noop */
     },
     async ensureAccount() {
       return true;

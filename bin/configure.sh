@@ -19,7 +19,8 @@ fi
 ENV_VARS=(
   CF_ACCOUNT_ID POLARIS_API_HOSTNAME
   CF_API_TOKEN CF_ZONE_ID
-  TS_TAILNET BRIDGE_HOST TS_OAUTH_CLIENT_SECRET
+  TS_TAILNET BRIDGE_HOST BRIDGE_ZONE_ID TS_OAUTH_CLIENT_SECRET
+  MOX_ADMIN_PASSWORD CERT_EMAIL
   SYNTHETIC_MONITOR_DOMAIN ALERT_WEBHOOK SYNTHETIC_FROM SYNTHETIC_TO
   OIDC_ISSUER OIDC_CLIENT_ID
   SIDECAR_TAG
@@ -89,11 +90,25 @@ ask POLARIS_API_HOSTNAME  "API hostname"                                  "${POL
 ask CF_API_TOKEN          "Cloudflare API token (optional; needed for make onboard --apply)" "" 1
 ask CF_ZONE_ID            "Cloudflare zone ID for ad-hoc bin/dns-records.sh use (optional)"
 
-# Bridge (Tailscale + Mox + sidecar) — optional, only for SMTPS/IMAP/JMAP.
+# Bridge (Tailscale + Mox + sidecar) — optional, only for SMTPS/IMAP.
+# Mox does NOT speak JMAP; that protocol was dropped from the bridge plan.
 ask TS_TAILNET            "Tailscale tailnet, e.g. tail-scales.ts.net (optional; skip if no bridge)"
 # BRIDGE_HOST default is only meaningful once TS_TAILNET is known; otherwise blank.
-ask BRIDGE_HOST           "Bridge FQDN on the tailnet (optional)" "${BRIDGE_HOST:-${TS_TAILNET:+polaris-email.${TS_TAILNET}}}"
+ask BRIDGE_HOST           "Bridge FQDN (the public DNS name lego issues a cert for, e.g. mail.plrs.im)" "${BRIDGE_HOST:-${TS_TAILNET:+polaris-email.${TS_TAILNET}}}"
+ask BRIDGE_ZONE_ID        "Cloudflare zone ID for BRIDGE_HOST (optional; required by make bridge-up if BRIDGE_HOST is a public name on Cloudflare)"
 ask TS_OAUTH_CLIENT_SECRET "Tailscale OAuth client secret, tskey-client-... (optional; needed for make bridge-up)" "" 1
+
+# Mox admin password — bcrypt-hashed into mox-config/adminpasswd and also
+# passed plaintext to the sidecar so it can drive the LoginPrep/Login
+# ceremony against /admin/api. Generated on first configure if blank.
+if [[ -z "${MOX_ADMIN_PASSWORD:-}" ]] && command -v openssl >/dev/null 2>&1; then
+  MOX_ADMIN_PASSWORD="$(openssl rand -base64 24)"
+  save_env
+fi
+ask MOX_ADMIN_PASSWORD    "Mox admin password (auto-generated if blank; rotated only manually)" "$MOX_ADMIN_PASSWORD" 1
+
+# Cert issuance email (Let's Encrypt subscriber address).
+ask CERT_EMAIL            "Let's Encrypt subscriber email (optional)" "${CERT_EMAIL:-${BRIDGE_HOST:+postmaster@${BRIDGE_HOST}}}"
 
 # Synthetic monitoring — optional. SYNTHETIC_MONITOR_DOMAIN is the home domain for the
 # synthetic test mailbox; it default-builds the FROM/TO addresses below. Sending and

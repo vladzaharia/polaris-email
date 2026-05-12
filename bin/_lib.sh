@@ -107,3 +107,42 @@ polaris_api_call() {
     -H "x-polaris-sig: v1=${sig}" \
     --data "$body"
 }
+
+# Upsert a Cloudflare A record. Args: <zone_id> <name> <ipv4> [token]
+# Token defaults to $CF_API_TOKEN. Returns the record ID on stdout.
+cf_upsert_a_record() {
+  local zone="$1" name="$2" ipv4="$3" token="${4:-${CF_API_TOKEN:-}}"
+  [[ -n "$token" ]] || die "cf_upsert_a_record: CF_API_TOKEN required"
+  local base="https://api.cloudflare.com/client/v4/zones/${zone}/dns_records"
+  local existing
+  existing="$(curl -sS -H "Authorization: Bearer ${token}" \
+    "${base}?type=A&name=${name}" | jq -r '.result[0].id // empty')"
+  local body
+  body="$(jq -nc --arg n "$name" --arg c "$ipv4" '{type:"A", name:$n, content:$c, ttl:60, proxied:false}')"
+  if [[ -n "$existing" ]]; then
+    curl -sS -X PUT -H "Authorization: Bearer ${token}" -H 'content-type: application/json' \
+      "${base}/${existing}" --data "$body" | jq -r '.result.id // empty'
+  else
+    curl -sS -X POST -H "Authorization: Bearer ${token}" -H 'content-type: application/json' \
+      "${base}" --data "$body" | jq -r '.result.id // empty'
+  fi
+}
+
+# Upsert a Cloudflare TXT record. Args: <zone_id> <name> <content> [token]
+cf_upsert_txt_record() {
+  local zone="$1" name="$2" content="$3" token="${4:-${CF_API_TOKEN:-}}"
+  [[ -n "$token" ]] || die "cf_upsert_txt_record: CF_API_TOKEN required"
+  local base="https://api.cloudflare.com/client/v4/zones/${zone}/dns_records"
+  local existing
+  existing="$(curl -sS -H "Authorization: Bearer ${token}" \
+    "${base}?type=TXT&name=${name}" | jq -r '.result[0].id // empty')"
+  local body
+  body="$(jq -nc --arg n "$name" --arg c "$content" '{type:"TXT", name:$n, content:$c, ttl:60}')"
+  if [[ -n "$existing" ]]; then
+    curl -sS -X PUT -H "Authorization: Bearer ${token}" -H 'content-type: application/json' \
+      "${base}/${existing}" --data "$body" | jq -r '.result.id // empty'
+  else
+    curl -sS -X POST -H "Authorization: Bearer ${token}" -H 'content-type: application/json' \
+      "${base}" --data "$body" | jq -r '.result.id // empty'
+  fi
+}

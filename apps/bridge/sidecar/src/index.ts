@@ -14,12 +14,15 @@ async function main() {
     keySecret: env.POLARIS_BRIDGE_KEY_SECRET,
   });
   const mox = makeMoxClient({
-    sockPath: env.MOX_WEBAPI_SOCK ?? '/run/mox/webapi.sock',
-    ...(env.MOX_WEBAPI_URL ? { baseUrl: env.MOX_WEBAPI_URL } : {}),
+    adminBaseUrl: env.MOX_ADMIN_URL ?? 'http://127.0.0.1:80',
+    webapiBaseUrl: env.MOX_WEBAPI_URL ?? env.MOX_ADMIN_URL ?? 'http://127.0.0.1:80',
+    adminPassword: env.MOX_ADMIN_PASSWORD ?? '',
+    submitHost: env.MOX_SUBMIT_HOST ?? '127.0.0.1',
+    submitPort: env.MOX_SUBMIT_PORT ? Number.parseInt(env.MOX_SUBMIT_PORT, 10) : 465,
   });
 
   const localTargets = new Map<string, string>();
-  const mailboxes = new Map<string, { account: string }>();
+  const mailboxes = new Map<string, { account: string; address?: string; password?: string }>();
 
   interface BridgeSenderRow {
     id: string;
@@ -47,9 +50,9 @@ async function main() {
     for (const t of conf.local_webhook_targets) localTargets.set(`${t.service}/${t.rule}`, t.upstream);
     mailboxes.clear();
     for (const m of conf.mailboxes) {
-      // Mox account name = local part of the address.
-      const account = m.address.split('@')[0];
-      if (account) mailboxes.set(m.id, { account });
+      // Mox account name = full address (matches the convention used in
+      // mox-ops.ts where username is the address).
+      mailboxes.set(m.id, { account: m.address, address: m.address });
     }
     // Reconcile Mox accounts for each sender. Best-effort: one bad sender should
     // not halt sync.
