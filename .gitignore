@@ -33,3 +33,4 @@ secrets.created.json
 .wrangler.merged.json
 # Claude Code per-project state (settings, worktrees, plans).
 .claude/
+.worktrees/
