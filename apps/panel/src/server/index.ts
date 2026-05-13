@@ -4,7 +4,7 @@ import { readEnv } from './env.js';
 import { openDb } from './db.js';
 import { makePolaris } from './polaris.js';
 import { requireAdmin, sessionMiddleware } from './auth.js';
-import { servicesRoutes } from './routes/services.js';
+import { tenantsRoutes } from './routes/tenants.js';
 import { apiKeysRoutes } from './routes/api-keys.js';
 import { mailboxesRoutes } from './routes/mailboxes.js';
 import { webhooksRoutes } from './routes/webhooks.js';
@@ -28,7 +28,7 @@ async function main() {
   // Everything below requires admin group.
   const guarded = new Hono();
   guarded.use('*', requireAdmin(env.ADMIN_GROUP));
-  guarded.route('/', servicesRoutes(polaris));
+  guarded.route('/', tenantsRoutes(polaris));
   guarded.route('/', apiKeysRoutes(polaris));
   guarded.route('/', mailboxesRoutes(polaris));
   guarded.route('/', webhooksRoutes(polaris));

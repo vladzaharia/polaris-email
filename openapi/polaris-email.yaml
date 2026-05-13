@@ -71,9 +71,9 @@ components:
             request_id: { type: string }
     IssueApiKeyRequest:
       type: object
-      required: [service_id, sender_scopes]
+      required: [tenant_id, sender_scopes]
       properties:
-        service_id: { type: string, pattern: "^[a-z][a-z0-9-]{0,63}$" }
+        tenant_id: { type: string, pattern: "^[a-z][a-z0-9-]{0,63}$" }
         sender_scopes:
           type: array
           minItems: 1
@@ -107,25 +107,14 @@ components:
         new_key_id: { type: string }
         new_key_secret: { type: string }
         prev_status: { type: string }
-    CreateMailboxRequest:
-      type: object
-      required: [address]
-      properties:
-        address: { type: string, format: email }
-        display_name: { type: string }
-        service_id: { type: string }
-        retain_imap: { type: boolean, default: false }
-        retention_days: { type: integer, default: 90 }
-        max_inbound_bytes: { type: integer }
     CreateWebhookSubRequest:
       type: object
-      required: [url, kind, events]
+      required: [tenant_id, url, kind, events]
       properties:
-        mailbox_id: { type: string }
-        service_id: { type: string }
+        tenant_id: { type: string }
+        domain_id: { type: string }
         url: { type: string, format: uri }
         kind: { type: string, enum: [external, tailnet] }
-        local_target_id: { type: string }
         events:
           type: array
           items:
@@ -254,9 +243,9 @@ paths:
       responses:
         '201':
           description: created
-  /v1/admin/bulk/revoke-service:
+  /v1/admin/bulk/revoke-tenant:
     post:
-      summary: Quarantine a service — revoke all its api keys, rotate all its mailbox passwords
+      summary: Quarantine a tenant — revoke all its api keys
       parameters:
         - { $ref: '#/components/parameters/KeyId' }
         - { $ref: '#/components/parameters/Ts' }
@@ -267,9 +256,9 @@ paths:
           application/json:
             schema:
               type: object
-              required: [service_id, mode, confirmation, incident_ticket_id]
+              required: [tenant_id, mode, confirmation, incident_ticket_id]
               properties:
-                service_id: { type: string }
+                tenant_id: { type: string }
                 mode: { type: string, enum: [emergency] }
                 confirmation: { type: string }
                 incident_ticket_id: { type: string }

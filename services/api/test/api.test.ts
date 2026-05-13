@@ -130,7 +130,7 @@ describe('admin api-keys', () => {
     // Create service
     let body = JSON.stringify({ id: 'expresscharge', name: 'ExpressCharge' });
     let req = await signedRequest(
-      'https://x/v1/admin/services',
+      'https://x/v1/admin/tenants',
       body,
       'POST',
       admin.admin_key_secret,
@@ -152,7 +152,7 @@ describe('admin api-keys', () => {
 
     // Issue api key
     body = JSON.stringify({
-      service_id: 'expresscharge',
+      tenant_id: 'expresscharge',
       sender_scopes: [{ kind: 'exact', pattern: 'noreply@example.com' }],
       scopes: ['send'],
     });
@@ -174,7 +174,7 @@ describe('admin api-keys', () => {
     const { env, admin } = await bootstrapEnv();
     await app.fetch(
       await signedRequest(
-        'https://x/v1/admin/services',
+        'https://x/v1/admin/tenants',
         JSON.stringify({ id: 'svc', name: 'Svc' }),
         'POST',
         admin.admin_key_secret,
@@ -188,7 +188,7 @@ describe('admin api-keys', () => {
         await signedRequest(
           'https://x/v1/admin/api-keys',
           JSON.stringify({
-            service_id: 'svc',
+            tenant_id: 'svc',
             sender_scopes: [{ kind: 'exact', pattern: 'a@example.com' }],
           }),
           'POST',
@@ -236,7 +236,7 @@ describe('admin api-keys', () => {
     const { env, admin } = await bootstrapEnv();
     await app.fetch(
       await signedRequest(
-        'https://x/v1/admin/services',
+        'https://x/v1/admin/tenants',
         JSON.stringify({ id: 'svc', name: 'Svc' }),
         'POST',
         admin.admin_key_secret,
@@ -256,7 +256,7 @@ describe('admin api-keys', () => {
         await signedRequest(
           'https://x/v1/admin/api-keys',
           JSON.stringify({
-            service_id: 'svc',
+            tenant_id: 'svc',
             sender_scopes: [{ kind: 'exact', pattern: 'a@example.com' }],
           }),
           'POST',

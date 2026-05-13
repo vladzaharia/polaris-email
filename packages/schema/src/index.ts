@@ -363,17 +363,11 @@ export const AuditRow = z.object({
 // ---------- admin REST shapes ----------
 
 export const IssueApiKeyRequest = z.object({
-  // Tenant id (canonical). The legacy `service_id` request field is kept on the
-  // wire by clients and routed to `tenant_id` server-side; new callers should
-  // send `tenant_id` directly.
-  tenant_id: ServiceSlug.optional(),
-  service_id: ServiceSlug.optional(),
+  tenant_id: ServiceSlug,
   display_name: z.string().min(1).max(120).optional(),
   sender_scopes: z.array(SenderScope).min(1),
   scopes: KeyScopes.default(['send']),
   rate_limit_per_min: z.number().int().positive().max(100000).default(1000),
-}).refine((o) => o.tenant_id || o.service_id, {
-  message: 'tenant_id or service_id required',
 });
 
 export const RotateRequest = z.object({
@@ -383,14 +377,11 @@ export const RotateRequest = z.object({
 });
 
 export const CreateWebhookSubRequest = z.object({
-  tenant_id: ServiceSlug.optional(),
-  service_id: ServiceSlug.optional(),
+  tenant_id: ServiceSlug,
   domain_id: Ulid.optional(),
   url: z.string().url(),
   kind: z.enum(['external', 'tailnet']),
   events: z.array(WebhookEventType).min(1),
-}).refine((o) => o.tenant_id || o.service_id, {
-  message: 'tenant_id or service_id required',
 });
 
 export const CreateRoutingRuleRequest = z.object({
@@ -402,14 +393,14 @@ export const CreateRoutingRuleRequest = z.object({
   forward_to: Address.optional(),
 });
 
-export const CreateServiceRequest = z.object({
+export const CreateTenantRequest = z.object({
   id: z.string().min(1).max(64),
   name: z.string().min(1).max(120),
   description: z.string().max(2000).optional(),
 });
 
-export const BulkRevokeServiceRequest = z.object({
-  service_id: z.string().min(1).max(64),
+export const BulkRevokeTenantRequest = z.object({
+  tenant_id: z.string().min(1).max(64),
   mode: z.literal('emergency'),
   incident_ticket_id: z.string().min(1).max(120),
   confirmation: z.string().min(1).max(64),

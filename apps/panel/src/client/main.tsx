@@ -110,7 +110,7 @@ function Services() {
   const [id, setId] = useState('');
   const [name, setName] = useState('');
   useEffect(() => {
-    void api<{ data: { id: string; name: string }[] }>('/api/services').then((r) => setRows(r.body?.data ?? []));
+    void api<{ data: { id: string; name: string }[] }>('/api/tenants').then((r) => setRows(r.body?.data ?? []));
   }, []);
   return (
     <div>
@@ -135,7 +135,7 @@ function Services() {
                     const ticket = prompt(`Type incident ticket ID to quarantine "${r.id}":`);
                     if (!ticket) return;
                     if (prompt(`Type "${r.id}" to confirm:`) !== r.id) return;
-                    const res = await api(`/api/services/${r.id}/quarantine`, {
+                    const res = await api(`/api/tenants/${r.id}/quarantine`, {
                       method: 'POST',
                       headers: { 'content-type': 'application/json' },
                       body: JSON.stringify({ incident_ticket_id: ticket }),
@@ -155,7 +155,7 @@ function Services() {
       <input placeholder="name" value={name} onChange={(e) => setName(e.target.value)} />{' '}
       <button
         onClick={async () => {
-          const res = await api('/api/services', {
+          const res = await api('/api/tenants', {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
             body: JSON.stringify({ id, name }),
@@ -171,10 +171,10 @@ function Services() {
 }
 
 function ApiKeys() {
-  const [rows, setRows] = useState<{ id: string; service_id: string | null; status: string }[]>([]);
+  const [rows, setRows] = useState<{ id: string; principal_id: string | null; status: string }[]>([]);
   const [showSecret, setShowSecret] = useState<{ key_id: string; key_secret: string } | null>(null);
   useEffect(() => {
-    void api<{ data: { id: string; service_id: string | null; status: string }[] }>(
+    void api<{ data: { id: string; principal_id: string | null; status: string }[] }>(
       '/api/api-keys',
     ).then((r) => setRows(r.body?.data ?? []));
   }, []);
@@ -199,7 +199,7 @@ function ApiKeys() {
           {rows.map((r) => (
             <tr key={r.id}>
               <td>{r.id}</td>
-              <td>{r.service_id ?? ''}</td>
+              <td>{r.principal_id ?? ''}</td>
               <td>{r.status}</td>
               <td>
                 <button

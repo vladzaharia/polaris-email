@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   Address,
-  BulkRevokeServiceRequest,
+  BulkRevokeTenantRequest,
   CreateRoutingRuleRequest,
-  CreateServiceRequest,
+  CreateTenantRequest,
   CreateWebhookSubRequest,
   IssueApiKeyRequest,
   RotateRequest,
@@ -49,7 +49,7 @@ describe('admin requests', () => {
   it('IssueApiKeyRequest', () => {
     expect(
       IssueApiKeyRequest.parse({
-        service_id: 'svc',
+        tenant_id: 'svc',
         sender_scopes: [{ kind: 'exact', pattern: 'a@b.com' }],
       }),
     ).toBeDefined();
@@ -75,13 +75,13 @@ describe('admin requests', () => {
       }),
     ).toBeDefined();
   });
-  it('CreateServiceRequest', () => {
-    expect(CreateServiceRequest.parse({ id: 'svc', name: 'Svc' })).toBeDefined();
+  it('CreateTenantRequest', () => {
+    expect(CreateTenantRequest.parse({ id: 'svc', name: 'Svc' })).toBeDefined();
   });
-  it('BulkRevokeServiceRequest enforces confirmation', () => {
+  it('BulkRevokeTenantRequest enforces confirmation', () => {
     expect(() =>
-      BulkRevokeServiceRequest.parse({
-        service_id: 'svc',
+      BulkRevokeTenantRequest.parse({
+        tenant_id: 'svc',
         mode: 'emergency',
         incident_ticket_id: 'INC-1',
         confirmation: 'other',

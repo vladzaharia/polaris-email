@@ -1,11 +1,11 @@
 // polaris-email-forensic: encrypt + decrypt recipient lists with AES-GCM.
-// Per-row key is derived HKDF(master, message_id || service_id).
+// Per-row key is derived HKDF(master, message_id || tenant_id).
 // Decryption requires an incident_ticket_id + a second approver subject (the api Worker
 // verifies the approvers; this Worker just enforces presence + audits).
 //
 // Service binding API:
-//   POST /encrypt   { message_id, service_id, plaintext } → { ciphertext, key_version }
-//   POST /decrypt   { message_id, service_id, ciphertext, incident_ticket_id,
+//   POST /encrypt   { message_id, tenant_id, plaintext } → { ciphertext, key_version }
+//   POST /decrypt   { message_id, tenant_id, ciphertext, incident_ticket_id,
 //                     primary_subject, approver_subject } → { plaintext }
 
 interface Env {
@@ -100,7 +100,7 @@ export default {
     if (url.pathname === '/encrypt') {
       const body = (await req.json()) as {
         message_id?: string;
-        service_id?: string | null;
+        tenant_id?: string | null;
         plaintext?: string;
       };
       if (!body.message_id || typeof body.plaintext !== 'string') {
@@ -108,7 +108,7 @@ export default {
       }
       const ct = await encryptRecipients(
         master,
-        `${body.message_id}|${body.service_id ?? ''}`,
+        `${body.message_id}|${body.tenant_id ?? ''}`,
         body.plaintext,
       );
       return json({ ciphertext: ct, key_version: env.KEY_VERSION });
@@ -116,7 +116,7 @@ export default {
     if (url.pathname === '/decrypt') {
       const body = (await req.json()) as {
         message_id?: string;
-        service_id?: string | null;
+        tenant_id?: string | null;
         ciphertext?: string;
         incident_ticket_id?: string;
         primary_subject?: string;
@@ -137,7 +137,7 @@ export default {
       try {
         const pt = await decryptRecipients(
           master,
-          `${body.message_id}|${body.service_id ?? ''}`,
+          `${body.message_id}|${body.tenant_id ?? ''}`,
           body.ciphertext,
         );
         return json({ plaintext: pt });

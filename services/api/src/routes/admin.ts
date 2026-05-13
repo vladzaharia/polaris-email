@@ -3,9 +3,9 @@
 // All HMAC-auth + `admin:*` scope.
 import { Hono } from 'hono';
 import {
-  BulkRevokeServiceRequest,
+  BulkRevokeTenantRequest,
   CreateRoutingRuleRequest,
-  CreateServiceRequest,
+  CreateTenantRequest,
   CreateWebhookSubRequest,
   IssueApiKeyRequest,
   RotateRequest,
@@ -30,13 +30,13 @@ admin.use('/v1/daemon/*', hmacAuth('polaris-api.v1'));
 admin.route('/', outboundDomains);
 admin.route('/', sendersRoutes);
 
-// ---------- tenants (legacy "services" URL kept for backward compat) ----------
+// ---------- tenants ----------
 
-admin.post('/v1/admin/services', requireScope('admin:rotate'), async (c) => {
+admin.post('/v1/admin/tenants', requireScope('admin:rotate'), async (c) => {
   const key = c.get('apiKey');
   let body;
   try {
-    body = CreateServiceRequest.parse(JSON.parse(bodyText(c)));
+    body = CreateTenantRequest.parse(JSON.parse(bodyText(c)));
   } catch (e) {
     return buildError(c, 'bad_request', e instanceof Error ? e.message : 'invalid body');
   }
@@ -62,7 +62,7 @@ admin.post('/v1/admin/services', requireScope('admin:rotate'), async (c) => {
   return c.json({ id: body.id, created_at: now }, 201);
 });
 
-admin.get('/v1/admin/services', requireScope('admin:read'), async (c) => {
+admin.get('/v1/admin/tenants', requireScope('admin:read'), async (c) => {
   const rows = await c.env.DB.prepare(
     `SELECT id, name, description, environment, created_at, disabled_at FROM tenants ORDER BY id ASC`,
   ).all();
@@ -79,7 +79,7 @@ admin.post('/v1/admin/api-keys', requireScope('admin:rotate'), async (c) => {
   } catch (e) {
     return buildError(c, 'bad_request', e instanceof Error ? e.message : 'invalid body');
   }
-  const tenantId = body.tenant_id ?? body.service_id!;
+  const tenantId = body.tenant_id;
   const id = ulid();
   const principalId = ulid();
   const secret = generateSecret();
@@ -144,7 +144,7 @@ admin.post('/v1/admin/api-keys', requireScope('admin:rotate'), async (c) => {
 });
 
 admin.get('/v1/admin/api-keys', requireScope('admin:read'), async (c) => {
-  const tenant = c.req.query('tenant') ?? c.req.query('service');
+  const tenant = c.req.query('tenant');
   if (tenant) {
     // Two-step lookup: principals → api_keys (mock D1 doesn't parse joins).
     const principals = await c.env.DB.prepare(
@@ -344,7 +344,7 @@ admin.post('/v1/admin/webhook-subs', requireScope('admin:rotate'), async (c) => 
   }
   const id = ulid();
   const secret = generateSecret();
-  const tenantId = body.tenant_id ?? body.service_id!;
+  const tenantId = body.tenant_id;
   const nowIso = new Date().toISOString();
   await c.env.DB.prepare(
     `INSERT INTO webhook_subs
@@ -411,23 +411,23 @@ admin.post('/v1/admin/routing-rules', requireScope('admin:rotate'), async (c) =>
 
 // ---------- bulk revoke tenant ----------
 
-admin.post('/v1/admin/bulk/revoke-service', requireScope('admin:rotate'), async (c) => {
+admin.post('/v1/admin/bulk/revoke-tenant', requireScope('admin:rotate'), async (c) => {
   const key = c.get('apiKey');
   let body;
   try {
-    body = BulkRevokeServiceRequest.parse(JSON.parse(bodyText(c)));
+    body = BulkRevokeTenantRequest.parse(JSON.parse(bodyText(c)));
   } catch (e) {
     return buildError(c, 'bad_request', e instanceof Error ? e.message : 'invalid body');
   }
-  if (body.confirmation !== body.service_id) {
-    return buildError(c, 'bad_request', 'confirmation does not match service_id');
+  if (body.confirmation !== body.tenant_id) {
+    return buildError(c, 'bad_request', 'confirmation does not match tenant_id');
   }
   const nowIso = new Date().toISOString();
   // Find all principals for this tenant, then all api_keys for those principals.
   const principals = await c.env.DB.prepare(
     `SELECT id FROM principals WHERE tenant_id = ?`,
   )
-    .bind(body.service_id)
+    .bind(body.tenant_id)
     .all<{ id: string }>();
   const allKeys: { id: string }[] = [];
   for (const p of principals.results) {
@@ -450,7 +450,7 @@ admin.post('/v1/admin/bulk/revoke-service', requireScope('admin:rotate'), async 
   await audit(c.env, {
     actor: `key:${key.key_id}`,
     action: 'tenant.disable',
-    target: body.service_id,
+    target: body.tenant_id,
     meta: {
       incident_ticket_id: body.incident_ticket_id,
       revoked_api_keys: allKeys.map((k) => k.id),

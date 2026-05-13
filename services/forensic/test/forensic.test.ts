@@ -17,7 +17,7 @@ describe('forensic worker', () => {
         method: 'POST',
         body: JSON.stringify({
           message_id: 'M1',
-          service_id: 'svc',
+          tenant_id: 'svc',
           plaintext: JSON.stringify(['a@b.com', 'c@d.com']),
         }),
       }),
@@ -30,7 +30,7 @@ describe('forensic worker', () => {
         method: 'POST',
         body: JSON.stringify({
           message_id: 'M1',
-          service_id: 'svc',
+          tenant_id: 'svc',
           ciphertext,
           incident_ticket_id: 'INC-1',
           primary_subject: 'a@team.com',
@@ -48,7 +48,7 @@ describe('forensic worker', () => {
     const enc = await worker.fetch(
       new Request('https://x/encrypt', {
         method: 'POST',
-        body: JSON.stringify({ message_id: 'M1', service_id: null, plaintext: 'x' }),
+        body: JSON.stringify({ message_id: 'M1', tenant_id: null, plaintext: 'x' }),
       }),
       env,
     );
@@ -58,7 +58,7 @@ describe('forensic worker', () => {
         method: 'POST',
         body: JSON.stringify({
           message_id: 'M1',
-          service_id: null,
+          tenant_id: null,
           ciphertext,
           incident_ticket_id: 'I',
           primary_subject: 'a@team.com',
@@ -74,7 +74,7 @@ describe('forensic worker', () => {
     const enc = await worker.fetch(
       new Request('https://x/encrypt', {
         method: 'POST',
-        body: JSON.stringify({ message_id: 'M1', service_id: null, plaintext: 'x' }),
+        body: JSON.stringify({ message_id: 'M1', tenant_id: null, plaintext: 'x' }),
       }),
       env,
     );
@@ -84,7 +84,7 @@ describe('forensic worker', () => {
         method: 'POST',
         body: JSON.stringify({
           message_id: 'M2',
-          service_id: null,
+          tenant_id: null,
           ciphertext,
           incident_ticket_id: 'I',
           primary_subject: 'a@team.com',

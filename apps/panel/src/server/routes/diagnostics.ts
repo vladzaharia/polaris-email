@@ -30,12 +30,12 @@ export function diagnosticsRoutes(polaris: PolarisClient) {
     } catch (e) {
       checks.push({ name: 'audit_chain', ok: false, detail: String(e) });
     }
-    // 3. services listing
+    // 3. tenants listing
     try {
-      const r = await polaris.call('GET', '/v1/admin/services');
-      checks.push({ name: 'services_listable', ok: r.status === 200 });
+      const r = await polaris.call('GET', '/v1/admin/tenants');
+      checks.push({ name: 'tenants_listable', ok: r.status === 200 });
     } catch (e) {
-      checks.push({ name: 'services_listable', ok: false, detail: String(e) });
+      checks.push({ name: 'tenants_listable', ok: false, detail: String(e) });
     }
     const ok = checks.every((x) => x.ok);
     return c.json({ ok, checks });
