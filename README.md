@@ -1,66 +1,97 @@
 # polaris-email
 
 Managed email service for the `polaris-*` family. One HMAC REST contract for outbound,
-SMTPS/IMAP/JMAP on the Tailnet for legacy clients, signed webhooks for inbound, and a
-managed admin panel for mailboxes, API keys, routing rules, secrets, and operations.
+signed webhooks for inbound, an on-prem SMTPS submission daemon for legacy clients, and a
+managed admin panel for tenants, API keys, routing rules, secrets, and operations.
 
 ## Architecture
 
-- `services/api` — control plane Cloudflare Worker. REST surface, admin API, audit chain.
-- `services/out` — outbound queue consumer Worker that calls `send_email` bindings.
-- `services/in` — Email Routing handler Worker that parses inbound MIME.
-- `services/fanout` — signed-webhook delivery Worker.
-- `services/forensic` — isolated Worker that holds the recipient AEAD key.
-- `services/synthetic` — Cron-Triggered end-to-end health Worker.
-- `services/janitor` — Cron-Triggered retention enforcer.
-- `services/staleness` — Cron-Triggered control-plane secret age checker.
-- `services/anchor` — Cron-Triggered audit hash-chain anchor publisher.
-- `apps/bridge` — singleton Mox + sidecar + Tailscale Docker container (SMTPS/IMAP/JMAP/webhook proxy).
-- `apps/panel` — Hono + React admin UI behind OIDC + WebAuthn step-up.
-- `packages/hmac`, `packages/schema`, `packages/test-vectors` — shared.
-- `packages/webhook-verify-node|go|python` — consumer-facing verifier libs.
+Cloudflare Workers (control plane):
 
-See `/Users/vlad/.claude/plans/now-that-cloudflare-supports-snoopy-squid.md` for the full design,
-and `RUNBOOKS/` for operational procedures.
+- `services/api` — REST surface, admin API, audit chain, idempotency, key auth.
+- `services/out` — outbound queue consumer that drives the chosen Provider (Cloudflare
+  `send_email`, Postmark, SES, etc. — see `packages/providers`).
+- `services/in` — Email Routing handler that parses inbound MIME and dispatches to fanout.
+- `services/fanout` — signed-webhook delivery (external, tailnet, retry/DLQ).
+- `services/forensic` — isolated Worker holding the recipient AEAD key.
+- `services/synthetic` — cron end-to-end health probe.
+- `services/janitor` — cron retention enforcer.
+- `services/staleness` — cron control-plane secret-age checker.
+- `services/anchor` — cron audit hash-chain anchor publisher.
+
+On-prem (per host):
+
+- `apps/submission-daemon` — Go SMTPS daemon (implicit TLS on :465) that authenticates
+  clients against a SQLite credential mirror and forwards canonicalised RFC 5322 to
+  `/v1/send/raw`. Replaces the previous Mox bridge. See `apps/submission-daemon/README.md`.
+
+Operator tooling:
+
+- `apps/polaris-cli` — Go CLI (`polaris-email`, aliased `pml`) for tenants, domains,
+  routes, credentials, daemons, webhooks, audit, cost, bootstrap. See
+  `apps/polaris-cli/README.md`.
+- `apps/panel` — Hono + React admin UI.
+
+Shared packages:
+
+- `packages/hmac`, `packages/schema`, `packages/test-vectors` — signing primitives + types.
+- `packages/webhook-verify-{node,go,python}` — consumer-facing verifier libs.
+- `packages/mime` — canonicalisation + sender-policy + IDNA address normalisation.
+- `packages/providers` — Provider interface + Cloudflare/Postmark/SES adapters.
+- `packages/cf-api` — Cloudflare API wrapper (zones, DNS, Email Routing/Service, DKIM).
+- `packages/crypto-utils` — pepper, timing-safe compare, argon2-deferred helpers.
+- `packages/migrations` — D1 migration runner.
+- `packages/observability` — structured logger, analytics, tracing.
+- `packages/revocation-do` — revocation Durable Object.
+- `packages/url-guard` — SSRF guard.
+
+Infrastructure: `infra/terraform/` defines zone + access-app modules and per-environment
+roots (staging / prod / anchors).
 
 ## Local development
 
 ```sh
 pnpm install
-pnpm typecheck
-pnpm test
-pnpm build
+pnpm -r test
+pnpm -r build
+
+# Go modules
+(cd apps/submission-daemon && go test ./... && go build ./...)
+(cd apps/polaris-cli       && go vet ./... && go build ./...)
 ```
 
 Each Worker has a `wrangler.jsonc` (committed, placeholder IDs) and expects a gitignored
-`wrangler.local.jsonc` with real D1/R2/KV/Queue IDs. Those are generated automatically from
+`wrangler.local.jsonc` with real D1/R2/KV/Queue IDs. Those are generated from
 `services/*/wrangler.local.template.jsonc` + `.deploy-state.json` by
-`bin/render-wrangler-local.sh`; `bin/deploy.sh` then merges the public + local configs before
-`wrangler deploy`. Do not hand-edit the materialized files.
+`bin/render-wrangler-local.sh`; `bin/deploy.sh` then merges the public + local configs
+before `wrangler deploy`. Do not hand-edit the materialised files.
 
 ## Quick start
 
-The full deploy flow is wrapped behind a single Makefile. See [`docs/DEPLOY.md`](docs/DEPLOY.md)
-for the ordered runbook.
+See [`docs/DEPLOY.md`](docs/DEPLOY.md) for the ordered runbook and
+[`docs/OPERATOR.md`](docs/OPERATOR.md) for day-to-day workflows.
 
 ```sh
-make preflight       # check tools + auth
-make configure       # write .env.deploy interactively
-make bootstrap       # cold-start: create CF resources, deploy, mint admin key
-make dns DOMAIN=…    # print DNS records to add
-make bridge-up       # (optional) bring up the Mox+sidecar bridge on the Tailnet
-make smoke           # end-to-end health probe
+make preflight      # verify required tools and env
+make configure      # write .env.deploy interactively
+make bootstrap      # cold-start: create CF resources, deploy, mint admin key
+make smoke          # end-to-end health probe
+make deploy-changed # deploy only services whose code (or deps) changed
+make rollback SERVICE=api
 ```
 
-Routine redeploys after the cold-start:
+Operator workflows that previously lived in `bin/*.sh` (issue-key, register-consumer,
+onboard, rotate-secret, sync-bindings, …) are migrating to the `polaris-email` CLI;
+see `apps/polaris-cli/README.md` for the current subcommand tree.
 
-```sh
-make deploy-changed                     # only services whose code (or deps) changed
-make rollback SERVICE=api               # revert one service to its previous version
-make issue-key NAME=acme SCOPES=mail:send
-make register-consumer NAME=acme WEBHOOK=https://… KIND=external EVENTS=delivered,bounced
-```
+## Status
+
+The codebase is mid-migration from the legacy single-service-per-Worker layout to a
+modular monolith. `docs/PROGRESS.md` tracks phase-by-phase status; legacy and v1
+endpoints run side-by-side until each cutover is verified.
 
 ## Security
 
-See `SECURITY.md` for the threat model and `RUNBOOKS/cf-account-compromise.md` for the kill switch.
+See [`SECURITY.md`](SECURITY.md) for the threat model,
+[`RUNBOOKS/cf-account-compromise.md`](RUNBOOKS/cf-account-compromise.md) for the kill
+switch, and [`docs/RUNBOOK.md`](docs/RUNBOOK.md) for incident response.
