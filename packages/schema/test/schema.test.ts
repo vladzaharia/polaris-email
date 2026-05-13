@@ -90,3 +90,77 @@ describe('admin requests', () => {
     // Equality check is enforced by API logic, not schema; schema only constrains shape.
   });
 });
+
+describe('negative validation', () => {
+  it('Ulid rejects lowercase', () => {
+    expect(() => Ulid.parse('01hxr0000000000000000000a8')).toThrow();
+  });
+  it('Ulid rejects wrong length', () => {
+    expect(() => Ulid.parse('01HXR0000')).toThrow();
+  });
+  it('ServiceSlug rejects uppercase', () => {
+    expect(() => ServiceSlug.parse('Acme')).toThrow();
+  });
+  it('ServiceSlug rejects leading digit', () => {
+    expect(() => ServiceSlug.parse('1acme')).toThrow();
+  });
+  it('Address rejects missing @', () => {
+    expect(() => Address.parse('nope')).toThrow();
+  });
+  it('IssueApiKeyRequest rejects missing tenant_id', () => {
+    expect(() =>
+      IssueApiKeyRequest.parse({
+        sender_scopes: [{ kind: 'exact', pattern: 'a@b.com' }],
+      }),
+    ).toThrow();
+  });
+  it('IssueApiKeyRequest rejects empty sender_scopes', () => {
+    expect(() =>
+      IssueApiKeyRequest.parse({ tenant_id: 'svc', sender_scopes: [] }),
+    ).toThrow();
+  });
+  it('IssueApiKeyRequest rejects invalid scope', () => {
+    expect(() =>
+      IssueApiKeyRequest.parse({
+        tenant_id: 'svc',
+        sender_scopes: [{ kind: 'exact', pattern: 'a@b.com' }],
+        scopes: ['banana'],
+      }),
+    ).toThrow();
+  });
+  it('RotateRequest rejects unknown mode', () => {
+    expect(() => RotateRequest.parse({ mode: 'sideways' })).toThrow();
+  });
+  it('CreateWebhookSubRequest rejects bare http for external', () => {
+    // schema accepts shape; the URL scheme enforcement is route-side.
+    // But events array must be non-empty:
+    expect(() =>
+      CreateWebhookSubRequest.parse({
+        tenant_id: 'svc',
+        url: 'https://example.com',
+        kind: 'external',
+        events: [],
+      }),
+    ).toThrow();
+  });
+  it('CreateWebhookSubRequest rejects unknown kind', () => {
+    expect(() =>
+      CreateWebhookSubRequest.parse({
+        tenant_id: 'svc',
+        url: 'https://example.com',
+        kind: 'magic',
+        events: ['message.received'],
+      }),
+    ).toThrow();
+  });
+  it('CreateTenantRequest rejects oversize name', () => {
+    expect(() =>
+      CreateTenantRequest.parse({ id: 'svc', name: 'a'.repeat(200) }),
+    ).toThrow();
+  });
+  it('CreateRoutingRuleRequest rejects missing address_pattern', () => {
+    expect(() =>
+      CreateRoutingRuleRequest.parse({ domain_id: '01HXR0000000000000000000A8' }),
+    ).toThrow();
+  });
+});

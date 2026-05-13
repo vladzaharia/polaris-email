@@ -40,9 +40,15 @@ export function hmacAuth(direction: 'polaris-api.v1'): MiddlewareHandler<{ Bindi
     const bodyText = await c.req.text();
     (c.req as any)._cachedBody = bodyText;
 
-    // Load key from KV cache (warm path) or D1 (cold path).
+    // Load key from KV cache (warm path) or D1 (cold path). Cache miss is
+    // expected and falls through to D1; transport errors are logged so they
+    // show up in observability instead of disappearing into a `null`.
     const cacheKey = `key:${keyId}`;
-    const cached = await env.KV_KEY_CACHE.get(cacheKey, 'json').catch(() => null);
+    const cached = await env.KV_KEY_CACHE.get(cacheKey, 'json').catch((e: unknown) => {
+      // eslint-disable-next-line no-console
+      console.warn('KV_KEY_CACHE.get failed', e instanceof Error ? e.message : 'unknown');
+      return null;
+    });
     type RowShape = {
       id: string;
       tenant_id: string | null;

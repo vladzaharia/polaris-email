@@ -394,7 +394,11 @@ domains.post('/v1/admin/domains/:id/verify', requireScope('admin:rotate'), async
 
   for (const rec of expected.filter((r) => r.type.toUpperCase() === 'CNAME')) {
     const want = stripDot(rec.content).toLowerCase();
-    const got = await dohResolve(rec.name, 'CNAME').catch(() => []);
+    const got = await dohResolve(rec.name, 'CNAME').catch((e: unknown) => {
+      // eslint-disable-next-line no-console
+      console.warn(`dohResolve CNAME ${rec.name} failed`, e instanceof Error ? e.message : 'unknown');
+      return [];
+    });
     const seen = got.map((a) => stripDot(a.data).toLowerCase());
     checks.push({
       name: `cname:${rec.name}`,
@@ -404,7 +408,11 @@ domains.post('/v1/admin/domains/:id/verify', requireScope('admin:rotate'), async
     });
   }
 
-  const mxAnswers = await dohResolve(row.name, 'MX').catch(() => []);
+  const mxAnswers = await dohResolve(row.name, 'MX').catch((e: unknown) => {
+    // eslint-disable-next-line no-console
+    console.warn(`dohResolve MX ${row.name} failed`, e instanceof Error ? e.message : 'unknown');
+    return [];
+  });
   const seenMxHosts = mxAnswers
     .map((a) => stripDot(a.data.split(/\s+/).pop() ?? '').toLowerCase())
     .filter((h) => h.length > 0);

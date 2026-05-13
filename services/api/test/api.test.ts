@@ -459,3 +459,85 @@ describe('domains + senders', () => {
     expect(Array.isArray(verified.checks)).toBe(true);
   });
 });
+
+describe('daemon credential mirror', () => {
+  it('returns the issued SMTP credential to the daemon poller', async () => {
+    const { env, admin } = await bootstrapEnv();
+    await app.fetch(
+      await signedRequest(
+        'https://x/v1/admin/domains',
+        JSON.stringify({ name: 'plrs.im' }),
+        'POST',
+        admin.admin_key_secret,
+        admin.admin_key_id,
+      ),
+      env,
+      ctx,
+    );
+    const dom = (await (
+      await app.fetch(
+        await signedRequest(
+          'https://x/v1/admin/domains/lookup?name=plrs.im',
+          '',
+          'GET',
+          admin.admin_key_secret,
+          admin.admin_key_id,
+        ),
+        env,
+        ctx,
+      )
+    ).json()) as { id: string };
+    const sender = (await (
+      await app.fetch(
+        await signedRequest(
+          `https://x/v1/admin/domains/${dom.id}/senders`,
+          JSON.stringify({ local_part: 'noreply', default_for_domain: true }),
+          'POST',
+          admin.admin_key_secret,
+          admin.admin_key_id,
+        ),
+        env,
+        ctx,
+      )
+    ).json()) as { id: string; address: string };
+    const cred = (await (
+      await app.fetch(
+        await signedRequest(
+          `https://x/v1/admin/senders/${sender.id}/smtp-credentials`,
+          JSON.stringify({ label: 'test' }),
+          'POST',
+          admin.admin_key_secret,
+          admin.admin_key_id,
+        ),
+        env,
+        ctx,
+      )
+    ).json()) as { id: string; username: string; secret: string };
+
+    const r = await app.fetch(
+      await signedRequest(
+        'https://x/v1/daemon/credentials?since=0',
+        '',
+        'GET',
+        admin.admin_key_secret,
+        admin.admin_key_id,
+      ),
+      env,
+      ctx,
+    );
+    expect(r.status).toBe(200);
+    const body = (await r.json()) as {
+      updates: { id: string; username: string; bcrypt_hash: string; allowed_senders: string[] }[];
+      deletions: string[];
+      mirror_version: number;
+    };
+    expect(Array.isArray(body.updates)).toBe(true);
+    const u = body.updates.find((x) => x.id === cred.id);
+    expect(u).toBeTruthy();
+    expect(u?.username).toBe('noreply@plrs.im');
+    expect(typeof u?.bcrypt_hash).toBe('string');
+    expect(u?.bcrypt_hash).not.toBe(cred.secret);
+    expect(body.mirror_version).toBeGreaterThan(0);
+    expect(Array.isArray(body.deletions)).toBe(true);
+  });
+});

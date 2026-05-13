@@ -116,7 +116,13 @@ export class Decommissioner {
         }
         // For the apex domain row, also disable Email Routing entirely.
         if (!domain.name.includes('.', domain.name.indexOf('.') + 1)) {
-          await disableEmailRouting(this.deps.client, domain.cfZoneId).catch(() => undefined);
+          await disableEmailRouting(this.deps.client, domain.cfZoneId).catch((e: unknown) => {
+            // eslint-disable-next-line no-console
+            console.warn(
+              `disableEmailRouting ${domain.cfZoneId} failed`,
+              e instanceof Error ? e.message : 'unknown',
+            );
+          });
         }
         const ok = await this.confirmRemoved(
           { type: 'MX', name: domain.name },
