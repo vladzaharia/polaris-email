@@ -10,7 +10,12 @@
   "logpush": true,
   "placement": { "mode": "smart" },
   "d1_databases": [
-    { "binding": "DB", "database_name": "polaris-email", "database_id": "REPLACE_WITH_LOCAL" }
+    {
+      "binding": "DB",
+      "database_name": "polaris-email",
+      "database_id": "REPLACE_WITH_LOCAL",
+      "migrations_dir": "migrations/legacy"
+    }
   ],
   "r2_buckets": [
     { "binding": "R2", "bucket_name": "polaris-email", "jurisdiction": "default" }

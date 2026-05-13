@@ -505,7 +505,7 @@ export type BridgeSenderConfig = z.infer<typeof BridgeSenderConfig>;
 
 // Pending Mox operations enqueued by the api Worker and drained by the sidecar.
 // payload_b64 holds base64-encoded plaintext password material for set_password
-// ops and MUST NEVER be logged. See services/api/migrations/0005_*.sql.
+// ops and MUST NEVER be logged. See services/api/migrations/legacy/0005_*.sql.
 export const MoxPendingOp = z.object({
   id: Ulid,
   op: z.enum(['set_password', 'remove_account']),
