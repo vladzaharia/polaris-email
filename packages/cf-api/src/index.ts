@@ -45,7 +45,7 @@ export {
 
 export type { ExpectedRecord, Zone, EmailRoutingRule } from './types.js';
 
-// Phase 3 deliverables that the cf-api agent didn't finish before stalling.
+// Cloudflare API helpers used by services/api admin routes.
 // Implementations live alongside the rest of the package and follow the same
 // shape: thin orchestration over the lower-level dns/email-routing/email-service
 // helpers, with state machines for rotation + decommission per the plan.

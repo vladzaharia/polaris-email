@@ -9,7 +9,7 @@ Most cloud providers (Hetzner, OVH, AWS by default) block outbound SMTP. polaris
 ## Common gotchas
 
 - **STARTTLS-only libraries**: not supported. Reconfigure to implicit TLS (`SMTPSecure='ssl'`, `SMTPS`, `SSL=true`, `port=465`).
-- **Cert SAN**: Mox presents a cert valid for `polaris-email.<tailnet>.ts.net`. Always connect to that exact hostname.
+- **Cert SAN**: The submission daemon presents a cert valid for its configured hostname. Always connect to that exact hostname.
 - **JDK ≤ 11 trust store**: some old JDKs reject `.ts.net` LE-issued chains. Either upgrade or import the cert into the keystore.
 - **IDLE poll latency**: ~5 s. IMAP IDLE clients see batches every 5 s, not real-time. Real-time inbound is webhook-only.
 

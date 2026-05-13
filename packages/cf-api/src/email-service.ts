@@ -58,7 +58,7 @@ export interface OnboardResult {
  * (the standard path). The function returns the records to verify.
  *
  * NOTE: as of 2026-05 the Email Service onboarding endpoint is in beta. The
- * Phase −1 spike (`scripts/spike/01-email-service-binding-model.sh`) confirms
+ * Confirmed by manual probing:
  * the exact URL and payload shape; until that's run, this function falls
  * back to the manual-publish path with a logged warning.
  */
@@ -71,7 +71,7 @@ export async function onboardSenderDomain(
 
   if (cfManaged) {
     // Try the Email Service onboarding endpoint first. The exact path is
-    // confirmed by Phase −1 spike; if it 404s or 405s, fall through to the
+    // If the endpoint 404s or 405s, fall through to the
     // manual-publish path.
     try {
       await client.post(

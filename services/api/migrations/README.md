@@ -1,6 +1,6 @@
 # polaris-email D1 migrations
 
-Single D1 database (`polaris-email`). The sharded design described in earlier
+Single D1 database (`polaris-email`). Earlier
 revisions was rolled back: at our expected volume, splitting D1 by purpose
 adds operational complexity without commensurate benefit. One DB, expand-
 then-contract migrations within it.
@@ -15,7 +15,7 @@ migrations/
 
 `wrangler d1 migrations apply polaris-email --remote` consumes this
 directory in lex order; the custom runner in `@polaris-email/migrations`
-exposes a programmatic alternative (used by the Phase 2 CLI's
+exposes a programmatic alternative (used by the polaris-email CLI's
 `polaris-email bootstrap` flow).
 
 ## Tables
@@ -53,6 +53,6 @@ possible.
 
 ```bash
 wrangler d1 migrations apply polaris-email --remote
-# or, programmatically (Phase 2 CLI):
+# or, programmatically (polaris-email CLI):
 polaris-email bootstrap     # runs migrations as part of one-time setup
 ```

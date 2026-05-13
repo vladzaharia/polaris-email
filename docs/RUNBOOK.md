@@ -39,7 +39,7 @@ Look at error class:
   ```bash
   polaris-email domain set-provider acme.com --provider ses
   ```
-  (requires SES configured in Workers Secrets; see Phase 5 / v1.x).
+  (SES is not currently implemented as a provider; future work)
 - **dkim_invalid**: receiver bouncing on DKIM. Check current DKIM key state:
   ```bash
   polaris-email domain show acme.com   # look for dkim_keys with state
@@ -164,7 +164,7 @@ polaris-email cost --month $(date +%Y-%m) --by-service
 Cost cliffs to look for (I19):
 
 - **Workers CPU-ms** dominated by Argon2id-on-every-send → confirm Argon2id
-  moved out of request path (Phase 5/I5). If still in path, escalate.
+  moved out of request path. If still in path, escalate.
 - **Queue operations** dominated by webhook retries → check fanout DLQ for
   poison messages.
 - **R2 Class A operations** spike → buggy retry loop re-PUTting MIME (I14).

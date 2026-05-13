@@ -1,14 +1,13 @@
 // Daemon HMAC auth middleware for /v1/daemon/* and /v1/send/raw.
 //
 // Distinct from tenant HMAC auth (auth.ts):
-// - HMAC secret is the daemon's pre-shared key (Env.DAEMON_HMAC_KEY for v1;
-//   per-daemon secret in v1.x once the daemons table is wired).
+// - HMAC secret is the daemon's pre-shared key (Env.DAEMON_HMAC_KEY).
 // - Identity is daemon_id from X-Polaris-Daemon-Id.
 // - Cloudflare Access service token (CF-Access-Client-Id +
-//   CF-Access-Client-Secret) verified by Access in front of the Worker (I18).
-// - We use the polaris-api.v1 direction (existing scheme); secret isolation
-//   provides cross-context separation since tenant API keys live in api_keys
-//   rows and the daemon secret lives only in Workers Secrets.
+//   CF-Access-Client-Secret) verified by Access in front of the Worker.
+// - The polaris-api.v1 direction is the HMAC canonical-string prefix; secret
+//   isolation provides cross-context separation since tenant API keys live
+//   in api_keys rows and the daemon secret lives only in Workers Secrets.
 
 import type { MiddlewareHandler } from 'hono';
 import { verify } from '@polaris-email/hmac';

@@ -302,7 +302,7 @@ export const AuditAction = z.enum([
   'panel.step_up',
   'schema.migration',
   'bootstrap.consume',
-  // Phase 0: new pipeline events
+  // pipeline events
   'message.submitted',
   'message.queued',
   'message.sent',

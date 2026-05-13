@@ -2,7 +2,7 @@
 //
 // Uses the account-level `EMAIL` binding (single binding for all domains; the
 // `from` parameter selects the sender domain). This was confirmed by the
-// Phase −1 spike (assumption: account-level binding model is correct; if Spike 1
+// Assumption: account-level binding model is correct. If that assumption
 // proves otherwise, this provider needs per-domain dispatch).
 
 import type { Provider, SendOutcome, SendRequest } from './provider.js';

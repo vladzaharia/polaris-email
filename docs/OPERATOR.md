@@ -7,7 +7,7 @@ deployment. Pairs with `docs/RUNBOOK.md` (incident response) and
 ## Prerequisites
 
 - Cloudflare account on the **Workers Paid** plan with Email Routing and Email
-  Service available. (Phase −1 spike must pass first; see `docs/spike/README.md`.)
+  Service available.
 - Three Cloudflare accounts provisioned (`polaris-prod`, `polaris-anchors`,
   `polaris-staging`) per the multi-account topology (I11). At minimum prod is
   required to start.
@@ -29,7 +29,7 @@ polaris-email bootstrap --env prod
 The wizard:
 
 1. Reads CF account IDs + scoped API tokens from prompt or `--from-file`.
-2. Provisions D1 (single `polaris-email` database — the sharded design
+2. Provisions D1 (single `polaris-email` database. Earlier revisions
    was rolled back; one DB is sufficient at expected volume), KV
    namespaces, R2 buckets (including the anchors bucket
    in the `polaris-anchors` account with object lock in compliance mode), and

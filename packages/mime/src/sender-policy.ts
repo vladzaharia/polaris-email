@@ -121,7 +121,7 @@ export function enforceSenderPolicy(mime: ParsedMime, policy: SenderPolicy): voi
     }
     if (!allowed.has(replyAddr)) {
       // Reply-To allowed if it's any address on a domain the principal can send from.
-      // Conservative for v1: require exact match. Loosen in v1.x if needed.
+      // Conservative: require exact match.
       throw new SenderPolicyError(
         `Reply-To: ${replyAddr} not in allowed_senders`,
         'reply_to_not_allowed'

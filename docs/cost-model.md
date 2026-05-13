@@ -6,7 +6,7 @@ and notes any deltas in this doc.
 
 All figures USD, list pricing as of May 2026, Workers Paid plan ($5/mo
 subscription floor). Excludes Email Service per-message pricing (operator
-must confirm during Phase −1 spike).
+TBD.
 
 ## Traffic tiers
 
@@ -76,7 +76,7 @@ Things that disproportionately blow the bill if not watched:
 1. **Workers CPU-ms — Argon2id-on-every-send (I5)**: at Large scale, each
    request paying ~50 ms CPU for Argon2id alone = 15M CPU-seconds/month.
    At $0.02 per million CPU-ms past the sub allocation, that's ~$300/mo
-   just for one hash. **Mitigation**: Phase 5/I5 — Argon2id moved to the
+   just for one hash. **Mitigation**: Argon2id moved to the
    Out Worker (deferred hashing pattern).
 
 2. **Queues operations — 4 ops/msg multiplier**: every send is enqueue +
@@ -98,7 +98,7 @@ Things that disproportionately blow the bill if not watched:
 5. **D1 storage cliff at 10 GB/database**: not a billing cost so much as a
    correctness cliff — writes fail when the cap is reached. **Mitigation**:
    monthly archival of older-than-N-day rows from the single
-   `polaris-email` D1 to R2 Parquet (the sharded design was rolled back; I3).
+   `polaris-email` D1 to R2 Parquet.
 
 6. **Per-tenant Workers Secrets**: ~64 secret cap per Worker. Adding a
    tenant pepper per tenant blows this at 50+ tenants. **Mitigation**:
