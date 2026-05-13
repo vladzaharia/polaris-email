@@ -12,6 +12,8 @@
   },
   "dependencies": {
     "@polaris-email/hmac": "workspace:*",
+    "@polaris-email/mime": "workspace:*",
+    "@polaris-email/providers": "workspace:*",
     "@polaris-email/schema": "workspace:*",
     "hono": "^4.5.0",
     "zod": "^3.23.0"

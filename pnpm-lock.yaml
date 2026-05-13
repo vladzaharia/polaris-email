@@ -204,6 +204,12 @@ importers:
       '@polaris-email/hmac':
         specifier: workspace:*
         version: link:../../packages/hmac
+      '@polaris-email/mime':
+        specifier: workspace:*
+        version: link:../../packages/mime
+      '@polaris-email/providers':
+        specifier: workspace:*
+        version: link:../../packages/providers
       '@polaris-email/schema':
         specifier: workspace:*
         version: link:../../packages/schema

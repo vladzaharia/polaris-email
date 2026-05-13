@@ -121,7 +121,7 @@ export function parseStrict(input: Uint8Array): ParsedMime {
 }
 
 function parseHeaders(bytes: Uint8Array): Header[] {
-  const decoded = new TextDecoder('utf-8', { fatal: false }).decode(bytes);
+  const decoded = new TextDecoder('utf-8').decode(bytes);
   // Split on CRLF; reassemble continuation lines (lines starting with WSP).
   const lines = decoded.split('\r\n');
   const headers: Header[] = [];

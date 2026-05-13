@@ -380,6 +380,26 @@ export const AuditAction = z.enum([
   'bootstrap.consume',
   'mox_pending_op.acked',
   'mox_pending_op.failed',
+  // Phase 0: new pipeline events
+  'message.submitted',
+  'message.queued',
+  'message.sent',
+  'message.failed',
+  'message.bounced',
+  'tenant.create',
+  'tenant.update',
+  'tenant.disable',
+  'tenant.rotate_pepper',
+  'principal.create',
+  'principal.revoke',
+  'principal.rotate',
+  'daemon.register',
+  'daemon.deregister',
+  'daemon.rotate',
+  'zone.register',
+  'dkim_key.create',
+  'dkim_key.activate',
+  'dkim_key.retire',
 ]);
 export type AuditAction = z.infer<typeof AuditAction>;
 
