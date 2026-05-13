@@ -37,37 +37,6 @@ export const SenderScope = z.discriminatedUnion('kind', [
 export const KeyScope = z.enum(['send', 'admin:rotate', 'admin:read', 'forensic:request']);
 export const KeyScopes = z.array(KeyScope).min(1);
 
-// ---------- message I/O ----------
-
-export const Attachment = z.object({
-  filename: z.string().max(255),
-  contentType: z.string().max(127),
-  contentB64: z.string().max(25 * 1024 * 1024), // raw size cap upstream
-});
-
-export const SendMessageRequest = z.object({
-  from: Address,
-  to: z.array(Address).min(1).max(50),
-  cc: z.array(Address).max(50).optional(),
-  bcc: z.array(Address).max(50).optional(),
-  replyTo: Address.optional(),
-  subject: z.string().max(998),
-  html: z.string().max(5 * 1024 * 1024).optional(),
-  text: z.string().max(5 * 1024 * 1024).optional(),
-  headers: z.record(z.string().max(998), z.string().max(998)).optional(),
-  attachments: z.array(Attachment).max(20).optional(),
-  category: z.string().regex(/^[a-z0-9.-]{1,64}$/),
-  mode: z.enum(['live', 'test']).default('live'),
-});
-export type SendMessageRequest = z.infer<typeof SendMessageRequest>;
-
-export const SendMessageResponse = z.object({
-  messageId: Ulid,
-  queuedAt: z.number().int().nonnegative(),
-  mode: z.enum(['live', 'test']),
-});
-export type SendMessageResponse = z.infer<typeof SendMessageResponse>;
-
 // ---------- error envelope ----------
 
 export const ErrorCode = z.enum([

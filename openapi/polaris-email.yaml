@@ -38,45 +38,6 @@ components:
       required: false
       schema: { type: string, pattern: "^[A-Za-z0-9_-]{8,128}$" }
   schemas:
-    SendMessageRequest:
-      type: object
-      required: [from, to, subject, category]
-      properties:
-        from: { type: string, format: email }
-        to:
-          type: array
-          items: { type: string, format: email }
-          minItems: 1
-          maxItems: 50
-        cc:
-          type: array
-          items: { type: string, format: email }
-        bcc:
-          type: array
-          items: { type: string, format: email }
-        replyTo: { type: string, format: email }
-        subject: { type: string, maxLength: 998 }
-        html: { type: string }
-        text: { type: string }
-        headers: { type: object, additionalProperties: { type: string } }
-        attachments:
-          type: array
-          items:
-            type: object
-            required: [filename, contentType, contentB64]
-            properties:
-              filename: { type: string }
-              contentType: { type: string }
-              contentB64: { type: string }
-        category: { type: string, pattern: "^[a-z0-9.-]{1,64}$" }
-        mode: { type: string, enum: [live, test], default: live }
-    SendMessageResponse:
-      type: object
-      required: [messageId, queuedAt, mode]
-      properties:
-        messageId: { type: string }
-        queuedAt: { type: integer, format: int64 }
-        mode: { type: string, enum: [live, test] }
     Error:
       type: object
       required: [error]
@@ -185,31 +146,6 @@ paths:
       responses:
         '200':
           description: ok
-  /v1/messages:
-    post:
-      summary: Send outbound message
-      parameters:
-        - { $ref: '#/components/parameters/KeyId' }
-        - { $ref: '#/components/parameters/Ts' }
-        - { $ref: '#/components/parameters/Nonce' }
-        - { $ref: '#/components/parameters/IdempotencyKey' }
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/SendMessageRequest' }
-      responses:
-        '202':
-          description: queued
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/SendMessageResponse' }
-        '400': { description: bad request, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
-        '401': { description: signature failure, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
-        '403': { description: scope violation, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
-        '409': { description: idempotency conflict or nonce replay, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
-        '422': { description: domain not verified, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
-        '429': { description: rate limited, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
   /v1/admin/api-keys:
     post:
       summary: Issue an api key

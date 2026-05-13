@@ -2,12 +2,10 @@ import { describe, expect, it } from 'vitest';
 import worker from '../src/index.js';
 
 describe('synthetic', () => {
-  it('does not throw without key configured', async () => {
+  it('does not throw when API_BASE_URL is missing', async () => {
     const env = {
-      API_BASE_URL: 'https://x',
+      API_BASE_URL: '',
       ALERT_WEBHOOK: '',
-      SYNTHETIC_FROM: 'a@b',
-      SYNTHETIC_TO: 'c@d',
       MAX_LATENCY_MS: '30000',
     };
     await expect(

@@ -38,7 +38,7 @@ describe('buildCanonical', () => {
     const c = await buildCanonical({
       direction: 'polaris-api.v1',
       method: 'post',
-      path: '/v1/messages',
+      path: '/v1/send/raw',
       query: 'mode=test',
       ts: TS,
       nonce: NONCE,
@@ -47,7 +47,7 @@ describe('buildCanonical', () => {
     const lines = c.split('\n');
     expect(lines[0]).toBe('polaris-api.v1');
     expect(lines[1]).toBe('POST');
-    expect(lines[2]).toBe('/v1/messages');
+    expect(lines[2]).toBe('/v1/send/raw');
     expect(lines[3]).toBe('mode=test');
     expect(lines[4]).toBe(TS);
     expect(lines[5]).toBe(NONCE);
@@ -85,7 +85,7 @@ describe('sign + verify', () => {
   const base = {
     direction: 'polaris-api.v1' as const,
     method: 'POST',
-    path: '/v1/messages',
+    path: '/v1/send/raw',
     query: 'a=1&b=2',
     ts: TS,
     nonce: NONCE,

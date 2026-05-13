@@ -7,7 +7,6 @@ import {
   CreateWebhookSubRequest,
   IssueApiKeyRequest,
   RotateRequest,
-  SendMessageRequest,
   SenderScope,
   ServiceSlug,
   Ulid,
@@ -43,35 +42,6 @@ describe('SenderScope', () => {
   });
   it('requires @ in glob', () => {
     expect(() => SenderScope.parse({ kind: 'glob', pattern: 'foo' })).toThrow();
-  });
-});
-
-describe('SendMessageRequest', () => {
-  it('parses minimal', () => {
-    const r = SendMessageRequest.parse({
-      from: 'a@b.com',
-      to: ['c@d.com'],
-      subject: 'hi',
-      text: 'hello',
-      category: 'svc.test',
-    });
-    expect(r.mode).toBe('live');
-  });
-  it('rejects > 50 recipients', () => {
-    const to = Array.from({ length: 51 }, (_, i) => `u${i}@b.com`);
-    expect(() =>
-      SendMessageRequest.parse({ from: 'a@b.com', to, subject: 'x', category: 'c' }),
-    ).toThrow();
-  });
-  it('rejects bad category', () => {
-    expect(() =>
-      SendMessageRequest.parse({
-        from: 'a@b.com',
-        to: ['c@d.com'],
-        subject: 'x',
-        category: 'BAD CATEGORY',
-      }),
-    ).toThrow();
   });
 });
 

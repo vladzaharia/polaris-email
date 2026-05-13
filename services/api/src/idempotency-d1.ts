@@ -1,14 +1,9 @@
-// D1-backed idempotency (I2 mitigation).
+// D1-backed idempotency.
 //
 // KV is up to 60s eventually consistent — exactly the window where retries land
 // in different colos. Two retries of the same key can both miss the cache and
 // both write. D1 is single-region serializable; INSERT ... ON CONFLICT
 // DO NOTHING ... RETURNING gives us a true atomic claim.
-//
-// The KV-backed module (`idempotency.ts`) remains as a downstream read-side
-// optimization for the legacy /v1/messages route until that route is migrated
-// to the new pipeline. New code (/v1/send, /v1/send/raw, the modular monolith)
-// must use this module.
 
 import type { Env } from './env.js';
 
