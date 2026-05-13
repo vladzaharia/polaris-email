@@ -4,17 +4,13 @@ package forwarder
 import (
 	"bytes"
 	"context"
-	"crypto/hmac"
-	"crypto/rand"
-	"crypto/sha256"
 	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
-	"strconv"
 	"time"
+
+	"github.com/vladzaharia/polaris-email/apps/submission-daemon/internal/sign"
 )
 
 // Config carries the fixed bits each Forward call needs.
@@ -94,7 +90,7 @@ func (f *Forwarder) Forward(ctx context.Context, in ForwardRequest) (*ForwardRes
 	req.Header.Set("CF-Access-Client-Secret", f.cfg.AccessClientSecret)
 	req.Header.Set("X-Polaris-Daemon-Id", f.cfg.DaemonID)
 	req.Header.Set("X-Polaris-Submission-Id", in.SubmissionID)
-	f.sign(req, "POST", path, raw)
+	sign.Request(req, "POST", path, raw, f.cfg.HMACKey)
 
 	resp, err := f.cfg.HTTPClient.Do(req)
 	if err != nil {
@@ -117,17 +113,3 @@ func (f *Forwarder) Forward(ctx context.Context, in ForwardRequest) (*ForwardRes
 	return res, nil
 }
 
-func (f *Forwarder) sign(req *http.Request, method, path string, body []byte) {
-	ts := strconv.FormatInt(time.Now().Unix(), 10)
-	nonceBytes := make([]byte, 16)
-	_, _ = rand.Read(nonceBytes)
-	nonce := hex.EncodeToString(nonceBytes)
-	bodyHash := sha256.Sum256(body)
-	bodyHex := hex.EncodeToString(bodyHash[:])
-	canonical := fmt.Sprintf("%s\n%s\n%s\n%s\n%s", method, path, bodyHex, ts, nonce)
-	mac := hmac.New(sha256.New, f.cfg.HMACKey)
-	mac.Write([]byte(canonical))
-	req.Header.Set("X-Polaris-HMAC", hex.EncodeToString(mac.Sum(nil)))
-	req.Header.Set("X-Polaris-Timestamp", ts)
-	req.Header.Set("X-Polaris-Nonce", nonce)
-}

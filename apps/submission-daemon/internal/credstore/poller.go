@@ -2,18 +2,15 @@ package credstore
 
 import (
 	"context"
-	"crypto/hmac"
-	"crypto/rand"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
-	"strconv"
 	"sync/atomic"
 	"time"
+
+	"github.com/vladzaharia/polaris-email/apps/submission-daemon/internal/sign"
 )
 
 // PollerConfig configures the poller HTTP calls.
@@ -78,7 +75,7 @@ func (p *Poller) syncOnce(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	p.signRequest(req, "GET", fmt.Sprintf("/v1/daemon/credentials?since=%d", since), nil)
+	sign.Request(req, "GET", fmt.Sprintf("/v1/daemon/credentials?since=%d", since), nil, p.cfg.HMACKey)
 	req.Header.Set("CF-Access-Client-Id", p.cfg.AccessClientID)
 	req.Header.Set("CF-Access-Client-Secret", p.cfg.AccessClientSecret)
 	req.Header.Set("X-Polaris-Daemon-Id", p.cfg.DaemonID)
@@ -112,18 +109,3 @@ func (p *Poller) syncOnce(ctx context.Context) error {
 	return nil
 }
 
-func (p *Poller) signRequest(req *http.Request, method, path string, body []byte) {
-	ts := strconv.FormatInt(time.Now().Unix(), 10)
-	nonceBytes := make([]byte, 16)
-	_, _ = rand.Read(nonceBytes)
-	nonce := hex.EncodeToString(nonceBytes)
-	bodyHash := sha256.Sum256(body)
-	bodyHex := hex.EncodeToString(bodyHash[:])
-	canonical := fmt.Sprintf("%s\n%s\n%s\n%s\n%s", method, path, bodyHex, ts, nonce)
-	mac := hmac.New(sha256.New, p.cfg.HMACKey)
-	mac.Write([]byte(canonical))
-	sig := hex.EncodeToString(mac.Sum(nil))
-	req.Header.Set("X-Polaris-HMAC", sig)
-	req.Header.Set("X-Polaris-Timestamp", ts)
-	req.Header.Set("X-Polaris-Nonce", nonce)
-}
