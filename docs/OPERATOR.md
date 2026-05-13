@@ -55,13 +55,20 @@ Steps the wizard walks you through:
    onboarding only when override is needed — see Resolved Q6).
 2. CF zone discovery (walks up subdomain labels if needed; refuses if no
    parent zone is on the account).
-3. Outbound onboarding via Email Service (publishes DKIM CNAME with wildcard
-   if `wildcard_subdomains`, SPF, DMARC, `cf-bounce` MX). DKIM key
-   ed25519-by-default, RSA-2048 fallback.
-4. Inbound onboarding: Email Routing enable + single catch-all rule
-   `*@<zone>` → `workers/in` (per I8 catch-all-only routing).
-5. DNS verification state machine (A10): `published → seen_via_authoritative →
-   seen_via_three_resolvers → confirmed`.
+3. Outbound onboarding via Email Service. **Cloudflare auto-publishes the
+   DKIM CNAME (with wildcard if `wildcard_subdomains`), SPF, DMARC, and
+   `cf-bounce` MX records on the zone**; we just confirm via DoH that they
+   appeared. DKIM key is ed25519 by default, RSA-2048 fallback. (Operators
+   running on non-CF DNS pass `--cf-managed-dns=false` and the wizard falls
+   back to publishing the records itself via the DNS API.)
+4. Inbound onboarding: Email Routing enable (CF auto-publishes the inbound
+   MX records pointing at `route1/2/3.mx.cloudflare.net`) + single
+   catch-all rule `*@<zone>` → `workers/in` (per I8 catch-all-only routing).
+5. DNS verification state machine (A10): `published → seen_via_authoritative
+   → seen_via_three_resolvers → confirmed`. The `published` step now means
+   "CF reports the record exists in its zone" — a CF API check, not a
+   write-and-poll. The remaining steps are DoH-only and confirm the
+   public-internet view matches.
 6. Registers the `domains` row + `dkim_keys(state='active')` row.
 
 Non-interactive: `polaris-email domain onboard --from-file domain.toml`. The

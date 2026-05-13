@@ -87,7 +87,7 @@ export async function* bulkOnboardPattern(
         domain,
         ...opts.perDomainOpts,
       });
-      return { domain, status: 'ok', recordCount: r.dnsRecords.length };
+      return { domain, status: 'ok', recordCount: r.expectedRecords.length };
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);
       return { domain, status: 'error', error: reason };

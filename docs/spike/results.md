@@ -23,6 +23,13 @@ Conclusion: ___
 If wildcard rule rejected, fall back to per-subdomain rules and document the
 200-rule-per-zone pressure (I8).
 
+**Note (clarification 2026-05)**: Cloudflare auto-publishes the DKIM, SPF,
+and bounce-MX records when Email Service onboarding is enabled on a zone.
+This spike is therefore primarily about *verifying* that the records CF
+publishes for a subdomain (e.g., `mail.acme.com`) sign mail correctly via
+the wildcard CNAME structure when the parent zone is `acme.com`. Our code
+DoH-verifies; we don't normally write DNS records ourselves.
+
 ## Spike 4 — `cf-bounce` MX semantics
 
 - Hard bounce delivery format: ___

@@ -1,3 +1,23 @@
+// Cloudflare Email Service onboarding helpers.
+//
+// IMPORTANT (operator clarification, 2026-05): Cloudflare manages the DNS for
+// us automatically. When Email Routing is enabled on a zone, CF auto-publishes
+// the inbound MX records (`route1/2/3.mx.cloudflare.net`). When a domain is
+// onboarded with Email Service, CF auto-publishes the DKIM CNAMEs, the SPF
+// `_spf.mx.cloudflare.net` include, the cf-bounce MX, and a DMARC record.
+//
+// Our job is therefore *verify*, not *create*. The functions below:
+//   1. Ask the Email Service onboarding endpoint to onboard the domain
+//      (which causes CF to publish the records on its side).
+//   2. Return the *expected* records so the caller knows what to confirm.
+//   3. Provide `verifyOnboarding()` which DoH-checks each expected record
+//      via the public resolvers.
+//
+// We retain `unboardSenderDomain()` and the dns.ts create/update/delete
+// helpers for two edge cases: (a) operators who run their own DNS provider
+// where CF can't auto-publish, and (b) custom records (e.g., per-tenant
+// DMARC `rua=` mailbox) that need surgical adjustments.
+
 import type { CloudflareApiClient } from './client.js';
 import {
   createRecord,
@@ -10,73 +30,118 @@ import type { ExpectedRecord } from './types.js';
 export interface OnboardSenderDomainOpts {
   zoneId: string;
   domain: string;
-  /** Selector for the DKIM CNAME alias. Defaults to `cf` */
+  /** Selector for the DKIM CNAME alias. CF chooses this when not provided. */
   dkimSelector?: string;
-  /** When true (default), publish wildcard DKIM CNAME for *._domainkey */
+  /** When true (default), expect a wildcard DKIM CNAME for *._domainkey */
   wildcardDkim?: boolean;
-  /** Override the cf-bounce MX target */
+  /** Override the cf-bounce MX target. */
   bounceMxTarget?: string;
-  /** Override the DKIM CNAME target host */
+  /** Override the DKIM CNAME target host. */
   dkimTarget?: string;
+  /**
+   * When true (default), call the Email Service onboarding endpoint and let
+   * Cloudflare publish DNS. When false, fall back to the manual-publish path
+   * (used by operators on non-CF DNS).
+   */
+  cfManagedDns?: boolean;
 }
 
 export interface OnboardResult {
-  dnsRecords: DnsRecordInput[];
+  /** Records that CF has published or will publish. */
+  expectedRecords: DnsRecordInput[];
+  /** True when CF was asked to manage the DNS itself. */
+  cfManaged: boolean;
 }
 
 /**
- * Publishes the canonical DNS records for a Cloudflare Email Service sender
- * domain.
+ * Onboard a sender domain. By default, asks Cloudflare to manage DNS itself
+ * (the standard path). The function returns the records to verify.
  *
- * Note (2026-05): the Email Service onboarding endpoint is still in beta and
- * not exposed as a stable public API. This implementation publishes the
- * functionally-equivalent records via the DNS API:
- *  - DKIM CNAME (selector + optional wildcard) -> `<sel>.<dkimTarget>`
- *  - SPF TXT  (`v=spf1 include:_spf.mx.cloudflare.net -all`)
- *  - DMARC TXT (`v=DMARC1; p=quarantine; rua=mailto:dmarc@<domain>`)
- *  - cf-bounce MX (priority 10 -> route.mx.cloudflare.net)
+ * NOTE: as of 2026-05 the Email Service onboarding endpoint is in beta. The
+ * Phase −1 spike (`scripts/spike/01-email-service-binding-model.sh`) confirms
+ * the exact URL and payload shape; until that's run, this function falls
+ * back to the manual-publish path with a logged warning.
  */
 export async function onboardSenderDomain(
   client: CloudflareApiClient,
-  opts: OnboardSenderDomainOpts,
+  opts: OnboardSenderDomainOpts
 ): Promise<OnboardResult> {
-  const records = expectedRecordsFor(opts);
-  const created: DnsRecordInput[] = [];
-  for (const r of records) {
-    // Idempotent: if a record with the same name+type already exists, skip.
-    const existing = await findRecord(client, opts.zoneId, { type: r.type, name: r.name });
-    if (existing && existing.content === r.content) {
-      created.push(r);
-      continue;
+  const cfManaged = opts.cfManagedDns ?? true;
+  const expected = expectedRecordsFor(opts);
+
+  if (cfManaged) {
+    // Try the Email Service onboarding endpoint first. The exact path is
+    // confirmed by Phase −1 spike; if it 404s or 405s, fall through to the
+    // manual-publish path.
+    try {
+      await client.post(
+        `/accounts/${client.accountId}/email-service/sender-domains`,
+        {
+          domain: opts.domain,
+          dkim_selector: opts.dkimSelector,
+          wildcard_dkim: opts.wildcardDkim ?? true,
+        }
+      );
+      return { expectedRecords: expected, cfManaged: true };
+    } catch (err) {
+      // 404 / 405 / 501 from the API => endpoint not yet GA on this account.
+      // Fall through to manual publish so onboarding still completes.
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!/^4(0[45]|18)|^501/.test(msg)) {
+        throw err;
+      }
     }
-    if (existing) {
-      // Conflict on name+type but different content: leave it untouched and
-      // surface via verifyOnboarding rather than blowing up onboarding.
-      created.push(r);
-      continue;
-    }
-    await createRecord(client, opts.zoneId, r);
-    created.push(r);
   }
-  return { dnsRecords: created };
+
+  // Manual-publish path (non-CF DNS, or Email Service endpoint unavailable).
+  for (const r of expected) {
+    const existing = await findRecord(client, opts.zoneId, { type: r.type, name: r.name });
+    if (existing && existing.content === r.content) continue;
+    if (existing) continue; // leave conflicts for verifyOnboarding to surface
+    await createRecord(client, opts.zoneId, r);
+  }
+  return { expectedRecords: expected, cfManaged: false };
 }
 
+/**
+ * Confirm via DoH that all expected records are visible from the public
+ * internet. This is the primary verification path because Cloudflare may
+ * publish records asynchronously after onboarding.
+ *
+ * `dohFetch` defaults to fetching against 1.1.1.1 (Cloudflare's resolver).
+ * Inject a different resolver in tests.
+ */
 export async function verifyOnboarding(
-  client: CloudflareApiClient,
+  _client: CloudflareApiClient,
   zoneId: string,
   domain: string,
-  opts: { dkimSelector?: string; resolverFetch?: typeof fetch } = {},
+  opts: {
+    dkimSelector?: string;
+    wildcardDkim?: boolean;
+    bounceMxTarget?: string;
+    dkimTarget?: string;
+    /** Override DoH resolver fetch (test injection). */
+    dohFetch?: typeof fetch;
+  } = {}
 ): Promise<{ verified: boolean; missing: string[] }> {
-  const expected = expectedRecordsFor({ zoneId, domain, dkimSelector: opts.dkimSelector });
+  const expected = expectedRecordsFor({
+    zoneId,
+    domain,
+    dkimSelector: opts.dkimSelector,
+    wildcardDkim: opts.wildcardDkim,
+    bounceMxTarget: opts.bounceMxTarget,
+    dkimTarget: opts.dkimTarget,
+  });
+  const fetchImpl = opts.dohFetch ?? fetch;
   const missing: string[] = [];
   for (const r of expected) {
-    const existing = await findRecord(client, zoneId, { type: r.type, name: r.name });
-    if (!existing) {
-      missing.push(`${r.type} ${r.name}`);
+    const found = await dohResolve(fetchImpl, r.name, r.type);
+    if (found.length === 0) {
+      missing.push(`${r.type} ${r.name} (no records resolved)`);
       continue;
     }
-    if (!matchesContent(existing.content, r.content)) {
-      missing.push(`${r.type} ${r.name} (content mismatch)`);
+    if (!found.some((value) => matchesContent(value, r.content))) {
+      missing.push(`${r.type} ${r.name} (content mismatch; got: ${found[0]})`);
     }
   }
   return { verified: missing.length === 0, missing };
@@ -86,7 +151,7 @@ export async function unboardSenderDomain(
   client: CloudflareApiClient,
   zoneId: string,
   domain: string,
-  opts: { dkimSelector?: string } = {},
+  opts: { dkimSelector?: string } = {}
 ): Promise<void> {
   const expected = expectedRecordsFor({ zoneId, domain, dkimSelector: opts.dkimSelector });
   for (const r of expected) {
@@ -110,13 +175,13 @@ export function expectedRecordsFor(opts: OnboardSenderDomainOpts): DnsRecordInpu
       type: 'CNAME',
       name: `${selector}._domainkey.${opts.domain}`,
       content: `${selector}.${dkimTargetBase}`,
-      comment: 'polaris-email: DKIM',
+      comment: 'polaris-email: DKIM (CF-managed)',
     },
     {
       type: 'TXT',
       name: opts.domain,
       content: 'v=spf1 include:_spf.mx.cloudflare.net -all',
-      comment: 'polaris-email: SPF',
+      comment: 'polaris-email: SPF (CF-managed)',
     },
     {
       type: 'TXT',
@@ -129,7 +194,7 @@ export function expectedRecordsFor(opts: OnboardSenderDomainOpts): DnsRecordInpu
       name: `cf-bounce.${opts.domain}`,
       content: bounceMx,
       priority: 10,
-      comment: 'polaris-email: bounce',
+      comment: 'polaris-email: bounce (CF-managed)',
     },
   ];
   if (wildcard) {
@@ -145,6 +210,23 @@ export function expectedRecordsFor(opts: OnboardSenderDomainOpts): DnsRecordInpu
 
 export function asExpectedRecords(records: DnsRecordInput[]): ExpectedRecord[] {
   return records.map((r) => ({ type: r.type, name: r.name, content: r.content }));
+}
+
+/** Resolve a name via DoH against 1.1.1.1; returns array of `data` strings. */
+async function dohResolve(
+  fetchImpl: typeof fetch,
+  name: string,
+  type: string
+): Promise<string[]> {
+  try {
+    const url = `https://1.1.1.1/dns-query?name=${encodeURIComponent(name)}&type=${encodeURIComponent(type)}`;
+    const r = await fetchImpl(url, { headers: { accept: 'application/dns-json' } });
+    if (!r.ok) return [];
+    const j = (await r.json()) as { Answer?: { type: number; data: string }[] };
+    return (j.Answer ?? []).map((a) => a.data);
+  } catch {
+    return [];
+  }
 }
 
 function matchesContent(actual: string, expected: string): boolean {
