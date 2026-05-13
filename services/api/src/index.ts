@@ -4,7 +4,7 @@ import { admin } from './routes/admin.js';
 import { bootstrap } from './routes/bootstrap.js';
 import type { Env } from './env.js';
 import { sendRaw } from './routes/send-raw.js';
-import { requestId } from './ids.js';
+import { requestId } from '@polaris-email/ids';
 import { buildError } from './errors.js';
 
 const app = new Hono<{ Bindings: Env }>();

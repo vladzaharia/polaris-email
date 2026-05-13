@@ -5,7 +5,7 @@ import type { Env } from '../env.js';
 import { audit } from '../audit.js';
 import { buildError } from '../errors.js';
 import { hashSecret } from '../hashing.js';
-import { ulid } from '../ids.js';
+import { ulid } from '@polaris-email/ids';
 import { generateSecret, verify } from '@polaris-email/hmac';
 
 export const bootstrap = new Hono<{ Bindings: Env }>();

@@ -1,6 +1,7 @@
 // polaris-email-out: queue consumer that drives Cloudflare's send_email bindings.
 // Picks the binding for the message's `from` domain, sends, writes status to D1, emits a
 // fanout event.
+import { ulid } from '@polaris-email/ids';
 import type { Env, FanoutEvent, OutboundQueueMessage, SendEmailBinding } from './env.js';
 
 interface MessageBody {
@@ -14,20 +15,6 @@ interface MessageBody {
   text?: string;
   headers?: Record<string, string>;
   attachments?: { filename: string; contentType: string; contentB64: string }[];
-}
-
-function ulidLite(): string {
-  const CROCK = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
-  const rnd = new Uint8Array(16);
-  crypto.getRandomValues(rnd);
-  let out = '';
-  let t = Date.now();
-  for (let i = 9; i >= 0; i--) {
-    out = (CROCK[t % 32] ?? '0') + out;
-    t = Math.floor(t / 32);
-  }
-  for (let i = 0; i < 16; i++) out += CROCK[(rnd[i] ?? 0) % 32];
-  return out;
 }
 
 function b64ToArrayBuffer(b64: string): ArrayBuffer {
@@ -95,7 +82,7 @@ async function handleOne(env: Env, msg: OutboundQueueMessage): Promise<void> {
   if (!dom?.binding_name) {
     await setStatus(env, msg.messageId, 'failed', { last_error: 'no_binding_for_domain' });
     await fanout(env, {
-      event_id: ulidLite(),
+      event_id: ulid(),
       event: 'message.failed',
       message_id: msg.messageId,
       mailbox_id: null,
@@ -109,7 +96,7 @@ async function handleOne(env: Env, msg: OutboundQueueMessage): Promise<void> {
   if (msg.mode === 'test') {
     await setStatus(env, msg.messageId, 'sent');
     await fanout(env, {
-      event_id: ulidLite(),
+      event_id: ulid(),
       event: 'message.sent',
       message_id: msg.messageId,
       mailbox_id: null,
@@ -153,7 +140,7 @@ async function handleOne(env: Env, msg: OutboundQueueMessage): Promise<void> {
         smtp_response: result.permanent_bounces.join(','),
       });
       await fanout(env, {
-        event_id: ulidLite(),
+        event_id: ulid(),
         event: 'message.bounced',
         message_id: msg.messageId,
         mailbox_id: null,
@@ -164,7 +151,7 @@ async function handleOne(env: Env, msg: OutboundQueueMessage): Promise<void> {
     } else {
       await setStatus(env, msg.messageId, 'sent');
       await fanout(env, {
-        event_id: ulidLite(),
+        event_id: ulid(),
         event: 'message.sent',
         message_id: msg.messageId,
         mailbox_id: null,
@@ -178,7 +165,7 @@ async function handleOne(env: Env, msg: OutboundQueueMessage): Promise<void> {
     if (msg.retries >= 4) {
       await setStatus(env, msg.messageId, 'failed', { last_error: err.slice(0, 256) });
       await fanout(env, {
-        event_id: ulidLite(),
+        event_id: ulid(),
         event: 'message.failed',
         message_id: msg.messageId,
         mailbox_id: null,

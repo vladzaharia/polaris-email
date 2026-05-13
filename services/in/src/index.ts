@@ -1,4 +1,5 @@
 // polaris-email-in: Email Routing handler.
+import { ulid } from '@polaris-email/ids';
 import { parseMime, ParseError } from './parse.js';
 
 interface Env {
@@ -16,20 +17,6 @@ interface FanoutInbound {
   service_id: string | null;
   created_at: number;
   data: Record<string, unknown>;
-}
-
-const CROCK = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
-function ulidLite(): string {
-  const rnd = new Uint8Array(16);
-  crypto.getRandomValues(rnd);
-  let t = Date.now();
-  let out = '';
-  for (let i = 9; i >= 0; i--) {
-    out = (CROCK[t % 32] ?? '0') + out;
-    t = Math.floor(t / 32);
-  }
-  for (let i = 0; i < 16; i++) out += CROCK[(rnd[i] ?? 0) % 32];
-  return out;
 }
 
 function randomSuffix(): string {
@@ -101,7 +88,7 @@ export default {
     env: Env,
     _ctx: ExecutionContext,
   ): Promise<void> {
-    const id = ulidLite();
+    const id = ulid();
     const r2Key = `in/_unrouted/${id}-${randomSuffix()}.eml`;
 
     let raw: Uint8Array;
@@ -230,7 +217,7 @@ export default {
       .run();
 
     await env.FANOUT_QUEUE.send({
-      event_id: ulidLite(),
+      event_id: ulid(),
       event: 'message.received',
       message_id: id,
       mailbox_id: mbox.id,

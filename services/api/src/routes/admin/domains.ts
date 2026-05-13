@@ -9,7 +9,7 @@ import { audit } from '../../audit.js';
 import { bodyText, requireScope } from '../../auth.js';
 import type { Env } from '../../env.js';
 import { buildError } from '../../errors.js';
-import { ulid } from '../../ids.js';
+import { ulid } from '@polaris-email/ids';
 
 export const domains = new Hono<{ Bindings: Env }>();
 

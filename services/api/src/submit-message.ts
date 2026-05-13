@@ -8,7 +8,7 @@
 // not the submitter's bytes. This is the C2 mitigation enforcement point.
 
 import type { Env } from './env.js';
-import { ulid } from './ids.js';
+import { ulid } from '@polaris-email/ids';
 import { sha256Hex } from './hashing.js';
 import { audit } from './audit.js';
 import { tryClaim, recordClaim } from './idempotency-d1.js';

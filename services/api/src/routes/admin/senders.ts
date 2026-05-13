@@ -15,7 +15,7 @@ import { bodyText, requireScope } from '../../auth.js';
 import type { Env } from '../../env.js';
 import { buildError } from '../../errors.js';
 import { hashSecret } from '../../hashing.js';
-import { ulid } from '../../ids.js';
+import { ulid } from '@polaris-email/ids';
 
 export const senders = new Hono<{ Bindings: Env }>();
 

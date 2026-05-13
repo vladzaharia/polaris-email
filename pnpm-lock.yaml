@@ -98,6 +98,15 @@ importers:
         specifier: ^2.0.0
         version: 2.1.9(@types/node@22.19.18)
 
+  packages/ids:
+    devDependencies:
+      '@cloudflare/workers-types':
+        specifier: ^4.20240909.0
+        version: 4.20260511.1
+      typescript:
+        specifier: ^5.5.0
+        version: 5.9.3
+
   packages/migrations:
     devDependencies:
       '@cloudflare/workers-types':
@@ -201,6 +210,9 @@ importers:
       '@polaris-email/hmac':
         specifier: workspace:*
         version: link:../../packages/hmac
+      '@polaris-email/ids':
+        specifier: workspace:*
+        version: link:../../packages/ids
       '@polaris-email/mime':
         specifier: workspace:*
         version: link:../../packages/mime
@@ -260,6 +272,9 @@ importers:
       '@polaris-email/hmac':
         specifier: workspace:*
         version: link:../../packages/hmac
+      '@polaris-email/ids':
+        specifier: workspace:*
+        version: link:../../packages/ids
     devDependencies:
       '@cloudflare/workers-types':
         specifier: ^4.20240909.0
@@ -285,6 +300,9 @@ importers:
 
   services/out:
     dependencies:
+      '@polaris-email/ids':
+        specifier: workspace:*
+        version: link:../../packages/ids
       '@polaris-email/schema':
         specifier: workspace:*
         version: link:../../packages/schema
