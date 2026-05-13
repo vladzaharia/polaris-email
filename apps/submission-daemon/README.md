@@ -1,7 +1,7 @@
 # polaris-daemon
 
 On-prem implicit-TLS SMTP submission daemon for Polaris. Authenticates SMTP
-clients against a SQLite mirror of bridge credentials, canonicalizes RFC 5322,
+clients against a SQLite mirror of daemon credentials, canonicalizes RFC 5322,
 and forwards to the Polaris API at `/v1/send/raw`.
 
 ## Build
@@ -57,7 +57,7 @@ disambiguate forwarded submissions.
 
 - **Auth always fails** — verify the daemon synced credentials at least once
   (`mirror_version` log line). Until then, all logins fail. Check Cloudflare
-  Access tokens and HMAC key match the bridge config.
+  Access tokens and HMAC key match the daemon credential-mirror config.
 - **TLS handshake fails** — confirm `TLS_CERT`/`TLS_KEY` are readable by the
   `polaris` user (uid present in container) and contain matching key material.
 - **Upstream 4xx → 451** — the API returned a transient error (timeout, 429,

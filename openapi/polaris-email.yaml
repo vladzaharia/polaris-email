@@ -124,7 +124,7 @@ components:
         mailbox_id: { type: string }
         service_id: { type: string }
         url: { type: string, format: uri }
-        kind: { type: string, enum: [external, tailnet, bridge] }
+        kind: { type: string, enum: [external, tailnet] }
         local_target_id: { type: string }
         events:
           type: array
@@ -276,16 +276,47 @@ paths:
       responses:
         '200':
           description: quarantined
-  /v1/bridge/config:
+  /v1/daemon/credentials:
     get:
-      summary: Bridge sidecar configuration
+      summary: Submission-daemon credential mirror
+      description: |
+        Returns the current set of active SMTP submission credentials plus
+        the set of disabled credentials to remove. Polled by the
+        submission-daemon to keep its local SQLite mirror current.
       parameters:
         - { $ref: '#/components/parameters/KeyId' }
         - { $ref: '#/components/parameters/Ts' }
         - { $ref: '#/components/parameters/Nonce' }
+        - name: since
+          in: query
+          required: false
+          schema: { type: integer }
       responses:
         '200':
-          description: bridge config
+          description: credential delta
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [updates, deletions, mirror_version]
+                properties:
+                  updates:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, username, bcrypt_hash, allowed_senders, mirror_version]
+                      properties:
+                        id: { type: string }
+                        username: { type: string }
+                        bcrypt_hash: { type: string }
+                        allowed_senders:
+                          type: array
+                          items: { type: string }
+                        mirror_version: { type: integer, format: int64 }
+                  deletions:
+                    type: array
+                    items: { type: string }
+                  mirror_version: { type: integer, format: int64 }
   /admin/bootstrap:
     post:
       summary: One-time seed of the first admin key. Signed with POLARIS_SECRET_A.

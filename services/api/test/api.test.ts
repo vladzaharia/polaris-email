@@ -415,7 +415,7 @@ describe('outbound_domains + senders', () => {
     expect(cred.secret.length).toBeGreaterThan(20);
 
     // Issuing the credential must persist a submission_credentials row with
-    // the bcrypt_hash (NOT the plaintext) — the daemon polls /v1/bridge/config
+    // the bcrypt_hash (NOT the plaintext) — the daemon polls /v1/daemon/credentials
     // and mirrors the hash locally. The plaintext is returned to the caller
     // in the response exactly once and never stored anywhere queryable.
     const mockDb = env.DB as unknown as { tables: Map<string, Record<string, unknown>[]> };

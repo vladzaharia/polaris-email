@@ -26,7 +26,7 @@ type PollerConfig struct {
 	Interval           time.Duration
 }
 
-// Poller periodically pulls credential deltas from the bridge API.
+// Poller periodically pulls credential deltas from the daemon credentials API.
 type Poller struct {
 	cfg   PollerConfig
 	store *Store
@@ -73,12 +73,12 @@ type deltaResponse struct {
 
 func (p *Poller) syncOnce(ctx context.Context) error {
 	since := p.store.MirrorVersion()
-	url := fmt.Sprintf("%s/v1/bridge/credentials?since=%d", p.cfg.APIURL, since)
+	url := fmt.Sprintf("%s/v1/daemon/credentials?since=%d", p.cfg.APIURL, since)
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return err
 	}
-	p.signRequest(req, "GET", fmt.Sprintf("/v1/bridge/credentials?since=%d", since), nil)
+	p.signRequest(req, "GET", fmt.Sprintf("/v1/daemon/credentials?since=%d", since), nil)
 	req.Header.Set("CF-Access-Client-Id", p.cfg.AccessClientID)
 	req.Header.Set("CF-Access-Client-Secret", p.cfg.AccessClientSecret)
 	req.Header.Set("X-Polaris-Daemon-Id", p.cfg.DaemonID)

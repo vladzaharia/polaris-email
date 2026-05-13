@@ -34,7 +34,7 @@ export interface Env {
   ARGON2_PEPPER?: string;
   /** HMAC master pepper for HKDF-derived per-tenant peppers (I13). */
   PEPPER_MASTER?: string;
-  /** HMAC key shared with the submission daemon for /v1/bridge/* + /v1/send/raw. */
+  /** HMAC key shared with the submission daemon for /v1/daemon/* + /v1/send/raw. */
   DAEMON_HMAC_KEY?: string;
 }
 

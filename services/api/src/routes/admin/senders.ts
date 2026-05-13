@@ -167,7 +167,7 @@ senders.post(
     const username = senderRow.address;
     const secret = generateSecret();
     // Hash the secret before persistence — D1 only ever sees the hash. The
-    // submission daemon polls /v1/bridge/credentials and mirrors the hash
+    // submission daemon polls /v1/daemon/credentials and mirrors the hash
     // locally; the plaintext is returned to the caller exactly once below.
     const hashed = await hashSecret(secret, c.env.ARGON2_PEPPER);
 

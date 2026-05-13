@@ -203,7 +203,7 @@ export default {
       message.setReject('552 5.3.4 message too large for mailbox');
       return;
     }
-    // Rekey R2 with the resolved mailbox path so the bridge sync loop can find it.
+    // Rekey R2 with the resolved mailbox path so downstream consumers can find it.
     const r2KeyFinal = `in/${mbox.service_id ?? 'unrouted'}/${id}-${randomSuffix()}.eml`;
     await env.R2.put(r2KeyFinal, raw, { httpMetadata: { contentType: 'message/rfc822' } });
     await env.R2.delete(r2Key);

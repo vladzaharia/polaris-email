@@ -18,7 +18,7 @@ import (
 )
 
 // dummyBcryptHash is used to keep AuthPlain timing constant on credential miss.
-// Generated once at init with the same cost we expect bridge hashes to use (12).
+// Generated once at init with the same cost we expect daemon hashes to use (12).
 var dummyBcryptHash []byte
 
 func init() {

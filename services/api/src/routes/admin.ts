@@ -1,5 +1,5 @@
-// Admin REST routes: tenants (legacy "services" alias), domains, api-keys,
-// webhooks, routing, bulk-revoke, rotation, bridge-config.
+// Admin REST routes: tenants, domains, api-keys, webhooks, routing,
+// bulk-revoke, rotation, daemon credential mirror.
 // All HMAC-auth + `admin:*` scope.
 import { Hono } from 'hono';
 import {
@@ -23,10 +23,10 @@ import { senders as sendersRoutes } from './admin/senders.js';
 export const admin = new Hono<{ Bindings: Env }>();
 
 admin.use('/v1/admin/*', hmacAuth('polaris-api.v1'));
-// /v1/bridge/* lives below; also auth-required (admin:read scope).
-admin.use('/v1/bridge/*', hmacAuth('polaris-api.v1'));
+// /v1/daemon/* lives below; also auth-required (admin:read scope).
+admin.use('/v1/daemon/*', hmacAuth('polaris-api.v1'));
 
-// Sub-routers for v2 admin surfaces. Both rely on the admin middleware above.
+// Sub-routers. Both rely on the admin middleware above.
 admin.route('/', outboundDomains);
 admin.route('/', sendersRoutes);
 
@@ -461,89 +461,67 @@ admin.post('/v1/admin/bulk/revoke-service', requireScope('admin:rotate'), async 
   });
 });
 
-// ---------- bridge config ----------
+// ---------- daemon credential mirror ----------
 
-admin.get('/v1/bridge/config', requireScope('admin:read'), async (c) => {
-  // The bridge/daemon is a privileged consumer with `admin:read` scope. Returns
-  // ONLY senders + submission_credentials for the daemon to mirror.
-  // Best-effort: mail_domains may not yet have rows (fresh deploy). Empty array OK.
-  type SenderRowB = {
-    id: string;
-    domain_id: string;
-    address: string;
-    local_part: string | null;
-    disabled_at: string | null;
-  };
-  type DomainRowB = { id: string; name: string };
-  type CredRowB = {
+admin.get('/v1/daemon/credentials', requireScope('admin:read'), async (c) => {
+  // The submission daemon polls this endpoint to mirror SMTP credentials
+  // locally. Returns a delta-style payload:
+  //   { updates: Credential[], deletions: string[], mirror_version: number }
+  // Where Credential is { id, username, bcrypt_hash, allowed_senders, mirror_version, ... }.
+  // The `since` query param is accepted for forward-compat but currently we always
+  // return the full active set — the daemon's UpsertBatch + DeleteByID handle
+  // reconciliation idempotently.
+  type CredRow = {
     id: string;
     principal_id: string;
     username: string;
     bcrypt_hash: string;
     disabled_at: string | null;
+    last_used_at: string | null;
   };
-  type ScopeRowB = { principal_id: string; sender_id: string };
-  let senderRows: { results: SenderRowB[] } = { results: [] };
-  let domainRows: { results: DomainRowB[] } = { results: [] };
-  let credRows: { results: CredRowB[] } = { results: [] };
-  let scopeRows: { results: ScopeRowB[] } = { results: [] };
+  type ScopeRow = { principal_id: string; sender_id: string };
+  type SenderRow = { id: string; address: string };
+  let credRows: { results: CredRow[] } = { results: [] };
+  let scopeRows: { results: ScopeRow[] } = { results: [] };
+  let senderRows: { results: SenderRow[] } = { results: [] };
   try {
-    senderRows = await c.env.DB.prepare(
-      `SELECT id, domain_id, address, local_part, disabled_at FROM email_senders`,
-    ).all<SenderRowB>();
-    domainRows = await c.env.DB.prepare(
-      `SELECT id, name FROM mail_domains`,
-    ).all<DomainRowB>();
     credRows = await c.env.DB.prepare(
-      `SELECT id, principal_id, username, bcrypt_hash, disabled_at FROM submission_credentials`,
-    ).all<CredRowB>();
+      `SELECT id, principal_id, username, bcrypt_hash, disabled_at, last_used_at
+       FROM submission_credentials`,
+    ).all<CredRow>();
     scopeRows = await c.env.DB.prepare(
       `SELECT principal_id, sender_id FROM principal_sender_scopes`,
-    ).all<ScopeRowB>();
+    ).all<ScopeRow>();
+    senderRows = await c.env.DB.prepare(
+      `SELECT id, address FROM email_senders`,
+    ).all<SenderRow>();
   } catch {
     // Tables absent (degraded environment). Treat as empty.
   }
-  const domainById = new Map<string, string>();
-  for (const d of domainRows.results) domainById.set(d.id, d.name);
-  // Build sender → credentials map via principal_sender_scopes:
-  // submission_credentials.principal_id ⋈ principal_sender_scopes.principal_id ⋈ sender_id.
-  const credsByPrincipal = new Map<string, CredRowB[]>();
-  for (const cr of credRows.results) {
-    const arr = credsByPrincipal.get(cr.principal_id) ?? [];
-    arr.push(cr);
-    credsByPrincipal.set(cr.principal_id, arr);
-  }
-  const credsBySender = new Map<string, CredRowB[]>();
+  const senderAddrById = new Map<string, string>();
+  for (const s of senderRows.results) senderAddrById.set(s.id, s.address);
+  const sendersByPrincipal = new Map<string, string[]>();
   for (const sc of scopeRows.results) {
-    const creds = credsByPrincipal.get(sc.principal_id) ?? [];
-    const arr = credsBySender.get(sc.sender_id) ?? [];
-    for (const cr of creds) arr.push(cr);
-    credsBySender.set(sc.sender_id, arr);
+    const addr = senderAddrById.get(sc.sender_id);
+    if (!addr) continue;
+    const arr = sendersByPrincipal.get(sc.principal_id) ?? [];
+    arr.push(addr);
+    sendersByPrincipal.set(sc.principal_id, arr);
   }
-  const sendersOut = senderRows.results
-    .map((s) => {
-      const dom = domainById.get(s.domain_id);
-      if (!dom) return null;
-      return {
-        id: s.id,
-        address: s.address,
-        display_name: null,
-        disabled: s.disabled_at != null,
-        smtp_credentials: (credsBySender.get(s.id) ?? []).map((cr) => ({
-          id: cr.id,
-          username: cr.username,
-          password_hash: cr.bcrypt_hash,
-          disabled: cr.disabled_at != null,
-        })),
-      };
-    })
-    .filter((x): x is NonNullable<typeof x> => x !== null);
-  return c.json({
-    senders: sendersOut,
-    rate_limits: {
-      inbound_per_source_ip_per_min: 60,
-    },
-  });
+  const mirrorVersion = Date.now();
+  const updates = credRows.results
+    .filter((r) => r.disabled_at == null)
+    .map((r) => ({
+      id: r.id,
+      username: r.username,
+      bcrypt_hash: r.bcrypt_hash,
+      allowed_senders: sendersByPrincipal.get(r.principal_id) ?? [],
+      mirror_version: mirrorVersion,
+    }));
+  const deletions = credRows.results
+    .filter((r) => r.disabled_at != null)
+    .map((r) => r.id);
+  return c.json({ updates, deletions, mirror_version: mirrorVersion });
 });
 
 // ---------- audit chain status ----------

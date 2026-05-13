@@ -1,4 +1,4 @@
-// Package credstore is a SQLite-backed local mirror of bridge SMTP credentials.
+// Package credstore is a SQLite-backed local mirror of daemon SMTP credentials.
 package credstore
 
 import (
@@ -11,7 +11,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-// Credential is one bridge credential row.
+// Credential is one daemon credential row.
 type Credential struct {
 	ID              string   `json:"id"`
 	Username        string   `json:"username"`
