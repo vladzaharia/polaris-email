@@ -1,5 +1,8 @@
-// Admin REST routes for outbound_domains (the "send-from" peer of the inbound `domains` table).
+// Admin REST routes for mail_domains (the canonical "send/recv" domain table).
 // All HMAC-signed (admin middleware applied at the parent `admin` Hono instance).
+//
+// The legacy `outbound_domains` URL prefix is kept for backward-compat.
+// Internally everything maps to the canonical `mail_domains` table (v1 schema).
 import { Hono } from 'hono';
 import {
   CreateOutboundDomainRequest,
@@ -13,25 +16,56 @@ import { ulid } from '../../ids.js';
 
 export const outboundDomains = new Hono<{ Bindings: Env }>();
 
-interface OutboundDomainRow {
+interface MailDomainRow {
   id: string;
-  domain: string;
-  dkim_selector: string;
-  status: 'pending' | 'verified' | 'active' | 'disabled';
+  zone_id: string;
+  name: string;
+  dkim_selector: string | null;
+  status: string;
   cf_zone_id: string | null;
-  is_default: number;
-  dmarc_policy: 'none' | 'quarantine' | 'reject';
+  dmarc_policy: string | null;
   dmarc_rua: string | null;
-  binding_tag: string | null;
-  last_verified_at: number | null;
-  created_at: number;
-  updated_at: number;
-  disabled_at: number | null;
+  verified_at: string | null;
+  last_verify_check_at: string | null;
+  created_at: string;
+  updated_at: string;
+  disabled_at: string | null;
 }
 
-function deriveBindingTag(domain: string): string {
-  // EMAIL_PLRS_IM, EMAIL_POLARIS_VIDEO, etc.
-  return domain.toUpperCase().replace(/[^A-Z0-9]+/g, '_');
+function bindingTagFromName(name: string): string {
+  // Synthesised for the response (legacy clients still expect this hint).
+  return name.toUpperCase().replace(/[^A-Z0-9]+/g, '_');
+}
+
+/**
+ * Ensure a `zones` row exists for the given cf_zone_id (or a synthesised
+ * placeholder for tests where the operator hasn't pre-provisioned one).
+ * Returns the canonical zones.id.
+ */
+async function ensureZone(
+  c: { env: Env },
+  cfZoneId: string | null,
+  name: string,
+): Promise<string> {
+  // Try to find by cf_zone_id when provided.
+  if (cfZoneId) {
+    const found = await c.env.DB.prepare(
+      `SELECT id FROM zones WHERE cf_zone_id = ?`,
+    )
+      .bind(cfZoneId)
+      .first<{ id: string }>();
+    if (found) return found.id;
+  }
+  // Synthesise a placeholder cf_zone_id when none provided so the UNIQUE
+  // constraint on zones.cf_zone_id holds; operator can later UPDATE.
+  const id = ulid();
+  const cfId = cfZoneId ?? `local-${id}`;
+  await c.env.DB.prepare(
+    `INSERT INTO zones (id, cf_zone_id, name, created_at) VALUES (?, ?, ?, ?)`,
+  )
+    .bind(id, cfId, name, new Date().toISOString())
+    .run();
+  return id;
 }
 
 // ---------- create ----------
@@ -44,23 +78,27 @@ outboundDomains.post('/v1/admin/outbound-domains', requireScope('admin:rotate'),
     return buildError(c, 'bad_request', e instanceof Error ? e.message : 'invalid body');
   }
   const id = ulid();
-  const now = Date.now();
-  const selector = body.dkim_selector ?? 'cf2024-1';
+  const nowIso = new Date().toISOString();
+  const selector = body.dkim_selector ?? 'cf';
   const policy = body.dmarc_policy ?? 'none';
   const rua = body.dmarc_rua ?? `mailto:postmaster@${body.domain}`;
-  const bindingTag = body.binding_tag ?? deriveBindingTag(body.domain);
-  const isDefault = body.is_default ? 1 : 0;
+  const bindingTag = body.binding_tag ?? bindingTagFromName(body.domain);
+  let zoneId: string;
   try {
-    // If this row becomes the new default, demote any existing default.
-    if (isDefault === 1) {
-      await c.env.DB.prepare(`UPDATE outbound_domains SET is_default = 0 WHERE is_default = 1`).run();
-    }
+    zoneId = await ensureZone(c, null, body.domain);
+  } catch (e) {
+    if (String(e).includes('UNIQUE')) return buildError(c, 'conflict', 'domain already registered');
+    throw e;
+  }
+  try {
     await c.env.DB.prepare(
-      `INSERT INTO outbound_domains
-         (id, domain, dkim_selector, status, is_default, dmarc_policy, dmarc_rua, binding_tag, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO mail_domains
+         (id, zone_id, name, environment, status, wildcard_subdomains, dmarc_policy,
+          dmarc_rua, inbound_enabled, outbound_enabled, provider, dkim_selector,
+          created_at, updated_at)
+       VALUES (?, ?, ?, 'prod', 'pending', 1, ?, ?, 0, 1, 'cloudflare', ?, ?, ?)`,
     )
-      .bind(id, body.domain, selector, 'pending', isDefault, policy, rua, bindingTag, now, now)
+      .bind(id, zoneId, body.domain, policy, rua, selector, nowIso, nowIso)
       .run();
   } catch (e) {
     if (String(e).includes('UNIQUE')) return buildError(c, 'conflict', 'domain already registered');
@@ -70,7 +108,7 @@ outboundDomains.post('/v1/admin/outbound-domains', requireScope('admin:rotate'),
     actor: `key:${key.key_id}`,
     action: 'outbound_domain.create',
     target: id,
-    meta: { domain: body.domain, selector, is_default: isDefault === 1 },
+    meta: { domain: body.domain, selector, is_default: !!body.is_default },
   });
   return c.json(
     {
@@ -79,10 +117,9 @@ outboundDomains.post('/v1/admin/outbound-domains', requireScope('admin:rotate'),
       dkim_selector: selector,
       status: 'pending',
       binding_tag: bindingTag,
-      // Convenience: hint at the CNAME target the operator can pre-create. The real
-      // value comes back from CF Email Routing once the zone is enabled.
+      // Convenience: hint at the CNAME target the operator can pre-create.
       dkim_cname_hint: `${selector}._domainkey.${body.domain}. CNAME ${selector}._domainkey.<zone>.cf-email-routing.com.`,
-      created_at: now,
+      created_at: Date.now(),
     },
     201,
   );
@@ -91,28 +128,40 @@ outboundDomains.post('/v1/admin/outbound-domains', requireScope('admin:rotate'),
 // ---------- list ----------
 outboundDomains.get('/v1/admin/outbound-domains', requireScope('admin:read'), async (c) => {
   const rows = await c.env.DB.prepare(
-    `SELECT id, domain, dkim_selector, status, cf_zone_id, is_default, dmarc_policy,
-            dmarc_rua, binding_tag, last_verified_at, created_at, updated_at, disabled_at
-     FROM outbound_domains ORDER BY is_default DESC, domain ASC`,
-  ).all<OutboundDomainRow>();
-  return c.json({ data: rows.results });
+    `SELECT id, zone_id, name, dkim_selector, status, cf_zone_id, dmarc_policy,
+            dmarc_rua, verified_at, last_verify_check_at, created_at, updated_at, disabled_at
+     FROM mail_domains ORDER BY name ASC`,
+  ).all<MailDomainRow>();
+  // Synthesize the legacy `domain`/`binding_tag`/`is_default` fields so existing
+  // clients keep working during the transition.
+  const data = rows.results.map((r) => ({
+    ...r,
+    domain: r.name,
+    binding_tag: bindingTagFromName(r.name),
+    is_default: 1,
+  }));
+  return c.json({ data });
 });
 
 // ---------- get one ----------
 outboundDomains.get('/v1/admin/outbound-domains/:id', requireScope('admin:read'), async (c) => {
   const id = c.req.param('id');
   const row = await c.env.DB.prepare(
-    `SELECT id, domain, dkim_selector, status, cf_zone_id, is_default, dmarc_policy,
-            dmarc_rua, binding_tag, last_verified_at, created_at, updated_at, disabled_at
-     FROM outbound_domains WHERE id = ?`,
+    `SELECT id, zone_id, name, dkim_selector, status, cf_zone_id, dmarc_policy,
+            dmarc_rua, verified_at, last_verify_check_at, created_at, updated_at, disabled_at
+     FROM mail_domains WHERE id = ?`,
   )
     .bind(id)
-    .first<OutboundDomainRow>();
-  if (!row) return buildError(c, 'not_found', 'outbound_domain not found');
-  return c.json(row);
+    .first<MailDomainRow>();
+  if (!row) return buildError(c, 'not_found', 'mail_domain not found');
+  return c.json({
+    ...row,
+    domain: row.name,
+    binding_tag: bindingTagFromName(row.name),
+  });
 });
 
-// ---------- patch (cache zone id, set status, etc.) ----------
+// ---------- patch ----------
 outboundDomains.patch('/v1/admin/outbound-domains/:id', requireScope('admin:rotate'), async (c) => {
   const key = c.get('apiKey');
   const id = c.req.param('id');
@@ -122,10 +171,10 @@ outboundDomains.patch('/v1/admin/outbound-domains/:id', requireScope('admin:rota
   } catch (e) {
     return buildError(c, 'bad_request', e instanceof Error ? e.message : 'invalid body');
   }
-  const existing = await c.env.DB.prepare(`SELECT id FROM outbound_domains WHERE id = ?`)
+  const existing = await c.env.DB.prepare(`SELECT id FROM mail_domains WHERE id = ?`)
     .bind(id)
     .first<{ id: string }>();
-  if (!existing) return buildError(c, 'not_found', 'outbound_domain not found');
+  if (!existing) return buildError(c, 'not_found', 'mail_domain not found');
 
   const sets: string[] = [];
   const binds: unknown[] = [];
@@ -145,28 +194,18 @@ outboundDomains.patch('/v1/admin/outbound-domains/:id', requireScope('admin:rota
     sets.push('dmarc_rua = ?');
     binds.push(body.dmarc_rua);
   }
-  if (body.binding_tag !== undefined) {
-    sets.push('binding_tag = ?');
-    binds.push(body.binding_tag);
-  }
   if (body.dkim_selector !== undefined) {
     sets.push('dkim_selector = ?');
     binds.push(body.dkim_selector);
   }
-  if (body.is_default !== undefined) {
-    if (body.is_default) {
-      await c.env.DB.prepare(`UPDATE outbound_domains SET is_default = 0 WHERE is_default = 1`).run();
-    }
-    sets.push('is_default = ?');
-    binds.push(body.is_default ? 1 : 0);
-  }
+  // `binding_tag` and `is_default` are no-ops in v1 (synthesised in responses).
   if (sets.length === 0) return buildError(c, 'bad_request', 'no fields to update');
-  const now = Date.now();
+  const nowIso = new Date().toISOString();
   sets.push('updated_at = ?');
-  binds.push(now);
+  binds.push(nowIso);
   binds.push(id);
   await c.env.DB.prepare(
-    `UPDATE outbound_domains SET ${sets.join(', ')} WHERE id = ?`,
+    `UPDATE mail_domains SET ${sets.join(', ')} WHERE id = ?`,
   )
     .bind(...binds)
     .run();
@@ -176,21 +215,10 @@ outboundDomains.patch('/v1/admin/outbound-domains/:id', requireScope('admin:rota
     target: id,
     meta: { fields: Object.keys(body) },
   });
-  return c.json({ id, updated_at: now });
+  return c.json({ id, updated_at: Date.now() });
 });
 
 // ---------- verify (real DNS check via DoH + CF Email Routing) ----------
-//
-// Resolves the domain's expected DKIM CNAME target from Cloudflare Email Routing's
-// /zones/:zone_id/email/routing/dns endpoint, then verifies via Cloudflare DoH
-// (https://cloudflare-dns.com/dns-query) that:
-//   • The DKIM CNAME(s) point at the expected `*.cf-email-routing.com` host.
-//   • The MX records resolve to `routeN.mx.cloudflare.net`.
-// On full success, flips status to 'verified'. On partial/failed, leaves status
-// unchanged and returns a diagnostic 200 with per-check detail.
-//
-// The Worker has no DNS resolver of its own; DoH (RFC 8484 / JSON variant) is the
-// only outbound DNS path inside a Worker.
 interface DohAnswer {
   name: string;
   type: number;
@@ -208,7 +236,6 @@ interface VerifyCheck {
   actual: string;
 }
 
-// DNS record type codes.
 const DNS_CNAME = 5;
 const DNS_MX = 15;
 
@@ -217,12 +244,10 @@ async function dohResolve(host: string, type: 'CNAME' | 'MX'): Promise<DohAnswer
   const res = await fetch(url, {
     method: 'GET',
     headers: { accept: 'application/dns-json' },
-    // 5s timeout via AbortSignal so a slow resolver doesn't hang the verify call.
     signal: AbortSignal.timeout(5_000),
   });
   if (!res.ok) return [];
   const j = (await res.json()) as DohResponse;
-  // NXDOMAIN / NODATA → Answer may be absent. Treat as empty.
   if (!j.Answer || !Array.isArray(j.Answer)) return [];
   const want = type === 'CNAME' ? DNS_CNAME : DNS_MX;
   return j.Answer.filter((a) => a.type === want);
@@ -248,8 +273,6 @@ async function fetchExpectedRoutingDns(
   zoneId: string,
   apiToken: string,
 ): Promise<RoutingDnsRecord[]> {
-  // Cloudflare API: GET /zones/:zone_id/email/routing/dns returns the canonical
-  // set of MX + DKIM CNAME records that Email Routing wants on this zone.
   const url = `https://api.cloudflare.com/client/v4/zones/${zoneId}/email/routing/dns`;
   const res = await fetch(url, {
     method: 'GET',
@@ -273,24 +296,18 @@ outboundDomains.post(
     const key = c.get('apiKey');
     const id = c.req.param('id');
     const row = await c.env.DB.prepare(
-      `SELECT id, domain, status, cf_zone_id FROM outbound_domains WHERE id = ?`,
+      `SELECT id, name, status, cf_zone_id FROM mail_domains WHERE id = ?`,
     )
       .bind(id)
-      .first<{ id: string; domain: string; status: string; cf_zone_id: string | null }>();
-    if (!row) return buildError(c, 'not_found', 'outbound_domain not found');
+      .first<{ id: string; name: string; status: string; cf_zone_id: string | null }>();
+    if (!row) return buildError(c, 'not_found', 'mail_domain not found');
 
-    // Env access for CF API token + account id. These may not be present in test
-    // environments — degrade gracefully with a check-level error rather than 500.
     const env = c.env as unknown as { CF_API_TOKEN?: string; CF_ACCOUNT_ID?: string };
     const apiToken = env.CF_API_TOKEN;
     const accountId = env.CF_ACCOUNT_ID;
 
     const checks: VerifyCheck[] = [];
 
-    // 1) Pull expected records from CF Email Routing (DKIM CNAMEs + MX list).
-    //    Without CF API credentials or a cached zone id, we cannot self-discover
-    //    the expected DKIM CNAME target — return a diagnostic without any
-    //    outbound network calls (lets the operator know what's missing).
     let expected: RoutingDnsRecord[] = [];
     const haveCfCreds = !!(apiToken && accountId && row.cf_zone_id);
     if (!haveCfCreds) {
@@ -304,7 +321,7 @@ outboundDomains.post(
         actor: `key:${key.key_id}`,
         action: 'outbound_domain.verify_incomplete',
         target: id,
-        meta: { domain: row.domain, reason: 'no-cf-creds' },
+        meta: { domain: row.name, reason: 'no-cf-creds' },
       });
       return c.json({
         id,
@@ -317,7 +334,6 @@ outboundDomains.post(
       () => [],
     );
 
-    // 2) Check each expected DKIM CNAME via DoH.
     for (const rec of expected.filter((r) => r.type.toUpperCase() === 'CNAME')) {
       const want = stripDot(rec.content).toLowerCase();
       const got = await dohResolve(rec.name, 'CNAME').catch(() => []);
@@ -330,16 +346,13 @@ outboundDomains.post(
       });
     }
 
-    // 3) Check MX records resolve to routeN.mx.cloudflare.net.
-    //    DoH "data" for MX has the form: "<priority> <exchange>."
-    const mxAnswers = await dohResolve(row.domain, 'MX').catch(() => []);
+    const mxAnswers = await dohResolve(row.name, 'MX').catch(() => []);
     const seenMxHosts = mxAnswers
       .map((a) => stripDot(a.data.split(/\s+/).pop() ?? '').toLowerCase())
       .filter((h) => h.length > 0);
     const expectedMxHosts = expected
       .filter((r) => r.type.toUpperCase() === 'MX')
       .map((r) => stripDot(r.content).toLowerCase());
-    // If CF didn't return MX expectations, fall back to the canonical Cloudflare set.
     const fallbackMx = ['route1.mx.cloudflare.net', 'route2.mx.cloudflare.net', 'route3.mx.cloudflare.net'];
     const wantMxSet = (expectedMxHosts.length > 0 ? expectedMxHosts : fallbackMx).sort();
     const haveMxSet = [...new Set(seenMxHosts)].sort();
@@ -354,21 +367,21 @@ outboundDomains.post(
     });
 
     const allOk = checks.length > 0 && checks.every((ch) => ch.ok);
-    const now = Date.now();
+    const nowIso = new Date().toISOString();
 
     if (allOk) {
       await c.env.DB.prepare(
-        `UPDATE outbound_domains SET status = 'verified', last_verified_at = ?, updated_at = ? WHERE id = ?`,
+        `UPDATE mail_domains SET status = 'verified', verified_at = ?, last_verify_check_at = ?, updated_at = ? WHERE id = ?`,
       )
-        .bind(now, now, id)
+        .bind(nowIso, nowIso, nowIso, id)
         .run();
       await audit(c.env, {
         actor: `key:${key.key_id}`,
         action: 'outbound_domain.verify',
         target: id,
-        meta: { domain: row.domain, checks: checks.map((c2) => c2.name) },
+        meta: { domain: row.name, checks: checks.map((c2) => c2.name) },
       });
-      return c.json({ id, status: 'verified', verified_at: now, checks });
+      return c.json({ id, status: 'verified', verified_at: Date.now(), checks });
     }
 
     await audit(c.env, {
@@ -376,7 +389,7 @@ outboundDomains.post(
       action: 'outbound_domain.verify_incomplete',
       target: id,
       meta: {
-        domain: row.domain,
+        domain: row.name,
         failures: checks.filter((ch) => !ch.ok).map((ch) => ch.name),
       },
     });
@@ -396,13 +409,13 @@ outboundDomains.delete(
   async (c) => {
     const key = c.get('apiKey');
     const id = c.req.param('id');
-    const now = Date.now();
+    const nowIso = new Date().toISOString();
     const r = await c.env.DB.prepare(
-      `UPDATE outbound_domains
+      `UPDATE mail_domains
        SET status = 'disabled', disabled_at = ?, updated_at = ?
        WHERE id = ? AND disabled_at IS NULL`,
     )
-      .bind(now, now, id)
+      .bind(nowIso, nowIso, id)
       .run();
     if (r.meta.changes === 0) return buildError(c, 'not_found', 'not found or already disabled');
     await audit(c.env, {
@@ -411,6 +424,6 @@ outboundDomains.delete(
       target: id,
       meta: {},
     });
-    return c.json({ id, disabled_at: now });
+    return c.json({ id, disabled_at: Date.now() });
   },
 );

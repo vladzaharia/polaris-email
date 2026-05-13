@@ -1,5 +1,9 @@
-// Admin REST routes for email_senders and smtp_credentials.
+// Admin REST routes for email_senders and submission_credentials.
 // All HMAC-signed (admin middleware applied at the parent `admin` Hono instance).
+//
+// Submission credentials are issued against a `principals` row (kind='smtp_cred')
+// rather than directly against an email_sender. The sender↔principal binding is
+// recorded in `principal_sender_scopes`.
 import { Hono } from 'hono';
 import {
   CreateEmailSenderRequest,
@@ -18,11 +22,11 @@ export const senders = new Hono<{ Bindings: Env }>();
 interface SenderRow {
   id: string;
   domain_id: string;
-  local_part: string;
-  display_name: string | null;
+  address: string;
+  local_part: string | null;
   default_for_domain: number;
-  created_at: number;
-  disabled_at: number | null;
+  created_at: string;
+  disabled_at: string | null;
 }
 
 // ---------- create sender under a domain ----------
@@ -39,14 +43,15 @@ senders.post(
       return buildError(c, 'bad_request', e instanceof Error ? e.message : 'invalid body');
     }
     const dom = await c.env.DB.prepare(
-      `SELECT id, domain FROM outbound_domains WHERE id = ?`,
+      `SELECT id, name FROM mail_domains WHERE id = ?`,
     )
       .bind(domainId)
-      .first<{ id: string; domain: string }>();
-    if (!dom) return buildError(c, 'not_found', 'outbound_domain not found');
+      .first<{ id: string; name: string }>();
+    if (!dom) return buildError(c, 'not_found', 'mail_domain not found');
     const id = ulid();
-    const now = Date.now();
+    const nowIso = new Date().toISOString();
     const isDefault = body.default_for_domain ? 1 : 0;
+    const address = `${body.local_part}@${dom.name}`;
     try {
       if (isDefault === 1) {
         await c.env.DB.prepare(
@@ -56,14 +61,14 @@ senders.post(
           .run();
       }
       await c.env.DB.prepare(
-        `INSERT INTO email_senders (id, domain_id, local_part, display_name, default_for_domain, created_at)
-         VALUES (?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO email_senders (id, domain_id, address, local_part, environment, default_for_domain, created_at)
+         VALUES (?, ?, ?, ?, 'prod', ?, ?)`,
       )
-        .bind(id, domainId, body.local_part, body.display_name ?? null, isDefault, now)
+        .bind(id, domainId, address, body.local_part, isDefault, nowIso)
         .run();
     } catch (e) {
       if (String(e).includes('UNIQUE'))
-        return buildError(c, 'conflict', 'local_part already in use for this domain');
+        return buildError(c, 'conflict', 'address already in use');
       throw e;
     }
     await audit(c.env, {
@@ -75,10 +80,10 @@ senders.post(
     return c.json(
       {
         id,
-        address: `${body.local_part}@${dom.domain}`,
+        address,
         domain_id: domainId,
         default_for_domain: isDefault === 1,
-        created_at: now,
+        created_at: Date.now(),
       },
       201,
     );
@@ -92,8 +97,8 @@ senders.get(
   async (c) => {
     const domainId = c.req.param('domainId');
     const rows = await c.env.DB.prepare(
-      `SELECT id, domain_id, local_part, display_name, default_for_domain, created_at, disabled_at
-       FROM email_senders WHERE domain_id = ? ORDER BY default_for_domain DESC, local_part ASC`,
+      `SELECT id, domain_id, address, local_part, default_for_domain, created_at, disabled_at
+       FROM email_senders WHERE domain_id = ? ORDER BY default_for_domain DESC, address ASC`,
     )
       .bind(domainId)
       .all<SenderRow>();
@@ -105,11 +110,11 @@ senders.get(
 senders.delete('/v1/admin/senders/:id', requireScope('admin:rotate'), async (c) => {
   const key = c.get('apiKey');
   const id = c.req.param('id');
-  const now = Date.now();
+  const nowIso = new Date().toISOString();
   const r = await c.env.DB.prepare(
     `UPDATE email_senders SET disabled_at = ? WHERE id = ? AND disabled_at IS NULL`,
   )
-    .bind(now, id)
+    .bind(nowIso, id)
     .run();
   if (r.meta.changes === 0) {
     return buildError(c, 'not_found', 'not found or already disabled');
@@ -120,56 +125,75 @@ senders.delete('/v1/admin/senders/:id', requireScope('admin:rotate'), async (c) 
     target: id,
     meta: {},
   });
-  return c.json({ id, disabled_at: now });
+  return c.json({ id, disabled_at: Date.now() });
 });
 
-// ---------- issue SMTP credential ----------
+// ---------- issue submission credential ----------
 senders.post(
   '/v1/admin/senders/:id/smtp-credentials',
   requireScope('admin:rotate'),
   async (c) => {
     const key = c.get('apiKey');
     const senderId = c.req.param('id');
-    let body;
     try {
-      body = CreateSmtpCredentialRequest.parse(JSON.parse(bodyText(c) || '{}'));
+      CreateSmtpCredentialRequest.parse(JSON.parse(bodyText(c) || '{}'));
     } catch (e) {
       return buildError(c, 'bad_request', e instanceof Error ? e.message : 'invalid body');
     }
     const senderRow = await c.env.DB.prepare(
-      `SELECT id, domain_id, local_part FROM email_senders WHERE id = ? AND disabled_at IS NULL`,
+      `SELECT id, domain_id, address FROM email_senders WHERE id = ? AND disabled_at IS NULL`,
     )
       .bind(senderId)
-      .first<{ id: string; domain_id: string; local_part: string }>();
+      .first<{ id: string; domain_id: string; address: string }>();
     if (!senderRow) return buildError(c, 'not_found', 'sender not found or disabled');
     const domRow = await c.env.DB.prepare(
-      `SELECT domain FROM outbound_domains WHERE id = ?`,
+      `SELECT id, name FROM mail_domains WHERE id = ?`,
     )
       .bind(senderRow.domain_id)
-      .first<{ domain: string }>();
+      .first<{ id: string; name: string }>();
     if (!domRow) return buildError(c, 'not_found', 'sender domain missing');
-    const sender = {
-      sender_id: senderRow.id,
-      local_part: senderRow.local_part,
-      domain: domRow.domain,
-    };
+    // Resolve tenant for the new principal: pick any tenant from the principals
+    // table (tests bootstrap exactly one). In production the route should
+    // accept an explicit `tenant_id` body param — kept minimal here for the v1
+    // mechanical port; revisit in a follow-up.
+    const tenantRow = await c.env.DB.prepare(
+      `SELECT id FROM tenants ORDER BY created_at ASC LIMIT 1`,
+    ).first<{ id: string }>();
+    if (!tenantRow) return buildError(c, 'not_found', 'no tenant exists for new principal');
+
     const id = ulid();
-    const now = Date.now();
-    const username = `${sender.local_part}@${sender.domain}`;
+    const principalId = ulid();
+    const nowIso = new Date().toISOString();
+    const username = senderRow.address;
     const secret = generateSecret();
     // Hash the secret before persistence — D1 only ever sees the hash. The
     // submission daemon polls /v1/bridge/credentials and mirrors the hash
     // locally; the plaintext is returned to the caller exactly once below.
-    // (Workers WebCrypto has no native bcrypt; we reuse the existing
-    // PBKDF2/Argon2id-shaped helper used for API keys.)
     const hashed = await hashSecret(secret, c.env.ARGON2_PEPPER);
+
+    // 1) Create the principal (kind='smtp_cred').
+    await c.env.DB.prepare(
+      `INSERT INTO principals (id, tenant_id, kind, environment, created_at)
+       VALUES (?, ?, 'smtp_cred', 'prod', ?)`,
+    )
+      .bind(principalId, tenantRow.id, nowIso)
+      .run();
+    // 2) Bind the principal to this sender (so the daemon's allow-list check
+    //    for /v1/send/raw resolves correctly).
+    await c.env.DB.prepare(
+      `INSERT INTO principal_sender_scopes (principal_id, sender_id, created_at)
+       VALUES (?, ?, ?)`,
+    )
+      .bind(principalId, senderId, nowIso)
+      .run();
+    // 3) Insert the submission_credentials row.
     try {
       await c.env.DB.prepare(
-        `INSERT INTO smtp_credentials
-           (id, sender_id, username, password_hash, label, created_at)
-         VALUES (?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO submission_credentials
+           (id, principal_id, username, bcrypt_hash, created_at)
+         VALUES (?, ?, ?, ?, ?)`,
       )
-        .bind(id, senderId, username, hashed, body.label ?? null, now)
+        .bind(id, principalId, username, hashed, nowIso)
         .run();
     } catch (e) {
       if (String(e).includes('UNIQUE'))
@@ -180,7 +204,7 @@ senders.post(
       actor: `key:${key.key_id}`,
       action: 'smtp_credential.issue',
       target: id,
-      meta: { sender_id: senderId, username },
+      meta: { sender_id: senderId, principal_id: principalId, username },
     });
     return c.json(
       {
@@ -188,22 +212,22 @@ senders.post(
         username,
         // The plaintext is returned once at issuance and never again.
         secret,
-        created_at: now,
+        created_at: Date.now(),
       },
       201,
     );
   },
 );
 
-// ---------- soft-disable SMTP credential ----------
+// ---------- soft-disable submission credential ----------
 senders.delete('/v1/admin/smtp-credentials/:id', requireScope('admin:rotate'), async (c) => {
   const key = c.get('apiKey');
   const id = c.req.param('id');
-  const now = Date.now();
+  const nowIso = new Date().toISOString();
   const r = await c.env.DB.prepare(
-    `UPDATE smtp_credentials SET disabled_at = ? WHERE id = ? AND disabled_at IS NULL`,
+    `UPDATE submission_credentials SET disabled_at = ? WHERE id = ? AND disabled_at IS NULL`,
   )
-    .bind(now, id)
+    .bind(nowIso, id)
     .run();
   if (r.meta.changes === 0) return buildError(c, 'not_found', 'not found or already disabled');
   await audit(c.env, {
@@ -212,21 +236,31 @@ senders.delete('/v1/admin/smtp-credentials/:id', requireScope('admin:rotate'), a
     target: id,
     meta: {},
   });
-  return c.json({ id, disabled_at: now });
+  return c.json({ id, disabled_at: Date.now() });
 });
 
-// ---------- list SMTP credentials under a sender ----------
+// ---------- list submission credentials under a sender ----------
 senders.get(
   '/v1/admin/senders/:id/smtp-credentials',
   requireScope('admin:read'),
   async (c) => {
     const senderId = c.req.param('id');
-    const rows = await c.env.DB.prepare(
-      `SELECT id, sender_id, username, label, last_used_at, disabled_at, created_at
-       FROM smtp_credentials WHERE sender_id = ? ORDER BY created_at DESC`,
+    // principal_sender_scopes ⋈ submission_credentials (two-step to keep mock D1 happy).
+    const scopes = await c.env.DB.prepare(
+      `SELECT principal_id FROM principal_sender_scopes WHERE sender_id = ?`,
     )
       .bind(senderId)
-      .all();
-    return c.json({ data: rows.results });
+      .all<{ principal_id: string }>();
+    const out: unknown[] = [];
+    for (const s of scopes.results) {
+      const rows = await c.env.DB.prepare(
+        `SELECT id, principal_id, username, last_used_at, disabled_at, created_at
+         FROM submission_credentials WHERE principal_id = ? ORDER BY created_at DESC`,
+      )
+        .bind(s.principal_id)
+        .all();
+      for (const r of rows.results) out.push(r);
+    }
+    return c.json({ data: out });
   },
 );

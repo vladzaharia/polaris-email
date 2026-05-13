@@ -53,6 +53,6 @@ export interface OutboundQueueMessage {
 
 export interface InboundQueueMessage {
   messageId: string;
-  mailboxId: string;
-  serviceId: string | null;
+  domainId: string;
+  tenantId: string | null;
 }

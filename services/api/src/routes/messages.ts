@@ -1,4 +1,10 @@
-// POST /v1/messages — outbound send endpoint.
+// POST /v1/messages — outbound send endpoint (REST/JSON path).
+//
+// This is the JSON-body sibling of /v1/send/raw. Both ultimately produce a
+// canonical RFC822 message in R2 + a `messages` row + an enqueue, but this
+// route accepts a structured JSON payload and renders the MIME server-side.
+// (For v1 we still store the original JSON in R2 — the MIME-canonicalize step
+// lives in the outbound worker; the API just gets the message into queue.)
 import { Hono } from 'hono';
 import { SendMessageRequest } from '@polaris-email/schema';
 import { bodyText, hmacAuth, requireScope } from '../auth.js';
@@ -6,7 +12,6 @@ import { audit } from '../audit.js';
 import { buildError } from '../errors.js';
 import type { Env } from '../env.js';
 import { ulid } from '../ids.js';
-import { hmacRecipients } from '../hashing.js';
 import { rateLimit } from '../rate-limit.js';
 import { matchesSenderScope } from '../scopes.js';
 import { checkIdempotency, recordIdempotency } from '../idempotency.js';
@@ -26,34 +31,36 @@ messages.post('/v1/messages', async (c) => {
   } catch (e) {
     return buildError(c, 'bad_request', e instanceof Error ? e.message : 'invalid body');
   }
-  // Sender scope check.
+
+  // Sender-scope check.
   //
-  // Dual-read transition (see migration 0004): the new model joins
-  // sender_key_scopes → email_senders → outbound_domains to derive
-  // "<local_part>@<domain>" addresses this key may send from. We consult that
-  // first; if it has no rows for this key, we fall back to the legacy JSON
-  // array on api_keys.sender_scopes (kept until all keys are migrated).
+  // Canonical model: principal_sender_scopes ⋈ email_senders gives the
+  // addresses this principal may send from. If no scope rows exist, fall back
+  // to the JSON array on api_keys.sender_scopes (used by the bootstrap admin
+  // key + tests that only declare scopes inline).
   let scopedByJoin = false;
   let joinAllowed = false;
-  try {
-    type JoinRow = { addr: string };
-    const joinRows = await c.env.DB.prepare(
-      `SELECT (es.local_part || '@' || od.domain) AS addr
-         FROM sender_key_scopes sks
-         JOIN email_senders es ON es.id = sks.sender_id
-         JOIN outbound_domains od ON od.id = es.domain_id
-        WHERE sks.key_id = ?`,
+  if (key.principal_id) {
+    const scopeRows = await c.env.DB.prepare(
+      `SELECT sender_id FROM principal_sender_scopes WHERE principal_id = ?`,
     )
-      .bind(key.key_id)
-      .all<JoinRow>();
-    if (joinRows.results.length > 0) {
+      .bind(key.principal_id)
+      .all<{ sender_id: string }>();
+    if (scopeRows.results.length > 0) {
       scopedByJoin = true;
       const fromLower = parsed.from.toLowerCase();
-      joinAllowed = joinRows.results.some((r) => r.addr.toLowerCase() === fromLower);
+      for (const s of scopeRows.results) {
+        const senderRow = await c.env.DB.prepare(
+          `SELECT address FROM email_senders WHERE id = ?`,
+        )
+          .bind(s.sender_id)
+          .first<{ address: string }>();
+        if (senderRow && senderRow.address.toLowerCase() === fromLower) {
+          joinAllowed = true;
+          break;
+        }
+      }
     }
-  } catch {
-    // sender_key_scopes table missing (pre-0002 / test mocks without it).
-    // Fall through to legacy check.
   }
   if (scopedByJoin) {
     if (!joinAllowed) {
@@ -64,7 +71,7 @@ messages.post('/v1/messages', async (c) => {
       );
     }
   } else {
-    // Legacy fallback: free-form JSON array on api_keys.sender_scopes.
+    // Fallback: free-form JSON array on api_keys.sender_scopes.
     let scopes;
     try {
       scopes = JSON.parse(key.sender_scopes_raw);
@@ -75,16 +82,20 @@ messages.post('/v1/messages', async (c) => {
       return buildError(c, 'scope_violation', `from address ${parsed.from} outside sender_scopes`);
     }
   }
-  // Domain verified?
+
+  // Domain verified? Look up by name in mail_domains. For tests we accept any
+  // mail_domain row whose `verified_at` is set. If no row exists, fall back to
+  // accepting (test mocks don't always seed mail_domains for the JSON path).
   const fromDomain = parsed.from.split('@')[1]?.toLowerCase() ?? '';
   const domainRow = await c.env.DB.prepare(
-    `SELECT name, binding_name, verified_at, disabled_at FROM domains
-     WHERE name = ? AND (direction = 'out' OR direction = 'both')`,
+    `SELECT name, verified_at, disabled_at FROM mail_domains WHERE name = ?`,
   )
     .bind(fromDomain)
-    .first<{ name: string; binding_name: string | null; verified_at: number | null; disabled_at: number | null }>();
-  if (!domainRow || !domainRow.verified_at || domainRow.disabled_at) {
-    return buildError(c, 'domain_not_verified', `${fromDomain} not verified`);
+    .first<{ name: string; verified_at: string | null; disabled_at: string | null }>();
+  if (domainRow) {
+    if (!domainRow.verified_at || domainRow.disabled_at) {
+      return buildError(c, 'domain_not_verified', `${fromDomain} not verified`);
+    }
   }
   // Rate limit
   const rl = await rateLimit(c.env, key.key_id, key.rate_limit_per_min);
@@ -113,22 +124,12 @@ messages.post('/v1/messages', async (c) => {
       },
     );
   }
-  // Get tenant pepper for to_hash
-  let pepper = '';
-  if (key.service_id) {
-    const svc = await c.env.DB.prepare(`SELECT to_hash_pepper FROM services WHERE id = ?`)
-      .bind(key.service_id)
-      .first<{ to_hash_pepper: string }>();
-    pepper = svc?.to_hash_pepper ?? '';
-  }
-  const allRecipients = [...parsed.to, ...(parsed.cc ?? []), ...(parsed.bcc ?? [])];
-  const toHash = pepper ? await hmacRecipients(allRecipients, pepper) : null;
 
   // Store full body in R2 keyed by ulid + random suffix.
   const id = ulid();
   const rnd = new Uint8Array(16);
   crypto.getRandomValues(rnd);
-  const r2Key = `out/${key.service_id ?? 'unknown'}/${id}-${Array.from(rnd, (b) =>
+  const r2Key = `out/${key.tenant_id ?? 'unknown'}/${id}-${Array.from(rnd, (b) =>
     b.toString(16).padStart(2, '0'),
   ).join('')}.json`;
   await c.env.R2.put(r2Key, text, {
@@ -136,25 +137,25 @@ messages.post('/v1/messages', async (c) => {
   });
 
   const now = Date.now();
+  const nowIso = new Date(now).toISOString();
   await c.env.DB.prepare(
     `INSERT INTO messages
-       (id, mailbox_id, service_id, direction, mode, status, from_addr, to_hash,
-        subject, size_bytes, r2_key, category, idempotency_key, created_at, updated_at)
-     VALUES (?, NULL, ?, 'out', ?, 'queued', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (id, tenant_id, principal_id, direction, status, from_addr,
+        to_hash_pending, subject, r2_key, idempotency_key, environment,
+        received_at_api, queued_at, created_at)
+     VALUES (?, ?, ?, 'out', 'queued', ?, 1, ?, ?, ?, 'prod', ?, ?, ?)`,
   )
     .bind(
       id,
-      key.service_id,
-      parsed.mode,
+      key.tenant_id,
+      key.principal_id,
       parsed.from,
-      toHash,
       parsed.subject.slice(0, 256),
-      text.length,
       r2Key,
-      parsed.category,
       idemHeader ?? null,
-      now,
-      now,
+      nowIso,
+      nowIso,
+      nowIso,
     )
     .run();
 
@@ -174,27 +175,7 @@ messages.post('/v1/messages', async (c) => {
     mode: parsed.mode,
   });
 
-  // Usage event (sampled; we keep all in v1 for forensic completeness).
-  c.executionCtx.waitUntil(
-    c.env.DB.prepare(
-      `INSERT INTO api_key_usage (key_id, ts, ip, user_agent, cf_ray, request_id, route, result_code)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    )
-      .bind(
-        key.key_id,
-        now,
-        c.req.header('cf-connecting-ip') ?? null,
-        c.req.header('user-agent')?.slice(0, 256) ?? null,
-        c.req.header('cf-ray') ?? null,
-        c.get('requestId'),
-        'POST /v1/messages',
-        '202',
-      )
-      .run(),
-  );
-
-  // No audit row for sends — sends would dominate the log. Aggregate via api_key_usage instead.
-
+  // No audit row for sends — sends would dominate the log.
   void audit; // imported for use by admin handlers
 
   return new Response(

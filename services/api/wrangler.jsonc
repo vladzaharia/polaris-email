@@ -14,7 +14,7 @@
       "binding": "DB",
       "database_name": "polaris-email",
       "database_id": "REPLACE_WITH_LOCAL",
-      "migrations_dir": "migrations/legacy"
+      "migrations_dir": "migrations"
     }
   ],
   "r2_buckets": [

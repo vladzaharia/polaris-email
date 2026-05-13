@@ -8,7 +8,10 @@ import { verifySecret } from './hashing.js';
 
 export interface AuthenticatedKey {
   key_id: string;
-  service_id: string | null;
+  /** Tenant id (canonical column on principals table). */
+  tenant_id: string | null;
+  /** Principal id (api_keys.principal_id → principals.id). */
+  principal_id: string | null;
   sender_scopes_raw: string;
   scopes_raw: string;
   rate_limit_per_min: number;
@@ -43,9 +46,10 @@ export function hmacAuth(direction: 'polaris-api.v1'): MiddlewareHandler<{ Bindi
     const cached = await env.KV_KEY_CACHE.get(cacheKey, 'json').catch(() => null);
     type RowShape = {
       id: string;
-      service_id: string | null;
+      tenant_id: string | null;
+      principal_id: string | null;
       secret_argon2id: string;
-      sender_scopes: string;
+      sender_scopes: string | null;
       scopes: string;
       rate_limit_per_min: number;
       status: 'primary' | 'secondary' | 'revoked';
@@ -55,13 +59,53 @@ export function hmacAuth(direction: 'polaris-api.v1'): MiddlewareHandler<{ Bindi
     if (cached) {
       row = cached as RowShape;
     } else {
-      row = await env.DB.prepare(
-        `SELECT id, service_id, secret_argon2id, sender_scopes, scopes,
+      // Two-query lookup so the in-memory mock D1 (which doesn't parse JOINs)
+      // can satisfy this path. Production D1 sees both queries against the
+      // single-region SQLite store so the cost is one extra round-trip on
+      // cold KV cache only (warm requests skip both via KV_KEY_CACHE).
+      const keyRow = await env.DB.prepare(
+        `SELECT id, principal_id, secret_argon2id, sender_scopes, scopes,
                 rate_limit_per_min, status, revoked_at
          FROM api_keys WHERE id = ?`,
       )
         .bind(keyId)
-        .first<RowShape>();
+        .first<{
+          id: string;
+          principal_id: string | null;
+          secret_argon2id: string;
+          sender_scopes: string | null;
+          scopes: string;
+          rate_limit_per_min: number;
+          status: 'primary' | 'secondary' | 'revoked';
+          revoked_at: number | null;
+        }>();
+      if (keyRow) {
+        let tenantId: string | null = null;
+        if (keyRow.principal_id) {
+          const principalRow = await env.DB.prepare(
+            `SELECT tenant_id, disabled_at FROM principals WHERE id = ?`,
+          )
+            .bind(keyRow.principal_id)
+            .first<{ tenant_id: string; disabled_at: string | null }>();
+          if (!principalRow || principalRow.disabled_at) {
+            return buildError(c, 'key_revoked', 'principal disabled');
+          }
+          tenantId = principalRow.tenant_id;
+        }
+        row = {
+          id: keyRow.id,
+          tenant_id: tenantId,
+          principal_id: keyRow.principal_id,
+          secret_argon2id: keyRow.secret_argon2id,
+          sender_scopes: keyRow.sender_scopes,
+          scopes: keyRow.scopes,
+          rate_limit_per_min: keyRow.rate_limit_per_min,
+          status: keyRow.status,
+          revoked_at: keyRow.revoked_at,
+        };
+      } else {
+        row = null;
+      }
       if (row) {
         c.executionCtx.waitUntil(env.KV_KEY_CACHE.put(cacheKey, JSON.stringify(row), { expirationTtl: 60 }));
       }
@@ -134,8 +178,9 @@ export function hmacAuth(direction: 'polaris-api.v1'): MiddlewareHandler<{ Bindi
 
     c.set('apiKey', {
       key_id: row.id,
-      service_id: row.service_id,
-      sender_scopes_raw: row.sender_scopes,
+      tenant_id: row.tenant_id,
+      principal_id: row.principal_id,
+      sender_scopes_raw: row.sender_scopes ?? '[]',
       scopes_raw: row.scopes,
       rate_limit_per_min: row.rate_limit_per_min,
       status: row.status,

@@ -142,7 +142,7 @@ when storage approaches the 10 GB cap. Run the archival job:
 
 ```bash
 polaris-email db archive-messages --older-than 90d
-# Selects rows from messages_v2 older than 90 days, writes them to R2 as
+# Selects rows from messages older than 90 days, writes them to R2 as
 # Parquet (queryable via DuckDB), and DELETEs them from D1.
 ```
 

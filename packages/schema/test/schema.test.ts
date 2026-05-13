@@ -2,8 +2,6 @@ import { describe, expect, it } from 'vitest';
 import {
   Address,
   BulkRevokeServiceRequest,
-  CreateLocalTargetRequest,
-  CreateMailboxRequest,
   CreateRoutingRuleRequest,
   CreateServiceRequest,
   CreateWebhookSubRequest,
@@ -89,14 +87,10 @@ describe('admin requests', () => {
   it('RotateRequest', () => {
     expect(RotateRequest.parse({ mode: 'emergency', reason: 'leak' })).toBeDefined();
   });
-  it('CreateMailboxRequest defaults', () => {
-    const r = CreateMailboxRequest.parse({ address: 'support@svc.example.com' });
-    expect(r.retain_imap).toBe(false);
-    expect(r.retention_days).toBe(90);
-  });
   it('CreateWebhookSubRequest', () => {
     expect(
       CreateWebhookSubRequest.parse({
+        tenant_id: 'svc',
         url: 'https://example.com/hook',
         kind: 'external',
         events: ['message.received'],
@@ -106,17 +100,8 @@ describe('admin requests', () => {
   it('CreateRoutingRuleRequest', () => {
     expect(
       CreateRoutingRuleRequest.parse({
-        domain: 'in.example.com',
-        mailbox_id: '01HXR0000000000000000000A8',
-      }),
-    ).toBeDefined();
-  });
-  it('CreateLocalTargetRequest', () => {
-    expect(
-      CreateLocalTargetRequest.parse({
-        service: 'svc',
-        rule: 'email-hook',
-        upstream: 'http://svc:3000/hook',
+        domain_id: '01HXR0000000000000000000A8',
+        address_pattern: 'support@*',
       }),
     ).toBeDefined();
   });

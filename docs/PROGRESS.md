@@ -19,7 +19,7 @@ Updated on every commit; pairs with `docs/OPERATOR.md` (workflows) and
 
 ## Test posture
 
-**228 tests across 22 packages** all passing as of latest commit.
+**222 tests across 22 packages** all passing as of latest commit.
 
 Per-package breakdown:
 
@@ -37,7 +37,7 @@ Per-package breakdown:
 | @polaris-email/test-vectors, webhook-verify-node | 16 | existing |
 | services/anchor, forensic, janitor, staleness, in, out, fanout, synthetic, api | 39 | all existing tests pass |
 | apps/panel, apps/bridge/sidecar | 23 | existing |
-| **Total** | **228** | |
+| **Total** | **222** | |
 
 Plus the Go modules:
 - `apps/submission-daemon/` — `go vet`, `go build`, `go test ./...` clean
@@ -54,7 +54,7 @@ they're sequenced for after the user runs Phase −1.
 1. **Modular monolith collapse**: `services/{api,out,fanout,anchor,staleness,janitor,synthetic}` → `workers/control-plane`. The new endpoints live alongside the legacy ones; cutover is incremental.
 2. **`services/api/src/routes/messages.ts:79-88` migration to new `domains` table**: still reads the legacy table; the `submit-message.ts` pipeline reads the new shape. Cut over once the new shape is populated.
 3. **`services/out/src/index.ts` Provider integration**: the Provider interface exists in `@polaris-email/providers`; `services/out` still uses per-domain `send_email` bindings until Phase 0d cutover.
-4. **Schema cutover (0007)**: migration 0006 added v2 tables alongside legacy; the cutover migration will copy legacy → v2 and drop the legacy ones, then rename `messages_v2` → `messages`. (Sharded design was rolled back; single D1 going forward.)
+4. **Schema is canonical v1**: nothing was deployed before this. Single migration `0001_init.sql` defines all tables. (Sharded design was rolled back; single D1 going forward.)
 5. **Phase 4 observability**: Logpush config, Workers Analytics Engine writes, `workers-otel` instrumentation are documented but not yet wired into a Worker.
 6. **Phase 5 H4 / H6 / H9**: R2 object lock provisioning + per-tenant envelope encryption + one-shot bootstrap with anchored genesis are documented in the plan but require operator action to provision (Object Lock retention period, per-tenant KEK, WebAuthn enrollment).
 

@@ -32,34 +32,38 @@ interface TableRow {
 export class MockD1 {
   tables: Map<string, TableRow[]> = new Map();
   constructor() {
-    // Pre-create tables we use in tests.
-    this.tables.set('services', []);
-    this.tables.set('domains', []);
+    // Pre-create the canonical (v1) tables used by tests.
+    this.tables.set('schema_migrations', []);
+    this.tables.set('bootstrap', []);
+    this.tables.set('tenants', []);
+    this.tables.set('zones', []);
+    this.tables.set('mail_domains', []);
+    this.tables.set('email_senders', []);
+    this.tables.set('principals', []);
     this.tables.set('api_keys', []);
+    this.tables.set('submission_credentials', []);
+    this.tables.set('principal_sender_scopes', []);
+    this.tables.set('dkim_keys', []);
+    this.tables.set('daemons', []);
     this.tables.set('webhook_subs', []);
     this.tables.set('routing_rules', []);
     this.tables.set('messages', []);
+    this.tables.set('message_attempts', []);
     this.tables.set('message_deliveries', []);
+    this.tables.set('idempotency_keys', []);
     this.tables.set('audit_log', [
       {
         id: 0,
         actor: 'system',
         action: 'schema.migration',
         target: '0001_init',
-        meta_json: '{"genesis":true}',
+        meta: '{"genesis":true}',
         prev_hash: '0'.repeat(64),
         row_hash: '0'.repeat(64),
         at: 0,
       },
     ]);
     this.tables.set('audit_anchors', []);
-    this.tables.set('api_key_usage', []);
-    this.tables.set('local_webhook_targets', []);
-    this.tables.set('bootstrap', []);
-    this.tables.set('outbound_domains', []);
-    this.tables.set('email_senders', []);
-    this.tables.set('smtp_credentials', []);
-    this.tables.set('sender_key_scopes', []);
   }
   prepare(sql: string) {
     return new MockStatement(this, sql);
@@ -120,16 +124,47 @@ function executeSql<T>(
     const colsM = trimmed.match(/\(([^)]+)\)\s*VALUES/i);
     if (!colsM) throw new Error('mock: insert columns ' + trimmed);
     const cols = colsM[1]!.split(',').map((x) => x.trim());
+    // Parse the VALUES (...) tuple so we can resolve positional `?` to a bound
+    // param vs an inline literal (number / 'string' / NULL).
+    const valsM = trimmed.match(/values\s*\(([^)]*)\)\s*(returning\s+.*)?$/is);
+    if (!valsM) throw new Error('mock: insert values ' + trimmed);
+    const valTokens = valsM[1]!
+      .split(',')
+      .map((v) => v.trim());
     const row: TableRow = {};
-    cols.forEach((c, i) => (row[c] = params[i]));
+    let pi = 0;
+    cols.forEach((c, i) => {
+      const tok = valTokens[i];
+      if (tok === undefined) {
+        row[c] = undefined;
+        return;
+      }
+      if (tok === '?' || /^\?\d+$/.test(tok)) {
+        // SQLite supports both `?` and numbered `?1`, `?2`, ...
+        if (/^\?\d+$/.test(tok)) {
+          const idx = Number(tok.slice(1)) - 1;
+          row[c] = params[idx];
+        } else {
+          row[c] = params[pi++];
+        }
+      } else if (/^-?\d+(\.\d+)?$/.test(tok)) {
+        row[c] = Number(tok);
+      } else if (/^'.*'$/.test(tok)) {
+        row[c] = tok.slice(1, -1);
+      } else if (tok.toLowerCase() === 'null') {
+        row[c] = null;
+      } else {
+        row[c] = tok;
+      }
+    });
     const rows = db.tables.get(table);
     if (!rows) throw new Error('mock: unknown table ' + table);
     // Crude UNIQUE/PK handling: id column conflicts.
     if (conflict !== 'ignore' && conflict !== 'replace') {
       // Detect simple unique columns
-      const uniqueCols = ['id', 'address', 'domain', 'username'];
+      const uniqueCols = ['id', 'address', 'domain', 'name', 'username', 'cf_zone_id'];
       for (const u of uniqueCols) {
-        if (row[u] !== undefined && rows.some((r) => r[u] !== undefined && r[u] === row[u])) {
+        if (row[u] != null && rows.some((r) => r[u] != null && r[u] === row[u])) {
           throw new Error(`mock: UNIQUE constraint failed (${table}.${u})`);
         }
       }

@@ -108,7 +108,7 @@ export async function submitMessage(
   //    `queued` via CAS as we go. State machine per A7.
   await env.DB
     .prepare(
-      `INSERT INTO messages_v2
+      `INSERT INTO messages
         (id, tenant_id, principal_id, daemon_id, submission_id, direction, status,
          from_addr, to_hash_pending, subject, r2_key, content_sha256,
          idempotency_key, environment, received_at_daemon, received_at_api,
@@ -150,7 +150,7 @@ export async function submitMessage(
   });
   await env.DB
     .prepare(
-      `UPDATE messages_v2 SET status = 'queued', send_attempt_id = ?2, queued_at = ?3
+      `UPDATE messages SET status = 'queued', send_attempt_id = ?2, queued_at = ?3
        WHERE id = ?1 AND status = 'mime_stored'`
     )
     .bind(messageId, sendAttemptId, now)

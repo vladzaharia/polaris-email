@@ -140,13 +140,15 @@ describe('admin api-keys', () => {
     expect(res.status).toBe(201);
 
     // Create domain (verified)
-    const now = Date.now();
-    await env.DB.prepare(
-      `INSERT INTO domains (name, direction, binding_name, verified_at, last_verify_check_at)
-       VALUES (?, ?, ?, ?, ?)`,
-    )
-      .bind('example.com', 'out', 'EMAIL_NOREPLY', now, now)
-      .run();
+    {
+      const isoNow = new Date().toISOString();
+      await env.DB.prepare(
+        `INSERT INTO mail_domains (id, zone_id, name, status, verified_at, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      )
+        .bind('01HX00DOMAIN0000000000ABCE', '01HX00ZONE000000000000ABCE', 'example.com', 'verified', isoNow, isoNow, isoNow)
+        .run();
+    }
 
     // Issue api key
     body = JSON.stringify({
@@ -203,10 +205,10 @@ describe('admin api-keys', () => {
     );
     // Domain
     await env.DB.prepare(
-      `INSERT INTO domains (name, direction, binding_name, verified_at, last_verify_check_at)
-       VALUES (?, ?, ?, ?, ?)`,
+      `INSERT INTO mail_domains (id, zone_id, name, status, verified_at, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
     )
-      .bind('example.com', 'out', 'EMAIL_NOREPLY', Date.now(), Date.now())
+      .bind('01HX00DOMAIN0000000000ABCD', '01HX00ZONE000000000000ABCD', 'example.com', 'verified', new Date().toISOString(), new Date().toISOString(), new Date().toISOString())
       .run();
     // Issue key scoped to noreply@
     const issueRes = await app.fetch(
@@ -261,10 +263,10 @@ describe('admin api-keys', () => {
       ctx,
     );
     await env.DB.prepare(
-      `INSERT INTO domains (name, direction, binding_name, verified_at, last_verify_check_at)
-       VALUES (?, ?, ?, ?, ?)`,
+      `INSERT INTO mail_domains (id, zone_id, name, status, verified_at, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
     )
-      .bind('example.com', 'out', 'EMAIL_NOREPLY', Date.now(), Date.now())
+      .bind('01HX00DOMAIN0000000000ABCD', '01HX00ZONE000000000000ABCD', 'example.com', 'verified', new Date().toISOString(), new Date().toISOString(), new Date().toISOString())
       .run();
     const issueRes = await app.fetch(
       await signedRequest(
@@ -325,10 +327,10 @@ describe('admin api-keys', () => {
       ctx,
     );
     await env.DB.prepare(
-      `INSERT INTO domains (name, direction, binding_name, verified_at, last_verify_check_at)
-       VALUES (?, ?, ?, ?, ?)`,
+      `INSERT INTO mail_domains (id, zone_id, name, status, verified_at, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
     )
-      .bind('example.com', 'out', 'EMAIL_NOREPLY', Date.now(), Date.now())
+      .bind('01HX00DOMAIN0000000000ABCD', '01HX00ZONE000000000000ABCD', 'example.com', 'verified', new Date().toISOString(), new Date().toISOString(), new Date().toISOString())
       .run();
     const issued = (await (
       await app.fetch(
@@ -454,10 +456,10 @@ describe('admin api-keys', () => {
       ctx,
     );
     await env.DB.prepare(
-      `INSERT INTO domains (name, direction, binding_name, verified_at, last_verify_check_at)
-       VALUES (?, ?, ?, ?, ?)`,
+      `INSERT INTO mail_domains (id, zone_id, name, status, verified_at, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
     )
-      .bind('example.com', 'out', 'EMAIL_NOREPLY', Date.now(), Date.now())
+      .bind('01HX00DOMAIN0000000000ABCD', '01HX00ZONE000000000000ABCD', 'example.com', 'verified', new Date().toISOString(), new Date().toISOString(), new Date().toISOString())
       .run();
     const issued = (await (
       await app.fetch(
@@ -634,17 +636,17 @@ describe('outbound_domains + senders', () => {
     expect(cred.username).toBe('noreply@plrs.im');
     expect(cred.secret.length).toBeGreaterThan(20);
 
-    // Issuing the credential must persist a smtp_credentials row with the
-    // password_hash (NOT the plaintext) — the daemon polls /v1/bridge/config
+    // Issuing the credential must persist a submission_credentials row with
+    // the bcrypt_hash (NOT the plaintext) — the daemon polls /v1/bridge/config
     // and mirrors the hash locally. The plaintext is returned to the caller
     // in the response exactly once and never stored anywhere queryable.
     const mockDb = env.DB as unknown as { tables: Map<string, Record<string, unknown>[]> };
-    const credRows = mockDb.tables.get('smtp_credentials') ?? [];
+    const credRows = mockDb.tables.get('submission_credentials') ?? [];
     const credRow = credRows.find((r) => r['username'] === 'noreply@plrs.im');
     expect(credRow).toBeTruthy();
     expect(credRow?.['id']).toBe(cred.id);
-    expect(typeof credRow?.['password_hash']).toBe('string');
-    expect(credRow?.['password_hash']).not.toBe(cred.secret);
+    expect(typeof credRow?.['bcrypt_hash']).toBe('string');
+    expect(credRow?.['bcrypt_hash']).not.toBe(cred.secret);
     // Plaintext must not appear in any column of any row of any table.
     for (const [, rows] of mockDb.tables) {
       for (const row of rows) {

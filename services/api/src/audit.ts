@@ -34,7 +34,7 @@ export async function audit(env: Env, args: AuditArgs): Promise<void> {
   ].join('\n');
   const rowHash = await sha256Hex(canonical);
   await env.DB.prepare(
-    `INSERT INTO audit_log (actor, action, target, meta_json, prev_hash, row_hash, at)
+    `INSERT INTO audit_log (actor, action, target, meta, prev_hash, row_hash, at)
      VALUES (?, ?, ?, ?, ?, ?, ?)`,
   )
     .bind(args.actor, args.action, args.target ?? null, meta, prevHash, rowHash, at)
@@ -52,7 +52,7 @@ export async function verifyChain(
 ): Promise<{ ok: true } | { ok: false; brokenAt: number; reason: string }> {
   const rows = toId
     ? await env.DB.prepare(
-        `SELECT id, actor, action, target, meta_json, prev_hash, row_hash, at
+        `SELECT id, actor, action, target, meta, prev_hash, row_hash, at
          FROM audit_log WHERE id >= ? AND id <= ? ORDER BY id ASC`,
       )
         .bind(fromId, toId)
@@ -61,13 +61,13 @@ export async function verifyChain(
           actor: string;
           action: string;
           target: string | null;
-          meta_json: string;
+          meta: string;
           prev_hash: string;
           row_hash: string;
           at: number;
         }>()
     : await env.DB.prepare(
-        `SELECT id, actor, action, target, meta_json, prev_hash, row_hash, at
+        `SELECT id, actor, action, target, meta, prev_hash, row_hash, at
          FROM audit_log WHERE id >= ? ORDER BY id ASC`,
       )
         .bind(fromId)
@@ -76,7 +76,7 @@ export async function verifyChain(
           actor: string;
           action: string;
           target: string | null;
-          meta_json: string;
+          meta: string;
           prev_hash: string;
           row_hash: string;
           at: number;
@@ -94,7 +94,7 @@ export async function verifyChain(
       r.actor,
       r.action,
       r.target ?? '',
-      r.meta_json,
+      r.meta,
       r.prev_hash,
       String(r.at),
     ].join('\n');

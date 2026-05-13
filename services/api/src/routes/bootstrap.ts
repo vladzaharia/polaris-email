@@ -29,45 +29,72 @@ bootstrap.post('/admin/bootstrap', async (c) => {
     allowedAlgorithms: c.env.VERIFY_ALGORITHMS.split(','),
   });
   if (!r.ok) return buildError(c, 'bad_signature', `bootstrap auth: ${r.code}`);
-  // Idempotency
+  // Idempotency: bootstrap (id=1) is seeded by 0001_init; we may need to
+  // INSERT it on first call against a fresh test DB.
   const row = await c.env.DB.prepare(
-    `SELECT id, consumed_at, pending_key_id FROM bootstrap WHERE id = ?`,
+    `SELECT id, consumed_at, admin_key_id FROM bootstrap WHERE id = ?`,
   )
     .bind(1)
-    .first<{ id: number; consumed_at: number | null; pending_key_id: string | null }>();
+    .first<{ id: number; consumed_at: string | null; admin_key_id: string | null }>();
   if (row?.consumed_at) {
     return buildError(c, 'conflict', 'bootstrap already consumed');
   }
   const now = Date.now();
+  const nowIso = new Date(now).toISOString();
+  const tenantId = ulid();
+  const principalId = ulid();
   const keyId = ulid();
   const secret = generateSecret();
   const hashed = await hashSecret(secret, c.env.ARGON2_PEPPER);
+
+  // 1) Bootstrap tenant for the admin principal.
+  await c.env.DB.prepare(
+    `INSERT INTO tenants (id, name, description, environment, pepper_version, created_at, updated_at)
+     VALUES (?, ?, ?, 'prod', 1, ?, ?)`,
+  )
+    .bind(tenantId, '__bootstrap__', 'bootstrap admin tenant', nowIso, nowIso)
+    .run();
+  // 2) Principal for the admin api_key.
+  await c.env.DB.prepare(
+    `INSERT INTO principals (id, tenant_id, kind, display_name, environment, created_at)
+     VALUES (?, ?, 'api_key', 'bootstrap-admin', 'prod', ?)`,
+  )
+    .bind(principalId, tenantId, nowIso)
+    .run();
+  // 3) The api_key itself.
   await c.env.DB.prepare(
     `INSERT INTO api_keys
-       (id, prefix, secret_argon2id, service_id, sender_scopes, scopes,
+       (id, principal_id, prefix, secret_argon2id, scopes, sender_scopes,
         rate_limit_per_min, status, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, 'primary', ?)`,
   )
     .bind(
       keyId,
+      principalId,
       'pk_admin_',
       hashed,
-      null,
-      '[]',
       '["admin:rotate","admin:read"]',
+      '[]',
       60,
-      'primary',
-      now,
+      nowIso,
     )
     .run();
   await c.env.KV_KEY_CACHE.put(`plain:${keyId}`, secret, {
     expirationTtl: 60 * 60 * 24 * 365,
   });
-  await c.env.DB.prepare(
-    `INSERT OR REPLACE INTO bootstrap (id, seeded_at, consumed_at, pending_key_id) VALUES (?, ?, ?, ?)`,
-  )
-    .bind(1, row?.consumed_at ?? now, now, keyId)
-    .run();
+  if (row) {
+    await c.env.DB.prepare(
+      `UPDATE bootstrap SET consumed_at = ?, admin_key_id = ? WHERE id = ?`,
+    )
+      .bind(nowIso, keyId, 1)
+      .run();
+  } else {
+    await c.env.DB.prepare(
+      `INSERT INTO bootstrap (id, consumed_at, admin_key_id) VALUES (?, ?, ?)`,
+    )
+      .bind(1, nowIso, keyId)
+      .run();
+  }
   await audit(c.env, {
     actor: 'bootstrap',
     action: 'bootstrap.consume',

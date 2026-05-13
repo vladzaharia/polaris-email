@@ -74,7 +74,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: sudo apt-get update && sudo apt-get install -y sqlite3
-      - run: "sqlite3 ':memory:' < services/api/migrations/legacy/0001_init.sql"
+      - run: "sqlite3 ':memory:' < services/api/migrations/0001_init.sql"
 
   build-bridge-image:
     runs-on: ubuntu-latest

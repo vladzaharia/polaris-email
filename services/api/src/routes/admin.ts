@@ -1,9 +1,9 @@
-// Admin REST routes: services, domains, api-keys, webhooks, routing,
-// local-webhook-targets, bulk-revoke, rotation, bridge-config. All HMAC-auth + `admin:*` scope.
+// Admin REST routes: tenants (legacy "services" alias), domains, api-keys,
+// webhooks, routing, bulk-revoke, rotation, bridge-config.
+// All HMAC-auth + `admin:*` scope.
 import { Hono } from 'hono';
 import {
   BulkRevokeServiceRequest,
-  CreateLocalTargetRequest,
   CreateRoutingRuleRequest,
   CreateServiceRequest,
   CreateWebhookSubRequest,
@@ -30,7 +30,7 @@ admin.use('/v1/bridge/*', hmacAuth('polaris-api.v1'));
 admin.route('/', outboundDomains);
 admin.route('/', sendersRoutes);
 
-// ---------- services ----------
+// ---------- tenants (legacy "services" URL kept for backward compat) ----------
 
 admin.post('/v1/admin/services', requireScope('admin:rotate'), async (c) => {
   const key = c.get('apiKey');
@@ -40,22 +40,28 @@ admin.post('/v1/admin/services', requireScope('admin:rotate'), async (c) => {
   } catch (e) {
     return buildError(c, 'bad_request', e instanceof Error ? e.message : 'invalid body');
   }
-  const pepper = generateSecret();
   const now = Date.now();
+  const nowIso = new Date(now).toISOString();
+  // Fold legacy `notes` + `owner` into the canonical `description` column.
+  const descParts: string[] = [];
+  if (body.description) descParts.push(body.description);
+  if (body.owner) descParts.push(`owner: ${body.owner}`);
+  if (body.notes) descParts.push(body.notes);
+  const description = descParts.length > 0 ? descParts.join(' | ') : null;
   try {
     await c.env.DB.prepare(
-      `INSERT INTO services (id, name, owner, notes, to_hash_pepper, created_at)
-       VALUES (?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO tenants (id, name, description, environment, pepper_version, created_at, updated_at)
+       VALUES (?, ?, ?, 'prod', 1, ?, ?)`,
     )
-      .bind(body.id, body.name, body.owner ?? null, body.notes ?? null, pepper, now)
+      .bind(body.id, body.name, description, nowIso, nowIso)
       .run();
   } catch (e) {
-    if (String(e).includes('UNIQUE')) return buildError(c, 'conflict', 'service id taken');
+    if (String(e).includes('UNIQUE')) return buildError(c, 'conflict', 'tenant id or name taken');
     throw e;
   }
   await audit(c.env, {
     actor: `key:${key.key_id}`,
-    action: 'service.create',
+    action: 'tenant.create',
     target: body.id,
     meta: { name: body.name, owner: body.owner ?? null },
   });
@@ -64,7 +70,7 @@ admin.post('/v1/admin/services', requireScope('admin:rotate'), async (c) => {
 
 admin.get('/v1/admin/services', requireScope('admin:read'), async (c) => {
   const rows = await c.env.DB.prepare(
-    `SELECT id, name, owner, notes, created_at, disabled_at FROM services ORDER BY id ASC`,
+    `SELECT id, name, description, environment, created_at, disabled_at FROM tenants ORDER BY id ASC`,
   ).all();
   return c.json({ data: rows.results });
 });
@@ -79,25 +85,36 @@ admin.post('/v1/admin/api-keys', requireScope('admin:rotate'), async (c) => {
   } catch (e) {
     return buildError(c, 'bad_request', e instanceof Error ? e.message : 'invalid body');
   }
+  const tenantId = body.tenant_id ?? body.service_id!;
   const id = ulid();
+  const principalId = ulid();
   const secret = generateSecret();
   const hashed = await hashSecret(secret, c.env.ARGON2_PEPPER);
   const now = Date.now();
+  const nowIso = new Date(now).toISOString();
+  // 1) Create principal row (kind='api_key').
+  await c.env.DB.prepare(
+    `INSERT INTO principals (id, tenant_id, kind, display_name, environment, created_at)
+     VALUES (?, ?, 'api_key', ?, 'prod', ?)`,
+  )
+    .bind(principalId, tenantId, body.display_name ?? null, nowIso)
+    .run();
+  // 2) Create the api_key row pointing at the principal.
   await c.env.DB.prepare(
     `INSERT INTO api_keys
-       (id, prefix, secret_argon2id, service_id, sender_scopes, scopes,
+       (id, principal_id, prefix, secret_argon2id, scopes, sender_scopes,
         rate_limit_per_min, status, created_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, 'primary', ?)`,
   )
     .bind(
       id,
+      principalId,
       'pk_live_',
       hashed,
-      body.service_id,
-      JSON.stringify(body.sender_scopes),
       JSON.stringify(body.scopes),
+      JSON.stringify(body.sender_scopes),
       body.rate_limit_per_min,
-      now,
+      nowIso,
     )
     .run();
   // Cache plaintext for 60s so other colos can verify recent sigs without a DB hit.
@@ -107,7 +124,8 @@ admin.post('/v1/admin/api-keys', requireScope('admin:rotate'), async (c) => {
     `key:${id}`,
     JSON.stringify({
       id,
-      service_id: body.service_id,
+      tenant_id: tenantId,
+      principal_id: principalId,
       secret_argon2id: hashed,
       sender_scopes: JSON.stringify(body.sender_scopes),
       scopes: JSON.stringify(body.scopes),
@@ -122,7 +140,8 @@ admin.post('/v1/admin/api-keys', requireScope('admin:rotate'), async (c) => {
     action: 'api_key.issue',
     target: id,
     meta: {
-      service_id: body.service_id,
+      tenant_id: tenantId,
+      principal_id: principalId,
       scopes: body.scopes,
       sender_scope_count: body.sender_scopes.length,
     },
@@ -131,19 +150,32 @@ admin.post('/v1/admin/api-keys', requireScope('admin:rotate'), async (c) => {
 });
 
 admin.get('/v1/admin/api-keys', requireScope('admin:read'), async (c) => {
-  const service = c.req.query('service');
-  const stmt = service
-    ? c.env.DB.prepare(
-        `SELECT id, prefix, service_id, scopes, sender_scopes, status, created_at,
+  const tenant = c.req.query('tenant') ?? c.req.query('service');
+  if (tenant) {
+    // Two-step lookup: principals → api_keys (mock D1 doesn't parse joins).
+    const principals = await c.env.DB.prepare(
+      `SELECT id FROM principals WHERE tenant_id = ?`,
+    )
+      .bind(tenant)
+      .all<{ id: string }>();
+    const out: unknown[] = [];
+    for (const p of principals.results) {
+      const rows = await c.env.DB.prepare(
+        `SELECT id, principal_id, prefix, scopes, sender_scopes, status, created_at,
                 revoked_at, last_used_at, last_used_ip
-         FROM api_keys WHERE service_id = ? ORDER BY created_at DESC`,
-      ).bind(service)
-    : c.env.DB.prepare(
-        `SELECT id, prefix, service_id, scopes, sender_scopes, status, created_at,
-                revoked_at, last_used_at, last_used_ip
-         FROM api_keys ORDER BY created_at DESC LIMIT 500`,
-      );
-  const rows = await stmt.all();
+         FROM api_keys WHERE principal_id = ? ORDER BY created_at DESC`,
+      )
+        .bind(p.id)
+        .all();
+      for (const r of rows.results) out.push(r);
+    }
+    return c.json({ data: out });
+  }
+  const rows = await c.env.DB.prepare(
+    `SELECT id, principal_id, prefix, scopes, sender_scopes, status, created_at,
+            revoked_at, last_used_at, last_used_ip
+     FROM api_keys ORDER BY created_at DESC LIMIT 500`,
+  ).all();
   return c.json({ data: rows.results });
 });
 
@@ -191,14 +223,15 @@ admin.post('/v1/admin/api-keys/:id/rotate', requireScope('admin:rotate'), async 
   const newSecret = generateSecret();
   const newHashed = await hashSecret(newSecret, c.env.ARGON2_PEPPER);
   const now = Date.now();
+  const nowIso = new Date(now).toISOString();
   // Copy the old row's scopes etc. to the new secondary row.
   const fullOld = await c.env.DB.prepare(
-    `SELECT service_id, sender_scopes, scopes, rate_limit_per_min, prefix FROM api_keys WHERE id = ?`,
+    `SELECT principal_id, sender_scopes, scopes, rate_limit_per_min, prefix FROM api_keys WHERE id = ?`,
   )
     .bind(id)
     .first<{
-      service_id: string | null;
-      sender_scopes: string;
+      principal_id: string | null;
+      sender_scopes: string | null;
       scopes: string;
       rate_limit_per_min: number;
       prefix: string;
@@ -206,19 +239,19 @@ admin.post('/v1/admin/api-keys/:id/rotate', requireScope('admin:rotate'), async 
   if (!fullOld) return buildError(c, 'not_found', 'race: api key vanished');
   await c.env.DB.prepare(
     `INSERT INTO api_keys
-       (id, prefix, secret_argon2id, service_id, sender_scopes, scopes,
+       (id, principal_id, prefix, secret_argon2id, scopes, sender_scopes,
         rate_limit_per_min, status, created_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, 'primary', ?)`,
   )
     .bind(
       newId,
+      fullOld.principal_id,
       fullOld.prefix,
       newHashed,
-      fullOld.service_id,
-      fullOld.sender_scopes,
       fullOld.scopes,
+      fullOld.sender_scopes,
       fullOld.rate_limit_per_min,
-      now,
+      nowIso,
     )
     .run();
   await c.env.KV_KEY_CACHE.put(`plain:${newId}`, newSecret, {
@@ -236,7 +269,7 @@ admin.post('/v1/admin/api-keys/:id/rotate', requireScope('admin:rotate'), async 
     });
   } else {
     await c.env.DB.prepare(`UPDATE api_keys SET status = 'revoked', revoked_at = ? WHERE id = ?`)
-      .bind(now, id)
+      .bind(nowIso, id)
       .run();
     await c.env.KV_KEY_CACHE.delete(`plain:${id}`);
     await c.env.KV_KEY_CACHE.delete(`key:${id}`);
@@ -275,10 +308,11 @@ admin.post('/v1/admin/api-keys/:id/revoke', requireScope('admin:rotate'), async 
     return c.json({ dry_run: true, target: id });
   }
   const now = Date.now();
+  const nowIso = new Date(now).toISOString();
   const r = await c.env.DB.prepare(
     `UPDATE api_keys SET status = 'revoked', revoked_at = ? WHERE id = ? AND status <> 'revoked'`,
   )
-    .bind(now, id)
+    .bind(nowIso, id)
     .run();
   if (r.meta.changes === 0) return buildError(c, 'not_found', 'api key not found or already revoked');
   await c.env.KV_KEY_CACHE.delete(`plain:${id}`);
@@ -302,12 +336,6 @@ admin.post('/v1/admin/webhook-subs', requireScope('admin:rotate'), async (c) => 
   } catch (e) {
     return buildError(c, 'bad_request', e instanceof Error ? e.message : 'invalid body');
   }
-  if (body.kind === 'bridge' && !body.local_target_id) {
-    return buildError(c, 'bad_request', 'bridge kind requires local_target_id');
-  }
-  if (body.kind !== 'bridge' && body.local_target_id) {
-    return buildError(c, 'bad_request', 'non-bridge kind must not have local_target_id');
-  }
   // Validate URL host
   try {
     const url = new URL(body.url);
@@ -328,19 +356,22 @@ admin.post('/v1/admin/webhook-subs', requireScope('admin:rotate'), async (c) => 
   }
   const id = ulid();
   const secret = generateSecret();
+  const tenantId = body.tenant_id ?? body.service_id!;
+  const nowIso = new Date().toISOString();
   await c.env.DB.prepare(
     `INSERT INTO webhook_subs
-       (id, service_id, url, kind, local_target_id, secret, events)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+       (id, tenant_id, domain_id, url, kind, secret, events, environment, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, 'prod', ?)`,
   )
     .bind(
       id,
-      body.service_id ?? null,
+      tenantId,
+      body.domain_id ?? null,
       body.url,
       body.kind,
-      body.local_target_id ?? null,
       secret,
       JSON.stringify(body.events),
+      nowIso,
     )
     .run();
   await audit(c.env, {
@@ -363,67 +394,34 @@ admin.post('/v1/admin/routing-rules', requireScope('admin:rotate'), async (c) =>
     return buildError(c, 'bad_request', e instanceof Error ? e.message : 'invalid body');
   }
   const id = ulid();
-  const now = Date.now();
+  const nowIso = new Date().toISOString();
   await c.env.DB.prepare(
-    `INSERT INTO routing_rules (id, domain, match_json, priority, created_at)
-     VALUES (?, ?, ?, ?, ?)`,
+    `INSERT INTO routing_rules
+       (id, domain_id, priority, address_pattern, action, webhook_sub_id, forward_to,
+        environment, enabled, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, 'prod', 1, ?)`,
   )
-    .bind(id, body.domain, JSON.stringify(body.match), body.priority, now)
+    .bind(
+      id,
+      body.domain_id,
+      body.priority,
+      body.address_pattern,
+      body.action,
+      body.webhook_sub_id ?? null,
+      body.forward_to ?? null,
+      nowIso,
+    )
     .run();
   await audit(c.env, {
     actor: `key:${key.key_id}`,
     action: 'routing_rule.create',
     target: id,
-    meta: { domain: body.domain, priority: body.priority },
+    meta: { domain_id: body.domain_id, priority: body.priority, action: body.action },
   });
   return c.json({ id }, 201);
 });
 
-// ---------- local webhook targets ----------
-
-admin.post('/v1/admin/local-webhook-targets', requireScope('admin:rotate'), async (c) => {
-  const key = c.get('apiKey');
-  let body;
-  try {
-    body = CreateLocalTargetRequest.parse(JSON.parse(bodyText(c)));
-  } catch (e) {
-    return buildError(c, 'bad_request', e instanceof Error ? e.message : 'invalid body');
-  }
-  // Restrict upstream to internal docker hostnames (no http://localhost, no IP literals)
-  try {
-    const url = new URL(body.upstream);
-    if (url.protocol !== 'http:' && url.protocol !== 'https:') {
-      return buildError(c, 'bad_request', 'unsupported scheme');
-    }
-    if (/^\d+\.\d+\.\d+\.\d+$/.test(url.hostname)) {
-      return buildError(c, 'bad_request', 'no IP-literal upstreams');
-    }
-  } catch {
-    return buildError(c, 'bad_request', 'invalid upstream url');
-  }
-  const id = ulid();
-  const now = Date.now();
-  try {
-    await c.env.DB.prepare(
-      `INSERT INTO local_webhook_targets (id, service, rule, upstream, created_at)
-       VALUES (?, ?, ?, ?, ?)`,
-    )
-      .bind(id, body.service, body.rule, body.upstream, now)
-      .run();
-  } catch (e) {
-    if (String(e).includes('UNIQUE')) return buildError(c, 'conflict', '(service,rule) taken');
-    throw e;
-  }
-  await audit(c.env, {
-    actor: `key:${key.key_id}`,
-    action: 'local_webhook_target.create',
-    target: id,
-    meta: { service: body.service, rule: body.rule },
-  });
-  return c.json({ id }, 201);
-});
-
-// ---------- bulk revoke service ----------
+// ---------- bulk revoke tenant ----------
 
 admin.post('/v1/admin/bulk/revoke-service', requireScope('admin:rotate'), async (c) => {
   const key = c.get('apiKey');
@@ -436,32 +434,42 @@ admin.post('/v1/admin/bulk/revoke-service', requireScope('admin:rotate'), async 
   if (body.confirmation !== body.service_id) {
     return buildError(c, 'bad_request', 'confirmation does not match service_id');
   }
-  const now = Date.now();
-  const keys = await c.env.DB.prepare(
-    `SELECT id FROM api_keys WHERE service_id = ? AND status <> 'revoked'`,
+  const nowIso = new Date().toISOString();
+  // Find all principals for this tenant, then all api_keys for those principals.
+  const principals = await c.env.DB.prepare(
+    `SELECT id FROM principals WHERE tenant_id = ?`,
   )
     .bind(body.service_id)
     .all<{ id: string }>();
-  for (const k of keys.results) {
+  const allKeys: { id: string }[] = [];
+  for (const p of principals.results) {
+    const ks = await c.env.DB.prepare(
+      `SELECT id FROM api_keys WHERE principal_id = ? AND status <> 'revoked'`,
+    )
+      .bind(p.id)
+      .all<{ id: string }>();
+    for (const k of ks.results) allKeys.push(k);
+  }
+  for (const k of allKeys) {
     await c.env.DB.prepare(
       `UPDATE api_keys SET status = 'revoked', revoked_at = ? WHERE id = ?`,
     )
-      .bind(now, k.id)
+      .bind(nowIso, k.id)
       .run();
     await c.env.KV_KEY_CACHE.delete(`plain:${k.id}`);
     await c.env.KV_KEY_CACHE.delete(`key:${k.id}`);
   }
   await audit(c.env, {
     actor: `key:${key.key_id}`,
-    action: 'service.disable',
+    action: 'tenant.disable',
     target: body.service_id,
     meta: {
       incident_ticket_id: body.incident_ticket_id,
-      revoked_api_keys: keys.results.map((k) => k.id),
+      revoked_api_keys: allKeys.map((k) => k.id),
     },
   });
   return c.json({
-    revoked_api_keys: keys.results.map((k) => k.id),
+    revoked_api_keys: allKeys.map((k) => k.id),
   });
 });
 
@@ -469,47 +477,60 @@ admin.post('/v1/admin/bulk/revoke-service', requireScope('admin:rotate'), async 
 
 admin.get('/v1/bridge/config', requireScope('admin:read'), async (c) => {
   // The bridge/daemon is a privileged consumer with `admin:read` scope. Returns
-  // ONLY senders + smtp_credentials for the daemon to mirror.
-  // Senders + SMTP credential hashes for the daemon's local mirror.
-  // Best-effort: outbound_domains may not yet have rows (fresh deploy). Empty array OK.
+  // ONLY senders + submission_credentials for the daemon to mirror.
+  // Best-effort: mail_domains may not yet have rows (fresh deploy). Empty array OK.
   type SenderRowB = {
     id: string;
     domain_id: string;
-    local_part: string;
-    display_name: string | null;
-    disabled_at: number | null;
+    address: string;
+    local_part: string | null;
+    disabled_at: string | null;
   };
-  type DomainRowB = { id: string; domain: string };
+  type DomainRowB = { id: string; name: string };
   type CredRowB = {
     id: string;
-    sender_id: string;
+    principal_id: string;
     username: string;
-    password_hash: string;
-    disabled_at: number | null;
+    bcrypt_hash: string;
+    disabled_at: string | null;
   };
+  type ScopeRowB = { principal_id: string; sender_id: string };
   let senderRows: { results: SenderRowB[] } = { results: [] };
   let domainRows: { results: DomainRowB[] } = { results: [] };
   let credRows: { results: CredRowB[] } = { results: [] };
+  let scopeRows: { results: ScopeRowB[] } = { results: [] };
   try {
     senderRows = await c.env.DB.prepare(
-      `SELECT id, domain_id, local_part, display_name, disabled_at FROM email_senders`,
+      `SELECT id, domain_id, address, local_part, disabled_at FROM email_senders`,
     ).all<SenderRowB>();
     domainRows = await c.env.DB.prepare(
-      `SELECT id, domain FROM outbound_domains`,
+      `SELECT id, name FROM mail_domains`,
     ).all<DomainRowB>();
     credRows = await c.env.DB.prepare(
-      `SELECT id, sender_id, username, password_hash, disabled_at FROM smtp_credentials`,
+      `SELECT id, principal_id, username, bcrypt_hash, disabled_at FROM submission_credentials`,
     ).all<CredRowB>();
+    scopeRows = await c.env.DB.prepare(
+      `SELECT principal_id, sender_id FROM principal_sender_scopes`,
+    ).all<ScopeRowB>();
   } catch {
-    // Tables absent (test mocks without 0002 migration). Treat as empty.
+    // Tables absent (degraded environment). Treat as empty.
   }
   const domainById = new Map<string, string>();
-  for (const d of domainRows.results) domainById.set(d.id, d.domain);
-  const credsBySender = new Map<string, CredRowB[]>();
+  for (const d of domainRows.results) domainById.set(d.id, d.name);
+  // Build sender → credentials map via principal_sender_scopes:
+  // submission_credentials.principal_id ⋈ principal_sender_scopes.principal_id ⋈ sender_id.
+  const credsByPrincipal = new Map<string, CredRowB[]>();
   for (const cr of credRows.results) {
-    const arr = credsBySender.get(cr.sender_id) ?? [];
+    const arr = credsByPrincipal.get(cr.principal_id) ?? [];
     arr.push(cr);
-    credsBySender.set(cr.sender_id, arr);
+    credsByPrincipal.set(cr.principal_id, arr);
+  }
+  const credsBySender = new Map<string, CredRowB[]>();
+  for (const sc of scopeRows.results) {
+    const creds = credsByPrincipal.get(sc.principal_id) ?? [];
+    const arr = credsBySender.get(sc.sender_id) ?? [];
+    for (const cr of creds) arr.push(cr);
+    credsBySender.set(sc.sender_id, arr);
   }
   const sendersOut = senderRows.results
     .map((s) => {
@@ -517,13 +538,13 @@ admin.get('/v1/bridge/config', requireScope('admin:read'), async (c) => {
       if (!dom) return null;
       return {
         id: s.id,
-        address: `${s.local_part}@${dom}`,
-        display_name: s.display_name,
+        address: s.address,
+        display_name: null,
         disabled: s.disabled_at != null,
         smtp_credentials: (credsBySender.get(s.id) ?? []).map((cr) => ({
           id: cr.id,
           username: cr.username,
-          password_hash: cr.password_hash,
+          password_hash: cr.bcrypt_hash,
           disabled: cr.disabled_at != null,
         })),
       };
@@ -544,9 +565,9 @@ admin.get('/v1/admin/audit/chain-status', requireScope('admin:read'), async (c) 
     `SELECT id, row_hash, at FROM audit_log ORDER BY id DESC LIMIT 1`,
   ).first<{ id: number; row_hash: string; at: number }>();
   const anchor = await c.env.DB.prepare(
-    `SELECT id, last_audit_id, last_row_hash, signed_at, external_ref
+    `SELECT id, last_audit_id, signed_at, signature, anchor_object_key
      FROM audit_anchors ORDER BY id DESC LIMIT 1`,
-  ).first<{ id: number; last_audit_id: number; last_row_hash: string; signed_at: number; external_ref: string | null }>();
+  ).first<{ id: number; last_audit_id: number; signed_at: string; signature: string; anchor_object_key: string | null }>();
   return c.json({ head, latest_anchor: anchor });
 });
 

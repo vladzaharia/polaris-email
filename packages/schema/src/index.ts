@@ -124,132 +124,124 @@ export type WebhookEnvelope = z.infer<typeof WebhookEnvelope>;
 
 // ---------- domain model (D1 row shapes; not the public REST surface) ----------
 
-export const Service = z.object({
-  id: ServiceSlug,
-  name: z.string().min(1).max(120),
-  owner: z.string().email().nullable(),
-  notes: z.string().max(2000).nullable(),
-  created_at: z.number().int(),
-  disabled_at: z.number().int().nullable(),
-});
-
-export const Domain = z.object({
-  name: DomainName,
-  direction: z.enum(['in', 'out', 'both']),
-  binding_name: z.string().nullable(),
-  dns_records_json: z.string().nullable(),
-  verified_at: z.number().int().nullable(),
-  last_verify_check_at: z.number().int().nullable(),
-  disabled_at: z.number().int().nullable(),
-});
-
-export const Mailbox = z.object({
+export const Tenant = z.object({
   id: Ulid,
-  address: Address,
-  display_name: z.string().nullable(),
-  service_id: ServiceSlug.nullable(),
-  imap_username: z.string().nullable(),
-  imap_pw_bcrypt: z.string().nullable(),
-  imap_pw_bcrypt_prev: z.string().nullable(),
-  imap_pw_rotated_at: z.number().int().nullable(),
-  retain_imap: z.number().int().min(0).max(1),
-  retention_days: z.number().int().positive(),
-  max_inbound_bytes: z.number().int().positive(),
-  created_at: z.number().int(),
-  disabled_at: z.number().int().nullable(),
+  name: z.string().min(1).max(120),
+  description: z.string().nullable(),
+  environment: z.string(),
+  to_hash_pepper_id: z.string().nullable(),
+  pepper_version: z.number().int(),
+  created_at: z.string(),
+  updated_at: z.string(),
+  disabled_at: z.string().nullable(),
 });
+export type Tenant = z.infer<typeof Tenant>;
+
+export const MailDomain = z.object({
+  id: Ulid,
+  zone_id: Ulid,
+  parent_domain_id: Ulid.nullable(),
+  name: DomainName,
+  environment: z.string(),
+  status: z.string(),
+  wildcard_subdomains: z.number().int(),
+  dmarc_policy: z.string().nullable(),
+  dmarc_rua: z.string().nullable(),
+  inbound_enabled: z.number().int(),
+  outbound_enabled: z.number().int(),
+  provider: z.string(),
+  cf_zone_id: z.string().nullable(),
+  dkim_selector: z.string().nullable(),
+  created_at: z.string(),
+  updated_at: z.string(),
+  verified_at: z.string().nullable(),
+  last_verify_check_at: z.string().nullable(),
+  disabled_at: z.string().nullable(),
+});
+export type MailDomain = z.infer<typeof MailDomain>;
 
 export const ApiKey = z.object({
   id: Ulid,
+  principal_id: Ulid,
   prefix: z.string(),
   secret_argon2id: z.string(),
-  service_id: ServiceSlug.nullable(),
-  sender_scopes: z.string(), // JSON array of SenderScope
-  scopes: z.string(), // JSON array of KeyScope
+  sender_scopes: z.string().nullable(),
+  scopes: z.string(),
   rate_limit_per_min: z.number().int().positive(),
   status: z.enum(['primary', 'secondary', 'revoked']),
-  created_at: z.number().int(),
-  revoked_at: z.number().int().nullable(),
-  last_used_at: z.number().int().nullable(),
+  created_at: z.string(),
+  revoked_at: z.string().nullable(),
+  last_used_at: z.string().nullable(),
   last_used_ip: z.string().nullable(),
   last_used_ua: z.string().nullable(),
 });
 
 export const WebhookSub = z.object({
   id: Ulid,
-  mailbox_id: Ulid.nullable(),
-  service_id: ServiceSlug.nullable(),
+  tenant_id: Ulid,
+  domain_id: Ulid.nullable(),
+  route_id: z.string().nullable(),
   url: z.string().url(),
   kind: z.enum(['external', 'tailnet', 'bridge']),
-  local_target_id: Ulid.nullable(),
   secret: z.string(),
   secret_prev: z.string().nullable(),
   events: z.string(), // JSON array of WebhookEventType
-  paused_at: z.number().int().nullable(),
+  paused_at: z.string().nullable(),
+  environment: z.string(),
+  created_at: z.string(),
+  disabled_at: z.string().nullable(),
 });
 
 export const RoutingRule = z.object({
   id: Ulid,
-  domain: DomainName,
-  match_json: z.string(),
-  mailbox_id: Ulid,
+  domain_id: Ulid,
   priority: z.number().int(),
-  created_at: z.number().int(),
-});
-
-export const LocalWebhookTarget = z.object({
-  id: Ulid,
-  service_id: ServiceSlug.nullable(),
-  service: ServiceSlug,
-  rule: RuleSlug,
-  upstream: z.string().url(),
-  created_at: z.number().int(),
-  disabled_at: z.number().int().nullable(),
+  address_pattern: z.string(),
+  action: z.enum(['webhook', 'forward', 'drop', 'alias']),
+  webhook_sub_id: Ulid.nullable(),
+  forward_to: z.string().nullable(),
+  environment: z.string(),
+  enabled: z.number().int(),
+  created_at: z.string(),
+  disabled_at: z.string().nullable(),
 });
 
 export const MessageRow = z.object({
   id: Ulid,
-  mailbox_id: Ulid.nullable(),
-  service_id: ServiceSlug.nullable(),
+  tenant_id: Ulid,
+  principal_id: Ulid.nullable(),
+  daemon_id: Ulid.nullable(),
+  submission_id: Ulid.nullable(),
   direction: z.enum(['in', 'out']),
-  mode: z.enum(['live', 'test']),
-  status: z.enum([
-    'queued',
-    'sent',
-    'delivered',
-    'bounced',
-    'failed',
-    'received',
-    'parse_failed',
-  ]),
+  status: z.enum(['received', 'mime_stored', 'queued', 'sending', 'sent', 'failed', 'bounced']),
+  send_attempt_id: z.string().nullable(),
   from_addr: z.string().nullable(),
-  to_hash: z.string().nullable(),
-  to_forensic_encrypted: z.string().nullable(),
+  to_hash_pending: z.number().int(),
   subject: z.string().nullable(),
-  size_bytes: z.number().int().nonnegative(),
-  r2_key: z.string().nullable(),
-  category: z.string().nullable(),
+  r2_key: z.string(),
+  content_sha256: z.string().nullable(),
   idempotency_key: z.string().nullable(),
-  imap_uid: z.number().int().nullable(),
-  imap_uidvalidity: z.number().int().nullable(),
-  delivered_to_imap_at: z.number().int().nullable(),
+  environment: z.string(),
+  received_at_daemon: z.string().nullable(),
+  received_at_api: z.string().nullable(),
+  queued_at: z.string().nullable(),
+  sending_at: z.string().nullable(),
+  sent_at: z.string().nullable(),
+  failed_at: z.string().nullable(),
+  bounce_metadata: z.string().nullable(),
   last_error: z.string().nullable(),
-  smtp_response: z.string().nullable(),
-  auth_results_json: z.string().nullable(),
-  created_at: z.number().int(),
-  updated_at: z.number().int(),
+  created_at: z.string(),
 });
 
 export const MessageDelivery = z.object({
   message_id: Ulid,
-  sub_id: Ulid,
+  webhook_sub_id: Ulid,
   status: z.enum(['pending', 'succeeded', 'failed', 'dlq']),
   attempts: z.number().int().nonnegative(),
+  next_attempt_at: z.string().nullable(),
   last_error: z.string().nullable(),
   last_response_code: z.number().int().nullable(),
-  next_attempt_at: z.number().int().nullable(),
-  succeeded_at: z.number().int().nullable(),
-  failed_at: z.number().int().nullable(),
+  created_at: z.string(),
 });
 
 // ---------- outbound domains + senders + SMTP credentials ----------
@@ -401,7 +393,7 @@ export const AuditRow = z.object({
   actor: z.string(),
   action: AuditAction,
   target: z.string().nullable(),
-  meta_json: z.string(),
+  meta: z.string(),
   prev_hash: z.string(),
   row_hash: z.string(),
   at: z.number().int(),
@@ -410,10 +402,17 @@ export const AuditRow = z.object({
 // ---------- admin REST shapes ----------
 
 export const IssueApiKeyRequest = z.object({
-  service_id: ServiceSlug,
+  // Tenant id (canonical). The legacy `service_id` request field is kept on the
+  // wire by clients and routed to `tenant_id` server-side; new callers should
+  // send `tenant_id` directly.
+  tenant_id: ServiceSlug.optional(),
+  service_id: ServiceSlug.optional(),
+  display_name: z.string().min(1).max(120).optional(),
   sender_scopes: z.array(SenderScope).min(1),
   scopes: KeyScopes.default(['send']),
   rate_limit_per_min: z.number().int().positive().max(100000).default(1000),
+}).refine((o) => o.tenant_id || o.service_id, {
+  message: 'tenant_id or service_id required',
 });
 
 export const RotateRequest = z.object({
@@ -422,60 +421,42 @@ export const RotateRequest = z.object({
   new_label: z.string().max(120).optional(),
 });
 
-export const CreateMailboxRequest = z.object({
-  address: Address,
-  display_name: z.string().min(1).max(120).optional(),
-  service_id: ServiceSlug.optional(),
-  retain_imap: z.boolean().default(false),
-  retention_days: z.number().int().positive().max(3650).default(90),
-  max_inbound_bytes: z
-    .number()
-    .int()
-    .positive()
-    .max(25 * 1024 * 1024)
-    .default(25 * 1024 * 1024),
-});
-
 export const CreateWebhookSubRequest = z.object({
-  mailbox_id: Ulid.optional(),
+  tenant_id: ServiceSlug.optional(),
   service_id: ServiceSlug.optional(),
+  domain_id: Ulid.optional(),
   url: z.string().url(),
   kind: z.enum(['external', 'tailnet', 'bridge']),
-  local_target_id: Ulid.optional(),
   events: z.array(WebhookEventType).min(1),
+}).refine((o) => o.tenant_id || o.service_id, {
+  message: 'tenant_id or service_id required',
 });
 
 export const CreateRoutingRuleRequest = z.object({
-  domain: DomainName,
-  mailbox_id: Ulid,
+  domain_id: Ulid,
   priority: z.number().int().default(100),
-  match: z
-    .object({
-      to_regex: z.string().max(512).optional(),
-      from_regex: z.string().max(512).optional(),
-      subject_regex: z.string().max(512).optional(),
-    })
-    .default({}),
-});
-
-export const CreateLocalTargetRequest = z.object({
-  service: ServiceSlug,
-  rule: RuleSlug,
-  upstream: z.string().url(),
+  address_pattern: z.string().min(1).max(512),
+  action: z.enum(['webhook', 'forward', 'drop', 'alias']).default('webhook'),
+  webhook_sub_id: Ulid.optional(),
+  forward_to: Address.optional(),
 });
 
 export const CreateServiceRequest = z.object({
-  id: ServiceSlug,
+  // Both legacy `id` and canonical `id` (tenant id, ULID OR slug) accepted.
+  id: z.string().min(1).max(64),
   name: z.string().min(1).max(120),
+  description: z.string().max(2000).optional(),
+  // Legacy fields retained for backward-compat client payloads. Mapped server-side.
   owner: z.string().email().optional(),
   notes: z.string().max(2000).optional(),
 });
 
 export const BulkRevokeServiceRequest = z.object({
-  service_id: ServiceSlug,
+  // Legacy field name; resolved to a tenant on the server side.
+  service_id: z.string().min(1).max(64),
   mode: z.literal('emergency'),
   incident_ticket_id: z.string().min(1).max(120),
-  confirmation: ServiceSlug, // must equal service_id
+  confirmation: z.string().min(1).max(64), // must equal service_id
 });
 
 // ---------- panel forensic decrypt ----------
@@ -488,19 +469,7 @@ export const ForensicDecryptRequest = z.object({
 
 // ---------- bridge config (sidecar fetches this) ----------
 
-export const BridgeMailboxConfig = z.object({
-  id: Ulid,
-  address: Address,
-  imap_username: z.string(),
-  imap_pw_bcrypt: z.string(),
-  imap_pw_bcrypt_prev: z.string().nullable(),
-  retain_imap: z.boolean(),
-  smtp_sender_scopes: z.array(SenderScope),
-  api_key_id: Ulid, // per-mailbox bridge key for SMTPS→REST
-  api_key_secret: z.string(),
-});
-
-export const BridgeSmtpCredential = z.object({
+export const BridgeSubmissionCredential = z.object({
   id: Ulid,
   username: Address,
   password_hash: z.string(),
@@ -512,45 +481,13 @@ export const BridgeSenderConfig = z.object({
   address: Address,
   display_name: z.string().nullable(),
   disabled: z.boolean(),
-  smtp_credentials: z.array(BridgeSmtpCredential),
+  smtp_credentials: z.array(BridgeSubmissionCredential),
 });
 export type BridgeSenderConfig = z.infer<typeof BridgeSenderConfig>;
 
-// Pending Mox operations enqueued by the api Worker and drained by the sidecar.
-// payload_b64 holds base64-encoded plaintext password material for set_password
-// ops and MUST NEVER be logged. See services/api/migrations/legacy/0005_*.sql.
-export const MoxPendingOp = z.object({
-  id: Ulid,
-  op: z.enum(['set_password', 'remove_account']),
-  username: Address,
-  payload_b64: z.string().nullable(),
-  attempts: z.number().int().nonnegative(),
-});
-export type MoxPendingOp = z.infer<typeof MoxPendingOp>;
-
-export const MoxPendingOpsResponse = z.object({
-  ops: z.array(MoxPendingOp),
-});
-export type MoxPendingOpsResponse = z.infer<typeof MoxPendingOpsResponse>;
-
-export const MoxPendingOpAckRequest = z.object({
-  ok: z.boolean(),
-  error: z.string().max(500).optional(),
-});
-export type MoxPendingOpAckRequest = z.infer<typeof MoxPendingOpAckRequest>;
-
 export const BridgeConfig = z.object({
-  mailboxes: z.array(BridgeMailboxConfig),
-  local_webhook_targets: z.array(
-    z.object({
-      service: ServiceSlug,
-      rule: RuleSlug,
-      upstream: z.string().url(),
-    }),
-  ),
   senders: z.array(BridgeSenderConfig).default([]),
   rate_limits: z.object({
-    inbound_per_mailbox_per_min: z.number().int().nonnegative().default(120),
     inbound_per_source_ip_per_min: z.number().int().nonnegative().default(60),
   }),
 });
