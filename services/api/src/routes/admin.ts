@@ -17,8 +17,14 @@ import { buildError } from '../errors.js';
 import { hashSecret } from '../hashing.js';
 import { ulid } from '@polaris-email/ids';
 import { generateSecret } from '@polaris-email/hmac';
+import { auditRoutes } from './admin/audit.js';
+import { credentials } from './admin/credentials.js';
+import { daemons } from './admin/daemons.js';
 import { domains } from './admin/domains.js';
 import { senders as sendersRoutes } from './admin/senders.js';
+import { status } from './admin/status.js';
+import { webhookDlq } from './admin/webhook-dlq.js';
+import { zones } from './admin/zones.js';
 
 export const admin = new Hono<{ Bindings: Env }>();
 
@@ -31,9 +37,15 @@ admin.use('/v1/admin/*', async (c, next) => {
 // /v1/daemon/* uses the same api-key HMAC.
 admin.use('/v1/daemon/*', adminHmac);
 
-// Sub-routers. Both rely on the admin middleware above.
+// Sub-routers. All rely on the admin middleware above.
 admin.route('/', domains);
 admin.route('/', sendersRoutes);
+admin.route('/', zones);
+admin.route('/', daemons);
+admin.route('/', credentials);
+admin.route('/', webhookDlq);
+admin.route('/', auditRoutes);
+admin.route('/', status);
 
 // ---------- tenants ----------
 
@@ -69,9 +81,93 @@ admin.post('/v1/admin/tenants', requireScope('admin:rotate'), async (c) => {
 
 admin.get('/v1/admin/tenants', requireScope('admin:read'), async (c) => {
   const rows = await c.env.DB.prepare(
-    `SELECT id, name, description, environment, created_at, disabled_at FROM tenants ORDER BY id ASC`,
+    `SELECT id, name, description, environment, retention_days, created_at, disabled_at
+     FROM tenants ORDER BY id ASC`,
   ).all();
   return c.json({ data: rows.results });
+});
+
+admin.get('/v1/admin/tenants/lookup', requireScope('admin:read'), async (c) => {
+  const id = c.req.query('id');
+  const name = c.req.query('name');
+  if (!id && !name) return buildError(c, 'bad_request', 'id or name required');
+  const sql = id
+    ? `SELECT id, name, description, environment, retention_days, created_at, disabled_at FROM tenants WHERE id = ?`
+    : `SELECT id, name, description, environment, retention_days, created_at, disabled_at FROM tenants WHERE name = ?`;
+  const row = await c.env.DB.prepare(sql).bind(id ?? name).first();
+  if (!row) return buildError(c, 'not_found', 'tenant not found');
+  return c.json(row);
+});
+
+admin.patch('/v1/admin/tenants/:id', requireScope('admin:rotate'), async (c) => {
+  const key = c.get('apiKey');
+  const id = c.req.param('id');
+  let body: { description?: string | null; retention_days?: number; disabled?: boolean };
+  try {
+    body = JSON.parse(bodyText(c) || '{}');
+  } catch {
+    return buildError(c, 'bad_request', 'invalid json');
+  }
+  const sets: string[] = [];
+  const binds: unknown[] = [];
+  if (body.description !== undefined) {
+    sets.push('description = ?');
+    binds.push(body.description);
+  }
+  if (body.retention_days !== undefined) {
+    if (!Number.isInteger(body.retention_days) || body.retention_days < 0) {
+      return buildError(c, 'bad_request', 'retention_days must be a non-negative integer');
+    }
+    sets.push('retention_days = ?');
+    binds.push(body.retention_days);
+  }
+  const nowIso = new Date().toISOString();
+  if (body.disabled === true) {
+    sets.push('disabled_at = ?');
+    binds.push(nowIso);
+  } else if (body.disabled === false) {
+    sets.push('disabled_at = NULL');
+  }
+  if (sets.length === 0) return buildError(c, 'bad_request', 'no fields to update');
+  sets.push('updated_at = ?');
+  binds.push(nowIso);
+  binds.push(id);
+  const r = await c.env.DB.prepare(`UPDATE tenants SET ${sets.join(', ')} WHERE id = ?`)
+    .bind(...binds)
+    .run();
+  if (r.meta.changes === 0) return buildError(c, 'not_found', 'tenant not found');
+  await audit(c.env, {
+    actor: `key:${key.key_id}`,
+    action: 'tenant.update',
+    target: id,
+    meta: { fields: Object.keys(body) },
+  });
+  return c.json({ id, updated_at: Date.now() });
+});
+
+admin.post('/v1/admin/tenants/:id/rotate-pepper', requireScope('admin:rotate'), async (c) => {
+  const key = c.get('apiKey');
+  const id = c.req.param('id');
+  const existing = await c.env.DB.prepare(`SELECT id, pepper_version FROM tenants WHERE id = ?`)
+    .bind(id)
+    .first<{ id: string; pepper_version: number }>();
+  if (!existing) return buildError(c, 'not_found', 'tenant not found');
+  const nextVersion = existing.pepper_version + 1;
+  const nowIso = new Date().toISOString();
+  await c.env.DB.prepare(`UPDATE tenants SET pepper_version = ?, updated_at = ? WHERE id = ?`)
+    .bind(nextVersion, nowIso, id)
+    .run();
+  // Flag every message in this tenant for re-hash by the janitor / hashing worker.
+  await c.env.DB.prepare(`UPDATE messages SET to_hash_pending = 1 WHERE tenant_id = ?`)
+    .bind(id)
+    .run();
+  await audit(c.env, {
+    actor: `key:${key.key_id}`,
+    action: 'tenant.rotate_pepper',
+    target: id,
+    meta: { pepper_version: nextVersion },
+  });
+  return c.json({ id, pepper_version: nextVersion });
 });
 
 // ---------- api keys ----------
@@ -427,6 +523,135 @@ admin.post('/v1/admin/routing-rules', requireScope('admin:rotate'), async (c) =>
   return c.json({ id }, 201);
 });
 
+admin.get('/v1/admin/routing-rules', requireScope('admin:read'), async (c) => {
+  const domainId = c.req.query('domain_id');
+  const rows = domainId
+    ? await c.env.DB.prepare(
+        `SELECT id, domain_id, priority, address_pattern, action, webhook_sub_id,
+                forward_to, environment, enabled, created_at, disabled_at
+         FROM routing_rules WHERE domain_id = ? ORDER BY priority ASC`,
+      )
+        .bind(domainId)
+        .all()
+    : await c.env.DB.prepare(
+        `SELECT id, domain_id, priority, address_pattern, action, webhook_sub_id,
+                forward_to, environment, enabled, created_at, disabled_at
+         FROM routing_rules ORDER BY priority ASC LIMIT 500`,
+      ).all();
+  return c.json({ data: rows.results });
+});
+
+admin.patch('/v1/admin/routing-rules/:id', requireScope('admin:rotate'), async (c) => {
+  const key = c.get('apiKey');
+  const id = c.req.param('id');
+  let body: { priority?: number; address_pattern?: string; enabled?: boolean };
+  try {
+    body = JSON.parse(bodyText(c) || '{}');
+  } catch {
+    return buildError(c, 'bad_request', 'invalid json');
+  }
+  const sets: string[] = [];
+  const binds: unknown[] = [];
+  if (body.priority !== undefined) {
+    sets.push('priority = ?');
+    binds.push(body.priority);
+  }
+  if (body.address_pattern !== undefined) {
+    sets.push('address_pattern = ?');
+    binds.push(body.address_pattern);
+  }
+  if (body.enabled !== undefined) {
+    sets.push('enabled = ?');
+    binds.push(body.enabled ? 1 : 0);
+  }
+  if (sets.length === 0) return buildError(c, 'bad_request', 'no fields to update');
+  binds.push(id);
+  const r = await c.env.DB.prepare(`UPDATE routing_rules SET ${sets.join(', ')} WHERE id = ?`)
+    .bind(...binds)
+    .run();
+  if (r.meta.changes === 0) return buildError(c, 'not_found', 'routing rule not found');
+  await audit(c.env, {
+    actor: `key:${key.key_id}`,
+    action: 'routing_rule.update',
+    target: id,
+    meta: { fields: Object.keys(body) },
+  });
+  return c.json({ id });
+});
+
+admin.delete('/v1/admin/routing-rules/:id', requireScope('admin:rotate'), async (c) => {
+  const key = c.get('apiKey');
+  const id = c.req.param('id');
+  const nowIso = new Date().toISOString();
+  const r = await c.env.DB.prepare(
+    `UPDATE routing_rules SET disabled_at = ?, enabled = 0 WHERE id = ? AND disabled_at IS NULL`,
+  )
+    .bind(nowIso, id)
+    .run();
+  if (r.meta.changes === 0) return buildError(c, 'not_found', 'not found or already disabled');
+  await audit(c.env, {
+    actor: `key:${key.key_id}`,
+    action: 'routing_rule.delete',
+    target: id,
+    meta: {},
+  });
+  return c.json({ id, disabled_at: Date.now() });
+});
+
+// Bulk apply: replace the rule set for a domain with the provided list.
+admin.post('/v1/admin/routing-rules/apply', requireScope('admin:rotate'), async (c) => {
+  const key = c.get('apiKey');
+  let body: {
+    domain_id?: string;
+    rules?: { priority?: number; address_pattern: string; action: string; webhook_sub_id?: string; forward_to?: string }[];
+  };
+  try {
+    body = JSON.parse(bodyText(c) || '{}');
+  } catch {
+    return buildError(c, 'bad_request', 'invalid json');
+  }
+  if (!body.domain_id || !Array.isArray(body.rules)) {
+    return buildError(c, 'bad_request', 'domain_id and rules[] required');
+  }
+  const nowIso = new Date().toISOString();
+  // Soft-disable existing rules for this domain, then insert the new set.
+  await c.env.DB.prepare(
+    `UPDATE routing_rules SET disabled_at = ?, enabled = 0
+     WHERE domain_id = ? AND disabled_at IS NULL`,
+  )
+    .bind(nowIso, body.domain_id)
+    .run();
+  const inserted: string[] = [];
+  for (const rule of body.rules) {
+    const id = ulid();
+    await c.env.DB.prepare(
+      `INSERT INTO routing_rules
+         (id, domain_id, priority, address_pattern, action, webhook_sub_id,
+          forward_to, environment, enabled, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'prod', 1, ?)`,
+    )
+      .bind(
+        id,
+        body.domain_id,
+        rule.priority ?? 100,
+        rule.address_pattern,
+        rule.action,
+        rule.webhook_sub_id ?? null,
+        rule.forward_to ?? null,
+        nowIso,
+      )
+      .run();
+    inserted.push(id);
+  }
+  await audit(c.env, {
+    actor: `key:${key.key_id}`,
+    action: 'routing_rule.update',
+    target: body.domain_id,
+    meta: { applied: inserted.length, via: 'bulk_apply' },
+  });
+  return c.json({ domain_id: body.domain_id, applied: inserted });
+});
+
 // ---------- bulk revoke tenant ----------
 
 admin.post('/v1/admin/bulk/revoke-tenant', requireScope('admin:rotate'), async (c) => {
@@ -549,17 +774,4 @@ admin.get('/v1/daemon/credentials', requireScope('admin:read'), async (c) => {
     .filter((r) => r.disabled_at != null)
     .map((r) => r.id);
   return c.json({ updates, deletions, mirror_version: mirrorVersion });
-});
-
-// ---------- audit chain status ----------
-
-admin.get('/v1/admin/audit/chain-status', requireScope('admin:read'), async (c) => {
-  const head = await c.env.DB.prepare(
-    `SELECT id, row_hash, at FROM audit_log ORDER BY id DESC LIMIT 1`,
-  ).first<{ id: number; row_hash: string; at: number }>();
-  const anchor = await c.env.DB.prepare(
-    `SELECT id, last_audit_id, signed_at, signature, anchor_object_key
-     FROM audit_anchors ORDER BY id DESC LIMIT 1`,
-  ).first<{ id: number; last_audit_id: number; signed_at: string; signature: string; anchor_object_key: string | null }>();
-  return c.json({ head, latest_anchor: anchor });
 });

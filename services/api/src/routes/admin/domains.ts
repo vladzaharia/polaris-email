@@ -122,6 +122,93 @@ domains.get('/v1/admin/domains', requireScope('admin:read'), async (c) => {
   return c.json({ data: rows.results });
 });
 
+// ---------- lookup by name ----------
+domains.get('/v1/admin/domains/lookup', requireScope('admin:read'), async (c) => {
+  const name = c.req.query('name');
+  if (!name) return buildError(c, 'bad_request', 'name required');
+  const row = await c.env.DB.prepare(
+    `SELECT id, zone_id, name, dkim_selector, status, cf_zone_id, dmarc_policy,
+            dmarc_rua, verified_at, last_verify_check_at, created_at, updated_at, disabled_at
+     FROM mail_domains WHERE name = ?`,
+  )
+    .bind(name)
+    .first<MailDomainRow>();
+  if (!row) return buildError(c, 'not_found', 'mail_domain not found');
+  return c.json(row);
+});
+
+// ---------- bulk onboard ----------
+domains.post('/v1/admin/domains/bulk-onboard', requireScope('admin:rotate'), async (c) => {
+  const key = c.get('apiKey');
+  let body: { names?: string[] };
+  try {
+    body = JSON.parse(bodyText(c) || '{}');
+  } catch {
+    return buildError(c, 'bad_request', 'invalid json');
+  }
+  if (!Array.isArray(body.names) || body.names.length === 0) {
+    return buildError(c, 'bad_request', 'names[] required');
+  }
+  const results: { name: string; id?: string; error?: string }[] = [];
+  const nowIso = new Date().toISOString();
+  for (const name of body.names) {
+    if (typeof name !== 'string' || name.length < 3 || !name.includes('.')) {
+      results.push({ name, error: 'invalid name' });
+      continue;
+    }
+    const id = ulid();
+    try {
+      const zoneId = await ensureZone(c, null, name);
+      await c.env.DB.prepare(
+        `INSERT INTO mail_domains
+           (id, zone_id, name, environment, status, wildcard_subdomains, dmarc_policy,
+            dmarc_rua, inbound_enabled, outbound_enabled, provider, dkim_selector,
+            created_at, updated_at)
+         VALUES (?, ?, ?, 'prod', 'pending', 1, 'none', ?, 0, 1, 'cloudflare', 'cf', ?, ?)`,
+      )
+        .bind(id, zoneId, name, `mailto:postmaster@${name}`, nowIso, nowIso)
+        .run();
+      results.push({ name, id });
+      await audit(c.env, {
+        actor: `key:${key.key_id}`,
+        action: 'domain.create',
+        target: id,
+        meta: { name, via: 'bulk_onboard' },
+      });
+    } catch (e) {
+      const msg = String(e);
+      results.push({ name, error: msg.includes('UNIQUE') ? 'already registered' : msg.slice(0, 200) });
+    }
+  }
+  return c.json({ results });
+});
+
+// ---------- rotate DKIM ----------
+domains.post('/v1/admin/domains/:id/rotate-dkim', requireScope('admin:rotate'), async (c) => {
+  const key = c.get('apiKey');
+  const id = c.req.param('id');
+  const row = await c.env.DB.prepare(`SELECT id, name, dkim_selector FROM mail_domains WHERE id = ?`)
+    .bind(id)
+    .first<{ id: string; name: string; dkim_selector: string | null }>();
+  if (!row) return buildError(c, 'not_found', 'mail_domain not found');
+  // Selector rotates by appending a date-stamp suffix. The actual CF API
+  // call to publish the new key happens out-of-band (packages/cf-api).
+  const current = row.dkim_selector ?? 'cf';
+  const stamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+  const next = `${current.replace(/-\d{8}$/, '')}-${stamp}`;
+  const nowIso = new Date().toISOString();
+  await c.env.DB.prepare(`UPDATE mail_domains SET dkim_selector = ?, updated_at = ? WHERE id = ?`)
+    .bind(next, nowIso, id)
+    .run();
+  await audit(c.env, {
+    actor: `key:${key.key_id}`,
+    action: 'domain.dkim_rotate',
+    target: id,
+    meta: { name: row.name, prev: current, next },
+  });
+  return c.json({ id, dkim_selector: next });
+});
+
 // ---------- get one ----------
 domains.get('/v1/admin/domains/:id', requireScope('admin:read'), async (c) => {
   const id = c.req.param('id');

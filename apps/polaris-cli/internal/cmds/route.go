@@ -33,7 +33,7 @@ func routeListCmd() *cobra.Command {
 				q.Set("domain", domain)
 			}
 			var out []client.Route
-			if err := cl.DoJSON(CtxBackground(), "GET", "/v1/admin/routes", q, nil, &out); err != nil {
+			if err := cl.DoJSON(CtxBackground(), "GET", "/v1/admin/routing-rules", q, nil, &out); err != nil {
 				return err
 			}
 			t := &output.Table{Headers: []string{"ID", "DOMAIN", "PATTERN", "ACTION", "TARGET", "ENABLED"}}
@@ -66,7 +66,7 @@ func routeAddCmd() *cobra.Command {
 			}
 			req := client.RouteCreateRequest{DomainName: domain, Pattern: pattern, Action: action, URL: urlFlag, ForwardTo: fwd, TenantName: tenant}
 			var out client.Route
-			if err := cl.DoJSON(CtxBackground(), "POST", "/v1/admin/routes", nil, req, &out); err != nil {
+			if err := cl.DoJSON(CtxBackground(), "POST", "/v1/admin/routing-rules", nil, req, &out); err != nil {
 				return err
 			}
 			return Emit(out)
@@ -105,7 +105,7 @@ func routeUpdateCmd() *cobra.Command {
 			if fwd != "" {
 				body["forward_to"] = fwd
 			}
-			path := fmt.Sprintf("/v1/admin/routes/%s", url.PathEscape(args[0]))
+			path := fmt.Sprintf("/v1/admin/routing-rules/%s", url.PathEscape(args[0]))
 			var out client.Route
 			if err := cl.DoJSON(CtxBackground(), "PATCH", path, nil, body, &out); err != nil {
 				return err
@@ -138,7 +138,7 @@ func setRouteEnabled(id string, enabled bool) error {
 	if err != nil {
 		return err
 	}
-	path := fmt.Sprintf("/v1/admin/routes/%s", url.PathEscape(id))
+	path := fmt.Sprintf("/v1/admin/routing-rules/%s", url.PathEscape(id))
 	body := map[string]any{"enabled": enabled}
 	var out client.Route
 	if err := cl.DoJSON(CtxBackground(), "PATCH", path, nil, body, &out); err != nil {
@@ -169,7 +169,7 @@ func routeApplyCmd() *cobra.Command {
 				return err
 			}
 			var out map[string]any
-			if err := cl.DoJSON(CtxBackground(), "POST", "/v1/admin/routes/apply", nil, spec, &out); err != nil {
+			if err := cl.DoJSON(CtxBackground(), "POST", "/v1/admin/routing-rules/apply", nil, spec, &out); err != nil {
 				return err
 			}
 			return Emit(out)

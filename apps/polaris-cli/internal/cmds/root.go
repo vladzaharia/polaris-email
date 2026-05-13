@@ -59,11 +59,9 @@ func NewRoot() *cobra.Command {
 		newRouteCmd(),
 		newCredCmd(),
 		newWebhookCmd(),
-		newLogsCmd(),
 		newStatusCmd(),
 		newAuditCmd(),
 		newBootstrapCmd(),
-		newCostCmd(),
 		newVersionCmd(),
 	)
 	return root

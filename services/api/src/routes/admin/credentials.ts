@@ -1,0 +1,132 @@
+// Admin credentials facade. Unions api_keys + submission_credentials so the
+// CLI's `polaris-email cred list|rotate|revoke` can operate on either kind
+// without the operator caring.
+import { Hono } from 'hono';
+import { audit } from '../../audit.js';
+import { requireScope } from '../../auth.js';
+import type { Env } from '../../env.js';
+import { buildError } from '../../errors.js';
+
+export const credentials = new Hono<{ Bindings: Env }>();
+
+interface ApiKeyRow {
+  id: string;
+  principal_id: string;
+  status: string;
+  created_at: string;
+}
+interface SmtpCredRow {
+  id: string;
+  principal_id: string;
+  username: string;
+  created_at: string;
+  disabled_at: string | null;
+}
+interface PrincipalRow {
+  id: string;
+  tenant_id: string;
+}
+
+credentials.get('/v1/admin/credentials', requireScope('admin:read'), async (c) => {
+  const tenant = c.req.query('tenant');
+  if (!tenant) return buildError(c, 'bad_request', 'tenant required');
+  // Two-step lookup (mock D1 doesn't parse joins).
+  const principals = await c.env.DB.prepare(
+    `SELECT id, tenant_id FROM principals WHERE tenant_id = ?`,
+  )
+    .bind(tenant)
+    .all<PrincipalRow>();
+  if (principals.results.length === 0) return c.json({ data: [] });
+  const data: { kind: 'api_key' | 'smtp'; id: string; principal_id: string; status: string; created_at: string; username?: string }[] = [];
+  for (const p of principals.results) {
+    const apiKeys = await c.env.DB.prepare(
+      `SELECT id, principal_id, status, created_at FROM api_keys WHERE principal_id = ? ORDER BY created_at DESC`,
+    )
+      .bind(p.id)
+      .all<ApiKeyRow>();
+    for (const k of apiKeys.results) {
+      data.push({ kind: 'api_key', id: k.id, principal_id: k.principal_id, status: k.status, created_at: k.created_at });
+    }
+    const smtps = await c.env.DB.prepare(
+      `SELECT id, principal_id, username, created_at, disabled_at FROM submission_credentials WHERE principal_id = ?`,
+    )
+      .bind(p.id)
+      .all<SmtpCredRow>();
+    for (const s of smtps.results) {
+      data.push({
+        kind: 'smtp',
+        id: s.id,
+        principal_id: s.principal_id,
+        status: s.disabled_at ? 'revoked' : 'active',
+        created_at: s.created_at,
+        username: s.username,
+      });
+    }
+  }
+  return c.json({ data });
+});
+
+async function resolveCredential(c: { env: Env }, id: string): Promise<{ kind: 'api_key' | 'smtp'; principal_id: string } | null> {
+  const ak = await c.env.DB.prepare(`SELECT principal_id FROM api_keys WHERE id = ?`)
+    .bind(id)
+    .first<{ principal_id: string }>();
+  if (ak) return { kind: 'api_key', principal_id: ak.principal_id };
+  const sc = await c.env.DB.prepare(`SELECT principal_id FROM submission_credentials WHERE id = ?`)
+    .bind(id)
+    .first<{ principal_id: string }>();
+  if (sc) return { kind: 'smtp', principal_id: sc.principal_id };
+  return null;
+}
+
+credentials.post('/v1/admin/credentials/:id/revoke', requireScope('admin:rotate'), async (c) => {
+  const key = c.get('apiKey');
+  const id = c.req.param('id');
+  const resolved = await resolveCredential(c, id);
+  if (!resolved) return buildError(c, 'not_found', 'credential not found');
+  const nowIso = new Date().toISOString();
+  if (resolved.kind === 'api_key') {
+    await c.env.DB.prepare(
+      `UPDATE api_keys SET status = 'revoked', revoked_at = ? WHERE id = ? AND status <> 'revoked'`,
+    )
+      .bind(nowIso, id)
+      .run();
+    await c.env.KV_KEY_CACHE.delete(`plain:${id}`);
+    await c.env.KV_KEY_CACHE.delete(`key:${id}`);
+  } else {
+    await c.env.DB.prepare(
+      `UPDATE submission_credentials SET disabled_at = ? WHERE id = ? AND disabled_at IS NULL`,
+    )
+      .bind(nowIso, id)
+      .run();
+  }
+  // Stamp the DO so /v1/send/raw rejects the next submission.
+  const doId = c.env.REVOCATION_DO.idFromName(resolved.principal_id);
+  await c.env.REVOCATION_DO.get(doId).fetch('https://revocation-do/revoke', {
+    method: 'POST',
+    body: JSON.stringify({ reason: 'credentials_facade_revoke' }),
+  });
+  await audit(c.env, {
+    actor: `key:${key.key_id}`,
+    action: resolved.kind === 'api_key' ? 'api_key.revoke' : 'smtp_credential.disable',
+    target: id,
+    meta: { principal_id: resolved.principal_id, via: 'credentials_facade' },
+  });
+  return c.json({ id, revoked_at: Date.now() });
+});
+
+credentials.post('/v1/admin/credentials/:id/rotate', requireScope('admin:rotate'), async (c) => {
+  const id = c.req.param('id');
+  const resolved = await resolveCredential(c, id);
+  if (!resolved) return buildError(c, 'not_found', 'credential not found');
+  // The kind-specific rotate logic lives in admin.ts (api-keys rotate) and
+  // admin/senders.ts (smtp credentials are rotated by issuing a new one).
+  // The facade only acks the request and tells the operator where to go
+  // for the actual rotate flow.
+  return c.json({
+    id,
+    kind: resolved.kind,
+    message: resolved.kind === 'api_key'
+      ? `use POST /v1/admin/api-keys/${id}/rotate to receive the new secret`
+      : 'SMTP credentials rotate by issuing a new one via POST /v1/admin/senders/:senderId/smtp-credentials',
+  });
+});
