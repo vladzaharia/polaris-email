@@ -247,6 +247,9 @@ importers:
       '@polaris-email/hmac':
         specifier: workspace:*
         version: link:../../packages/hmac
+      '@polaris-email/ids':
+        specifier: workspace:*
+        version: link:../../packages/ids
     devDependencies:
       '@cloudflare/workers-types':
         specifier: ^4.20240909.0

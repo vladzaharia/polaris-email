@@ -12,6 +12,10 @@ export interface OutboundQueueMessage {
   r2KeyOrInline: string;
   fromDomain: string;
   fromAddress: string;
+  /** Tenant that owns the sending domain (canonical). */
+  tenantId: string;
+  /** Optional mail_domains.id (canonical FK). */
+  domainId: string | null;
   mode: 'live' | 'test';
   retries: number;
 }
@@ -27,8 +31,8 @@ export interface FanoutEvent {
     | 'credential.rotated'
     | 'credential.revoked';
   message_id: string;
-  mailbox_id: string | null;
-  service_id: string | null;
+  tenant_id: string | null;
+  domain_id: string | null;
   created_at: number;
   data: Record<string, unknown>;
 }

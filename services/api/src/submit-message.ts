@@ -137,14 +137,22 @@ export async function submitMessage(
     await recordClaim(env, submission.idempotencyKey, messageId);
   }
 
-  // 6. Enqueue. Payload carries only references — no MIME (I7: 128 KB queue cap).
+  // 6. Enqueue. Payload carries only references — no MIME (queue 128 KB cap).
+  const fromDomain = submission.fromAddr.split('@')[1] ?? '';
+  const domainRow = fromDomain
+    ? await env.DB.prepare(`SELECT id FROM mail_domains WHERE name = ?`)
+        .bind(fromDomain)
+        .first<{ id: string }>()
+    : null;
   const sendAttemptId = ulid();
   await env.OUTBOUND_QUEUE.send({
     messageId,
     source: 'raw',
     r2KeyOrInline: r2Key,
-    fromDomain: submission.fromAddr.split('@')[1] ?? '',
+    fromDomain,
     fromAddress: submission.fromAddr,
+    tenantId: submission.tenantId,
+    domainId: domainRow?.id ?? null,
     mode: 'live',
     retries: 0,
   });

@@ -10,7 +10,8 @@
     "lint": "echo ok"
   },
   "dependencies": {
-    "@polaris-email/hmac": "workspace:*"
+    "@polaris-email/hmac": "workspace:*",
+    "@polaris-email/ids": "workspace:*"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20240909.0",

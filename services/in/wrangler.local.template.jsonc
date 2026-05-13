@@ -7,6 +7,6 @@
     { "binding": "R2", "bucket_name": "polaris-email", "jurisdiction": "eu" }
   ],
   "kv_namespaces": [
-    { "binding": "KV_RATE", "id": "${KV_RATE_LIMIT_ID}" }
+    { "binding": "KV_RATE_LIMIT", "id": "${KV_RATE_LIMIT_ID}" }
   ]
 }

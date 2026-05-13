@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import worker from '../src/index.js';
 import type { OutboundQueueMessage, SendEmailBinding } from '../src/env.js';
 
-class FakeKV {}
 class FakeQueue<T> {
   sent: T[] = [];
   async send(m: T) {
@@ -22,16 +21,32 @@ class FakeStatement {
     return this;
   }
   async first<T>(): Promise<T | null> {
-    if (/SELECT binding_name FROM domains WHERE name = \?/.test(this.sql)) {
+    if (/SELECT id, name FROM mail_domains WHERE name = \?/.test(this.sql)) {
       const name = this.params[0] as string;
-      return (this.db.domains.get(name) as T) ?? null;
+      const row = this.db.domains.get(name);
+      return row ? (row as T) : null;
     }
     return null;
   }
   async run() {
-    if (/UPDATE messages/.test(this.sql)) {
-      const [status, last_error, smtp_response, _ts, id] = this.params;
-      this.db.statuses.set(id as string, { status, last_error, smtp_response });
+    if (/UPDATE messages SET status = \?, sending_at/.test(this.sql)) {
+      const [status, _ts, last_error, bounce_metadata, id] = this.params;
+      this.db.statuses.set(id as string, { status, last_error, bounce_metadata });
+      return { meta: { changes: 1 }, results: [] };
+    }
+    if (/UPDATE messages SET status = \?, sent_at/.test(this.sql)) {
+      const [status, _ts, last_error, bounce_metadata, id] = this.params;
+      this.db.statuses.set(id as string, { status, last_error, bounce_metadata });
+      return { meta: { changes: 1 }, results: [] };
+    }
+    if (/UPDATE messages SET status = \?, failed_at/.test(this.sql)) {
+      const [status, _ts, last_error, bounce_metadata, id] = this.params;
+      this.db.statuses.set(id as string, { status, last_error, bounce_metadata });
+      return { meta: { changes: 1 }, results: [] };
+    }
+    if (/UPDATE messages SET status = \?, last_error/.test(this.sql)) {
+      const [status, last_error, bounce_metadata, id] = this.params;
+      this.db.statuses.set(id as string, { status, last_error, bounce_metadata });
       return { meta: { changes: 1 }, results: [] };
     }
     return { meta: { changes: 0 }, results: [] };
@@ -41,8 +56,8 @@ class FakeStatement {
   }
 }
 class FakeDB {
-  domains = new Map<string, { binding_name: string | null }>();
-  statuses = new Map<string, { status: unknown; last_error: unknown; smtp_response: unknown }>();
+  domains = new Map<string, { id: string; name: string }>();
+  statuses = new Map<string, { status: unknown; last_error: unknown; bounce_metadata: unknown }>();
   prepare(sql: string) {
     return new FakeStatement(this, sql);
   }
@@ -86,9 +101,8 @@ function mkEnv(binding?: FakeBinding) {
     DB: new FakeDB() as unknown as D1Database,
     R2: new FakeR2() as unknown as R2Bucket,
     FANOUT_QUEUE: new FakeQueue() as unknown as Queue<unknown>,
-    KV: new FakeKV(),
   } as Record<string, unknown>;
-  if (binding) env.EMAIL_DEFAULT = binding;
+  if (binding) env.EMAIL_EXAMPLE_COM = binding;
   return env;
 }
 
@@ -98,7 +112,7 @@ describe('out worker', () => {
     const env = mkEnv(binding);
     const db = env.DB as unknown as FakeDB;
     const r2 = env.R2 as unknown as FakeR2;
-    db.domains.set('example.com', { binding_name: 'EMAIL_DEFAULT' });
+    db.domains.set('example.com', { id: 'D1', name: 'example.com' });
     r2.map.set(
       'out/svc/msg.json',
       JSON.stringify({
@@ -114,6 +128,8 @@ describe('out worker', () => {
       r2KeyOrInline: 'out/svc/msg.json',
       fromDomain: 'example.com',
       fromAddress: 'a@example.com',
+      tenantId: 'svc',
+      domainId: 'D1',
       mode: 'live',
       retries: 0,
     });
@@ -127,7 +143,7 @@ describe('out worker', () => {
     const env = mkEnv();
     const db = env.DB as unknown as FakeDB;
     const r2 = env.R2 as unknown as FakeR2;
-    db.domains.set('example.com', { binding_name: 'EMAIL_DEFAULT' });
+    db.domains.set('example.com', { id: 'D1', name: 'example.com' });
     r2.map.set(
       'k',
       JSON.stringify({
@@ -143,6 +159,8 @@ describe('out worker', () => {
       r2KeyOrInline: 'k',
       fromDomain: 'example.com',
       fromAddress: 'a@example.com',
+      tenantId: 'svc',
+      domainId: 'D1',
       mode: 'test',
       retries: 0,
     });
@@ -157,7 +175,7 @@ describe('out worker', () => {
     const env = mkEnv(binding);
     const db = env.DB as unknown as FakeDB;
     const r2 = env.R2 as unknown as FakeR2;
-    db.domains.set('example.com', { binding_name: 'EMAIL_DEFAULT' });
+    db.domains.set('example.com', { id: 'D1', name: 'example.com' });
     r2.map.set('k', JSON.stringify({ from: 'a@example.com', to: ['x@y.com'], subject: 's' }));
     const batch = mkBatch({
       messageId: 'B',
@@ -165,6 +183,8 @@ describe('out worker', () => {
       r2KeyOrInline: 'k',
       fromDomain: 'example.com',
       fromAddress: 'a@example.com',
+      tenantId: 'svc',
+      domainId: 'D1',
       mode: 'live',
       retries: 0,
     });
@@ -173,7 +193,7 @@ describe('out worker', () => {
     expect(sent[0]?.event).toBe('message.bounced');
     expect(db.statuses.get('B')?.status).toBe('bounced');
   });
-  it('no binding for domain → failed', async () => {
+  it('no domain row → failed', async () => {
     const env = mkEnv();
     const r2 = env.R2 as unknown as FakeR2;
     r2.map.set('k', JSON.stringify({ from: 'a@nodom.com', to: ['x@y.com'], subject: 's' }));
@@ -183,6 +203,8 @@ describe('out worker', () => {
       r2KeyOrInline: 'k',
       fromDomain: 'nodom.com',
       fromAddress: 'a@nodom.com',
+      tenantId: 'svc',
+      domainId: null,
       mode: 'live',
       retries: 0,
     });
