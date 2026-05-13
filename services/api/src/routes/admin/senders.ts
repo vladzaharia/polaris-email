@@ -106,38 +106,12 @@ senders.delete('/v1/admin/senders/:id', requireScope('admin:rotate'), async (c) 
   const key = c.get('apiKey');
   const id = c.req.param('id');
   const now = Date.now();
-  // Resolve the sender's full address up-front so we can enqueue a Mox
-  // remove_account op alongside the soft-disable update.
-  const senderRow = await c.env.DB.prepare(
-    `SELECT id, domain_id, local_part, disabled_at FROM email_senders WHERE id = ?`,
+  const r = await c.env.DB.prepare(
+    `UPDATE email_senders SET disabled_at = ? WHERE id = ? AND disabled_at IS NULL`,
   )
-    .bind(id)
-    .first<{ id: string; domain_id: string; local_part: string; disabled_at: number | null }>();
-  if (!senderRow || senderRow.disabled_at != null) {
-    return buildError(c, 'not_found', 'not found or already disabled');
-  }
-  const domRow = await c.env.DB.prepare(
-    `SELECT domain FROM outbound_domains WHERE id = ?`,
-  )
-    .bind(senderRow.domain_id)
-    .first<{ domain: string }>();
-  const username = domRow ? `${senderRow.local_part}@${domRow.domain}` : null;
-  const opId = ulid();
-  const ops = [
-    c.env.DB.prepare(
-      `UPDATE email_senders SET disabled_at = ? WHERE id = ? AND disabled_at IS NULL`,
-    ).bind(now, id),
-  ];
-  if (username) {
-    ops.push(
-      c.env.DB.prepare(
-        `INSERT INTO mox_pending_ops (id, op, username, payload_b64, created_at)
-         VALUES (?, ?, ?, NULL, ?)`,
-      ).bind(opId, 'remove_account', username, now),
-    );
-  }
-  const results = await c.env.DB.batch(ops);
-  if (results[0]?.meta?.changes === 0) {
+    .bind(now, id)
+    .run();
+  if (r.meta.changes === 0) {
     return buildError(c, 'not_found', 'not found or already disabled');
   }
   await audit(c.env, {
@@ -183,27 +157,20 @@ senders.post(
     const now = Date.now();
     const username = `${sender.local_part}@${sender.domain}`;
     const secret = generateSecret();
+    // Hash the secret before persistence — D1 only ever sees the hash. The
+    // submission daemon polls /v1/bridge/credentials and mirrors the hash
+    // locally; the plaintext is returned to the caller exactly once below.
+    // (Workers WebCrypto has no native bcrypt; we reuse the existing
+    // PBKDF2/Argon2id-shaped helper used for API keys.)
     const hashed = await hashSecret(secret, c.env.ARGON2_PEPPER);
-    // Pre-compute the mox-pending-ops row so the credential insert + the queued
-    // op flip into D1 atomically (D1 .batch() is the transactional primitive
-    // available to Workers). The sidecar drains the queue on its next ~5s
-    // config-poll tick and bcrypts the plaintext into Mox via SetPassword.
-    // SECURITY: payload_b64 is plaintext-bearing — must NEVER be logged.
-    const opId = ulid();
-    const payloadB64 = btoa(secret);
     try {
-      await c.env.DB.batch([
-        c.env.DB.prepare(
-          `INSERT INTO smtp_credentials
-             (id, sender_id, username, password_hash, label, created_at)
-           VALUES (?, ?, ?, ?, ?, ?)`,
-        ).bind(id, senderId, username, hashed, body.label ?? null, now),
-        c.env.DB.prepare(
-          `INSERT INTO mox_pending_ops
-             (id, op, username, payload_b64, created_at)
-           VALUES (?, ?, ?, ?, ?)`,
-        ).bind(opId, 'set_password', username, payloadB64, now),
-      ]);
+      await c.env.DB.prepare(
+        `INSERT INTO smtp_credentials
+           (id, sender_id, username, password_hash, label, created_at)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+      )
+        .bind(id, senderId, username, hashed, body.label ?? null, now)
+        .run();
     } catch (e) {
       if (String(e).includes('UNIQUE'))
         return buildError(c, 'conflict', 'username already in use');

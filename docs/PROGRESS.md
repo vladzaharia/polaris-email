@@ -9,7 +9,7 @@ Updated on every commit; pairs with `docs/OPERATOR.md` (workflows) and
 | Phase | Status | Notes |
 |---|---|---|
 | **−1** Cloudflare API spike | ✅ Scripts ready | Operator runs against live CF account; fills out `docs/spike/results.md`. |
-| **0** Schema + structural rebuild | ✅ Foundation | New schema (control/messages/audit shards), new packages, new endpoints. Modular monolith collapse deferred — legacy `services/api` continues to serve while the new pipeline runs alongside. |
+| **0** Schema + structural rebuild | ✅ Foundation | Single-D1 v2 schema added alongside legacy (rolled back from sharded design per operator decision). New packages and endpoints. Modular monolith collapse deferred — legacy `services/api` continues to serve while the new pipeline runs alongside. |
 | **0.5** Critical security mitigations | ✅ C1, C2, H1, H7 | C3 partially (admin scope split is wired in CLI but the Worker-side enforcement is in `services/api/src/auth.ts` only for the legacy scopes; new scopes need to land in the workers/control-plane cutover). |
 | **1** Submission daemon (Go) | ✅ Done | 17 files, all tests pass. Multi-host registration model in place. |
 | **2** Polaris CLI (Go) | ✅ Done | Full subcommand tree, vet+build clean. End-to-end via `--help` confirmed. Exhaustive automated tests are a v1.x backfill. |
@@ -54,7 +54,7 @@ they're sequenced for after the user runs Phase −1.
 1. **Modular monolith collapse**: `services/{api,out,fanout,anchor,staleness,janitor,synthetic}` → `workers/control-plane`. The new endpoints live alongside the legacy ones; cutover is incremental.
 2. **`services/api/src/routes/messages.ts:79-88` migration to new `domains` table**: still reads the legacy table; the `submit-message.ts` pipeline reads the new shape. Cut over once the new shape is populated.
 3. **`services/out/src/index.ts` Provider integration**: the Provider interface exists in `@polaris-email/providers`; `services/out` still uses per-domain `send_email` bindings until Phase 0d cutover.
-4. **D1 sharding cutover**: migrations exist for `control/`, `messages/`, `audit/`; tests still apply `legacy/` migrations. Cutover requires creating the new D1 databases (`wrangler d1 create`) and updating the API's wrangler.jsonc.
+4. **Schema cutover (0007)**: migration 0006 added v2 tables alongside legacy; the cutover migration will copy legacy → v2 and drop the legacy ones, then rename `messages_v2` → `messages`. (Sharded design was rolled back; single D1 going forward.)
 5. **Phase 4 observability**: Logpush config, Workers Analytics Engine writes, `workers-otel` instrumentation are documented but not yet wired into a Worker.
 6. **Phase 5 H4 / H6 / H9**: R2 object lock provisioning + per-tenant envelope encryption + one-shot bootstrap with anchored genesis are documented in the plan but require operator action to provision (Object Lock retention period, per-tenant KEK, WebAuthn enrollment).
 

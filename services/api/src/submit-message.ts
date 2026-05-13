@@ -67,7 +67,6 @@ export async function submitMessage(
   env: Env,
   submission: NormalizedSubmission
 ): Promise<SubmissionResult> {
-  const messagesDb = env.DB_MESSAGES ?? env.DB;
   const now = new Date().toISOString();
 
   // 1. Idempotency claim (D1 atomic — I2 mitigation).
@@ -107,9 +106,9 @@ export async function submitMessage(
 
   // 4. Insert messages row in `received` then transition to `mime_stored` →
   //    `queued` via CAS as we go. State machine per A7.
-  await messagesDb
+  await env.DB
     .prepare(
-      `INSERT INTO messages
+      `INSERT INTO messages_v2
         (id, tenant_id, principal_id, daemon_id, submission_id, direction, status,
          from_addr, to_hash_pending, subject, r2_key, content_sha256,
          idempotency_key, environment, received_at_daemon, received_at_api,
@@ -149,15 +148,15 @@ export async function submitMessage(
     mode: 'live',
     retries: 0,
   });
-  await messagesDb
+  await env.DB
     .prepare(
-      `UPDATE messages SET status = 'queued', send_attempt_id = ?2, queued_at = ?3
+      `UPDATE messages_v2 SET status = 'queued', send_attempt_id = ?2, queued_at = ?3
        WHERE id = ?1 AND status = 'mime_stored'`
     )
     .bind(messageId, sendAttemptId, now)
     .run();
 
-  // 7. Audit (writes to legacy DB.audit_log; will route to DB_AUDIT once cut over).
+  // 7. Audit.
   await audit(env, {
     actor: submission.principalId,
     action: 'message.submitted',

@@ -39,8 +39,7 @@ export async function tryClaim(
   }
   // SQLite's INSERT OR IGNORE + RETURNING gives us the atomic semantics we need.
   // If a row exists, RETURNING is empty; we then SELECT to fetch the message_id.
-  const dbName = env.DB_MESSAGES ?? env.DB; // shim until DB_MESSAGES binding lands
-  const insert = await dbName
+  const insert = await env.DB
     .prepare(
       `INSERT OR IGNORE INTO idempotency_keys (key, tenant_id, principal_id, message_id, created_at)
        VALUES (?1, ?2, ?3, NULL, ?4)
@@ -53,7 +52,7 @@ export async function tryClaim(
   }
   // Duplicate — fetch the existing row's message_id (may be null if the original
   // request hasn't reached recordClaim() yet).
-  const row = await dbName
+  const row = await env.DB
     .prepare(`SELECT message_id FROM idempotency_keys WHERE key = ?1`)
     .bind(key)
     .first<{ message_id: string | null }>();
@@ -62,8 +61,7 @@ export async function tryClaim(
 
 /** Attach the message_id to the claim; called after the messages row is created. */
 export async function recordClaim(env: Env, key: string, messageId: string): Promise<void> {
-  const dbName = env.DB_MESSAGES ?? env.DB;
-  await dbName
+  await env.DB
     .prepare(`UPDATE idempotency_keys SET message_id = ?2 WHERE key = ?1 AND message_id IS NULL`)
     .bind(key, messageId)
     .run();

@@ -40,7 +40,7 @@ must confirm during Phase −1 spike).
 | Service | Cost/mo | Notes |
 |---|---|---|
 | Workers Paid | $5–10 | Subscription + modest overage |
-| D1 storage (sharded) | $5–10 | Time-partitioned messages-YYYY-MM rotates monthly |
+| D1 storage | $5–10 | Single `polaris-email` DB; old message rows archived to R2 Parquet when needed |
 | D1 reads/writes | $5–10 | ~3M writes × 4 ops/msg avg |
 | R2 storage | $10 | ~150 GB MIME (2-week retention; older dumped to Parquet) |
 | R2 ops | $5 | ~3M PUT + retries |
@@ -57,7 +57,7 @@ must confirm during Phase −1 spike).
 | Service | Cost/mo | Notes |
 |---|---|---|
 | Workers Paid (CPU-ms heavy) | $50–500 | Driven by per-request work; see I5 below |
-| D1 storage (sharded) | $50 | Multiple time-partitioned message databases live simultaneously |
+| D1 storage | $50 | Single `polaris-email` DB; older message rows archived monthly to R2 Parquet |
 | D1 reads/writes | $100–200 | 300M writes/mo × 4–5 ops avg |
 | R2 storage | $200 | ~15 TB rolling MIME |
 | R2 ops | $50 | 300M PUT + Class B reads in fanout |
@@ -97,8 +97,8 @@ Things that disproportionately blow the bill if not watched:
 
 5. **D1 storage cliff at 10 GB/database**: not a billing cost so much as a
    correctness cliff — writes fail when the cap is reached. **Mitigation**:
-   monthly rotation of `polaris-messages-YYYY-MM` with R2 Parquet dump
-   (I3).
+   monthly archival of older-than-N-day rows from the single
+   `polaris-email` D1 to R2 Parquet (the sharded design was rolled back; I3).
 
 6. **Per-tenant Workers Secrets**: ~64 secret cap per Worker. Adding a
    tenant pepper per tenant blows this at 50+ tenants. **Mitigation**:

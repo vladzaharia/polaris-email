@@ -1,13 +1,6 @@
 // Cloudflare environment bindings for polaris-email-api.
 export interface Env {
-  // Legacy single-D1 binding (Phase 0 keeps for backwards compat).
   DB: D1Database;
-  // New sharded D1 bindings (Phase 0 plan: polaris-control / messages-YYYY-MM /
-  // audit). Optional during the migration window — code that needs them falls
-  // back to DB if they aren't set.
-  DB_CONTROL?: D1Database;
-  DB_MESSAGES?: D1Database;
-  DB_AUDIT?: D1Database;
 
   R2: R2Bucket;
   KV_NONCE: KVNamespace;

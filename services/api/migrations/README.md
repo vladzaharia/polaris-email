@@ -1,97 +1,76 @@
 # polaris-email D1 migrations
 
-This directory holds the SQL migration files for every D1 database in the
-sharded polaris-email architecture, plus the original (pre-redesign) migrations
-under `legacy/`.
+Single D1 database (`polaris-email`). The sharded design described in earlier
+versions of the plan has been rolled back: at our expected volume, splitting
+D1 by purpose adds operational complexity without commensurate benefit.
+Reduce to one DB, expand-then-contract migrations within it.
 
 ## Layout
 
 ```
 migrations/
-  legacy/      Pre-redesign migrations 0001..0005. Apply to the existing
-               single `polaris-email` D1 (the only DB in production today).
-               This is what `wrangler d1 migrations apply polaris-email`
-               consumes (see services/api/wrangler.jsonc -> migrations_dir).
-               Do not edit historical files; add new ones if a hotfix to the
-               legacy DB is required during the cutover window.
-
-  control/     Schema for the new `polaris-control` D1. Holds tenants,
-               zones, domains, principals (api keys + smtp creds), routing
-               rules, webhook subscriptions, DKIM keys, daemons.
-
-  messages/    TEMPLATE schema for `polaris-messages-YYYY-MM` shards. A new
-               D1 is created each month (provisioned at runtime); the runner
-               applies every migration in this directory to the fresh shard
-               before first use.
-
-  audit/       Schema for `polaris-audit`. Hash-chained audit log + signed
-               anchor records.
+  0001_init.sql                     Initial schema (services, domains,
+                                    mailboxes, api_keys, messages, audit_log,
+                                    audit_anchors, bootstrap, ...)
+  0002_outbound_domains.sql         Per-domain DKIM/DMARC + SMTP creds
+                                    (legacy 'outbound_domains' / 'smtp_credentials').
+  0003_smtp_credentials_rename_hash.sql
+  0004_sender_scopes_to_manytomany.sql
+  0005_mox_pending_ops.sql          (Drop in 0006 — Mox era over.)
+  0006_phase0.sql                   v2 design tables + drops Mox-era tables.
+                                    Coexists with legacy tables until cutover
+                                    in 0007.
 ```
 
-## The three new databases
+`wrangler d1 migrations apply polaris-email --remote` consumes this
+directory in lex order; the custom runner in `@polaris-email/migrations`
+exposes a programmatic alternative (used by the Phase 2 CLI's
+`polaris-email bootstrap` flow).
 
-| Database                     | Purpose                                                |
-| ---------------------------- | ------------------------------------------------------ |
-| `polaris-control`            | Slow-changing config: tenants, domains, principals.    |
-| `polaris-messages-YYYY-MM`   | Per-month message metadata + idempotency keys.         |
-| `polaris-audit`              | Append-only audit log with hash-chained tamper detect. |
+## What 0006 does
 
-Sharding messages by month bounds the per-shard row count and keeps backups,
-restores, and queries cheap. The control DB stays small and is the join target
-for every message lookup.
+- **Drops**: `mailboxes`, `mox_pending_ops`, `local_webhook_targets`,
+  `api_key_usage` — no remaining consumers after the cleanup pass.
+- **Adds new canonical tables** that don't conflict with legacy:
+  `tenants`, `zones`, `mail_domains`, `principals`, `email_senders_v2`,
+  `principal_sender_scopes`, `submission_credentials`, `dkim_keys`,
+  `daemons`, `messages_v2`, `message_attempts`, `idempotency_keys`.
+- **Leaves legacy tables alone** (services, domains, outbound_domains,
+  email_senders, api_keys, smtp_credentials, sender_key_scopes,
+  webhook_subs, routing_rules, messages, message_deliveries, audit_log,
+  audit_anchors, bootstrap). New code paths use the new tables; legacy
+  admin routes continue to work against the old tables until cutover.
 
-## Cutover plan (Phase 0d)
+The `_v2` suffix on `email_senders_v2` and `messages_v2` is temporary —
+the cutover migration in 0007 will:
+1. Copy data from the legacy `email_senders` → `email_senders_v2` (and
+   from `messages` → `messages_v2`).
+2. DROP the legacy table.
+3. RENAME the v2 table back to the canonical name.
 
-Phase 0 is **additive only**. The new `control/`, `messages/`, `audit/`
-schemas exist on disk but no test infrastructure or runtime code consumes them
-yet. The legacy DB and legacy migrations remain the source of truth.
+## Expand-then-contract pattern
 
-Cutover sequence (per the redesign plan):
-1. Phase 0 (this PR): write new schemas + custom runner. No behavior change.
-2. Phase 0d: wire the runner into the API Worker startup path; add bindings
-   for the new DBs in wrangler.jsonc; switch tests to apply the new schemas.
-3. Backfill: dual-write from the legacy DB into the sharded DBs.
-4. Cutover: flip reads to the new DBs.
-5. Contract: drop the now-unused legacy tables in a follow-up migration.
-
-## Expand-then-contract migration pattern
-
-Every schema change to a live database must be applied as two separate
+Every schema change to a live D1 must be applied as two separate
 migrations:
 
-1. **Expand**: add the new column / table / index without removing or renaming
-   anything. Old code keeps working; new code starts dual-writing or reading
-   from the new shape.
-2. **Contract**: after every Worker version that reads the old shape has been
-   drained from the rotation, a follow-up migration drops the old column /
-   table / index.
+1. **Expand**: add the new column / table / index without removing or
+   renaming anything. Old code keeps working; new code starts dual-writing
+   or reading from the new shape.
+2. **Contract**: after every Worker version that reads the old shape has
+   been drained from the rotation, a follow-up migration drops the old
+   column / table / index.
 
-This is why the new SQL files in `control/`, `messages/`, `audit/` add new
-tables and columns but never modify legacy tables in this phase. The eventual
-removal of legacy tables happens in a contract-phase migration after backfill
-completes.
+This is why 0006 *adds* new tables alongside the legacy ones rather than
+trying to ALTER the legacy tables in place. ALTER TABLE on a multi-million-
+row table also tends to hit D1's per-query timeout (I10).
 
 ## How to run migrations
 
-### Today (legacy DB only)
-
-`wrangler d1 migrations apply polaris-email --remote` reads from
-`migrations/legacy` (configured via `migrations_dir` in
-`services/api/wrangler.jsonc`). `bin/bootstrap.sh` runs this during the
-initial deploy.
-
-### After Phase 0d (sharded DBs)
-
-The custom runner in `@polaris-email/migrations` (`packages/migrations`)
-applies migrations programmatically:
-
-```ts
-import { applyMigrations } from '@polaris-email/migrations';
-import controlMigrations from './migrations-bundle/control.js';
-await applyMigrations(env.CONTROL_DB, controlMigrations);
+```bash
+wrangler d1 migrations apply polaris-email --remote
+# or, programmatically (Phase 2 CLI):
+polaris-email bootstrap     # runs migrations as part of one-time setup
 ```
 
-A Phase 2 CLI (`bin/migrate.sh` or similar) will wrap this so an operator can
-apply migrations to control / audit / a specific messages shard from the
-command line. The per-month messages shards are created and migrated lazily
-at runtime by the API Worker when the month's first message arrives.
+For tests, the existing API test mock seeds the legacy schema directly;
+new tables are added on demand by tests that exercise the v2 routes.

@@ -106,7 +106,7 @@ sendRaw.post('/v1/send/raw', async (c) => {
   const allowedSenders = await c.env.DB.prepare(
     `SELECT es.address
        FROM principal_sender_scopes pss
-       JOIN email_senders es ON es.id = pss.sender_id
+       JOIN email_senders_v2 es ON es.id = pss.sender_id
       WHERE pss.principal_id = ?1 AND es.disabled_at IS NULL`
   )
     .bind(principal.principal_id)

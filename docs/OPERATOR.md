@@ -29,8 +29,9 @@ polaris-email bootstrap --env prod
 The wizard:
 
 1. Reads CF account IDs + scoped API tokens from prompt or `--from-file`.
-2. Provisions D1 databases (`polaris-control`, `polaris-messages-2026-NN`,
-   `polaris-audit`), KV namespaces, R2 buckets (including the anchors bucket
+2. Provisions D1 (single `polaris-email` database — the sharded design
+   was rolled back; one DB is sufficient at expected volume), KV
+   namespaces, R2 buckets (including the anchors bucket
    in the `polaris-anchors` account with object lock in compliance mode), and
    Queues.
 3. Runs schema migrations from `services/api/migrations/{control,messages,audit}/`.

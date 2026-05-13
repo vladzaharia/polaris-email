@@ -122,7 +122,7 @@ D1 has no transactional DDL (I10). If a deploy fails mid-migration:
 
 ```bash
 # 1. Check applied migrations (custom schema_migrations table per package).
-wrangler d1 execute polaris-control --command \
+wrangler d1 execute polaris-email --command \
   "SELECT version, applied_at FROM schema_migrations ORDER BY version DESC LIMIT 10"
 
 # 2. The expand-then-contract pattern means the previous Worker code should
@@ -131,18 +131,19 @@ wrangler d1 execute polaris-control --command \
 
 # 3. If a column was added with NOT NULL and no default, the migration left
 #    rows in a bad state. Manually backfill:
-wrangler d1 execute polaris-control --command \
+wrangler d1 execute polaris-email --command \
   "UPDATE <table> SET <col> = <default> WHERE <col> IS NULL"
 ```
 
 ### "D1 quota approaching"
 
-The `polaris-messages-YYYY-MM` databases time-partition. Roll forward:
+Single `polaris-email` D1; older message rows archive to R2 Parquet
+when storage approaches the 10 GB cap. Run the archival job:
 
 ```bash
-polaris-email db rotate-messages   # creates polaris-messages-<next-month>,
-                                    # cuts new writes over, schedules dump
-                                    # of prior month to R2 Parquet
+polaris-email db archive-messages --older-than 90d
+# Selects rows from messages_v2 older than 90 days, writes them to R2 as
+# Parquet (queryable via DuckDB), and DELETEs them from D1.
 ```
 
 Dump lifecycle:

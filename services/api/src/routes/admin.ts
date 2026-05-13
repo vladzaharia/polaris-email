@@ -1,10 +1,9 @@
-// Admin REST routes: services, domains, mailboxes, api-keys, webhooks, routing,
+// Admin REST routes: services, domains, api-keys, webhooks, routing,
 // local-webhook-targets, bulk-revoke, rotation, bridge-config. All HMAC-auth + `admin:*` scope.
 import { Hono } from 'hono';
 import {
   BulkRevokeServiceRequest,
   CreateLocalTargetRequest,
-  CreateMailboxRequest,
   CreateRoutingRuleRequest,
   CreateServiceRequest,
   CreateWebhookSubRequest,
@@ -293,109 +292,6 @@ admin.post('/v1/admin/api-keys/:id/revoke', requireScope('admin:rotate'), async 
   return c.json({ revoked_at: now });
 });
 
-// ---------- mailboxes ----------
-
-admin.post('/v1/admin/mailboxes', requireScope('admin:rotate'), async (c) => {
-  const key = c.get('apiKey');
-  let body;
-  try {
-    body = CreateMailboxRequest.parse(JSON.parse(bodyText(c)));
-  } catch (e) {
-    return buildError(c, 'bad_request', e instanceof Error ? e.message : 'invalid body');
-  }
-  const id = ulid();
-  const now = Date.now();
-  try {
-    await c.env.DB.prepare(
-      `INSERT INTO mailboxes
-         (id, address, display_name, service_id, retain_imap, retention_days,
-          max_inbound_bytes, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    )
-      .bind(
-        id,
-        body.address,
-        body.display_name ?? null,
-        body.service_id ?? null,
-        body.retain_imap ? 1 : 0,
-        body.retention_days,
-        body.max_inbound_bytes,
-        now,
-      )
-      .run();
-  } catch (e) {
-    if (String(e).includes('UNIQUE')) return buildError(c, 'conflict', 'address in use');
-    throw e;
-  }
-  await audit(c.env, {
-    actor: `key:${key.key_id}`,
-    action: 'mailbox.create',
-    target: id,
-    meta: { address: body.address, service_id: body.service_id ?? null },
-  });
-  return c.json({ id, created_at: now }, 201);
-});
-
-admin.post(
-  '/v1/admin/mailboxes/:id/imap-credential/rotate',
-  requireScope('admin:rotate'),
-  async (c) => {
-    const key = c.get('apiKey');
-    const id = c.req.param('id');
-    let body;
-    try {
-      body = RotateRequest.parse(JSON.parse(bodyText(c) || '{}'));
-    } catch (e) {
-      return buildError(c, 'bad_request', e instanceof Error ? e.message : 'invalid body');
-    }
-    const existing = await c.env.DB.prepare(
-      `SELECT id, imap_pw_bcrypt FROM mailboxes WHERE id = ?`,
-    )
-      .bind(id)
-      .first<{ id: string; imap_pw_bcrypt: string | null }>();
-    if (!existing) return buildError(c, 'not_found', 'mailbox not found');
-    const newPw = generateSecret();
-    // bcrypt is unavailable in Workers WebCrypto; we store a PHC-prefixed PBKDF2 hash
-    // and the sidecar bcrypts the plaintext locally before writing into Mox config.
-    const newHashed = await hashSecret(newPw, c.env.ARGON2_PEPPER);
-    const now = Date.now();
-    if (body.mode === 'planned') {
-      await c.env.DB.prepare(
-        `UPDATE mailboxes
-         SET imap_pw_bcrypt_prev = imap_pw_bcrypt,
-             imap_pw_bcrypt = ?,
-             imap_pw_rotated_at = ?
-         WHERE id = ?`,
-      )
-        .bind(newHashed, now, id)
-        .run();
-      await audit(c.env, {
-        actor: `key:${key.key_id}`,
-        action: 'mailbox.password_rotate',
-        target: id,
-        meta: { reason: body.reason ?? null },
-      });
-    } else {
-      await c.env.DB.prepare(
-        `UPDATE mailboxes
-         SET imap_pw_bcrypt_prev = NULL,
-             imap_pw_bcrypt = ?,
-             imap_pw_rotated_at = ?
-         WHERE id = ?`,
-      )
-        .bind(newHashed, now, id)
-        .run();
-      await audit(c.env, {
-        actor: `key:${key.key_id}`,
-        action: 'mailbox.password_rotate.emergency',
-        target: id,
-        meta: { reason: body.reason ?? null },
-      });
-    }
-    return c.json({ new_password: newPw, rotated_at: now });
-  },
-);
-
 // ---------- webhook subs ----------
 
 admin.post('/v1/admin/webhook-subs', requireScope('admin:rotate'), async (c) => {
@@ -434,12 +330,11 @@ admin.post('/v1/admin/webhook-subs', requireScope('admin:rotate'), async (c) => 
   const secret = generateSecret();
   await c.env.DB.prepare(
     `INSERT INTO webhook_subs
-       (id, mailbox_id, service_id, url, kind, local_target_id, secret, events)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+       (id, service_id, url, kind, local_target_id, secret, events)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
   )
     .bind(
       id,
-      body.mailbox_id ?? null,
       body.service_id ?? null,
       body.url,
       body.kind,
@@ -470,16 +365,16 @@ admin.post('/v1/admin/routing-rules', requireScope('admin:rotate'), async (c) =>
   const id = ulid();
   const now = Date.now();
   await c.env.DB.prepare(
-    `INSERT INTO routing_rules (id, domain, match_json, mailbox_id, priority, created_at)
-     VALUES (?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO routing_rules (id, domain, match_json, priority, created_at)
+     VALUES (?, ?, ?, ?, ?)`,
   )
-    .bind(id, body.domain, JSON.stringify(body.match), body.mailbox_id, body.priority, now)
+    .bind(id, body.domain, JSON.stringify(body.match), body.priority, now)
     .run();
   await audit(c.env, {
     actor: `key:${key.key_id}`,
     action: 'routing_rule.create',
     target: id,
-    meta: { domain: body.domain, mailbox_id: body.mailbox_id, priority: body.priority },
+    meta: { domain: body.domain, priority: body.priority },
   });
   return c.json({ id }, 201);
 });
@@ -556,61 +451,26 @@ admin.post('/v1/admin/bulk/revoke-service', requireScope('admin:rotate'), async 
     await c.env.KV_KEY_CACHE.delete(`plain:${k.id}`);
     await c.env.KV_KEY_CACHE.delete(`key:${k.id}`);
   }
-  const mailboxes = await c.env.DB.prepare(
-    `SELECT id FROM mailboxes WHERE service_id = ? AND disabled_at IS NULL`,
-  )
-    .bind(body.service_id)
-    .all<{ id: string }>();
-  for (const m of mailboxes.results) {
-    // Force-rotate IMAP password
-    const newPw = generateSecret();
-    const newHashed = await hashSecret(newPw, c.env.ARGON2_PEPPER);
-    await c.env.DB.prepare(
-      `UPDATE mailboxes
-       SET imap_pw_bcrypt = ?, imap_pw_bcrypt_prev = NULL, imap_pw_rotated_at = ?
-       WHERE id = ?`,
-    )
-      .bind(newHashed, now, m.id)
-      .run();
-    // We do NOT persist the plaintext anywhere; the consumer is quarantined so they don't
-    // need it. Panel can issue a manual rotate to re-establish access.
-  }
   await audit(c.env, {
     actor: `key:${key.key_id}`,
-    action: 'service.quarantine',
+    action: 'service.disable',
     target: body.service_id,
     meta: {
       incident_ticket_id: body.incident_ticket_id,
       revoked_api_keys: keys.results.map((k) => k.id),
-      rotated_mailboxes: mailboxes.results.map((m) => m.id),
     },
   });
   return c.json({
     revoked_api_keys: keys.results.map((k) => k.id),
-    rotated_mailboxes: mailboxes.results.map((m) => m.id),
   });
 });
 
 // ---------- bridge config ----------
 
 admin.get('/v1/bridge/config', requireScope('admin:read'), async (c) => {
-  // The bridge is a privileged consumer with `admin:read` scope. Returns mailboxes and
-  // local_webhook_targets.
-  const mailboxes = await c.env.DB.prepare(
-    `SELECT id, address, imap_username, imap_pw_bcrypt, imap_pw_bcrypt_prev, retain_imap
-     FROM mailboxes WHERE disabled_at IS NULL AND imap_username IS NOT NULL`,
-  ).all<{
-    id: string;
-    address: string;
-    imap_username: string;
-    imap_pw_bcrypt: string;
-    imap_pw_bcrypt_prev: string | null;
-    retain_imap: number;
-  }>();
-  const targets = await c.env.DB.prepare(
-    `SELECT service, rule, upstream FROM local_webhook_targets WHERE disabled_at IS NULL`,
-  ).all<{ service: string; rule: string; upstream: string }>();
-  // Senders + SMTP credential hashes for the sidecar's Mox sync.
+  // The bridge/daemon is a privileged consumer with `admin:read` scope. Returns
+  // ONLY senders + smtp_credentials for the daemon to mirror.
+  // Senders + SMTP credential hashes for the daemon's local mirror.
   // Best-effort: outbound_domains may not yet have rows (fresh deploy). Empty array OK.
   type SenderRowB = {
     id: string;
@@ -670,120 +530,11 @@ admin.get('/v1/bridge/config', requireScope('admin:read'), async (c) => {
     })
     .filter((x): x is NonNullable<typeof x> => x !== null);
   return c.json({
-    mailboxes: mailboxes.results.map((m) => ({
-      id: m.id,
-      address: m.address,
-      imap_username: m.imap_username,
-      imap_pw_bcrypt: m.imap_pw_bcrypt,
-      imap_pw_bcrypt_prev: m.imap_pw_bcrypt_prev,
-      retain_imap: m.retain_imap === 1,
-    })),
-    local_webhook_targets: targets.results,
     senders: sendersOut,
     rate_limits: {
-      inbound_per_mailbox_per_min: 120,
       inbound_per_source_ip_per_min: 60,
     },
   });
-});
-
-// ---------- bridge mox-ops queue ----------
-//
-// The sidecar drains pending Mox operations (set_password, remove_account) on
-// every config-poll tick. These rows briefly carry plaintext password material
-// (payload_b64). NEVER log payload_b64 — see the redaction below.
-
-interface MoxPendingOpRow {
-  id: string;
-  op: string;
-  username: string;
-  payload_b64: string | null;
-  attempts: number;
-}
-
-admin.get('/v1/bridge/mox-ops', requireScope('admin:read'), async (c) => {
-  const rows = await c.env.DB.prepare(
-    `SELECT id, op, username, payload_b64, attempts
-     FROM mox_pending_ops
-     WHERE applied_at IS NULL
-     ORDER BY created_at ASC
-     LIMIT 50`,
-  ).all<MoxPendingOpRow>();
-  return c.json({ ops: rows.results });
-});
-
-admin.post('/v1/bridge/mox-ops/:id/ack', requireScope('admin:read'), async (c) => {
-  const id = c.req.param('id');
-  let body: { ok: boolean; error?: string };
-  try {
-    const parsed = JSON.parse(bodyText(c) || '{}');
-    if (typeof parsed !== 'object' || parsed == null || typeof parsed.ok !== 'boolean') {
-      return buildError(c, 'bad_request', 'expected {ok: boolean, error?: string}');
-    }
-    body = parsed as { ok: boolean; error?: string };
-  } catch (e) {
-    return buildError(c, 'bad_request', e instanceof Error ? e.message : 'invalid body');
-  }
-  const now = Date.now();
-  const existing = await c.env.DB.prepare(
-    `SELECT id, username, op, attempts, applied_at FROM mox_pending_ops WHERE id = ?`,
-  )
-    .bind(id)
-    .first<{
-      id: string;
-      username: string;
-      op: string;
-      attempts: number;
-      applied_at: number | null;
-    }>();
-  if (!existing) return buildError(c, 'not_found', 'op not found');
-  if (existing.applied_at != null) {
-    // Idempotent ack: already applied. Return 200 so the sidecar moves on.
-    return c.json({ id, status: 'already_applied' });
-  }
-  if (body.ok) {
-    await c.env.DB.prepare(
-      `UPDATE mox_pending_ops SET applied_at = ?, last_error = NULL WHERE id = ?`,
-    )
-      .bind(now, id)
-      .run();
-    await audit(c.env, {
-      actor: 'bridge',
-      action: 'mox_pending_op.acked',
-      target: id,
-      // NOTE: we never include payload_b64 or its decoded value in audit meta.
-      meta: { op: existing.op, username: existing.username, attempts: existing.attempts },
-    });
-    return c.json({ id, status: 'acked' });
-  }
-  const truncated = (body.error ?? 'unknown').slice(0, 200);
-  const newAttempts = existing.attempts + 1;
-  await c.env.DB.prepare(
-    `UPDATE mox_pending_ops SET attempts = ?, last_error = ? WHERE id = ?`,
-  )
-    .bind(newAttempts, truncated, id)
-    .run();
-  if (newAttempts >= 5) {
-    // Persistent failure: leave the row for an operator to investigate. The
-    // janitor will eventually scrub it after a 1-hour grace window.
-    await audit(c.env, {
-      actor: 'bridge',
-      action: 'mox_pending_op.failed',
-      target: id,
-      meta: {
-        op: existing.op,
-        username: existing.username,
-        attempts: newAttempts,
-        // last_error is operator-visible by design; we never include payload_b64.
-        last_error: truncated,
-      },
-    });
-    // eslint-disable-next-line no-console
-    console.warn(
-      `mox-ops: persistent failure id=${id} op=${existing.op} username=${existing.username} attempts=${newAttempts}`,
-    );
-  }
-  return c.json({ id, status: 'recorded_failure', attempts: newAttempts });
 });
 
 // ---------- audit chain status ----------
