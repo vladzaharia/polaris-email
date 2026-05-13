@@ -1,4 +1,4 @@
-// /admin/bootstrap: one-time seed of the first admin:rotate key.
+// /v1/admin/bootstrap: one-time seed of the first admin:rotate key.
 // Protected by POLARIS_SECRET_A (control-plane HMAC); idempotent (subsequent calls 409).
 import { Hono } from 'hono';
 import type { Env } from '../env.js';
@@ -10,7 +10,7 @@ import { generateSecret, verify } from '@polaris-email/hmac';
 
 export const bootstrap = new Hono<{ Bindings: Env }>();
 
-bootstrap.post('/admin/bootstrap', async (c) => {
+bootstrap.post('/v1/admin/bootstrap', async (c) => {
   if (!c.env.POLARIS_SECRET_A) {
     return buildError(c, 'forbidden', 'POLARIS_SECRET_A not configured');
   }

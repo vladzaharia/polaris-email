@@ -17,17 +17,22 @@ import { buildError } from '../errors.js';
 import { hashSecret } from '../hashing.js';
 import { ulid } from '../ids.js';
 import { generateSecret } from '@polaris-email/hmac';
-import { outboundDomains } from './admin/outbound-domains.js';
+import { domains } from './admin/domains.js';
 import { senders as sendersRoutes } from './admin/senders.js';
 
 export const admin = new Hono<{ Bindings: Env }>();
 
-admin.use('/v1/admin/*', hmacAuth('polaris-api.v1'));
-// /v1/daemon/* lives below; also auth-required (admin:read scope).
-admin.use('/v1/daemon/*', hmacAuth('polaris-api.v1'));
+// /v1/admin/bootstrap signs with POLARIS_SECRET_A, not an api key — bypass hmacAuth there.
+const adminHmac = hmacAuth('polaris-api.v1');
+admin.use('/v1/admin/*', async (c, next) => {
+  if (c.req.path === '/v1/admin/bootstrap') return next();
+  return adminHmac(c, next);
+});
+// /v1/daemon/* uses the same api-key HMAC.
+admin.use('/v1/daemon/*', adminHmac);
 
 // Sub-routers. Both rely on the admin middleware above.
-admin.route('/', outboundDomains);
+admin.route('/', domains);
 admin.route('/', sendersRoutes);
 
 // ---------- tenants ----------

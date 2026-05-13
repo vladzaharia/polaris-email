@@ -31,7 +31,7 @@ interface SenderRow {
 
 // ---------- create sender under a domain ----------
 senders.post(
-  '/v1/admin/outbound-domains/:domainId/senders',
+  '/v1/admin/domains/:domainId/senders',
   requireScope('admin:rotate'),
   async (c) => {
     const key = c.get('apiKey');
@@ -92,7 +92,7 @@ senders.post(
 
 // ---------- list senders under a domain ----------
 senders.get(
-  '/v1/admin/outbound-domains/:domainId/senders',
+  '/v1/admin/domains/:domainId/senders',
   requireScope('admin:read'),
   async (c) => {
     const domainId = c.req.param('domainId');

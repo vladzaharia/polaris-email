@@ -213,46 +213,25 @@ export const MessageDelivery = z.object({
   created_at: z.string(),
 });
 
-// ---------- outbound domains + senders + SMTP credentials ----------
+// ---------- mail domain admin requests ----------
 
-export const OutboundDomainStatus = z.enum(['pending', 'verified', 'active', 'disabled']);
-export type OutboundDomainStatus = z.infer<typeof OutboundDomainStatus>;
+export const MailDomainStatus = z.enum(['pending', 'verified', 'active', 'disabled']);
+export type MailDomainStatus = z.infer<typeof MailDomainStatus>;
 
 export const DmarcPolicy = z.enum(['none', 'quarantine', 'reject']);
 
-export const OutboundDomain = z.object({
-  id: Ulid,
-  domain: DomainName,
-  dkim_selector: z.string().min(1).max(63),
-  status: OutboundDomainStatus,
-  cf_zone_id: z.string().nullable(),
-  is_default: z.number().int().min(0).max(1),
-  dmarc_policy: DmarcPolicy,
-  dmarc_rua: z.string().nullable(),
-  binding_tag: z.string().nullable(),
-  last_verified_at: z.number().int().nullable(),
-  created_at: z.number().int(),
-  updated_at: z.number().int(),
-  disabled_at: z.number().int().nullable(),
-});
-export type OutboundDomain = z.infer<typeof OutboundDomain>;
-
-export const CreateOutboundDomainRequest = z.object({
-  domain: DomainName,
+export const CreateMailDomainRequest = z.object({
+  name: DomainName,
   dkim_selector: z.string().min(1).max(63).optional(),
-  is_default: z.boolean().optional(),
   dmarc_policy: DmarcPolicy.optional(),
   dmarc_rua: z.string().max(320).optional(),
-  binding_tag: z.string().regex(/^[A-Z][A-Z0-9_]{0,62}$/).optional(),
 });
 
-export const UpdateOutboundDomainRequest = z.object({
+export const UpdateMailDomainRequest = z.object({
   cf_zone_id: z.string().max(64).optional(),
-  status: OutboundDomainStatus.optional(),
-  is_default: z.boolean().optional(),
+  status: MailDomainStatus.optional(),
   dmarc_policy: DmarcPolicy.optional(),
   dmarc_rua: z.string().max(320).optional(),
-  binding_tag: z.string().regex(/^[A-Z][A-Z0-9_]{0,62}$/).optional(),
   dkim_selector: z.string().min(1).max(63).optional(),
 });
 
@@ -289,11 +268,11 @@ export const SmtpCredential = z.object({
 export type SmtpCredential = z.infer<typeof SmtpCredential>;
 
 export const AuditAction = z.enum([
-  'outbound_domain.create',
-  'outbound_domain.update',
-  'outbound_domain.verify',
-  'outbound_domain.verify_incomplete',
-  'outbound_domain.disable',
+  'domain.create',
+  'domain.update',
+  'domain.verify',
+  'domain.verify_incomplete',
+  'domain.disable',
   'email_sender.create',
   'email_sender.disable',
   'smtp_credential.issue',
@@ -303,10 +282,7 @@ export const AuditAction = z.enum([
   'api_key.rotate.emergency',
   'api_key.revoke',
   'api_key.revoke.emergency',
-  'domain.register',
-  'domain.verify',
   'domain.dns_record_change',
-  'domain.disable',
   'domain.dkim_rotate',
   'webhook_sub.create',
   'webhook_sub.update',

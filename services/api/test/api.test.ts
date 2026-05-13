@@ -48,10 +48,10 @@ async function signedRequest(
 
 async function bootstrapEnv() {
   const env = mkEnv();
-  // POST /admin/bootstrap signed with POLARIS_SECRET_A
+  // POST /v1/admin/bootstrap signed with POLARIS_SECRET_A
   const body = '{}';
   const req = await signedRequest(
-    'https://polaris-email-api.workers.dev/admin/bootstrap',
+    'https://polaris-email-api.workers.dev/v1/admin/bootstrap',
     body,
     'POST',
     env.POLARIS_SECRET_A!,
@@ -89,7 +89,7 @@ describe('bootstrap', () => {
 
     // Second call should 409
     const req = await signedRequest(
-      'https://polaris-email-api.workers.dev/admin/bootstrap',
+      'https://polaris-email-api.workers.dev/v1/admin/bootstrap',
       '{}',
       'POST',
       env.POLARIS_SECRET_A!,
@@ -108,7 +108,7 @@ describe('bootstrap', () => {
 
   it('rejects bad signature', async () => {
     const env = mkEnv();
-    const req = new Request('https://polaris-email-api.workers.dev/admin/bootstrap', {
+    const req = new Request('https://polaris-email-api.workers.dev/v1/admin/bootstrap', {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
@@ -329,15 +329,15 @@ describe('webhook subs', () => {
   });
 });
 
-describe('outbound_domains + senders', () => {
+describe('domains + senders', () => {
   it('full create→sender→smtp-credential flow', async () => {
     const { env, admin } = await bootstrapEnv();
 
-    // Create outbound domain
+    // Create mail domain
     let res = await app.fetch(
       await signedRequest(
-        'https://x/v1/admin/outbound-domains',
-        JSON.stringify({ domain: 'plrs.im', is_default: true }),
+        'https://x/v1/admin/domains',
+        JSON.stringify({ name: 'plrs.im' }),
         'POST',
         admin.admin_key_secret,
         admin.admin_key_id,
@@ -346,15 +346,15 @@ describe('outbound_domains + senders', () => {
       ctx,
     );
     expect(res.status).toBe(201);
-    const dom = (await res.json()) as { id: string; binding_tag: string; status: string };
-    expect(dom.binding_tag).toBe('PLRS_IM');
+    const dom = (await res.json()) as { id: string; name: string; status: string };
+    expect(dom.name).toBe('plrs.im');
     expect(dom.status).toBe('pending');
 
     // Duplicate → 409
     res = await app.fetch(
       await signedRequest(
-        'https://x/v1/admin/outbound-domains',
-        JSON.stringify({ domain: 'plrs.im' }),
+        'https://x/v1/admin/domains',
+        JSON.stringify({ name: 'plrs.im' }),
         'POST',
         admin.admin_key_secret,
         admin.admin_key_id,
@@ -367,7 +367,7 @@ describe('outbound_domains + senders', () => {
     // List
     res = await app.fetch(
       await signedRequest(
-        'https://x/v1/admin/outbound-domains',
+        'https://x/v1/admin/domains',
         '',
         'GET',
         admin.admin_key_secret,
@@ -377,14 +377,13 @@ describe('outbound_domains + senders', () => {
       ctx,
     );
     expect(res.status).toBe(200);
-    const list = (await res.json()) as { data: { domain: string; is_default: number }[] };
-    expect(list.data[0]?.domain).toBe('plrs.im');
-    expect(list.data[0]?.is_default).toBe(1);
+    const list = (await res.json()) as { data: { name: string; status: string }[] };
+    expect(list.data[0]?.name).toBe('plrs.im');
 
     // Add sender
     res = await app.fetch(
       await signedRequest(
-        `https://x/v1/admin/outbound-domains/${dom.id}/senders`,
+        `https://x/v1/admin/domains/${dom.id}/senders`,
         JSON.stringify({ local_part: 'noreply', default_for_domain: true }),
         'POST',
         admin.admin_key_secret,
@@ -440,7 +439,7 @@ describe('outbound_domains + senders', () => {
     // verifier returns a 200 diagnostic envelope leaving status unchanged.
     res = await app.fetch(
       await signedRequest(
-        `https://x/v1/admin/outbound-domains/${dom.id}/verify`,
+        `https://x/v1/admin/domains/${dom.id}/verify`,
         '{}',
         'POST',
         admin.admin_key_secret,

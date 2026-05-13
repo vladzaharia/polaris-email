@@ -197,38 +197,6 @@ paths:
       responses:
         '200':
           description: revoked
-  /v1/admin/mailboxes:
-    post:
-      parameters:
-        - { $ref: '#/components/parameters/KeyId' }
-        - { $ref: '#/components/parameters/Ts' }
-        - { $ref: '#/components/parameters/Nonce' }
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/CreateMailboxRequest' }
-      responses:
-        '201':
-          description: created
-  /v1/admin/mailboxes/{id}/imap-credential/rotate:
-    post:
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema: { type: string }
-        - { $ref: '#/components/parameters/KeyId' }
-        - { $ref: '#/components/parameters/Ts' }
-        - { $ref: '#/components/parameters/Nonce' }
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/RotateRequest' }
-      responses:
-        '200':
-          description: rotated
   /v1/admin/webhook-subs:
     post:
       parameters:
@@ -306,7 +274,7 @@ paths:
                     type: array
                     items: { type: string }
                   mirror_version: { type: integer, format: int64 }
-  /admin/bootstrap:
+  /v1/admin/bootstrap:
     post:
       summary: One-time seed of the first admin key. Signed with POLARIS_SECRET_A.
       security: []
