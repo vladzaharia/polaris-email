@@ -1,0 +1,84 @@
+# goreleaser config for polaris-email CLI.
+#
+# `make release-dryrun` runs `goreleaser release --snapshot --clean --skip=publish`.
+version: 2
+
+project_name: polaris-email
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: polaris-email
+    main: ./cmd/polaris-email
+    binary: polaris-email
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: windows
+        goarch: arm64
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X github.com/vladzaharia/polaris-email/apps/polaris-cli/internal/cmds.Version={{ .Version }}
+      - -X github.com/vladzaharia/polaris-email/apps/polaris-cli/internal/cmds.Commit={{ .ShortCommit }}
+      - -X github.com/vladzaharia/polaris-email/apps/polaris-cli/internal/cmds.Date={{ .Date }}
+
+archives:
+  - id: default
+    formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files:
+      - README.md
+      - LICENSE*
+
+# Post-archive hooks emit the `pml` symlink alongside the binary inside each
+# archive. We do this with goreleaser's `extra_files`-style hook by including a
+# tiny install script in the archive; for now operators run `ln -sf
+# polaris-email pml` after extraction (Brew formula handles it automatically).
+
+checksum:
+  name_template: "checksums.txt"
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-snapshot"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^chore:'
+      - '^test:'
+
+release:
+  github:
+    owner: vladzaharia
+    name: polaris-email
+  draft: true
+
+brews:
+  - name: polaris-email
+    homepage: "https://github.com/vladzaharia/polaris-email"
+    description: "Operator CLI for the polaris-email control plane"
+    license: MIT
+    repository:
+      owner: vladzaharia
+      name: homebrew-tap
+    install: |
+      bin.install "polaris-email"
+      bin.install_symlink "polaris-email" => "pml"
+    test: |
+      system "#{bin}/polaris-email", "version"

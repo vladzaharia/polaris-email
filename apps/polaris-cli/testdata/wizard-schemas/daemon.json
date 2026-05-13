@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://polaris-email.example.com/schemas/wizard/daemon.json",
+  "title": "DaemonRegisterInput",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["name"],
+  "properties": {
+    "name":        { "type": "string", "minLength": 1 },
+    "environment": { "type": "string", "enum": ["prod", "staging", "dev"], "default": "prod" },
+    "output_form": { "type": "string", "enum": ["compose", "systemd"],     "default": "compose" },
+    "write_file":  { "type": "string" }
+  }
+}

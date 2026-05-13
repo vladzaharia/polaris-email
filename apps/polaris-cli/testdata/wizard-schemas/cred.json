@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://polaris-email.example.com/schemas/wizard/cred.json",
+  "title": "CredIssueInput",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["tenant_name", "type", "senders"],
+  "properties": {
+    "tenant_name":    { "type": "string", "minLength": 1 },
+    "type":           { "type": "string", "enum": ["smtp", "api"] },
+    "senders":        {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "pattern": "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$" }
+    },
+    "create_senders": { "type": "boolean", "default": false }
+  }
+}
