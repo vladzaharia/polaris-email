@@ -6,7 +6,6 @@ import { makePolaris } from './polaris.js';
 import { requireAdmin, sessionMiddleware } from './auth.js';
 import { tenantsRoutes } from './routes/tenants.js';
 import { apiKeysRoutes } from './routes/api-keys.js';
-import { mailboxesRoutes } from './routes/mailboxes.js';
 import { webhooksRoutes } from './routes/webhooks.js';
 import { routingRoutes } from './routes/routing.js';
 import { auditRoutes } from './routes/audit.js';
@@ -30,7 +29,6 @@ async function main() {
   guarded.use('*', requireAdmin(env.ADMIN_GROUP));
   guarded.route('/', tenantsRoutes(polaris));
   guarded.route('/', apiKeysRoutes(polaris));
-  guarded.route('/', mailboxesRoutes(polaris));
   guarded.route('/', webhooksRoutes(polaris));
   guarded.route('/', routingRoutes(polaris));
   guarded.route('/', auditRoutes(polaris));

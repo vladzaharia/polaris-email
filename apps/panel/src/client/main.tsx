@@ -34,9 +34,8 @@ function App() {
       <nav>
         <strong>polaris-email</strong>
         <a onClick={() => setPage('overview')}>Overview</a>
-        <a onClick={() => setPage('services')}>Services</a>
+        <a onClick={() => setPage('tenants')}>Tenants</a>
         <a onClick={() => setPage('api-keys')}>API keys</a>
-        <a onClick={() => setPage('mailboxes')}>Mailboxes</a>
         <a onClick={() => setPage('webhooks')}>Webhooks</a>
         <a onClick={() => setPage('routing')}>Routing</a>
         <a onClick={() => setPage('audit')}>Audit</a>
@@ -47,9 +46,8 @@ function App() {
       </nav>
       <main>
         {page === 'overview' && <Overview />}
-        {page === 'services' && <Services />}
+        {page === 'tenants' && <Tenants />}
         {page === 'api-keys' && <ApiKeys />}
-        {page === 'mailboxes' && <Mailboxes />}
         {page === 'webhooks' && <Webhooks />}
         {page === 'routing' && <Routing />}
         {page === 'audit' && <Audit />}
@@ -94,7 +92,7 @@ function Overview() {
       <h2>Overview</h2>
       <p>
         polaris-email runs on Cloudflare Workers, with on-prem submission daemons for legacy
-        SMTPS clients. Use the nav above to manage services, keys, mailboxes, webhooks, routing
+        SMTPS clients. Use the nav above to manage tenants, keys, webhooks, routing
         rules, and audit.
       </p>
       <p>
@@ -105,7 +103,7 @@ function Overview() {
   );
 }
 
-function Services() {
+function Tenants() {
   const [rows, setRows] = useState<{ id: string; name: string }[]>([]);
   const [id, setId] = useState('');
   const [name, setName] = useState('');
@@ -114,7 +112,7 @@ function Services() {
   }, []);
   return (
     <div>
-      <h2>Services</h2>
+      <h2>Tenants</h2>
       <table>
         <thead>
           <tr>
@@ -150,7 +148,7 @@ function Services() {
           ))}
         </tbody>
       </table>
-      <h3>Onboard new service</h3>
+      <h3>Onboard new tenant</h3>
       <input placeholder="slug" value={id} onChange={(e) => setId(e.target.value)} />{' '}
       <input placeholder="name" value={name} onChange={(e) => setName(e.target.value)} />{' '}
       <button
@@ -182,14 +180,14 @@ function ApiKeys() {
     <div>
       <h2>API keys</h2>
       <p>
-        Secrets are revealed exactly once at issuance. Copy them into your service's env vars
+        Secrets are revealed exactly once at issuance. Copy them into your tenant's env vars
         immediately.
       </p>
       <table>
         <thead>
           <tr>
             <th>ID</th>
-            <th>Service</th>
+            <th>Principal</th>
             <th>Status</th>
             <th>Rotate</th>
             <th>Revoke</th>
@@ -250,28 +248,6 @@ function ApiKeys() {
           <button onClick={() => setShowSecret(null)}>I've copied it</button>
         </div>
       )}
-    </div>
-  );
-}
-
-function Mailboxes() {
-  const [address, setAddress] = useState('');
-  return (
-    <div>
-      <h2>Mailboxes</h2>
-      <input placeholder="address@host" value={address} onChange={(e) => setAddress(e.target.value)} />{' '}
-      <button
-        onClick={async () => {
-          const res = await api('/api/mailboxes', {
-            method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ address, retain_imap: true }),
-          });
-          alert(JSON.stringify(res.body));
-        }}
-      >
-        Create
-      </button>
     </div>
   );
 }
