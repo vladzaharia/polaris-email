@@ -365,6 +365,35 @@ export class MockQueue<T> {
   }
 }
 
+function mkRevocationDoNamespace() {
+  // In-memory store, name → revoked? (true once /revoke has fired).
+  const state = new Map<string, boolean>();
+  return {
+    idFromName(name: string) {
+      return { __name: name, toString: () => name } as unknown as DurableObjectId;
+    },
+    get(id: { __name: string }) {
+      return {
+        async fetch(url: string, init?: { method?: string }) {
+          const u = new URL(url);
+          if (u.pathname === '/check') {
+            return new Response(JSON.stringify({ revoked: state.get(id.__name) === true }), {
+              headers: { 'content-type': 'application/json' },
+            });
+          }
+          if (u.pathname === '/revoke' && (init?.method ?? 'GET') === 'POST') {
+            state.set(id.__name, true);
+            return new Response(JSON.stringify({ ok: true }), {
+              headers: { 'content-type': 'application/json' },
+            });
+          }
+          return new Response('not-found', { status: 404 });
+        },
+      };
+    },
+  };
+}
+
 export function mkEnv(overrides: Partial<Env> = {}): Env {
   const env = {
     DB: new MockD1() as unknown as D1Database,
@@ -378,6 +407,7 @@ export function mkEnv(overrides: Partial<Env> = {}): Env {
     FORENSIC: {
       fetch: async () => new Response('not-implemented', { status: 501 }),
     } as unknown as Fetcher,
+    REVOCATION_DO: mkRevocationDoNamespace() as unknown as DurableObjectNamespace,
     VERIFY_ALGORITHMS: 'v1',
     API_BASE_URL: 'https://polaris-email-api.workers.dev',
     POLARIS_SECRET_A: 'test-control-plane-secret',

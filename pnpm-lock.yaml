@@ -207,6 +207,9 @@ importers:
       '@polaris-email/providers':
         specifier: workspace:*
         version: link:../../packages/providers
+      '@polaris-email/revocation-do':
+        specifier: workspace:*
+        version: link:../../packages/revocation-do
       '@polaris-email/schema':
         specifier: workspace:*
         version: link:../../packages/schema

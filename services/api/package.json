@@ -12,12 +12,13 @@
   },
   "dependencies": {
     "@polaris-email/hmac": "workspace:*",
+    "@polaris-email/ids": "workspace:*",
     "@polaris-email/mime": "workspace:*",
     "@polaris-email/providers": "workspace:*",
+    "@polaris-email/revocation-do": "workspace:*",
     "@polaris-email/schema": "workspace:*",
     "hono": "^4.5.0",
-    "zod": "^3.23.0",
-    "@polaris-email/ids": "workspace:*"
+    "zod": "^3.23.0"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20240909.0",

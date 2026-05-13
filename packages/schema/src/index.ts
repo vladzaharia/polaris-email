@@ -98,7 +98,7 @@ export const Tenant = z.object({
   name: z.string().min(1).max(120),
   description: z.string().nullable(),
   environment: z.string(),
-  to_hash_pepper_id: z.string().nullable(),
+  retention_days: z.number().int().nonnegative(),
   pepper_version: z.number().int(),
   created_at: z.string(),
   updated_at: z.string(),

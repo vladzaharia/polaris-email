@@ -7,23 +7,15 @@ export interface Env {
   KV_IDEMPOTENCY: KVNamespace;
   KV_RATE_LIMIT: KVNamespace;
   KV_KEY_CACHE: KVNamespace;
-  // I2 mitigation: best-effort revocation hint for the daemon's poller. Truth
-  // lives in a Durable Object, not KV.
+  /** Best-effort revocation hint for the daemon's poller. */
   KV_REVOKED_HINT?: KVNamespace;
 
   OUTBOUND_QUEUE: Queue<OutboundQueueMessage>;
   INBOUND_QUEUE: Queue<InboundQueueMessage>;
   FORENSIC: Fetcher;
 
-  // Account-level Email Service binding (I9 — single binding, `from` parameter
-  // selects sender domain). Optional during cutover; legacy services/out
-  // continues to use per-domain `send_email` bindings until migrated.
-  EMAIL?: {
-    send(message: { from: string; to: string | string[]; raw: ReadableStream | string | Uint8Array }): Promise<{ id?: string }>;
-  };
-
-  // Per-principal revocation Durable Object (H1 + I2).
-  REVOCATION_DO?: DurableObjectNamespace;
+  /** Per-principal revocation Durable Object. Synchronous truth for revocation state. */
+  REVOCATION_DO: DurableObjectNamespace;
 
   VERIFY_ALGORITHMS: string;
   API_BASE_URL: string;

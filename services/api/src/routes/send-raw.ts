@@ -91,16 +91,24 @@ sendRaw.post('/v1/send/raw', async (c) => {
       LIMIT 1`
   )
     .bind(username)
-    .first<{ principal_id: string; tenant_id: string }>()
-    .catch(() => null);
+    .first<{ principal_id: string; tenant_id: string }>();
 
   if (!principal) {
     return buildError(c, 'unauthorized', 'unknown principal for SMTP username');
   }
 
-  // I2 mitigation: re-check revocation state against the Durable Object (truth).
-  // For now (DO not yet wired) we just check the disabled_at column above; once
-  // REVOCATION_DO is bound we'll add the synchronous DO check.
+  // Synchronous revocation check against the Durable Object (single source of truth).
+  // The DO is updated by /v1/admin/api-keys/:id/revoke and /v1/admin/credentials/:id/revoke;
+  // a positive hit here is final.
+  const doId = c.env.REVOCATION_DO.idFromName(principal.principal_id);
+  const doStub = c.env.REVOCATION_DO.get(doId);
+  const revRes = await doStub.fetch('https://revocation-do/check');
+  if (revRes.ok) {
+    const revBody = (await revRes.json().catch(() => null)) as { revoked?: boolean } | null;
+    if (revBody?.revoked) {
+      return buildError(c, 'key_revoked', 'principal revoked');
+    }
+  }
 
   // C1 mitigation: load allowed_senders for this principal and enforce on MIME.
   const allowedSenders = await c.env.DB.prepare(

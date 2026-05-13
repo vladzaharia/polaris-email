@@ -1,9 +1,4 @@
--- polaris-email v1 canonical schema. Single D1 (`polaris-email`).
---
--- This is the from-scratch v1 schema; nothing was deployed prior to it.
--- Earlier migrations (0001..0006 in previous revisions of this branch)
--- have been collapsed into this single file.
---
+-- polaris-email canonical schema. Single D1 (`polaris-email`).
 -- Append-only going forward; add 0002_*.sql etc. for any future change.
 
 PRAGMA foreign_keys = ON;
@@ -30,15 +25,15 @@ INSERT INTO bootstrap (id) VALUES (1);
 -- ---- Tenancy + control plane ---------------------------------------------
 
 CREATE TABLE tenants (
-  id                 TEXT PRIMARY KEY,
-  name               TEXT NOT NULL UNIQUE,
-  description        TEXT,
-  environment        TEXT NOT NULL DEFAULT 'prod',
-  to_hash_pepper_id  TEXT,
-  pepper_version     INTEGER NOT NULL DEFAULT 1,
-  created_at         TEXT NOT NULL,
-  updated_at         TEXT NOT NULL,
-  disabled_at        TEXT
+  id              TEXT PRIMARY KEY,
+  name            TEXT NOT NULL UNIQUE,
+  description     TEXT,
+  environment     TEXT NOT NULL DEFAULT 'prod',
+  retention_days  INTEGER NOT NULL DEFAULT 90,
+  pepper_version  INTEGER NOT NULL DEFAULT 1,
+  created_at      TEXT NOT NULL,
+  updated_at      TEXT NOT NULL,
+  disabled_at     TEXT
 );
 CREATE INDEX idx_tenants_environment ON tenants(environment);
 
@@ -50,9 +45,7 @@ CREATE TABLE zones (
 );
 
 -- mail_domains. wildcard_subdomains=1 (default) means CF auto-publishes
--- wildcard DKIM and our routing covers *@*.<domain> implicitly. The
--- canonical EMAIL binding is account-level; binding_tag is kept only as
--- an opt-in override for operators that want a per-domain binding.
+-- wildcard DKIM and our routing covers *@*.<domain> implicitly.
 CREATE TABLE mail_domains (
   id                   TEXT PRIMARY KEY,
   zone_id              TEXT NOT NULL REFERENCES zones(id),
@@ -68,7 +61,6 @@ CREATE TABLE mail_domains (
   provider             TEXT NOT NULL DEFAULT 'cloudflare',
   cf_zone_id           TEXT,
   dkim_selector        TEXT DEFAULT 'cf',
-  binding_tag          TEXT,
   created_at           TEXT NOT NULL,
   updated_at           TEXT NOT NULL,
   verified_at          TEXT,
@@ -230,7 +222,6 @@ CREATE TABLE messages (
   status               TEXT NOT NULL CHECK(status IN ('received','mime_stored','queued','sending','sent','failed','bounced')),
   send_attempt_id      TEXT,
   from_addr            TEXT,
-  to_hash_ciphertext   BLOB,
   to_hash_pending      INTEGER NOT NULL DEFAULT 1,
   subject              TEXT,
   r2_key               TEXT NOT NULL,
@@ -282,9 +273,28 @@ CREATE TABLE idempotency_keys (
   tenant_id     TEXT NOT NULL,
   principal_id  TEXT,
   message_id    TEXT REFERENCES messages(id),
+  expires_at    TEXT,
   created_at    TEXT NOT NULL
 );
 CREATE INDEX idx_idempotency_keys_tenant_id ON idempotency_keys(tenant_id);
+CREATE INDEX idx_idempotency_keys_expires_at ON idempotency_keys(expires_at);
+
+-- Webhook DLQ: terminal-failure rows from services/fanout. The CLI's
+-- webhook-dlq commands query/replay/drop these rows.
+CREATE TABLE webhook_dlq (
+  id                  TEXT PRIMARY KEY,
+  message_id          TEXT REFERENCES messages(id),
+  webhook_sub_id      TEXT NOT NULL REFERENCES webhook_subs(id),
+  payload_sha256      TEXT NOT NULL,
+  last_status_code    INTEGER,
+  last_error          TEXT,
+  attempts            INTEGER NOT NULL DEFAULT 0,
+  dlq_at              TEXT NOT NULL,
+  replayed_at         TEXT,
+  dropped_at          TEXT
+);
+CREATE INDEX idx_webhook_dlq_sub_id ON webhook_dlq(webhook_sub_id);
+CREATE INDEX idx_webhook_dlq_dlq_at ON webhook_dlq(dlq_at);
 
 -- ---- Audit chain ---------------------------------------------------------
 
@@ -303,9 +313,10 @@ CREATE INDEX idx_audit_log_action ON audit_log(action);
 CREATE INDEX idx_audit_log_actor ON audit_log(actor);
 
 CREATE TABLE audit_anchors (
-  id                 INTEGER PRIMARY KEY AUTOINCREMENT,
-  last_audit_id      INTEGER NOT NULL,
-  signed_at          TEXT NOT NULL,
-  signature          TEXT NOT NULL,
-  anchor_object_key  TEXT
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  last_audit_id   INTEGER NOT NULL,
+  last_row_hash   TEXT NOT NULL,
+  signature       TEXT NOT NULL,
+  signed_at       INTEGER NOT NULL,
+  external_ref    TEXT
 );

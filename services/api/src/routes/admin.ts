@@ -308,6 +308,12 @@ admin.post('/v1/admin/api-keys/:id/revoke', requireScope('admin:rotate'), async 
   }
   const now = Date.now();
   const nowIso = new Date(now).toISOString();
+  // Look up the principal_id so we can stamp the revocation Durable Object.
+  const keyRow = await c.env.DB.prepare(
+    `SELECT principal_id FROM api_keys WHERE id = ?`,
+  )
+    .bind(id)
+    .first<{ principal_id: string }>();
   const r = await c.env.DB.prepare(
     `UPDATE api_keys SET status = 'revoked', revoked_at = ? WHERE id = ? AND status <> 'revoked'`,
   )
@@ -316,11 +322,18 @@ admin.post('/v1/admin/api-keys/:id/revoke', requireScope('admin:rotate'), async 
   if (r.meta.changes === 0) return buildError(c, 'not_found', 'api key not found or already revoked');
   await c.env.KV_KEY_CACHE.delete(`plain:${id}`);
   await c.env.KV_KEY_CACHE.delete(`key:${id}`);
+  if (keyRow?.principal_id) {
+    const doId = c.env.REVOCATION_DO.idFromName(keyRow.principal_id);
+    await c.env.REVOCATION_DO.get(doId).fetch('https://revocation-do/revoke', {
+      method: 'POST',
+      body: JSON.stringify({ reason: body.reason ?? null }),
+    });
+  }
   await audit(c.env, {
     actor: `key:${key.key_id}`,
     action: body.mode === 'emergency' ? 'api_key.revoke.emergency' : 'api_key.revoke',
     target: id,
-    meta: { reason: body.reason ?? null },
+    meta: { reason: body.reason ?? null, principal_id: keyRow?.principal_id ?? null },
   });
   return c.json({ revoked_at: now });
 });
@@ -451,6 +464,15 @@ admin.post('/v1/admin/bulk/revoke-tenant', requireScope('admin:rotate'), async (
       .run();
     await c.env.KV_KEY_CACHE.delete(`plain:${k.id}`);
     await c.env.KV_KEY_CACHE.delete(`key:${k.id}`);
+  }
+  // Stamp the revocation DO for every affected principal so /v1/send/raw
+  // and /v1/admin checks see the revocation synchronously.
+  for (const p of principals.results) {
+    const doId = c.env.REVOCATION_DO.idFromName(p.id);
+    await c.env.REVOCATION_DO.get(doId).fetch('https://revocation-do/revoke', {
+      method: 'POST',
+      body: JSON.stringify({ reason: 'tenant_quarantine', tenant_id: body.tenant_id }),
+    });
   }
   await audit(c.env, {
     actor: `key:${key.key_id}`,
