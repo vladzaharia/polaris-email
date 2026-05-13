@@ -4,7 +4,6 @@ import type { Context, MiddlewareHandler } from 'hono';
 import { verify } from '@polaris-email/hmac';
 import type { Env } from './env.js';
 import { buildError } from './errors.js';
-import { verifySecret } from './hashing.js';
 
 export interface AuthenticatedKey {
   key_id: string;
@@ -169,12 +168,6 @@ export function hmacAuth(direction: 'polaris-api.v1'): MiddlewareHandler<{ Bindi
     c.executionCtx.waitUntil(
       env.KV_NONCE.put(nonceKey, '1', { expirationTtl: NONCE_TTL_SECONDS }),
     );
-
-    // Verify-key plaintext secret stored in KV is correct against argon2id hash (sanity, runs
-    // once per cold KV entry; cheap because hashSecret was the slow side).
-    // Skipped on warm cache to avoid the PBKDF2 cost per request. We *trust* the KV plain entry
-    // because only /admin/api-keys handlers can write it.
-    void verifySecret; // satisfy unused-import for callers that import this module
 
     c.set('apiKey', {
       key_id: row.id,

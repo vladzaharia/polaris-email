@@ -9,8 +9,6 @@
 // Format: `$pbkdf2-sha256$i=600000$<saltb64>$<hashb64>` (PHC-like).
 // Verify with constant-time compare.
 
-import { constantTimeEqual } from '@polaris-email/hmac';
-
 export const KDF_ITERATIONS = 600_000;
 export const KDF_OUTLEN = 32;
 export const KDF_SALTLEN = 16;
@@ -53,44 +51,6 @@ export async function hashSecret(plain: string, pepper: string | undefined): Pro
   const peppered = new TextEncoder().encode(plain + (pepper ?? ''));
   const out = await pbkdf2(peppered, salt, KDF_ITERATIONS, KDF_OUTLEN);
   return `$${KDF_ID}$i=${KDF_ITERATIONS}$${b64enc(salt)}$${b64enc(out)}`;
-}
-
-export async function verifySecret(
-  plain: string,
-  stored: string,
-  pepper: string | undefined,
-): Promise<boolean> {
-  const parts = stored.split('$');
-  if (parts.length !== 5 || parts[1] !== KDF_ID || !parts[2]?.startsWith('i='))
-    return false;
-  const iterations = Number.parseInt(parts[2].slice(2), 10);
-  if (!Number.isFinite(iterations) || iterations < 100_000) return false;
-  const salt = b64dec(parts[3] ?? '');
-  const expected = b64dec(parts[4] ?? '');
-  const peppered = new TextEncoder().encode(plain + (pepper ?? ''));
-  const got = await pbkdf2(peppered, salt, iterations, expected.length);
-  return constantTimeEqual(expected, got);
-}
-
-/** HMAC-SHA256 of a recipient list with a per-tenant pepper. Hex-encoded. */
-export async function hmacRecipients(addrs: string[], pepper: string): Promise<string> {
-  const normalised = addrs.map((a) => a.trim().toLowerCase()).sort();
-  const key = await crypto.subtle.importKey(
-    'raw',
-    asBuf(new TextEncoder().encode(pepper)),
-    { name: 'HMAC', hash: 'SHA-256' },
-    false,
-    ['sign'],
-  );
-  const sig = await crypto.subtle.sign(
-    'HMAC',
-    key,
-    asBuf(new TextEncoder().encode(JSON.stringify(normalised))),
-  );
-  const bytes = new Uint8Array(sig);
-  let out = '';
-  for (const b of bytes) out += b.toString(16).padStart(2, '0');
-  return out;
 }
 
 export async function sha256Hex(s: string | Uint8Array): Promise<string> {

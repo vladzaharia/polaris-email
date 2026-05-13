@@ -14,7 +14,7 @@ import { audit } from '../audit.js';
 import { bodyText, hmacAuth, requireScope } from '../auth.js';
 import type { Env } from '../env.js';
 import { buildError } from '../errors.js';
-import { hashSecret, sha256Hex } from '../hashing.js';
+import { hashSecret } from '../hashing.js';
 import { ulid } from '../ids.js';
 import { generateSecret } from '@polaris-email/hmac';
 import { outboundDomains } from './admin/outbound-domains.js';
@@ -42,18 +42,12 @@ admin.post('/v1/admin/services', requireScope('admin:rotate'), async (c) => {
   }
   const now = Date.now();
   const nowIso = new Date(now).toISOString();
-  // Fold legacy `notes` + `owner` into the canonical `description` column.
-  const descParts: string[] = [];
-  if (body.description) descParts.push(body.description);
-  if (body.owner) descParts.push(`owner: ${body.owner}`);
-  if (body.notes) descParts.push(body.notes);
-  const description = descParts.length > 0 ? descParts.join(' | ') : null;
   try {
     await c.env.DB.prepare(
       `INSERT INTO tenants (id, name, description, environment, pepper_version, created_at, updated_at)
        VALUES (?, ?, ?, 'prod', 1, ?, ?)`,
     )
-      .bind(body.id, body.name, description, nowIso, nowIso)
+      .bind(body.id, body.name, body.description ?? null, nowIso, nowIso)
       .run();
   } catch (e) {
     if (String(e).includes('UNIQUE')) return buildError(c, 'conflict', 'tenant id or name taken');
@@ -63,7 +57,7 @@ admin.post('/v1/admin/services', requireScope('admin:rotate'), async (c) => {
     actor: `key:${key.key_id}`,
     action: 'tenant.create',
     target: body.id,
-    meta: { name: body.name, owner: body.owner ?? null },
+    meta: { name: body.name },
   });
   return c.json({ id: body.id, created_at: now }, 201);
 });
@@ -564,6 +558,3 @@ admin.get('/v1/admin/audit/chain-status', requireScope('admin:read'), async (c) 
   ).first<{ id: number; last_audit_id: number; signed_at: string; signature: string; anchor_object_key: string | null }>();
   return c.json({ head, latest_anchor: anchor });
 });
-
-// Cover the unused-import warning for sha256Hex (used elsewhere in this module if extended).
-void sha256Hex;

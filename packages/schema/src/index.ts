@@ -348,14 +348,6 @@ export const AuditAction = z.enum([
   'routing_rule.create',
   'routing_rule.update',
   'routing_rule.delete',
-  'local_webhook_target.create',
-  'local_webhook_target.update',
-  'local_webhook_target.delete',
-  'bridge.reload',
-  'service.create',
-  'service.update',
-  'service.disable',
-  'service.quarantine',
   'forensic_decrypt',
   'dry_run_rotate',
   'panel.login',
@@ -442,21 +434,16 @@ export const CreateRoutingRuleRequest = z.object({
 });
 
 export const CreateServiceRequest = z.object({
-  // Both legacy `id` and canonical `id` (tenant id, ULID OR slug) accepted.
   id: z.string().min(1).max(64),
   name: z.string().min(1).max(120),
   description: z.string().max(2000).optional(),
-  // Legacy fields retained for backward-compat client payloads. Mapped server-side.
-  owner: z.string().email().optional(),
-  notes: z.string().max(2000).optional(),
 });
 
 export const BulkRevokeServiceRequest = z.object({
-  // Legacy field name; resolved to a tenant on the server side.
   service_id: z.string().min(1).max(64),
   mode: z.literal('emergency'),
   incident_ticket_id: z.string().min(1).max(120),
-  confirmation: z.string().min(1).max(64), // must equal service_id
+  confirmation: z.string().min(1).max(64),
 });
 
 // ---------- panel forensic decrypt ----------
@@ -466,29 +453,3 @@ export const ForensicDecryptRequest = z.object({
   incident_ticket_id: z.string().min(1).max(120),
   approver_subject: z.string().min(1).max(256), // second OIDC subject
 });
-
-// ---------- bridge config (sidecar fetches this) ----------
-
-export const BridgeSubmissionCredential = z.object({
-  id: Ulid,
-  username: Address,
-  password_hash: z.string(),
-  disabled: z.boolean(),
-});
-
-export const BridgeSenderConfig = z.object({
-  id: Ulid,
-  address: Address,
-  display_name: z.string().nullable(),
-  disabled: z.boolean(),
-  smtp_credentials: z.array(BridgeSubmissionCredential),
-});
-export type BridgeSenderConfig = z.infer<typeof BridgeSenderConfig>;
-
-export const BridgeConfig = z.object({
-  senders: z.array(BridgeSenderConfig).default([]),
-  rate_limits: z.object({
-    inbound_per_source_ip_per_min: z.number().int().nonnegative().default(60),
-  }),
-});
-export type BridgeConfig = z.infer<typeof BridgeConfig>;

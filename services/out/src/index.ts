@@ -46,15 +46,6 @@ async function loadBody(env: Env, msg: OutboundQueueMessage): Promise<MessageBod
   return null;
 }
 
-function pickBinding(env: Env, fromDomain: string): SendEmailBinding | null {
-  // Convention: binding name = `EMAIL_` + uppercased label slug. Operator must set
-  // `domains.binding_name`. Resolution: lookup that value in env.
-  // Here we accept any binding present in env that is a SendEmail-shaped object.
-  // We do NOT scan all bindings — we use the explicit name from D1 (loaded in handler).
-  void fromDomain;
-  return null;
-}
-
 async function setStatus(
   env: Env,
   id: string,
@@ -201,6 +192,3 @@ async function handleOne(env: Env, msg: OutboundQueueMessage): Promise<void> {
     }
   }
 }
-
-// Suppress unused-import warning while keeping the function available for future overrides.
-void pickBinding;
