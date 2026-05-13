@@ -188,7 +188,7 @@ CREATE TABLE webhook_subs (
   domain_id    TEXT REFERENCES mail_domains(id),
   route_id     TEXT,
   url          TEXT NOT NULL,
-  kind         TEXT NOT NULL DEFAULT 'external' CHECK(kind IN ('external','tailnet','bridge')),
+  kind         TEXT NOT NULL DEFAULT 'external' CHECK(kind IN ('external','tailnet')),
   secret       TEXT NOT NULL,
   secret_prev  TEXT,
   events       TEXT NOT NULL,

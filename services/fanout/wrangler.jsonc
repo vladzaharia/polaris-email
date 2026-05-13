@@ -16,8 +16,5 @@
         "dead_letter_queue": "polaris-email-fanout-dlq"
       }
     ]
-  },
-  "vars": {
-    "BRIDGE_TAILNET_HOST": "polaris-email.example.ts.net"
   }
 }

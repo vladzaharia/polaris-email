@@ -345,12 +345,6 @@ admin.post('/v1/admin/webhook-subs', requireScope('admin:rotate'), async (c) => 
     if (body.kind === 'tailnet' && !url.hostname.endsWith('.ts.net')) {
       return buildError(c, 'bad_request', 'tailnet webhook must target *.ts.net');
     }
-    if (body.kind === 'bridge' && !url.hostname.endsWith(c.env.BRIDGE_TAILNET_HOST)) {
-      // Accept exact match too
-      if (url.hostname !== c.env.BRIDGE_TAILNET_HOST) {
-        return buildError(c, 'bad_request', 'bridge webhook must target the bridge hostname');
-      }
-    }
   } catch {
     return buildError(c, 'bad_request', 'invalid url');
   }

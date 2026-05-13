@@ -8,9 +8,6 @@ const PRIVATE_V4_CIDRS = [
   { prefix: '127.', bits: 8 },
   // Link-local
   { prefix: '169.254.', bits: 16 },
-  // CGNAT (also overlaps Tailscale 100.64/10)
-  // (We block 100.64/10 in general; the bridge kind uses .ts.net which we resolve at the
-  // hostname level.)
 ];
 
 const PRIVATE_V6_PREFIXES = ['fc', 'fd', 'fe80', '::1', '0::1'];
@@ -30,8 +27,7 @@ const FORBIDDEN_CLOUD_IPS = new Set([
 
 export interface SsrfCheck {
   url: string;
-  kind: 'external' | 'tailnet' | 'bridge';
-  bridgeHost: string;
+  kind: 'external' | 'tailnet';
 }
 
 export interface SsrfResult {
@@ -39,7 +35,7 @@ export interface SsrfResult {
   reason?: string;
 }
 
-export function ssrfCheck({ url, kind, bridgeHost }: SsrfCheck): SsrfResult {
+export function ssrfCheck({ url, kind }: SsrfCheck): SsrfResult {
   let u: URL;
   try {
     u = new URL(url);
@@ -55,32 +51,25 @@ export function ssrfCheck({ url, kind, bridgeHost }: SsrfCheck): SsrfResult {
   const host = u.hostname.toLowerCase();
   if (FORBIDDEN_HOSTS.has(host)) return { ok: false, reason: 'forbidden_host' };
   if (FORBIDDEN_CLOUD_IPS.has(host)) return { ok: false, reason: 'imds_blocked' };
-  // IPv4 literal?
+  // IP literals are never allowed for either kind: external must use a public DNS name,
+  // tailnet must use *.ts.net.
   if (/^\d+\.\d+\.\d+\.\d+$/.test(host)) {
-    if (kind !== 'bridge') return { ok: false, reason: 'ip_literal_disallowed' };
-    for (const c of PRIVATE_V4_CIDRS) {
-      if (host.startsWith(c.prefix)) return { ok: false, reason: 'private_v4' };
-    }
-    // Reject CGNAT 100.64/10 for non-tailnet egress
-    if (host.startsWith('100.')) {
-      const oct1 = parseInt(host.split('.')[1] ?? '0', 10);
-      if (oct1 >= 64 && oct1 <= 127) return { ok: false, reason: 'cgnat' };
-    }
+    return { ok: false, reason: 'ip_literal_disallowed' };
   }
-  // IPv6 literal?
   if (host.startsWith('[') && host.endsWith(']')) {
     const v6 = host.slice(1, -1).toLowerCase();
     for (const p of PRIVATE_V6_PREFIXES) {
       if (v6.startsWith(p)) return { ok: false, reason: 'private_v6' };
     }
+    return { ok: false, reason: 'ip_literal_disallowed' };
+  }
+  // Belt-and-braces: even if a DNS name resolves to private space, prefixes like 10. or
+  // 192.168. as hostnames are nonsensical and indicate misuse.
+  for (const c of PRIVATE_V4_CIDRS) {
+    if (host.startsWith(c.prefix)) return { ok: false, reason: 'private_v4' };
   }
   if (kind === 'tailnet') {
     if (!host.endsWith('.ts.net')) return { ok: false, reason: 'tailnet_host_required' };
-  }
-  if (kind === 'bridge') {
-    if (host !== bridgeHost && !host.endsWith('.' + bridgeHost)) {
-      return { ok: false, reason: 'bridge_host_required' };
-    }
   }
   return { ok: true };
 }
@@ -95,11 +84,10 @@ export interface SafeFetchInit {
 
 export async function safeFetch(
   url: string,
-  kind: 'external' | 'tailnet' | 'bridge',
-  bridgeHost: string,
+  kind: 'external' | 'tailnet',
   init: SafeFetchInit = {},
 ): Promise<{ status: number; body: string; ok: boolean }> {
-  const check = ssrfCheck({ url, kind, bridgeHost });
+  const check = ssrfCheck({ url, kind });
   if (!check.ok) return { status: 0, body: '', ok: false };
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), init.timeoutMs ?? 10_000);

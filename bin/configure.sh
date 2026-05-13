@@ -19,11 +19,8 @@ fi
 ENV_VARS=(
   CF_ACCOUNT_ID POLARIS_API_HOSTNAME
   CF_API_TOKEN CF_ZONE_ID
-  TS_TAILNET BRIDGE_HOST BRIDGE_ZONE_ID TS_OAUTH_CLIENT_SECRET
-  MOX_ADMIN_PASSWORD CERT_EMAIL
   SYNTHETIC_MONITOR_DOMAIN ALERT_WEBHOOK SYNTHETIC_FROM SYNTHETIC_TO
   OIDC_ISSUER OIDC_CLIENT_ID
-  SIDECAR_TAG
 )
 
 # Atomically rewrite .env.deploy from the current shell environment.
@@ -81,49 +78,25 @@ echo "polaris-email configure — values are saved to .env.deploy (gitignored) a
 echo "Press enter to keep current values shown in [brackets]. Leave optional fields blank to skip."
 echo
 
-# Required (preflight enforces). Sending/receiving domains are managed separately
-# in D1 via `make onboard` — this stack-level config doesn't enumerate them.
+# Required (preflight enforces). Sending/receiving domains are managed via
+# `polaris-email domain onboard`, not here.
 ask CF_ACCOUNT_ID         "Cloudflare account ID"
 ask POLARIS_API_HOSTNAME  "API hostname"                                  "${POLARIS_API_HOSTNAME:-polaris-email-api.workers.dev}"
 
-# Cloudflare automation — optional, but make onboard --apply needs them.
-ask CF_API_TOKEN          "Cloudflare API token (optional; needed for make onboard --apply)" "" 1
-ask CF_ZONE_ID            "Cloudflare zone ID for ad-hoc bin/dns-records.sh use (optional)"
-
-# Bridge (Tailscale + Mox + sidecar) — optional, only for SMTPS/IMAP.
-# Mox does NOT speak JMAP; that protocol was dropped from the bridge plan.
-ask TS_TAILNET            "Tailscale tailnet, e.g. tail-scales.ts.net (optional; skip if no bridge)"
-# BRIDGE_HOST default is only meaningful once TS_TAILNET is known; otherwise blank.
-ask BRIDGE_HOST           "Bridge FQDN (the public DNS name lego issues a cert for, e.g. mail.plrs.im)" "${BRIDGE_HOST:-${TS_TAILNET:+polaris-email.${TS_TAILNET}}}"
-ask BRIDGE_ZONE_ID        "Cloudflare zone ID for BRIDGE_HOST (optional; required by make bridge-up if BRIDGE_HOST is a public name on Cloudflare)"
-ask TS_OAUTH_CLIENT_SECRET "Tailscale OAuth client secret, tskey-client-... (optional; needed for make bridge-up)" "" 1
-
-# Mox admin password — bcrypt-hashed into mox-config/adminpasswd and also
-# passed plaintext to the sidecar so it can drive the LoginPrep/Login
-# ceremony against /admin/api. Generated on first configure if blank.
-if [[ -z "${MOX_ADMIN_PASSWORD:-}" ]] && command -v openssl >/dev/null 2>&1; then
-  MOX_ADMIN_PASSWORD="$(openssl rand -base64 24)"
-  save_env
-fi
-ask MOX_ADMIN_PASSWORD    "Mox admin password (auto-generated if blank; rotated only manually)" "$MOX_ADMIN_PASSWORD" 1
-
-# Cert issuance email (Let's Encrypt subscriber address).
-ask CERT_EMAIL            "Let's Encrypt subscriber email (optional)" "${CERT_EMAIL:-${BRIDGE_HOST:+postmaster@${BRIDGE_HOST}}}"
+# Cloudflare automation — optional, needed by `polaris-email domain onboard --apply`.
+ask CF_API_TOKEN          "Cloudflare API token (optional)" "" 1
+ask CF_ZONE_ID            "Cloudflare default zone ID (optional)"
 
 # Synthetic monitoring — optional. SYNTHETIC_MONITOR_DOMAIN is the home domain for the
-# synthetic test mailbox; it default-builds the FROM/TO addresses below. Sending and
-# receiving domains for real mail are tracked in D1 via `make onboard`, not here.
+# synthetic test mailbox; it default-builds the FROM/TO addresses below.
 ask SYNTHETIC_MONITOR_DOMAIN "Home domain for the synthetic monitor mailbox (optional, e.g. polaris.video)"
 ask ALERT_WEBHOOK         "Alert webhook URL (optional; synthetic + staleness post failures here)"
 ask SYNTHETIC_FROM        "Synthetic monitor from-address (optional)" "${SYNTHETIC_FROM:-${SYNTHETIC_MONITOR_DOMAIN:+synthetic@${SYNTHETIC_MONITOR_DOMAIN}}}"
 ask SYNTHETIC_TO          "Synthetic monitor to-address (optional)"   "${SYNTHETIC_TO:-${SYNTHETIC_MONITOR_DOMAIN:+synthetic@in.${SYNTHETIC_MONITOR_DOMAIN}}}"
 
-# Panel OIDC — optional, only if you front the admin panel.
+# Panel OIDC — optional, consumed by better-auth when the panel is fronted.
 ask OIDC_ISSUER           "Panel OIDC issuer URL (optional)"
 ask OIDC_CLIENT_ID        "Panel OIDC client ID (optional)"
-
-# Bridge image tag (real default).
-ask SIDECAR_TAG           "Bridge sidecar image tag" "${SIDECAR_TAG:-latest}"
 
 echo
 echo "wrote $ENV_FILE"

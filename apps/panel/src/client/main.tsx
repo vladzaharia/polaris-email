@@ -93,8 +93,9 @@ function Overview() {
     <div>
       <h2>Overview</h2>
       <p>
-        polaris-email runs across Cloudflare Workers + a Docker bridge on the Tailnet. Use the nav
-        above to manage services, keys, mailboxes, webhooks, routing rules, and audit.
+        polaris-email runs on Cloudflare Workers, with on-prem submission daemons for legacy
+        SMTPS clients. Use the nav above to manage services, keys, mailboxes, webhooks, routing
+        rules, and audit.
       </p>
       <p>
         Critical operational pages: <strong>Diagnostics</strong> for the green-tick self-test;{' '}
@@ -277,7 +278,7 @@ function Mailboxes() {
 
 function Webhooks() {
   const [url, setUrl] = useState('');
-  const [kind, setKind] = useState<'external' | 'tailnet' | 'bridge'>('external');
+  const [kind, setKind] = useState<'external' | 'tailnet'>('external');
   return (
     <div>
       <h2>Webhooks</h2>
@@ -285,7 +286,6 @@ function Webhooks() {
       <select value={kind} onChange={(e) => setKind(e.target.value as never)}>
         <option value="external">external</option>
         <option value="tailnet">tailnet</option>
-        <option value="bridge">bridge</option>
       </select>{' '}
       <button
         onClick={async () => {

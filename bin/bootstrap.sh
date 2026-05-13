@@ -261,11 +261,9 @@ rm -f "$ROOT/.bootstrap-secret-a"
 ##############################################################################
 log "8/8 next steps"
 cat <<EOF
-Remaining manual steps (see docs/DEPLOY.md):
-  - Onboard each sending/receiving domain:      make onboard DOMAIN=<yourdomain> NEW=1
-    (creates a D1 row, applies DNS records, enables Email Routing,
-     wires the send_email binding, optionally adds senders/SMTP creds)
-  - (Optional) Stand up the bridge on Tailnet:  make bridge-up
+Remaining manual steps (see docs/DEPLOY.md and apps/polaris-cli/README.md):
+  - Onboard each sending/receiving domain:      polaris-email domain onboard --apply <yourdomain>
+  - (Optional) Deploy a submission daemon:      see apps/submission-daemon/README.md
   - Smoke test the stack:                       make smoke
-  - Issue your first consumer key:              make issue-key NAME=acme SCOPES=mail:send
+  - Issue your first consumer key:              polaris-email cred issue --name acme --scopes mail:send
 EOF

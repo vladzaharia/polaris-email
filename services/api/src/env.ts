@@ -27,8 +27,6 @@ export interface Env {
 
   VERIFY_ALGORITHMS: string;
   API_BASE_URL: string;
-  BRIDGE_TAILNET_HOST: string;
-  FANOUT_TAG: string;
 
   // Secrets via `wrangler secret put`:
   POLARIS_SECRET_A?: string;

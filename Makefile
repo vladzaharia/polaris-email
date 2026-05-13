@@ -1,6 +1,7 @@
 # polaris-email — orchestration entrypoint.
-# All real logic lives in bin/*.sh. This Makefile is a thin wrapper so
-# every common operation has a single discoverable verb.
+# Bootstrap, deploy, smoke, rollback, kill-switch only. Day-to-day operator
+# workflows (issue-key, register-consumer, onboard, rotate-secret, …) live in
+# the `polaris-email` Go CLI — see apps/polaris-cli/README.md.
 
 SHELL := /usr/bin/env bash
 .SHELLFLAGS := -eu -o pipefail -c
@@ -11,8 +12,7 @@ BIN  := $(ROOT)/bin
 .DEFAULT_GOAL := help
 
 .PHONY: help preflight configure bootstrap deploy deploy-all deploy-changed \
-        rollback smoke issue-key register-consumer bridge-up bridge-down \
-        dns onboard onboard-plan sync-bindings rotate-secret doctor tag-deployed state-rebuild
+        rollback smoke doctor tag-deployed state-rebuild
 
 help: ## Show this help.
 	@awk 'BEGIN {FS = ":.*##"; printf "Usage: make \033[36m<target>\033[0m [VAR=value...]\n\nTargets:\n"} \
@@ -43,45 +43,12 @@ rollback: ## Roll back one service (SERVICE=api) to the previous Worker version 
 	@if [ -z "$(SERVICE)" ]; then echo "usage: make rollback SERVICE=api" >&2; exit 2; fi
 	@cd services/$(SERVICE) && wrangler rollback
 
-smoke: ## End-to-end health check: /healthz, signed diagnostics, optional bridge, synthetic send.
+smoke: ## End-to-end health check: /healthz, signed diagnostics, synthetic send.
 	@$(BIN)/smoke.sh
 
-issue-key: ## Issue an API key. NAME=acme SCOPES=mail:send[,...] [SENDER_SCOPES=...] [OUT=file:path].
-	@if [ -z "$(NAME)" ] || [ -z "$(SCOPES)" ]; then echo "usage: make issue-key NAME=acme SCOPES=mail:send" >&2; exit 2; fi
-	@$(BIN)/issue-key.sh --name "$(NAME)" --scopes "$(SCOPES)" $(if $(SENDER_SCOPES),--sender-scopes "$(SENDER_SCOPES)") $(if $(OUT),--out "$(OUT)")
-
-register-consumer: ## Register a webhook consumer. NAME=acme WEBHOOK=https://... KIND=external EVENTS=delivered,bounced.
-	@if [ -z "$(NAME)" ] || [ -z "$(WEBHOOK)" ] || [ -z "$(KIND)" ] || [ -z "$(EVENTS)" ]; then \
-		echo "usage: make register-consumer NAME=acme WEBHOOK=https://... KIND=external EVENTS=delivered,bounced" >&2; exit 2; fi
-	@$(BIN)/register-consumer.sh --name "$(NAME)" --webhook-url "$(WEBHOOK)" --kind "$(KIND)" --events "$(EVENTS)"
-
-bridge-up: ## Bring the Mox+sidecar bridge up on this host (requires Tailscale auth key in .env.deploy).
-	@$(BIN)/bridge-up.sh
-
-bridge-down: ## Stop the bridge containers without removing volumes.
-	@cd apps/bridge && docker compose stop
-
-dns: ## DEPRECATED: alias for onboard-plan. Use `make onboard` / `make onboard-plan`.
-	@echo "[deprecated] 'make dns' → 'make onboard-plan'." >&2
-	@if [ -z "$(DOMAIN)" ]; then $(BIN)/onboard.sh --plan; else $(BIN)/onboard.sh --plan --domain $(DOMAIN); fi
-
-onboard: ## Converge outbound domains end-to-end. [DOMAIN=name] [NEW=1 to create row if missing].
-	@$(BIN)/onboard.sh $(if $(DOMAIN),--domain $(DOMAIN)) $(if $(filter 1,$(NEW)),--create)
-
-onboard-plan: ## Print the per-record diff without writes. [DOMAIN=name].
-	@$(BIN)/onboard.sh --plan $(if $(DOMAIN),--domain $(DOMAIN))
-
-sync-bindings: ## Re-render services/out send_email bindings from D1 (admin API).
-	@$(BIN)/render-send-email-bindings.sh
-
-rotate-secret: ## Two-phase rotation of POLARIS_SECRET_A. NAME=POLARIS_SECRET_A.
-	@if [ -z "$(NAME)" ]; then echo "usage: make rotate-secret NAME=POLARIS_SECRET_A" >&2; exit 2; fi
-	@$(BIN)/rotate-secret.sh --name "$(NAME)"
-
-doctor: ## Re-run preflight + smoke + secret-age check against the live stack.
+doctor: ## Re-run preflight + smoke against the live stack.
 	@$(BIN)/preflight.sh
 	@$(BIN)/smoke.sh
-	@$(BIN)/rotate-secret.sh --name POLARIS_SECRET_A --check-only || true
 
 tag-deployed: ## Move the deployed/main git tag to HEAD (used by CI after a successful deploy).
 	@git tag -f deployed/main HEAD

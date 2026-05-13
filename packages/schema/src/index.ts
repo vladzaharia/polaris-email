@@ -182,7 +182,7 @@ export const WebhookSub = z.object({
   domain_id: Ulid.nullable(),
   route_id: z.string().nullable(),
   url: z.string().url(),
-  kind: z.enum(['external', 'tailnet', 'bridge']),
+  kind: z.enum(['external', 'tailnet']),
   secret: z.string(),
   secret_prev: z.string().nullable(),
   events: z.string(), // JSON array of WebhookEventType
@@ -426,7 +426,7 @@ export const CreateWebhookSubRequest = z.object({
   service_id: ServiceSlug.optional(),
   domain_id: Ulid.optional(),
   url: z.string().url(),
-  kind: z.enum(['external', 'tailnet', 'bridge']),
+  kind: z.enum(['external', 'tailnet']),
   events: z.array(WebhookEventType).min(1),
 }).refine((o) => o.tenant_id || o.service_id, {
   message: 'tenant_id or service_id required',

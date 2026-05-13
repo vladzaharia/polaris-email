@@ -380,8 +380,6 @@ export function mkEnv(overrides: Partial<Env> = {}): Env {
     } as unknown as Fetcher,
     VERIFY_ALGORITHMS: 'v1',
     API_BASE_URL: 'https://polaris-email-api.workers.dev',
-    BRIDGE_TAILNET_HOST: 'polaris-email.example.ts.net',
-    FANOUT_TAG: 'tag:polaris-workers',
     POLARIS_SECRET_A: 'test-control-plane-secret',
     ARGON2_PEPPER: 'test-pepper',
     ...overrides,

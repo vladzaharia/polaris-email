@@ -60,7 +60,8 @@ if [[ -f "$ENV_FILE" ]]; then
   source "$ENV_FILE"
   # SYNTHETIC_MONITOR_DOMAIN is intentionally NOT required — it only default-builds the
   # synthetic monitor's from/to addresses. A stack without synthetic monitoring doesn't
-  # need it. Multi-domain configuration lives in D1's outbound_domains table via `make onboard`.
+  # need it. Multi-domain configuration lives in D1's outbound_domains table, managed via
+  # `polaris-email domain onboard`.
   for k in CF_ACCOUNT_ID POLARIS_API_HOSTNAME; do
     if [[ -z "${!k:-}" ]]; then miss+=("$k"); fi
   done
@@ -71,37 +72,9 @@ if [[ -f "$ENV_FILE" ]]; then
     printf '  ok   .env.deploy has required keys\n'
   fi
 
-  # Bridge config consistency: if BRIDGE_HOST is set, we expect a matching
-  # BRIDGE_ZONE_ID (so bin/bridge-up.sh can upsert the A record via the
-  # Cloudflare API) and a CF_API_TOKEN with DNS:Edit on that zone for the
-  # lego cert-issuer's DNS-01 challenge.
-  if [[ -n "${BRIDGE_HOST:-}" ]]; then
-    if [[ -z "${BRIDGE_ZONE_ID:-}" ]]; then
-      printf '  warn BRIDGE_HOST is set but BRIDGE_ZONE_ID is empty — bridge-up will not be able to upsert the A record or drive cert-issuer DNS-01\n'
-    else
-      printf '  ok   BRIDGE_HOST + BRIDGE_ZONE_ID consistent\n'
-    fi
-    if [[ -z "${CF_API_TOKEN:-}" ]]; then
-      printf '  warn BRIDGE_HOST is set but CF_API_TOKEN is empty — lego DNS-01 will fail\n'
-    fi
-  fi
-
-  # Tailscale credential format: hard cutover from one-time auth keys to OAuth.
-  # Optional (bridge isn't required for cold-start), but if present it must be OAuth.
-  if [[ -n "${TS_OAUTH_CLIENT_SECRET:-}" ]]; then
-    if [[ "$TS_OAUTH_CLIENT_SECRET" == tskey-auth-* ]]; then
-      printf '  FAIL TS_OAUTH_CLIENT_SECRET looks like a one-time auth key (tskey-auth-...)\n       fix: create an OAuth client at Tailscale admin → Settings → OAuth clients (scope: devices:write, tag: tag:mail-bridge); paste the tskey-client-... secret via `make configure`.\n'
-      FAIL=1
-    elif [[ "$TS_OAUTH_CLIENT_SECRET" != tskey-client-* ]]; then
-      printf '  warn TS_OAUTH_CLIENT_SECRET does not look like a Tailscale OAuth secret (expected tskey-client-...). bridge-up will refuse this value.\n'
-    else
-      printf '  ok   TS_OAUTH_CLIENT_SECRET is an OAuth client secret\n'
-    fi
-  fi
-
-  # Best-effort scope check: CF_API_TOKEN must have Email Routing:Edit if we want
-  # `make onboard` to enable routing and write rules. A GET on the addresses list
-  # for the account returns 403 with bad scopes and 200 (empty result allowed) otherwise.
+  # Best-effort scope check: CF_API_TOKEN must have Email Routing:Edit for
+  # `polaris-email domain onboard` to enable routing and write rules. A GET on
+  # the addresses list returns 403 with bad scopes and 200 (empty allowed) otherwise.
   if [[ -n "${CF_API_TOKEN:-}" && -n "${CF_ACCOUNT_ID:-}" ]] && command -v curl >/dev/null 2>&1; then
     er_code="$(curl -s -o /dev/null -w '%{http_code}' \
       -H "Authorization: Bearer ${CF_API_TOKEN}" \

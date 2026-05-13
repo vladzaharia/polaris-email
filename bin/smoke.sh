@@ -37,19 +37,7 @@ else
   fail "no .bootstrap-output.json — cannot run signed diagnostics"
 fi
 
-# 3) Bridge health (optional)
-if [[ -n "${BRIDGE_HOST:-}" && "${BRIDGE_HOST}" != "polaris-email.example.ts.net" ]]; then
-  code="$(curl -sS -m 5 -o /dev/null -w '%{http_code}' "http://${BRIDGE_HOST}:8088/health" || echo 000)"
-  if [[ "$code" == "200" ]]; then
-    pass "bridge http://${BRIDGE_HOST}:8088/health -> 200"
-  else
-    fail "bridge http://${BRIDGE_HOST}:8088/health -> $code"
-  fi
-else
-  echo "  skip bridge health (BRIDGE_HOST not configured)"
-fi
-
-# 4) Enqueue a synthetic outbound and poll for delivery.
+# 3) Enqueue a synthetic outbound and poll for delivery.
 if [[ -f "$BOOTSTRAP_OUTPUT" && -n "${SYNTHETIC_FROM:-}" && -n "${SYNTHETIC_TO:-}" ]]; then
   msg_id="smoke-$(date +%s)-$$"
   body="$(jq -nc --arg from "$SYNTHETIC_FROM" --arg to "$SYNTHETIC_TO" --arg id "$msg_id" \

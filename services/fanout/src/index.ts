@@ -4,7 +4,6 @@ import { safeFetch } from './ssrf.js';
 
 interface Env {
   DB: D1Database;
-  BRIDGE_TAILNET_HOST: string;
 }
 
 interface FanoutEvent {
@@ -20,7 +19,7 @@ interface FanoutEvent {
 interface SubRow {
   id: string;
   url: string;
-  kind: 'external' | 'tailnet' | 'bridge';
+  kind: 'external' | 'tailnet';
   secret: string;
   secret_prev: string | null;
   secret_prev_expires_at: number | null;
@@ -112,7 +111,7 @@ async function deliverToSub(env: Env, ev: FanoutEvent, sub: SubRow): Promise<voi
     'x-polaris-event-id': ev.event_id,
     'x-polaris-event': ev.event,
   };
-  const result = await safeFetch(sub.url, sub.kind, env.BRIDGE_TAILNET_HOST, {
+  const result = await safeFetch(sub.url, sub.kind, {
     method: 'POST',
     headers,
     body,
