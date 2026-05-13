@@ -3,7 +3,7 @@
 # Source this; do not execute.
 
 # Service list, in deploy order (forensic first because api depends on it).
-POLARIS_SERVICES=(forensic api out in fanout synthetic janitor staleness anchor)
+POLARIS_SERVICES=(forensic api out in fanout cron)
 
 # Resolve the repo root from any cwd. Callers should `cd "$ROOT"`.
 polaris_root() {
