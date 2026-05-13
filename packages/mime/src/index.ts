@@ -14,3 +14,11 @@ export {
   SenderPolicyError,
   type SenderPolicy,
 } from './sender-policy.js';
+
+export {
+  normalizeAddress,
+  addressesEqual,
+  longestSuffixMatch,
+  AddressError,
+  type NormalizedAddress,
+} from './address-norm.js';

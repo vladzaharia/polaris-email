@@ -156,6 +156,18 @@ importers:
         specifier: ^2.0.0
         version: 2.1.9(@types/node@22.19.18)
 
+  packages/observability:
+    devDependencies:
+      '@cloudflare/workers-types':
+        specifier: ^4.20240502.0
+        version: 4.20260511.1
+      typescript:
+        specifier: ^5.5.0
+        version: 5.9.3
+      vitest:
+        specifier: ^2.0.0
+        version: 2.1.9(@types/node@22.19.18)
+
   packages/providers:
     devDependencies:
       '@cloudflare/workers-types':
