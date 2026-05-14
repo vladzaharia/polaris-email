@@ -3,7 +3,17 @@
 # Source this; do not execute.
 
 # Service list, in deploy order.
-POLARIS_SERVICES=(api out in fanout cron)
+# `panel` lives under apps/ rather than services/; deploy.sh resolves the path
+# via polaris_service_path().
+POLARIS_SERVICES=(api out in fanout cron panel)
+
+# Resolve a service name to its on-disk path (services/<name> or apps/<name>).
+polaris_service_path() {
+  case "$1" in
+    panel) echo "apps/panel" ;;
+    *)     echo "services/$1" ;;
+  esac
+}
 
 # Resolve the repo root from any cwd. Callers should `cd "$ROOT"`.
 polaris_root() {

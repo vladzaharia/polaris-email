@@ -25,6 +25,12 @@ deploy_one() {
   local dir="$ROOT/$svc_path"
   [[ -d "$dir" ]] || { warn "no such dir: $dir — skipping"; return 0; }
   log "deploying $svc_path"
+  # The panel ships a Vite-built React SPA alongside the Worker; build it
+  # before wrangler picks up dist/client/ via the ASSETS binding.
+  if [[ "$svc_path" == "apps/panel" ]]; then
+    log "  building panel client bundle (vite)"
+    (cd "$dir" && pnpm run build:client) || die "panel client build failed"
+  fi
   (
     cd "$dir"
     if [[ -f wrangler.jsonc && -f wrangler.local.jsonc ]]; then
@@ -56,7 +62,7 @@ case "$MODE" in
     ;;
   all)
     for svc in "${POLARIS_SERVICES[@]}"; do
-      deploy_one "services/$svc"
+      deploy_one "$(polaris_service_path "$svc")"
     done
     sha="$(git rev-parse HEAD 2>/dev/null || echo unknown)"
     printf '%s' "$sha" > "$LAST_SHA_FILE"
@@ -91,7 +97,7 @@ case "$MODE" in
     declare -A PKG_DEPS=()           # service-name -> space-separated list of workspace pkg deps
     workspace_pkgs="$(jq -r '.name' packages/*/package.json 2>/dev/null || true)"
     for svc in "${POLARIS_SERVICES[@]}"; do
-      pj="services/$svc/package.json"
+      pj="$(polaris_service_path "$svc")/package.json"
       [[ -f "$pj" ]] || continue
       deps="$(jq -r '((.dependencies // {}) + (.devDependencies // {})) | keys[]' "$pj" 2>/dev/null || true)"
       depset=""
@@ -111,6 +117,9 @@ case "$MODE" in
         services/*)
           svc="${f#services/}"; svc="${svc%%/*}"
           TO_DEPLOY["$svc"]=1
+          ;;
+        apps/panel/*)
+          TO_DEPLOY["panel"]=1
           ;;
         packages/*)
           pkg_dir="${f#packages/}"; pkg_dir="${pkg_dir%%/*}"
@@ -141,7 +150,7 @@ case "$MODE" in
     # Iterate in canonical order, not arbitrary hash order.
     for svc in "${POLARIS_SERVICES[@]}"; do
       if [[ -n "${TO_DEPLOY[$svc]:-}" ]]; then
-        deploy_one "services/$svc"
+        deploy_one "$(polaris_service_path "$svc")"
       fi
     done
     printf '%s' "$head_sha" > "$LAST_SHA_FILE"

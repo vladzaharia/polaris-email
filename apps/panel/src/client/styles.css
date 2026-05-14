@@ -1,0 +1,110 @@
+/*
+ * polaris-email panel — Tailwind v4 + design tokens.
+ *
+ * Ported (and de-EV-branded) from ExpressCharge's OKLch token system. Volt
+ * Green / Electric Cyan are renamed to neutral cyan / green / violet accents.
+ * Light + dark variants live under :root and .dark respectively; theme
+ * transitions fade colour-related properties only (no layout shifts).
+ */
+@import 'tailwindcss';
+
+@theme {
+  /* Sans/mono — system stack until we ship a webfont. */
+  --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, 'Cascadia Mono', monospace;
+
+  /* Radii — chunky cards, slim controls. */
+  --radius-sm: 0.25rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.875rem;
+  --radius-xl: 1.25rem;
+
+  /* Base palette (light mode). All OKLch so dark mode is a clean inversion. */
+  --color-background: oklch(0.985 0.005 264);
+  --color-foreground: oklch(0.18 0.02 264);
+  --color-card: oklch(1 0 0);
+  --color-card-foreground: oklch(0.18 0.02 264);
+  --color-popover: oklch(1 0 0);
+  --color-popover-foreground: oklch(0.18 0.02 264);
+  --color-primary: oklch(0.5 0.18 230); /* neutral cyan */
+  --color-primary-foreground: oklch(0.99 0.005 264);
+  --color-secondary: oklch(0.94 0.01 264);
+  --color-secondary-foreground: oklch(0.22 0.02 264);
+  --color-muted: oklch(0.94 0.01 264);
+  --color-muted-foreground: oklch(0.5 0.02 264);
+  --color-accent: oklch(0.93 0.03 230);
+  --color-accent-foreground: oklch(0.22 0.04 230);
+  --color-destructive: oklch(0.55 0.21 27);
+  --color-destructive-foreground: oklch(0.99 0.005 264);
+  --color-success: oklch(0.6 0.16 150); /* neutral green */
+  --color-success-foreground: oklch(0.99 0.005 264);
+  --color-detail: oklch(0.55 0.18 295); /* neutral violet */
+  --color-detail-foreground: oklch(0.99 0.005 264);
+  --color-border: oklch(0.9 0.01 264);
+  --color-input: oklch(0.92 0.01 264);
+  --color-ring: oklch(0.5 0.18 230);
+
+  /* Sidebar tokens — distinct from body so the surface reads as fixed-chrome. */
+  --color-sidebar: oklch(0.97 0.005 264);
+  --color-sidebar-foreground: oklch(0.22 0.02 264);
+  --color-sidebar-border: oklch(0.9 0.01 264);
+  --color-sidebar-accent: oklch(0.93 0.03 230);
+  --color-sidebar-accent-foreground: oklch(0.22 0.04 230);
+  --color-sidebar-ring: oklch(0.5 0.18 230);
+}
+
+.dark {
+  --color-background: oklch(0.16 0.015 264);
+  --color-foreground: oklch(0.96 0.005 264);
+  --color-card: oklch(0.2 0.015 264);
+  --color-card-foreground: oklch(0.96 0.005 264);
+  --color-popover: oklch(0.2 0.015 264);
+  --color-popover-foreground: oklch(0.96 0.005 264);
+  --color-primary: oklch(0.7 0.16 230);
+  --color-primary-foreground: oklch(0.16 0.015 264);
+  --color-secondary: oklch(0.26 0.015 264);
+  --color-secondary-foreground: oklch(0.94 0.005 264);
+  --color-muted: oklch(0.26 0.015 264);
+  --color-muted-foreground: oklch(0.7 0.015 264);
+  --color-accent: oklch(0.3 0.05 230);
+  --color-accent-foreground: oklch(0.94 0.005 264);
+  --color-destructive: oklch(0.65 0.22 27);
+  --color-destructive-foreground: oklch(0.99 0.005 264);
+  --color-success: oklch(0.7 0.16 150);
+  --color-success-foreground: oklch(0.16 0.015 264);
+  --color-detail: oklch(0.68 0.18 295);
+  --color-detail-foreground: oklch(0.16 0.015 264);
+  --color-border: oklch(0.3 0.015 264);
+  --color-input: oklch(0.3 0.015 264);
+  --color-ring: oklch(0.7 0.16 230);
+
+  --color-sidebar: oklch(0.18 0.015 264);
+  --color-sidebar-foreground: oklch(0.94 0.005 264);
+  --color-sidebar-border: oklch(0.3 0.015 264);
+  --color-sidebar-accent: oklch(0.3 0.05 230);
+  --color-sidebar-accent-foreground: oklch(0.94 0.005 264);
+  --color-sidebar-ring: oklch(0.7 0.16 230);
+}
+
+/* Smooth theme switches (color-only — no layout). */
+@keyframes theme-fade {
+  from {
+    opacity: 0.92;
+  }
+  to {
+    opacity: 1;
+  }
+}
+:root,
+.dark {
+  animation: theme-fade 180ms ease-out;
+}
+
+* {
+  border-color: var(--color-border);
+}
+body {
+  background: var(--color-background);
+  color: var(--color-foreground);
+  font-family: var(--font-sans);
+}
