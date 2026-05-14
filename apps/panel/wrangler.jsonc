@@ -1,0 +1,41 @@
+// polaris-email-panel Worker — committed config. Real IDs live in wrangler.local.jsonc
+// (gitignored) and are merged by bin/deploy.sh before `wrangler deploy`.
+//
+// The panel binds to the SAME `polaris-email` D1 as services/api (auth tables
+// live there alongside the canonical schema), and reaches services/api over a
+// one-way service binding (API). Static assets are served from dist/client via
+// the Workers Assets binding.
+//
+// Route / custom domain examples (uncomment in wrangler.local.jsonc):
+//   "routes": [{ "pattern": "api.polaris.example.com/panel/*", "zone_name": "polaris.example.com" }]
+{
+  "$schema": "https://json-schema.org/draft-07/schema",
+  "name": "polaris-email-panel",
+  "main": "src/server/index.ts",
+  "compatibility_date": "2026-04-15",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": { "enabled": true },
+  "logpush": true,
+  "placement": { "mode": "smart" },
+  "assets": {
+    "directory": "dist/client",
+    "binding": "ASSETS",
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "polaris-email",
+      "database_id": "REPLACE_WITH_LOCAL",
+      "migrations_dir": "migrations",
+    },
+  ],
+  "services": [{ "binding": "API", "service": "polaris-email-api" }],
+  "vars": {
+    "ADMIN_GROUP": "polaris-admins",
+    // Cookie scope. Default assumes panel runs at api.polaris.example.com/panel
+    // (same host as the API), so Path=/panel + no Domain. For subdomain mode
+    // (panel.polaris.example.com + api.polaris.example.com), override locally:
+    //   COOKIE_DOMAIN=".polaris.example.com"
+    "COOKIE_PATH": "/panel",
+  },
+}

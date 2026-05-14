@@ -7,10 +7,12 @@
   "compatibility_flags": ["nodejs_compat"],
   "observability": { "enabled": true },
   "logpush": true,
-  "d1_databases": [{ "binding": "DB", "database_name": "polaris-email", "database_id": "REPLACE_WITH_LOCAL" }],
+  "d1_databases": [
+    { "binding": "DB", "database_name": "polaris-email", "database_id": "REPLACE_WITH_LOCAL" },
+  ],
   "r2_buckets": [{ "binding": "R2", "bucket_name": "polaris-email" }],
   "kv_namespaces": [{ "binding": "KV_RATE_LIMIT", "id": "REPLACE_WITH_LOCAL" }],
   "queues": {
-    "producers": [{ "binding": "FANOUT_QUEUE", "queue": "polaris-email-fanout" }]
-  }
+    "producers": [{ "binding": "FANOUT_QUEUE", "queue": "polaris-email-fanout" }],
+  },
 }

@@ -109,7 +109,7 @@ export class Decommissioner {
         // Delete every Email Routing rule whose matchers reference this domain.
         const rules = await listEmailRoutingRules(this.deps.client, domain.cfZoneId);
         const toDelete = rules.filter((r) =>
-          (r.matchers ?? []).some((m) => (m.value ?? '').endsWith('@' + domain.name))
+          (r.matchers ?? []).some((m) => (m.value ?? '').endsWith('@' + domain.name)),
         );
         for (const r of toDelete) {
           if (r.id) await deleteEmailRoutingRule(this.deps.client, domain.cfZoneId, r.id);
@@ -126,7 +126,7 @@ export class Decommissioner {
         }
         const ok = await this.confirmRemoved(
           { type: 'MX', name: domain.name },
-          /*mustBeAbsent=*/ false
+          /*mustBeAbsent=*/ false,
         );
         // Routing absence is implicit; we can't directly DoH-check Cloudflare's
         // internal routing state, so we treat the Cloudflare API call as truth.
@@ -143,7 +143,7 @@ export class Decommissioner {
         }
         const stillThere = await this.confirmRemoved(
           { type: 'MX', name: domain.name },
-          /*mustBeAbsent=*/ true
+          /*mustBeAbsent=*/ true,
         );
         if (!stillThere.ok) {
           return {
@@ -182,7 +182,7 @@ export class Decommissioner {
    */
   private async confirmRemoved(
     record: { type: string; name: string },
-    mustBeAbsent: boolean
+    mustBeAbsent: boolean,
   ): Promise<{ ok: boolean; step?: VerifyStep }> {
     try {
       const r = await this.deps.verifier.advance({

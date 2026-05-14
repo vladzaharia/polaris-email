@@ -24,14 +24,9 @@ export async function audit(env: Env, args: AuditArgs): Promise<void> {
     `SELECT row_hash FROM audit_log ORDER BY id DESC LIMIT 1`,
   ).first<{ row_hash: string }>();
   const prevHash = prev?.row_hash ?? '0'.repeat(64);
-  const canonical = [
-    args.actor,
-    args.action,
-    args.target ?? '',
-    meta,
-    prevHash,
-    String(at),
-  ].join('\n');
+  const canonical = [args.actor, args.action, args.target ?? '', meta, prevHash, String(at)].join(
+    '\n',
+  );
   const rowHash = await sha256Hex(canonical);
   await env.DB.prepare(
     `INSERT INTO audit_log (actor, action, target, meta, prev_hash, row_hash, at)
@@ -90,14 +85,9 @@ export async function verifyChain(
     if (r.prev_hash !== prev) {
       return { ok: false, brokenAt: r.id, reason: 'prev_hash mismatch' };
     }
-    const canonical = [
-      r.actor,
-      r.action,
-      r.target ?? '',
-      r.meta,
-      r.prev_hash,
-      String(r.at),
-    ].join('\n');
+    const canonical = [r.actor, r.action, r.target ?? '', r.meta, r.prev_hash, String(r.at)].join(
+      '\n',
+    );
     const expected = await sha256Hex(canonical);
     if (expected !== r.row_hash) {
       return { ok: false, brokenAt: r.id, reason: 'row_hash mismatch' };

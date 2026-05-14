@@ -4,8 +4,10 @@ import { ZoneSchema, type Zone } from './types.js';
 import { CloudflareApiError } from './client.js';
 
 export async function listZones(client: CloudflareApiClient): Promise<Zone[]> {
-  return client.get(`/zones?account.id=${encodeURIComponent(client.accountId)}&per_page=50`,
-    z.array(ZoneSchema));
+  return client.get(
+    `/zones?account.id=${encodeURIComponent(client.accountId)}&per_page=50`,
+    z.array(ZoneSchema),
+  );
 }
 
 export async function getZone(client: CloudflareApiClient, zoneId: string): Promise<Zone> {

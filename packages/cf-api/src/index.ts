@@ -37,11 +37,7 @@ export {
 
 export { findZoneByName, getZone, listZones } from './zones.js';
 
-export {
-  DohDnsVerifier,
-  type VerifyStep,
-  type DnsVerifier,
-} from './dns-verify.js';
+export { DohDnsVerifier, type VerifyStep, type DnsVerifier } from './dns-verify.js';
 
 export type { ExpectedRecord, Zone, EmailRoutingRule } from './types.js';
 
@@ -59,14 +55,17 @@ export {
   type DnsOps,
 } from './dkim-rotation.js';
 
-export {
-  Decommissioner,
-  type DecomState,
-  type DecomDeps,
-} from './decommission.js';
+export { Decommissioner, type DecomState, type DecomDeps } from './decommission.js';
 
 export {
   bulkOnboardPattern,
   type BulkOnboardOpts,
   type BulkOnboardProgress,
 } from './bulk-onboard.js';
+
+export {
+  mintAttachmentUrl,
+  verifyAttachmentUrl,
+  type SignedUrlEnv,
+  type VerifiedAttachmentRef,
+} from './signed-urls.js';

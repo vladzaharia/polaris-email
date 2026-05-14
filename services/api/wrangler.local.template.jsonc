@@ -4,18 +4,16 @@
 {
   "account_id": "${CF_ACCOUNT_ID}",
   "d1_databases": [
-    { "binding": "DB", "database_name": "polaris-email", "database_id": "${D1_ID}" }
+    { "binding": "DB", "database_name": "polaris-email", "database_id": "${D1_ID}" },
   ],
-  "r2_buckets": [
-    { "binding": "R2", "bucket_name": "polaris-email", "jurisdiction": "eu" }
-  ],
+  "r2_buckets": [{ "binding": "R2", "bucket_name": "polaris-email", "jurisdiction": "eu" }],
   "kv_namespaces": [
-    { "binding": "KV_NONCE",       "id": "${KV_NONCE_ID}" },
+    { "binding": "KV_NONCE", "id": "${KV_NONCE_ID}" },
     { "binding": "KV_IDEMPOTENCY", "id": "${KV_IDEMPOTENCY_ID}" },
-    { "binding": "KV_RATE_LIMIT",  "id": "${KV_RATE_LIMIT_ID}" },
-    { "binding": "KV_KEY_CACHE",   "id": "${KV_KEY_CACHE_ID}" }
+    { "binding": "KV_RATE_LIMIT", "id": "${KV_RATE_LIMIT_ID}" },
+    { "binding": "KV_KEY_CACHE", "id": "${KV_KEY_CACHE_ID}" },
   ],
   "vars": {
-    "API_BASE_URL": "https://${POLARIS_API_HOSTNAME}"
-  }
+    "API_BASE_URL": "https://${POLARIS_API_HOSTNAME}",
+  },
 }

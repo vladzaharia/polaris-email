@@ -15,7 +15,7 @@ function stub(env: DoBindings, principalId: string) {
 
 export async function revocationCheck(
   env: DoBindings,
-  principalId: string
+  principalId: string,
 ): Promise<RevocationStateResponse> {
   const r = await stub(env, principalId).fetch(new Request('https://do/state'));
   if (!r.ok) {
@@ -28,14 +28,14 @@ export async function revoke(
   env: DoBindings,
   principalId: string,
   by: string,
-  reason: string
+  reason: string,
 ): Promise<void> {
   const r = await stub(env, principalId).fetch(
     new Request('https://do/revoke', {
       method: 'POST',
       body: JSON.stringify({ by, reason }),
       headers: { 'content-type': 'application/json' },
-    })
+    }),
   );
   if (!r.ok) throw new Error(`revoke failed: ${r.status}`);
 }
@@ -44,14 +44,14 @@ export async function unrevoke(
   env: DoBindings,
   principalId: string,
   by: string,
-  reason: string
+  reason: string,
 ): Promise<void> {
   const r = await stub(env, principalId).fetch(
     new Request('https://do/unrevoke', {
       method: 'POST',
       body: JSON.stringify({ by, reason }),
       headers: { 'content-type': 'application/json' },
-    })
+    }),
   );
   if (!r.ok) throw new Error(`unrevoke failed: ${r.status}`);
 }

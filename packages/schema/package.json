@@ -15,7 +15,7 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
-    "lint": "echo ok"
+    "lint": "oxlint ."
   },
   "dependencies": {
     "zod": "^3.23.0"

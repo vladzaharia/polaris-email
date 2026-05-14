@@ -27,14 +27,14 @@ infra/terraform/
 ## Workspaces / accounts
 
 We run three independent Terraform compositions, one per Cloudflare account.
-They are *not* Terraform CLI workspaces — they're separate root modules under
+They are _not_ Terraform CLI workspaces — they're separate root modules under
 `envs/`. Each has its own state file in the shared R2 backend bucket.
 
-| Env       | Cloudflare account  | Owns                                               |
-|-----------|---------------------|----------------------------------------------------|
-| `prod`    | `polaris-prod`      | All sender/recipient zones, Access apps for admin + `/v1/send/raw`. |
-| `staging` | `polaris-staging`   | Mirror of prod for staging tenants.                |
-| `anchors` | `polaris-anchors`   | Audit-anchor R2 bucket, compliance-locked.         |
+| Env       | Cloudflare account | Owns                                                                |
+| --------- | ------------------ | ------------------------------------------------------------------- |
+| `prod`    | `polaris-prod`     | All sender/recipient zones, Access apps for admin + `/v1/send/raw`. |
+| `staging` | `polaris-staging`  | Mirror of prod for staging tenants.                                 |
+| `anchors` | `polaris-anchors`  | Audit-anchor R2 bucket, compliance-locked.                          |
 
 ## Why Terraform here, Wrangler there
 
@@ -54,9 +54,11 @@ edit zones; the Terraform token cannot deploy Workers.
 ## Bootstrap
 
 1. **Create the state bucket** in `polaris-prod`:
+
    ```sh
    wrangler r2 bucket create polaris-tfstate --location ENAM
    ```
+
    Enable versioning (Cloudflare dashboard → R2 → polaris-tfstate → Settings).
    Do NOT use the `polaris-anchors` account for state — it's compliance-locked.
 
@@ -64,10 +66,11 @@ edit zones; the Terraform token cannot deploy Workers.
    - prod token: `Zone:Edit` + `Account.Email Routing:Edit` + `Account.Access:Edit` on `polaris-prod`.
    - staging token: same scopes on `polaris-staging`.
    - anchors token: `Account.R2:Edit` on `polaris-anchors`.
-   Plus an R2 access key (id + secret) on `polaris-prod` scoped to the
-   `polaris-tfstate` bucket only — used by the s3 backend.
+     Plus an R2 access key (id + secret) on `polaris-prod` scoped to the
+     `polaris-tfstate` bucket only — used by the s3 backend.
 
 3. **Set environment variables** before running terraform:
+
    ```sh
    export CLOUDFLARE_API_TOKEN=...
    export TF_VAR_cloudflare_api_token=$CLOUDFLARE_API_TOKEN
@@ -81,6 +84,7 @@ edit zones; the Terraform token cannot deploy Workers.
 4. **Init each env** with backend overrides (the `bucket`/`key`/`endpoints`
    values are intentionally left out of `backend.tf` so they're explicit at
    bootstrap time):
+
    ```sh
    terraform -chdir=infra/terraform/envs/prod init \
      -backend-config=bucket=polaris-tfstate \
@@ -88,6 +92,7 @@ edit zones; the Terraform token cannot deploy Workers.
      -backend-config=region=auto \
      -backend-config=endpoints='{"s3":"https://<PROD_ACCOUNT_ID>.r2.cloudflarestorage.com"}'
    ```
+
    Repeat with `key=staging/...` and `key=anchors/...` for the other envs.
 
 5. **Plan before apply**, always:
@@ -140,7 +145,7 @@ and/or depend on Cloudflare API surface that's still in flux as of writing:
    and update the module call if it differs.
 8. **Initial zone import** — if the operator already has zones with
    hand-rolled DNS records, run `terraform import cloudflare_record.<name>
-   <zone_id>/<record_id>` for each before the first apply, or terraform
+<zone_id>/<record_id>` for each before the first apply, or terraform
    will create duplicates.
 
 ## Provider version notes

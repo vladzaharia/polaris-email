@@ -91,5 +91,9 @@ export async function setCatchAllRule(
     matchers: [{ type: 'all' }],
     actions,
   };
-  return client.post(`/zones/${zoneId}/email/routing/rules/catch_all`, body, EmailRoutingRuleSchema);
+  return client.post(
+    `/zones/${zoneId}/email/routing/rules/catch_all`,
+    body,
+    EmailRoutingRuleSchema,
+  );
 }

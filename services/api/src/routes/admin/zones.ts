@@ -27,7 +27,9 @@ zones.get('/v1/admin/zones/lookup', requireScope('admin:read'), async (c) => {
   const name = c.req.query('name');
   if (!cfZoneId && !name) return buildError(c, 'bad_request', 'cf_zone_id or name required');
   const row = cfZoneId
-    ? await c.env.DB.prepare(`SELECT id, cf_zone_id, name, created_at FROM zones WHERE cf_zone_id = ?`)
+    ? await c.env.DB.prepare(
+        `SELECT id, cf_zone_id, name, created_at FROM zones WHERE cf_zone_id = ?`,
+      )
         .bind(cfZoneId)
         .first<ZoneRow>()
     : await c.env.DB.prepare(`SELECT id, cf_zone_id, name, created_at FROM zones WHERE name = ?`)

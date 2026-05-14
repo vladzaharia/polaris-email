@@ -1,4 +1,4 @@
-// Daemon HMAC auth middleware for /v1/daemon/* and /v1/send/raw.
+// Daemon HMAC auth middleware for /v1/daemon/* (and historically /v1/send/raw).
 //
 // Distinct from tenant HMAC auth (auth.ts):
 // - HMAC secret is the daemon's pre-shared key (Env.DAEMON_HMAC_KEY).

@@ -1,10 +1,7 @@
 // Admin REST routes for mail_domains (the send/recv domain table).
 // All HMAC-signed (admin middleware applied at the parent `admin` Hono instance).
 import { Hono } from 'hono';
-import {
-  CreateMailDomainRequest,
-  UpdateMailDomainRequest,
-} from '@polaris-email/schema';
+import { CreateMailDomainRequest, UpdateMailDomainRequest } from '@polaris-email/schema';
 import { audit } from '../../audit.js';
 import { bodyText, requireScope } from '../../auth.js';
 import type { Env } from '../../env.js';
@@ -34,24 +31,16 @@ interface MailDomainRow {
  * placeholder for tests where the operator hasn't pre-provisioned one).
  * Returns the canonical zones.id.
  */
-async function ensureZone(
-  c: { env: Env },
-  cfZoneId: string | null,
-  name: string,
-): Promise<string> {
+async function ensureZone(c: { env: Env }, cfZoneId: string | null, name: string): Promise<string> {
   if (cfZoneId) {
-    const found = await c.env.DB.prepare(
-      `SELECT id FROM zones WHERE cf_zone_id = ?`,
-    )
+    const found = await c.env.DB.prepare(`SELECT id FROM zones WHERE cf_zone_id = ?`)
       .bind(cfZoneId)
       .first<{ id: string }>();
     if (found) return found.id;
   }
   const id = ulid();
   const cfId = cfZoneId ?? `local-${id}`;
-  await c.env.DB.prepare(
-    `INSERT INTO zones (id, cf_zone_id, name, created_at) VALUES (?, ?, ?, ?)`,
-  )
+  await c.env.DB.prepare(`INSERT INTO zones (id, cf_zone_id, name, created_at) VALUES (?, ?, ?, ?)`)
     .bind(id, cfId, name, new Date().toISOString())
     .run();
   return id;
@@ -81,10 +70,10 @@ domains.post('/v1/admin/domains', requireScope('admin:rotate'), async (c) => {
   try {
     await c.env.DB.prepare(
       `INSERT INTO mail_domains
-         (id, zone_id, name, environment, status, wildcard_subdomains, dmarc_policy,
+         (id, zone_id, name, status, wildcard_subdomains, dmarc_policy,
           dmarc_rua, inbound_enabled, outbound_enabled, provider, dkim_selector,
           created_at, updated_at)
-       VALUES (?, ?, ?, 'prod', 'pending', 1, ?, ?, 0, 1, 'cloudflare', ?, ?, ?)`,
+       VALUES (?, ?, ?, 'pending', 1, ?, ?, 0, 1, 'cloudflare', ?, ?, ?)`,
     )
       .bind(id, zoneId, body.name, policy, rua, selector, nowIso, nowIso)
       .run();
@@ -161,10 +150,10 @@ domains.post('/v1/admin/domains/bulk-onboard', requireScope('admin:rotate'), asy
       const zoneId = await ensureZone(c, null, name);
       await c.env.DB.prepare(
         `INSERT INTO mail_domains
-           (id, zone_id, name, environment, status, wildcard_subdomains, dmarc_policy,
+           (id, zone_id, name, status, wildcard_subdomains, dmarc_policy,
             dmarc_rua, inbound_enabled, outbound_enabled, provider, dkim_selector,
             created_at, updated_at)
-         VALUES (?, ?, ?, 'prod', 'pending', 1, 'none', ?, 0, 1, 'cloudflare', 'cf', ?, ?)`,
+         VALUES (?, ?, ?, 'pending', 1, 'none', ?, 0, 1, 'cloudflare', 'cf', ?, ?)`,
       )
         .bind(id, zoneId, name, `mailto:postmaster@${name}`, nowIso, nowIso)
         .run();
@@ -177,7 +166,10 @@ domains.post('/v1/admin/domains/bulk-onboard', requireScope('admin:rotate'), asy
       });
     } catch (e) {
       const msg = String(e);
-      results.push({ name, error: msg.includes('UNIQUE') ? 'already registered' : msg.slice(0, 200) });
+      results.push({
+        name,
+        error: msg.includes('UNIQUE') ? 'already registered' : msg.slice(0, 200),
+      });
     }
   }
   return c.json({ results });
@@ -187,7 +179,9 @@ domains.post('/v1/admin/domains/bulk-onboard', requireScope('admin:rotate'), asy
 domains.post('/v1/admin/domains/:id/rotate-dkim', requireScope('admin:rotate'), async (c) => {
   const key = c.get('apiKey');
   const id = c.req.param('id');
-  const row = await c.env.DB.prepare(`SELECT id, name, dkim_selector FROM mail_domains WHERE id = ?`)
+  const row = await c.env.DB.prepare(
+    `SELECT id, name, dkim_selector FROM mail_domains WHERE id = ?`,
+  )
     .bind(id)
     .first<{ id: string; name: string; dkim_selector: string | null }>();
   if (!row) return buildError(c, 'not_found', 'mail_domain not found');
@@ -265,9 +259,7 @@ domains.patch('/v1/admin/domains/:id', requireScope('admin:rotate'), async (c) =
   sets.push('updated_at = ?');
   binds.push(nowIso);
   binds.push(id);
-  await c.env.DB.prepare(
-    `UPDATE mail_domains SET ${sets.join(', ')} WHERE id = ?`,
-  )
+  await c.env.DB.prepare(`UPDATE mail_domains SET ${sets.join(', ')} WHERE id = ?`)
     .bind(...binds)
     .run();
   await audit(c.env, {
@@ -388,15 +380,16 @@ domains.post('/v1/admin/domains/:id/verify', requireScope('admin:rotate'), async
       checks,
     });
   }
-  expected = await fetchExpectedRoutingDns(accountId!, row.cf_zone_id!, apiToken!).catch(
-    () => [],
-  );
+  expected = await fetchExpectedRoutingDns(accountId!, row.cf_zone_id!, apiToken!).catch(() => []);
 
   for (const rec of expected.filter((r) => r.type.toUpperCase() === 'CNAME')) {
     const want = stripDot(rec.content).toLowerCase();
     const got = await dohResolve(rec.name, 'CNAME').catch((e: unknown) => {
       // eslint-disable-next-line no-console
-      console.warn(`dohResolve CNAME ${rec.name} failed`, e instanceof Error ? e.message : 'unknown');
+      console.warn(
+        `dohResolve CNAME ${rec.name} failed`,
+        e instanceof Error ? e.message : 'unknown',
+      );
       return [];
     });
     const seen = got.map((a) => stripDot(a.data).toLowerCase());
@@ -426,9 +419,7 @@ domains.post('/v1/admin/domains/:id/verify', requireScope('admin:rotate'), async
   ];
   const wantMxSet = (expectedMxHosts.length > 0 ? expectedMxHosts : fallbackMx).sort();
   const haveMxSet = [...new Set(seenMxHosts)].sort();
-  const mxOk =
-    wantMxSet.length > 0 &&
-    wantMxSet.every((h) => haveMxSet.includes(h));
+  const mxOk = wantMxSet.length > 0 && wantMxSet.every((h) => haveMxSet.includes(h));
   checks.push({
     name: 'mx',
     ok: mxOk,
@@ -470,6 +461,73 @@ domains.post('/v1/admin/domains/:id/verify', requireScope('admin:rotate'), async
     checks,
   });
 });
+
+// ---------- enable/disable inbound/outbound ----------
+//
+// Four near-identical endpoints; the matrix is bounded so we register them
+// explicitly rather than collapsing via a helper that loses Hono's per-route
+// context typing.
+type FlagSpec = {
+  readonly path: `/v1/admin/domains/:id/${'inbound' | 'outbound'}/${'enable' | 'disable'}`;
+  readonly column: 'inbound_enabled' | 'outbound_enabled';
+  readonly enabled: boolean;
+  readonly action:
+    | 'domain.inbound.enable'
+    | 'domain.inbound.disable'
+    | 'domain.outbound.enable'
+    | 'domain.outbound.disable';
+};
+
+const TOGGLES: readonly FlagSpec[] = [
+  {
+    path: '/v1/admin/domains/:id/inbound/enable',
+    column: 'inbound_enabled',
+    enabled: true,
+    action: 'domain.inbound.enable',
+  },
+  {
+    path: '/v1/admin/domains/:id/inbound/disable',
+    column: 'inbound_enabled',
+    enabled: false,
+    action: 'domain.inbound.disable',
+  },
+  {
+    path: '/v1/admin/domains/:id/outbound/enable',
+    column: 'outbound_enabled',
+    enabled: true,
+    action: 'domain.outbound.enable',
+  },
+  {
+    path: '/v1/admin/domains/:id/outbound/disable',
+    column: 'outbound_enabled',
+    enabled: false,
+    action: 'domain.outbound.disable',
+  },
+];
+
+for (const spec of TOGGLES) {
+  domains.post(spec.path, requireScope('admin:rotate'), async (c) => {
+    const key = c.get('apiKey');
+    const id = c.req.param('id');
+    const row = await c.env.DB.prepare(`SELECT id, name FROM mail_domains WHERE id = ?`)
+      .bind(id)
+      .first<{ id: string; name: string }>();
+    if (!row) return buildError(c, 'not_found', 'mail_domain not found');
+    const nowIso = new Date().toISOString();
+    await c.env.DB.prepare(
+      `UPDATE mail_domains SET ${spec.column} = ?, updated_at = ? WHERE id = ?`,
+    )
+      .bind(spec.enabled ? 1 : 0, nowIso, id)
+      .run();
+    await audit(c.env, {
+      actor: `key:${key.key_id}`,
+      action: spec.action,
+      target: id,
+      meta: { name: row.name },
+    });
+    return c.json({ id, [spec.column]: spec.enabled });
+  });
+}
 
 // ---------- soft-disable ----------
 domains.delete('/v1/admin/domains/:id', requireScope('admin:rotate'), async (c) => {

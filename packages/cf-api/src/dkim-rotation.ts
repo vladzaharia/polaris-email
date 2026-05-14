@@ -18,12 +18,7 @@
 // module is pure orchestration so it stays portable across Worker/CLI consumers.
 
 import type { ExpectedRecord } from './types.js';
-import {
-  createRecord,
-  deleteRecord,
-  findRecord,
-  type DnsRecordInput,
-} from './dns.js';
+import { deleteRecord, findRecord, type DnsRecordInput } from './dns.js';
 import type { CloudflareApiClient } from './client.js';
 
 export const RETIRE_FLUSH_WINDOW_DAYS = 14;
@@ -109,10 +104,7 @@ export async function planRotation(opts: {
 /**
  * Promote pending → active and demote prior active → retiring atomically.
  */
-export async function promotePending(
-  dkim: DkimKeyOps,
-  pendingId: string
-): Promise<void> {
+export async function promotePending(dkim: DkimKeyOps, pendingId: string): Promise<void> {
   const pending = await dkim.getById(pendingId);
   if (!pending) throw new Error(`pending dkim_keys row ${pendingId} not found`);
   if (pending.state !== 'pending') {
@@ -136,7 +128,7 @@ export async function retireOldKey(
   client: CloudflareApiClient,
   zoneId: string,
   domain: string,
-  opts?: { now?: () => number }
+  opts?: { now?: () => number },
 ): Promise<{ retired: boolean; reason?: string }> {
   const k = await dkim.getById(retiringId);
   if (!k) return { retired: false, reason: 'not_found' };
@@ -174,13 +166,15 @@ function dkimTxtRecord(algo: DkimAlgo, publicKey: string): string {
   return `v=DKIM1; k=${k}; p=${publicKey}`;
 }
 
-async function generateKeyMaterial(algo: DkimAlgo): Promise<{ publicKey: string; privateKey: string }> {
+async function generateKeyMaterial(
+  algo: DkimAlgo,
+): Promise<{ publicKey: string; privateKey: string }> {
   // Stub — real generation happens server-side (CF Email Service onboarding
   // returns the public key) or via a dedicated key-management Worker. For
   // tests we accept generated material via the `generated` option above.
   void algo;
   throw new Error(
-    'generateKeyMaterial: pass `generated: { publicKey, privateKey }` or wire to onboardSenderDomain()'
+    'generateKeyMaterial: pass `generated: { publicKey, privateKey }` or wire to onboardSenderDomain()',
   );
 }
 

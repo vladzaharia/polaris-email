@@ -1,0 +1,63 @@
+# This is one of two equally-supported deployment modes for polaris-mail-bridge.
+# See README.md for the other (docker-compose.tailscale.yml for tailnet-fronted mode).
+#
+# Local / host-network mode:
+#   - Bridge binds 465/993/443 directly to the host network.
+#   - Operator owns the firewall, reverse proxy (if any), and TLS termination
+#     (operator-mounted PEM at /etc/polaris-bridge/tls/, or Lego ACME-DNS-01).
+#   - Suitable when the host is already the public entry point or sits behind
+#     a load balancer the operator controls.
+services:
+  # Optional cert manager. Skip if you're mounting operator-managed PEM files
+  # directly. Activate with `docker compose --profile lego up`.
+  lego:
+    image: goacme/lego:v4.14
+    container_name: polaris-mail-lego
+    environment:
+      CF_DNS_API_TOKEN: ${CF_DNS_API_TOKEN:-}
+    volumes:
+      - ${BRIDGE_TLS_DIR:-./tls}:/.lego
+    command: >
+      run --accept-tos --email ${ACME_EMAIL:-ops@example.com}
+          --domains ${BRIDGE_FQDN:-mail.example.com}
+          --dns cloudflare
+          --path /.lego
+    profiles: [lego]
+
+  bridge:
+    image: ghcr.io/vladzaharia/polaris-mail-bridge:latest
+    container_name: polaris-mail-bridge
+    # Bind the protocol ports directly on the host. Operator controls firewall.
+    ports:
+      - '${BRIDGE_SMTPS_PORT:-465}:465'
+      - '${BRIDGE_IMAP_PORT:-993}:993'
+      - '${BRIDGE_JMAP_PORT:-443}:443'
+    environment:
+      BRIDGE_TLS_MODE: local
+      BRIDGE_TLS_CERT_PATH: /etc/polaris-bridge/tls/fullchain.pem
+      BRIDGE_TLS_KEY_PATH: /etc/polaris-bridge/tls/privkey.pem
+      BRIDGE_POLARIS_API_URL: ${POLARIS_API_URL:-https://api.polaris.example.com}
+      BRIDGE_POLARIS_DAEMON_ID_FILE: /run/secrets/daemon_id
+      BRIDGE_POLARIS_HMAC_KEY_FILE: /run/secrets/hmac_key
+      BRIDGE_SMTPS_ENABLED: ${BRIDGE_SMTPS_ENABLED:-true}
+      BRIDGE_IMAP_ENABLED: ${BRIDGE_IMAP_ENABLED:-true}
+      BRIDGE_JMAP_ENABLED: ${BRIDGE_JMAP_ENABLED:-true}
+      BRIDGE_CREDSTORE_PATH: /var/lib/polaris-bridge/credstore.db
+      BRIDGE_MIRROR_PATH: /var/lib/polaris-bridge/mirror.db
+      BRIDGE_LOGGING_FILE: /var/log/polaris-bridge/audit.jsonl
+    volumes:
+      - bridge-data:/var/lib/polaris-bridge
+      - bridge-logs:/var/log/polaris-bridge
+      - ${BRIDGE_TLS_DIR:-./tls}:/etc/polaris-bridge/tls:ro
+      - ./bridge.toml:/etc/polaris-bridge/bridge.toml:ro
+      - ./secrets:/run/secrets:ro
+    healthcheck:
+      test: ['CMD', 'pgrep', '-f', 'polaris-bridge']
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+volumes:
+  bridge-data:
+  bridge-logs:

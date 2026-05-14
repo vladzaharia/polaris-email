@@ -6,8 +6,8 @@ polaris-email's stored data:
 - **R2** — declared in `services/api/wrangler.local.jsonc` as `bucket_name` + `jurisdiction: 'eu'` (configurable). Object Lock enabled in compliance mode.
 - **Email Routing inbound** — CF's regional routing follows the domain's MX, which lands in CF's nearest colo. Use a regional CF account to constrain.
 - **Workers** — `placement: { mode: 'smart' }` keeps execution close to D1/R2.
-- **Submission-daemon SQLite mirror** — on each daemon host's local volume (operator-managed). Holds credential bcrypt hashes only, never plaintext.
-- **Panel sqlite** — sessions only; on the panel container's volume.
+- **Mail-bridge SQLite mirror** — on each bridge host's local volume (operator-managed). Holds credential bcrypt hashes and the local message-state mirror; never plaintext passwords.
+- **Panel sessions** — stored in D1 (better-auth backing tables).
 
 ## Verifying
 
@@ -22,13 +22,27 @@ polaris-email status                # high-level counts
 For deeper jurisdiction inspection, query the bindings directly via `wrangler d1
 info` and `wrangler r2 bucket info`.
 
+## Recipients are unrecoverable
+
+By design, polaris-email does **not** retain plaintext recipient addresses
+once a message has been submitted and dispatched. The audit chain records
+hashes and metadata, not plaintext to/cc/bcc lists. Consumers expecting to
+respond to subpoenas or comparable disclosure requests must keep their own
+outbound logs on the sending side; the service cannot reconstruct who you
+sent to after the fact. See [`CONSUMER-CONTRACT.md`](../CONSUMER-CONTRACT.md).
+
 ## Right-to-erasure
 
-Erasure is not yet a first-class operation. The current path:
+The unified `processMessage` pipeline writes inbound and outbound messages
+to the same `messages` table, so erasure is **one DELETE path**, not two.
+There is no separate forensic store to scrub.
 
-1. Identify the affected messages via the audit log + `messages` table (`tenant_id`
-   + recipient hash columns).
-2. Manually `wrangler d1 execute` a DELETE for the relevant rows.
-3. R2 Object Lock blocks immediate erasure; place delete markers and accept that the
-   underlying objects expire on the configured retention window.
+Current procedure:
+
+1. Identify the affected messages via the audit log + `messages` table
+   (`mailbox_id` + sender/recipient hash columns + `created_at`).
+2. Issue `DELETE /v1/messages/:id` per affected row, then
+   `POST /v1/mailboxes/:id/expunge` to hard-delete (decrements `r2_refs`).
+3. R2 Object Lock blocks immediate object deletion; underlying bytes expire
+   on the configured retention window once `r2_refs` reaches zero.
 4. Audit-log the ticket id manually via `polaris-email audit chain`.

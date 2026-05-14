@@ -5,6 +5,7 @@ import { requestId } from '@polaris-email/ids';
 
 export const ERROR_HTTP: Record<ErrorCode, number> = {
   bad_request: 400,
+  bad_content_type: 400,
   bad_signature: 401,
   key_propagating: 401,
   clock_skew: 401,
@@ -15,6 +16,7 @@ export const ERROR_HTTP: Record<ErrorCode, number> = {
   domain_not_verified: 422,
   recipient_rejected: 422,
   rate_limited: 429,
+  too_many_requests: 429,
   cf_upstream: 502,
   degraded: 503,
   not_found: 404,
@@ -25,6 +27,7 @@ export const ERROR_HTTP: Record<ErrorCode, number> = {
 
 export const ERROR_RETRYABLE: Record<ErrorCode, boolean> = {
   bad_request: false,
+  bad_content_type: false,
   bad_signature: false,
   key_propagating: true,
   clock_skew: true,
@@ -35,6 +38,7 @@ export const ERROR_RETRYABLE: Record<ErrorCode, boolean> = {
   domain_not_verified: false,
   recipient_rejected: false,
   rate_limited: true,
+  too_many_requests: true,
   cf_upstream: true,
   degraded: true,
   not_found: false,

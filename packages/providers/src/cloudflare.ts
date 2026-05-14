@@ -9,7 +9,11 @@ import type { Provider, SendOutcome, SendRequest } from './provider.js';
 
 /** The shape of Cloudflare's account-level Email Service binding. */
 export interface CloudflareEmailBinding {
-  send(message: { from: string; to: string | string[]; raw: ReadableStream | string | Uint8Array }): Promise<{ id?: string }>;
+  send(message: {
+    from: string;
+    to: string | string[];
+    raw: ReadableStream | string | Uint8Array;
+  }): Promise<{ id?: string }>;
 }
 
 export class CloudflareProvider implements Provider {

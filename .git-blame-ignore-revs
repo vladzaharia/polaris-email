@@ -1,0 +1,9 @@
+# File listing commit SHAs to ignore in `git blame`.
+#
+# Convention: add a SHA on its own line, preceded by a comment describing why
+# (typically large mechanical reformat / lint auto-fix commits that would
+# otherwise pollute blame). Configure git locally with:
+#   git config blame.ignoreRevsFile .git-blame-ignore-revs
+
+# Initial oxfmt format pass across the tree (oxlint + oxfmt rollout)
+1eec2723d1e2d7e12db9135b7814d2b765d020b6

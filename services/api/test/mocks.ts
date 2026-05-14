@@ -1,5 +1,5 @@
 // Minimal in-memory mocks for D1, KV, R2, Queues. Just enough for unit tests.
-import type { Env, InboundQueueMessage, OutboundQueueMessage } from '../src/env.js';
+import type { Env, OutboundQueueMessage } from '../src/env.js';
 
 export class MockKV {
   private map = new Map<string, { v: string; expiresAt: number | null }>();
@@ -35,22 +35,28 @@ export class MockD1 {
     // Pre-create the canonical (v1) tables used by tests.
     this.tables.set('schema_migrations', []);
     this.tables.set('bootstrap', []);
-    this.tables.set('tenants', []);
     this.tables.set('zones', []);
+    this.tables.set('mailboxes', []);
     this.tables.set('mail_domains', []);
-    this.tables.set('email_senders', []);
+    this.tables.set('mailbox_senders', []);
+    this.tables.set('mailbox_receivers', []);
     this.tables.set('principals', []);
     this.tables.set('api_keys', []);
+    this.tables.set('api_key_sender_scopes', []);
     this.tables.set('submission_credentials', []);
-    this.tables.set('principal_sender_scopes', []);
     this.tables.set('dkim_keys', []);
     this.tables.set('daemons', []);
     this.tables.set('webhook_subs', []);
-    this.tables.set('routing_rules', []);
     this.tables.set('messages', []);
     this.tables.set('message_attempts', []);
     this.tables.set('message_deliveries', []);
     this.tables.set('idempotency_keys', []);
+    // Phase L bridge tables (0002_bridge.sql).
+    this.tables.set('mailbox_messages_state', []);
+    this.tables.set('mailbox_uid_counter', []);
+    this.tables.set('mailbox_change_counter', []);
+    this.tables.set('mailbox_credentials', []);
+    this.tables.set('jmap_push_subscriptions', []);
     this.tables.set('audit_log', [
       {
         id: 0,
@@ -128,9 +134,7 @@ function executeSql<T>(
     // param vs an inline literal (number / 'string' / NULL).
     const valsM = trimmed.match(/values\s*\(([^)]*)\)\s*(returning\s+.*)?$/is);
     if (!valsM) throw new Error('mock: insert values ' + trimmed);
-    const valTokens = valsM[1]!
-      .split(',')
-      .map((v) => v.trim());
+    const valTokens = valsM[1]!.split(',').map((v) => v.trim());
     const row: TableRow = {};
     let pi = 0;
     cols.forEach((c, i) => {
@@ -186,6 +190,14 @@ function executeSql<T>(
       row['id'] = maxId + 1;
     }
     rows.push(row);
+    // RETURNING support: parse the captured fragment, return the named cols.
+    const retMatch = trimmed.match(/returning\s+(.+)$/is);
+    if (retMatch) {
+      const colsRet = retMatch[1]!.split(',').map((s) => s.trim());
+      const out: TableRow = {};
+      for (const col of colsRet) out[col] = row[col];
+      return { results: [out as unknown as T], meta: { changes: 1 } };
+    }
     return { results: [], meta: { changes: 1 } };
   }
   if (lower.startsWith('update ')) {
@@ -204,8 +216,11 @@ function executeSql<T>(
       if (!setM) continue;
       const col = setM[1]!;
       const val = setM[2]!.trim();
+      const numMatch = val.match(/^\?(\d+)$/);
       if (val === '?') {
         setOps.push({ col, idx: pi++ });
+      } else if (numMatch) {
+        setOps.push({ col, idx: Number(numMatch[1]) - 1 });
       } else if (rows.length && val.match(/^[A-Za-z_]\w*$/) && val in rows[0]!) {
         // column-to-column copy (e.g. imap_pw_bcrypt_prev = imap_pw_bcrypt)
         setOps.push({ col, idx: null, literal: val });
@@ -217,26 +232,34 @@ function executeSql<T>(
         setOps.push({ col, idx: null, literal: val });
       }
     }
-    // WHERE: support patterns we use (col = ?, col = literal, col IS NOT NULL, col <> 'lit')
+    // WHERE: support patterns we use (col = ?, col = ?N, col = literal, IS NULL, etc.)
     const whereParams = params.slice(pi);
     const whereMatches = (row: TableRow): boolean => {
       let wp = 0;
       for (const cond of whereClause.split(/\s+and\s+/i)) {
+        const cTrim = cond.trim();
+        const numMatch = cTrim.match(/^(\w+)\s*=\s*\?(\d+)$/);
         const cm =
-          cond.trim().match(/^(\w+)\s*=\s*\?$/) ??
-          cond.trim().match(/^(\w+)\s*<>\s*'([^']+)'$/) ??
-          cond.trim().match(/^(\w+)\s+IS NOT NULL$/i) ??
-          cond.trim().match(/^(\w+)\s+IS NULL$/i) ??
-          cond.trim().match(/^(\w+)\s*=\s*'([^']+)'$/);
-        if (!cm) throw new Error('mock: where part ' + cond);
-        const col = cm[1]!;
-        if (/IS NOT NULL/i.test(cond)) {
+          cTrim.match(/^(\w+)\s*=\s*\?$/) ??
+          cTrim.match(/^(\w+)\s*<>\s*'([^']+)'$/) ??
+          cTrim.match(/^(\w+)\s+IS NOT NULL$/i) ??
+          cTrim.match(/^(\w+)\s+IS NULL$/i) ??
+          cTrim.match(/^(\w+)\s*=\s*'([^']+)'$/);
+        if (!cm && !numMatch) throw new Error('mock: where part ' + cond);
+        if (numMatch) {
+          const col = numMatch[1]!;
+          const want = params[Number(numMatch[2]) - 1];
+          if (row[col] != want) return false;
+          continue;
+        }
+        const col = cm![1]!;
+        if (/IS NOT NULL/i.test(cTrim)) {
           if (row[col] == null) return false;
-        } else if (/IS NULL/i.test(cond)) {
+        } else if (/IS NULL/i.test(cTrim)) {
           if (row[col] != null) return false;
-        } else if (cm[2] !== undefined) {
-          const lit = cm[2];
-          if (cond.includes('<>')) {
+        } else if (cm![2] !== undefined) {
+          const lit = cm![2];
+          if (cTrim.includes('<>')) {
             if (row[col] == lit) return false;
           } else {
             if (row[col] != lit) return false;
@@ -300,11 +323,47 @@ function executeSql<T>(
             if (!any) return false;
           } else {
             const eq = t.match(/^(\w+)\s*=\s*\?$/);
+            const eqN = t.match(/^(\w+)\s*=\s*\?(\d+)$/);
             const neq = t.match(/^(\w+)\s*<>\s*'([^']+)'$/);
+            const like = t.match(/^(\w+)\s+LIKE\s+\?$/i);
+            const likeN = t.match(/^(\w+)\s+LIKE\s+\?(\d+)$/i);
+            const gte = t.match(/^(\w+)\s*>=\s*\?(\d*)$/);
+            const lte = t.match(/^(\w+)\s*<=\s*\?(\d*)$/);
+            const gt = t.match(/^(\w+)\s*>\s*\?(\d*)$/);
+            const lt = t.match(/^(\w+)\s*<\s*\?(\d*)$/);
             if (eq) {
               if (row[eq[1]!] != params[wp++]) return false;
+            } else if (eqN) {
+              const idx = Number(eqN[2]) - 1;
+              if (row[eqN[1]!] != params[idx]) return false;
             } else if (neq) {
               if (row[neq[1]!] == neq[2]) return false;
+            } else if (like) {
+              const v = params[wp++];
+              const pat = String(v ?? '').replace(/%/g, '');
+              if (!String(row[like[1]!] ?? '').includes(pat)) return false;
+            } else if (likeN) {
+              const idx = Number(likeN[2]) - 1;
+              const pat = String(params[idx] ?? '').replace(/%/g, '');
+              if (!String(row[likeN[1]!] ?? '').includes(pat)) return false;
+            } else if (gte || lte || gt || lt) {
+              const m = (gte ?? lte ?? gt ?? lt)!;
+              const col = m[1]!;
+              const placeholderIdx = m[2];
+              const want = placeholderIdx ? params[Number(placeholderIdx) - 1] : params[wp++];
+              const have = row[col];
+              if (have == null) return false;
+              // Numeric comparison if both sides look numeric; otherwise string-collate.
+              let cmp: number;
+              if (typeof have === 'number' || typeof want === 'number') {
+                cmp = Number(have) - Number(want);
+              } else {
+                cmp = String(have).localeCompare(String(want));
+              }
+              if (gte && cmp < 0) return false;
+              if (lte && cmp > 0) return false;
+              if (gt && cmp <= 0) return false;
+              if (lt && cmp >= 0) return false;
             } else {
               throw new Error('mock: where cond ' + t);
             }
@@ -318,40 +377,116 @@ function executeSql<T>(
       filtered = [...filtered].sort((a, b) => Number(b['id']) - Number(a['id']));
     }
     if (/order\s+by\s+created_at\s+desc/i.test(trimmed)) {
-      filtered = [...filtered].sort(
-        (a, b) => Number(b['created_at']) - Number(a['created_at']),
+      filtered = [...filtered].sort((a, b) =>
+        String(b['created_at']).localeCompare(String(a['created_at'])),
       );
     }
     if (/order\s+by\s+id\s+asc/i.test(trimmed)) {
       filtered = [...filtered].sort((a, b) => Number(a['id']) - Number(b['id']));
     }
+    if (/order\s+by\s+change_id\s+asc/i.test(trimmed)) {
+      filtered = [...filtered].sort((a, b) => Number(a['change_id']) - Number(b['change_id']));
+    }
+    if (/order\s+by\s+created_at\s+asc/i.test(trimmed)) {
+      filtered = [...filtered].sort((a, b) =>
+        String(a['created_at']).localeCompare(String(b['created_at'])),
+      );
+    }
+    const offsetM = trimmed.match(/offset\s+(\d+)/i);
+    const offset = offsetM ? Number(offsetM[1]) : 0;
+    if (offset > 0) filtered = filtered.slice(offset);
     const limitM = trimmed.match(/limit\s+(\d+)/i);
     const limit = limitM ? Number(limitM[1]) : undefined;
     if (limit != null) filtered = filtered.slice(0, limit);
     return { results: filtered as T[], meta: { changes: 0 } };
   }
   if (lower.startsWith('delete from ')) {
-    return { results: [], meta: { changes: 0 } };
+    const m = trimmed.match(/delete\s+from\s+(\w+)(?:\s+where\s+(.+))?$/is);
+    if (!m) return { results: [], meta: { changes: 0 } };
+    const table = m[1]!;
+    const whereClause = m[2];
+    const rows = db.tables.get(table);
+    if (!rows) return { results: [], meta: { changes: 0 } };
+    if (!whereClause) {
+      const n = rows.length;
+      rows.length = 0;
+      return { results: [], meta: { changes: n } };
+    }
+    const matchRow = (row: TableRow): boolean => {
+      let pi = 0;
+      for (const cond of whereClause.split(/\s+and\s+/i)) {
+        const t = cond.trim();
+        const eq = t.match(/^(\w+)\s*=\s*\?$/);
+        const eqN = t.match(/^(\w+)\s*=\s*\?(\d+)$/);
+        const isNull = t.match(/^(\w+)\s+IS\s+NULL$/i);
+        const isNotNull = t.match(/^(\w+)\s+IS\s+NOT\s+NULL$/i);
+        const lt = t.match(/^(\w+)\s*<\s*\?$/);
+        if (eq) {
+          if (row[eq[1]!] != params[pi++]) return false;
+        } else if (eqN) {
+          const idx = Number(eqN[2]) - 1;
+          if (row[eqN[1]!] != params[idx]) return false;
+        } else if (isNull) {
+          if (row[isNull[1]!] != null) return false;
+        } else if (isNotNull) {
+          if (row[isNotNull[1]!] == null) return false;
+        } else if (lt) {
+          const want = params[pi++];
+          const have = row[lt[1]!];
+          if (have == null) return false;
+          if (String(have).localeCompare(String(want)) >= 0) return false;
+        } else {
+          // Unsupported condition shape — fail closed (no delete).
+          return false;
+        }
+      }
+      return true;
+    };
+    let changes = 0;
+    for (let i = rows.length - 1; i >= 0; i--) {
+      if (matchRow(rows[i]!)) {
+        rows.splice(i, 1);
+        changes++;
+      }
+    }
+    return { results: [], meta: { changes } };
   }
   throw new Error('mock: unsupported sql: ' + trimmed.slice(0, 120));
 }
 
 export class MockR2 {
-  private map = new Map<string, { body: string; meta: Record<string, string> }>();
-  async put(key: string, body: string, opts?: { httpMetadata?: { contentType?: string } }) {
-    this.map.set(key, { body, meta: { contentType: opts?.httpMetadata?.contentType ?? '' } });
+  private map = new Map<string, { body: Uint8Array; meta: Record<string, string> }>();
+  async put(
+    key: string,
+    body: string | Uint8Array,
+    opts?: { httpMetadata?: { contentType?: string } },
+  ) {
+    const bytes = typeof body === 'string' ? new TextEncoder().encode(body) : body;
+    this.map.set(key, {
+      body: bytes,
+      meta: { contentType: opts?.httpMetadata?.contentType ?? '' },
+    });
     return { key } as unknown;
   }
   async get(key: string) {
     const e = this.map.get(key);
     if (!e) return null;
+    const bytes = e.body;
+    const buf = new ArrayBuffer(bytes.byteLength);
+    new Uint8Array(buf).set(bytes);
     return {
-      text: async () => e.body,
-      arrayBuffer: async () => new TextEncoder().encode(e.body).buffer,
+      text: async () => new TextDecoder().decode(bytes),
+      arrayBuffer: async () => buf,
     } as unknown;
   }
   async head(key: string) {
     return this.map.has(key) ? ({} as unknown) : null;
+  }
+  async delete(key: string) {
+    this.map.delete(key);
+  }
+  size() {
+    return this.map.size;
   }
 }
 
@@ -403,10 +538,6 @@ export function mkEnv(overrides: Partial<Env> = {}): Env {
     KV_RATE_LIMIT: new MockKV() as unknown as KVNamespace,
     KV_KEY_CACHE: new MockKV() as unknown as KVNamespace,
     OUTBOUND_QUEUE: new MockQueue<OutboundQueueMessage>() as unknown as Queue<OutboundQueueMessage>,
-    INBOUND_QUEUE: new MockQueue<InboundQueueMessage>() as unknown as Queue<InboundQueueMessage>,
-    FORENSIC: {
-      fetch: async () => new Response('not-implemented', { status: 501 }),
-    } as unknown as Fetcher,
     REVOCATION_DO: mkRevocationDoNamespace() as unknown as DurableObjectNamespace,
     VERIFY_ALGORITHMS: 'v1',
     API_BASE_URL: 'https://polaris-email-api.workers.dev',

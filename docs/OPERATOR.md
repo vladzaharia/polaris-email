@@ -34,12 +34,30 @@ The wizard:
    namespaces, R2 buckets (including the anchors bucket
    in the `polaris-anchors` account with object lock in compliance mode), and
    Queues.
-3. Runs schema migrations from `services/api/migrations/{control,messages,audit}/`.
-4. Deploys the modular monolith Worker (`workers/control-plane`) and the
-   inbound handler (`workers/in`).
+3. Runs schema migrations from `services/api/migrations/` (canonical
+   `0001_init.sql`).
+4. Deploys the control-plane Workers (`services/api`, `services/out`,
+   `services/in`, `services/fanout`, `services/cron`) and the panel
+   (`apps/panel`).
 5. Mints the first operator API key with `admin:read` + `admin:audit:rotate`
-   scopes, anchored as the genesis audit entry (H9).
+   scopes, anchored as the genesis audit entry.
 6. Saves a `terraform.tfvars` skeleton you can fill in for the IaC pieces.
+
+## Mailbox-centric routing
+
+polaris-email is mailbox-centric: each operator owns N **mailboxes**, and a
+mailbox is the unit of routing, auth scope, retention, and webhook
+delivery. A mailbox owns its `mailbox_senders` (addresses it may send
+from), `mailbox_receivers` (addresses it claims for inbound), `principals`
+(API keys / SMTP credentials), and `webhook_subs`. Every message — inbound
+or outbound — has exactly one `mailbox_id`.
+
+Inbound routing matches incoming MIME recipients against
+`mailbox_receivers` patterns; outbound submission resolves the mailbox via
+the principal's binding, then validates the requested `from` against
+`mailbox_senders`. The previous tenant-centric model is gone; CLI commands
+referenced below that still say "tenant" target the same row shape under
+the new schema.
 
 ## Five workflows
 
@@ -66,7 +84,7 @@ Steps the wizard walks you through:
    MX records pointing at `route1/2/3.mx.cloudflare.net`) + single
    catch-all rule `*@<zone>` → `workers/in` (per I8 catch-all-only routing).
 5. DNS verification state machine (A10): `published → seen_via_authoritative
-   → seen_via_three_resolvers → confirmed`. The `published` step now means
+→ seen_via_three_resolvers → confirmed`. The `published` step now means
    "CF reports the record exists in its zone" — a CF API check, not a
    write-and-poll. The remaining steps are DoH-only and confirm the
    public-internet view matches.
@@ -86,7 +104,8 @@ polaris-email tenant disable newsletter
 ```
 
 A tenant is a consumer aggregate. It has zero or more **principals** (API keys
-+ SMTP credentials). Senders are attached implicitly via `polaris-email cred
+
+- SMTP credentials). Senders are attached implicitly via `polaris-email cred
 issue --tenant <name> --senders <list>`.
 
 ### C. Manage credentials

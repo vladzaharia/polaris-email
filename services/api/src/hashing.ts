@@ -19,14 +19,6 @@ function b64enc(bytes: Uint8Array): string {
   for (const b of bytes) bin += String.fromCharCode(b);
   return btoa(bin).replace(/=+$/, '');
 }
-function b64dec(s: string): Uint8Array {
-  const pad = s + '==='.slice((s.length + 3) % 4);
-  const bin = atob(pad);
-  const out = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-  return out;
-}
-
 function asBuf(u8: Uint8Array): ArrayBuffer {
   const buf = new ArrayBuffer(u8.byteLength);
   new Uint8Array(buf).set(u8);
@@ -54,8 +46,7 @@ export async function hashSecret(plain: string, pepper: string | undefined): Pro
 }
 
 export async function sha256Hex(s: string | Uint8Array): Promise<string> {
-  const data =
-    typeof s === 'string' ? new TextEncoder().encode(s) : s;
+  const data = typeof s === 'string' ? new TextEncoder().encode(s) : s;
   const digest = await crypto.subtle.digest('SHA-256', asBuf(data));
   const bytes = new Uint8Array(digest);
   let out = '';

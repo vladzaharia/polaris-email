@@ -22,3 +22,14 @@ export {
   AddressError,
   type NormalizedAddress,
 } from './address-norm.js';
+
+export {
+  mimeToMessage,
+  composeFromJson,
+  summarizeMime,
+  type UnifiedMessage,
+  type MessageRowMeta,
+  type MessageAttachmentMeta,
+  type SendRequestLike,
+  type ParsedMimeSummary,
+} from './json.js';

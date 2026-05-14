@@ -7,10 +7,7 @@ export type SenderScopeT = z.infer<typeof SenderScope>;
 /** Defensive cap on regex length + a CPU-budget hint via runtime length check. */
 const MAX_REGEX_LEN = 256;
 
-export function matchesSenderScope(
-  address: string,
-  scopes: readonly SenderScopeT[],
-): boolean {
+export function matchesSenderScope(address: string, scopes: readonly SenderScopeT[]): boolean {
   const norm = address.trim().toLowerCase();
   for (const s of scopes) {
     if (s.kind === 'exact') {

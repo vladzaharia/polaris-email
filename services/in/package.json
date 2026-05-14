@@ -7,11 +7,13 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "build": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
-    "lint": "echo ok"
+    "lint": "oxlint ."
   },
   "dependencies": {
     "@polaris-email/hmac": "workspace:*",
-    "@polaris-email/ids": "workspace:*"
+    "@polaris-email/ids": "workspace:*",
+    "@polaris-email/mime": "workspace:*",
+    "@polaris-email/pipeline": "workspace:*"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20240909.0",

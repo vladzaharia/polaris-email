@@ -1,6 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { parseStrict } from '../src/canonicalize.js';
-import { enforceSenderPolicy, extractSingleAddress, SenderPolicyError } from '../src/sender-policy.js';
+import {
+  enforceSenderPolicy,
+  extractSingleAddress,
+  SenderPolicyError,
+} from '../src/sender-policy.js';
 
 const enc = new TextEncoder();
 const policy = { allowedSenders: ['noreply@acme.com', 'alerts@billing.acme.com'] };
@@ -49,23 +53,17 @@ describe('enforceSenderPolicy', () => {
   });
 
   it('rejects when Sender is set to a non-allowed address', () => {
-    const m = mime(
-      'From: noreply@acme.com\r\nSender: attacker@evil.com\r\nDate: x\r\n\r\n'
-    );
+    const m = mime('From: noreply@acme.com\r\nSender: attacker@evil.com\r\nDate: x\r\n\r\n');
     expect(() => enforceSenderPolicy(m, policy)).toThrow(/Sender:.*not in allowed_senders/);
   });
 
   it('accepts when Sender matches allow-list', () => {
-    const m = mime(
-      'From: noreply@acme.com\r\nSender: alerts@billing.acme.com\r\nDate: x\r\n\r\n'
-    );
+    const m = mime('From: noreply@acme.com\r\nSender: alerts@billing.acme.com\r\nDate: x\r\n\r\n');
     expect(() => enforceSenderPolicy(m, policy)).not.toThrow();
   });
 
   it('rejects when Reply-To is non-allowed', () => {
-    const m = mime(
-      'From: noreply@acme.com\r\nReply-To: phisher@evil.com\r\nDate: x\r\n\r\n'
-    );
+    const m = mime('From: noreply@acme.com\r\nReply-To: phisher@evil.com\r\nDate: x\r\n\r\n');
     expect(() => enforceSenderPolicy(m, policy)).toThrow(/Reply-To/);
   });
 

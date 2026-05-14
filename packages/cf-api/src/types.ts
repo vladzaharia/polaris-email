@@ -64,8 +64,5 @@ export interface ExpectedRecord {
 
 export interface DnsOps {
   deleteRecord(zoneId: string, recordId: string): Promise<void>;
-  findRecord(
-    zoneId: string,
-    filter: { type?: string; name?: string },
-  ): Promise<DnsRecord | null>;
+  findRecord(zoneId: string, filter: { type?: string; name?: string }): Promise<DnsRecord | null>;
 }

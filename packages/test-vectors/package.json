@@ -8,7 +8,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "generate": "tsx src/generate.ts > vectors.json && echo wrote vectors.json",
     "test": "vitest run",
-    "lint": "echo ok"
+    "lint": "oxlint ."
   },
   "dependencies": {
     "@polaris-email/hmac": "workspace:*"

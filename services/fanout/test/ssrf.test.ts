@@ -15,9 +15,7 @@ describe('ssrfCheck', () => {
   });
   it('rejects IMDS', () => {
     expect(ssrfCheck({ url: 'http://169.254.169.254/', kind: 'external' }).ok).toBe(false);
-    expect(ssrfCheck({ url: 'http://metadata.google.internal/', kind: 'external' }).ok).toBe(
-      false,
-    );
+    expect(ssrfCheck({ url: 'http://metadata.google.internal/', kind: 'external' }).ok).toBe(false);
   });
   it('rejects IP literals on any kind', () => {
     expect(ssrfCheck({ url: 'http://8.8.8.8/', kind: 'tailnet' }).ok).toBe(false);

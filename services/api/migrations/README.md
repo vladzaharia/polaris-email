@@ -20,14 +20,14 @@ exposes a programmatic alternative (used by the polaris-email CLI's
 
 ## Tables
 
-Control plane: `tenants`, `zones`, `mail_domains`, `email_senders`,
-`principals`, `api_keys`, `submission_credentials`, `principal_sender_scopes`,
-`dkim_keys`, `daemons`.
+Mailbox plane: `mailboxes`, `mailbox_senders`, `mailbox_receivers`,
+`principals`, `api_keys`, `submission_credentials`,
+`principal_sender_scopes`, `dkim_keys`, `bridges`, `zones`, `mail_domains`.
 
-Routing: `webhook_subs`, `routing_rules`.
+Routing: `webhook_subs`.
 
 Messages: `messages`, `message_attempts`, `message_deliveries`,
-`idempotency_keys`.
+`idempotency_keys`, `r2_refs`.
 
 Audit: `audit_log`, `audit_anchors`.
 

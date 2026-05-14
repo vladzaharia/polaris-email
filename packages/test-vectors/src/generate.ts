@@ -135,7 +135,7 @@ const cases: Array<Omit<Vector, 'expected_sig'> & { tamper?: (sig: string) => st
     direction: 'polaris-api.v1',
     method: 'GET',
     path: '/v1/audit',
-    query: "q=he%21llo%27s&n=name%28x%29%2A",
+    query: 'q=he%21llo%27s&n=name%28x%29%2A',
     ts: '1700000000000',
     nonce: 'UNRESERVEDAAAAAA',
     secret: SECRET,
@@ -302,7 +302,8 @@ out.push({
   secret: SECRET,
   // Signature computed with a different secret; will not match.
   expected_sig:
-    'v1=' + await (async () => {
+    'v1=' +
+    (await (async () => {
       const wrong = await sign(
         {
           direction: 'polaris-api.v1',
@@ -316,7 +317,7 @@ out.push({
         'WRONG_SECRET_DIFFERENT_FROM_OURS_X1',
       );
       return wrong.replace(/^v1=/, '');
-    })(),
+    })()),
   body: '{}',
   must_verify: false,
   expected_error: 'bad_signature',

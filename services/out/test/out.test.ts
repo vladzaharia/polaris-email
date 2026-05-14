@@ -63,25 +63,38 @@ class FakeDB {
   }
 }
 class FakeR2 {
-  map = new Map<string, string>();
+  map = new Map<string, Uint8Array>();
   async get(key: string) {
     const t = this.map.get(key);
     if (!t) return null;
-    return { text: async () => t };
+    return {
+      arrayBuffer: async () =>
+        t.buffer.slice(t.byteOffset, t.byteOffset + t.byteLength) as ArrayBuffer,
+      text: async () => new TextDecoder().decode(t),
+    };
   }
 }
 class FakeBinding implements SendEmailBinding {
   fail?: 'throw' | 'bounce';
-  async send(_msg: {
+  lastRaw?: ArrayBuffer | Uint8Array | string;
+  async send(msg: {
     from: string;
     to: string | string[];
+    raw?: ArrayBuffer | Uint8Array | string;
   }): Promise<{ delivered: string[]; permanent_bounces: string[]; queued: string[] }> {
+    this.lastRaw = msg.raw;
     if (this.fail === 'throw') throw new Error('boom');
     if (this.fail === 'bounce')
       return { delivered: [], permanent_bounces: ['x@y.com'], queued: [] };
-    const toArr = Array.isArray(_msg.to) ? _msg.to : [_msg.to];
-    return { delivered: toArr, permanent_bounces: [], queued: [] };
+    return { delivered: ['b@x.com'], permanent_bounces: [], queued: [] };
   }
+}
+
+function rfc822Bytes(): Uint8Array {
+  const m =
+    'From: a@example.com\r\nTo: b@x.com\r\nSubject: hi\r\n' +
+    'Content-Type: text/plain; charset=utf-8\r\n\r\nhello\r\n';
+  return new TextEncoder().encode(m);
 }
 
 function mkBatch(body: OutboundQueueMessage) {
@@ -107,25 +120,17 @@ function mkEnv(binding?: FakeBinding) {
 }
 
 describe('out worker', () => {
-  it('sends a live message and emits message.sent', async () => {
+  it('sends a live message and emits message.sent (status=sent, no delivered transition)', async () => {
     const binding = new FakeBinding();
     const env = mkEnv(binding);
     const db = env.DB as unknown as FakeDB;
     const r2 = env.R2 as unknown as FakeR2;
     db.domains.set('example.com', { id: 'D1', name: 'example.com' });
-    r2.map.set(
-      'out/svc/msg.json',
-      JSON.stringify({
-        from: 'a@example.com',
-        to: ['b@x.com'],
-        subject: 'hi',
-        text: 'hello',
-      }),
-    );
+    r2.map.set('mime/aa/bb/cafe', rfc822Bytes());
     const batch = mkBatch({
       messageId: '01HXR0000000000000000000A8',
-      source: 'json',
-      r2KeyOrInline: 'out/svc/msg.json',
+      source: 'raw',
+      r2KeyOrInline: 'mime/aa/bb/cafe',
       fromDomain: 'example.com',
       fromAddress: 'a@example.com',
       tenantId: 'svc',
@@ -137,25 +142,20 @@ describe('out worker', () => {
     const sent = (env.FANOUT_QUEUE as unknown as FakeQueue<{ event: string }>).sent;
     expect(sent.length).toBe(1);
     expect(sent[0]?.event).toBe('message.sent');
+    // services/out NEVER emits 'message.delivered' — that's fanout's job.
+    expect(sent.some((s) => s.event === 'message.delivered')).toBe(false);
     expect(db.statuses.get('01HXR0000000000000000000A8')?.status).toBe('sent');
+    expect(binding.lastRaw).toBeTruthy();
   });
   it('test mode skips binding and emits synthetic sent', async () => {
     const env = mkEnv();
     const db = env.DB as unknown as FakeDB;
     const r2 = env.R2 as unknown as FakeR2;
     db.domains.set('example.com', { id: 'D1', name: 'example.com' });
-    r2.map.set(
-      'k',
-      JSON.stringify({
-        from: 'a@example.com',
-        to: ['b@x.com'],
-        subject: 's',
-        text: 't',
-      }),
-    );
+    r2.map.set('k', rfc822Bytes());
     const batch = mkBatch({
       messageId: 'M',
-      source: 'json',
+      source: 'raw',
       r2KeyOrInline: 'k',
       fromDomain: 'example.com',
       fromAddress: 'a@example.com',
@@ -165,7 +165,9 @@ describe('out worker', () => {
       retries: 0,
     });
     await worker.queue(batch, env as unknown as Parameters<typeof worker.queue>[1]);
-    const sent = (env.FANOUT_QUEUE as unknown as FakeQueue<{ event: string; data: { test?: boolean } }>).sent;
+    const sent = (
+      env.FANOUT_QUEUE as unknown as FakeQueue<{ event: string; data: { test?: boolean } }>
+    ).sent;
     expect(sent[0]?.data.test).toBe(true);
     expect(db.statuses.get('M')?.status).toBe('sent');
   });
@@ -176,10 +178,10 @@ describe('out worker', () => {
     const db = env.DB as unknown as FakeDB;
     const r2 = env.R2 as unknown as FakeR2;
     db.domains.set('example.com', { id: 'D1', name: 'example.com' });
-    r2.map.set('k', JSON.stringify({ from: 'a@example.com', to: ['x@y.com'], subject: 's' }));
+    r2.map.set('k', rfc822Bytes());
     const batch = mkBatch({
       messageId: 'B',
-      source: 'json',
+      source: 'raw',
       r2KeyOrInline: 'k',
       fromDomain: 'example.com',
       fromAddress: 'a@example.com',
@@ -196,10 +198,10 @@ describe('out worker', () => {
   it('no domain row → failed', async () => {
     const env = mkEnv();
     const r2 = env.R2 as unknown as FakeR2;
-    r2.map.set('k', JSON.stringify({ from: 'a@nodom.com', to: ['x@y.com'], subject: 's' }));
+    r2.map.set('k', rfc822Bytes());
     const batch = mkBatch({
       messageId: 'X',
-      source: 'json',
+      source: 'raw',
       r2KeyOrInline: 'k',
       fromDomain: 'nodom.com',
       fromAddress: 'a@nodom.com',

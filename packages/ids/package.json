@@ -15,7 +15,7 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "echo no tests",
-    "lint": "echo ok"
+    "lint": "oxlint ."
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20240909.0",

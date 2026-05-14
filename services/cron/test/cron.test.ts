@@ -106,7 +106,7 @@ describe('cron dispatch', () => {
               return this;
             },
             async all() {
-              if (sql.includes('FROM tenants')) return { results: [], meta: {} };
+              if (sql.includes('FROM mailboxes')) return { results: [], meta: {} };
               return { results: [], meta: {} };
             },
             async run() {

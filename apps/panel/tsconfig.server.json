@@ -3,10 +3,11 @@
   "compilerOptions": {
     "outDir": "./dist/server",
     "rootDir": "./src/server",
-    "lib": ["ES2023"],
-    "types": ["node"],
+    "lib": ["ES2024", "WebWorker"],
+    "types": ["@cloudflare/workers-types"],
     "module": "ES2022",
-    "moduleResolution": "Bundler"
+    "moduleResolution": "Bundler",
+    "noEmit": true
   },
   "include": ["src/server/**/*"]
 }

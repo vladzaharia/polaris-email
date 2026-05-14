@@ -49,8 +49,7 @@ describe('admin requests', () => {
   it('IssueApiKeyRequest', () => {
     expect(
       IssueApiKeyRequest.parse({
-        tenant_id: 'svc',
-        sender_scopes: [{ kind: 'exact', pattern: 'a@b.com' }],
+        mailbox_id: '01HXR0000000000000000000A8',
       }),
     ).toBeDefined();
   });
@@ -60,7 +59,7 @@ describe('admin requests', () => {
   it('CreateWebhookSubRequest', () => {
     expect(
       CreateWebhookSubRequest.parse({
-        tenant_id: 'svc',
+        mailbox_id: '01HXR0000000000000000000A8',
         url: 'https://example.com/hook',
         kind: 'external',
         events: ['message.received'],
@@ -107,23 +106,10 @@ describe('negative validation', () => {
   it('Address rejects missing @', () => {
     expect(() => Address.parse('nope')).toThrow();
   });
-  it('IssueApiKeyRequest rejects missing tenant_id', () => {
-    expect(() =>
-      IssueApiKeyRequest.parse({
-        sender_scopes: [{ kind: 'exact', pattern: 'a@b.com' }],
-      }),
-    ).toThrow();
-  });
-  it('IssueApiKeyRequest rejects empty sender_scopes', () => {
-    expect(() =>
-      IssueApiKeyRequest.parse({ tenant_id: 'svc', sender_scopes: [] }),
-    ).toThrow();
-  });
   it('IssueApiKeyRequest rejects invalid scope', () => {
     expect(() =>
       IssueApiKeyRequest.parse({
-        tenant_id: 'svc',
-        sender_scopes: [{ kind: 'exact', pattern: 'a@b.com' }],
+        mailbox_id: '01HXR0000000000000000000A8',
         scopes: ['banana'],
       }),
     ).toThrow();
@@ -136,7 +122,7 @@ describe('negative validation', () => {
     // But events array must be non-empty:
     expect(() =>
       CreateWebhookSubRequest.parse({
-        tenant_id: 'svc',
+        mailbox_id: '01HXR0000000000000000000A8',
         url: 'https://example.com',
         kind: 'external',
         events: [],
@@ -146,7 +132,7 @@ describe('negative validation', () => {
   it('CreateWebhookSubRequest rejects unknown kind', () => {
     expect(() =>
       CreateWebhookSubRequest.parse({
-        tenant_id: 'svc',
+        mailbox_id: '01HXR0000000000000000000A8',
         url: 'https://example.com',
         kind: 'magic',
         events: ['message.received'],
@@ -154,9 +140,7 @@ describe('negative validation', () => {
     ).toThrow();
   });
   it('CreateTenantRequest rejects oversize name', () => {
-    expect(() =>
-      CreateTenantRequest.parse({ id: 'svc', name: 'a'.repeat(200) }),
-    ).toThrow();
+    expect(() => CreateTenantRequest.parse({ id: 'svc', name: 'a'.repeat(200) })).toThrow();
   });
   it('CreateRoutingRuleRequest rejects missing address_pattern', () => {
     expect(() =>

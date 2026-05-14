@@ -5,7 +5,7 @@
 #   2) Create CF resources (D1, R2, KV namespaces, Queues) and capture IDs into .deploy-state.json.
 #   3) Render services/*/wrangler.local.jsonc from templates + state.
 #   4) Apply D1 migrations.
-#   5) Seed master secrets (POLARIS_SECRET_A, ARGON2_PEPPER, FORENSIC_MASTER_KEY, ANCHOR_SIGNING_KEY).
+#   5) Seed master secrets (POLARIS_SECRET_A, ARGON2_PEPPER, ANCHOR_SIGNING_KEY).
 #   6) Deploy all Workers.
 #   7) Mint the first admin key via signed POST /admin/bootstrap; save to .bootstrap-output.json.
 #   8) Print remaining manual next steps.
@@ -165,7 +165,7 @@ secret_record() {
   chmod 0600 "$SECRETS_CREATED"
 }
 
-POL_A=""; ARGON_PEPPER=""; FORENSIC_MASTER=""; ANCHOR_SIGN=""
+POL_A=""; ARGON_PEPPER=""; ANCHOR_SIGN=""
 gen() { openssl rand -base64 32 | tr -d '\n='; }
 
 put_secret() { # svc, name, value
@@ -191,12 +191,6 @@ if [[ -z "$(secret_seen ARGON2_PEPPER)" ]]; then
   secret_record ARGON2_PEPPER
 fi
 
-if [[ -z "$(secret_seen FORENSIC_MASTER_KEY)" ]]; then
-  FORENSIC_MASTER="$(gen)"
-  put_secret forensic FORENSIC_MASTER_KEY "$FORENSIC_MASTER" || warn "put FORENSIC_MASTER_KEY failed on forensic"
-  secret_record FORENSIC_MASTER_KEY
-fi
-
 if [[ -z "$(secret_seen ANCHOR_SIGNING_KEY)" ]]; then
   ANCHOR_SIGN="$(gen)"
   put_secret anchor ANCHOR_SIGNING_KEY "$ANCHOR_SIGN" || warn "put ANCHOR_SIGNING_KEY failed on anchor"
@@ -204,7 +198,7 @@ if [[ -z "$(secret_seen ANCHOR_SIGNING_KEY)" ]]; then
 fi
 
 ##############################################################################
-# 6/8  deploy Workers (forensic first because api binds it as a service)
+# 6/8  deploy Workers
 ##############################################################################
 log "6/8 deploying all Workers"
 "$ROOT/bin/deploy.sh" --all
@@ -263,7 +257,7 @@ log "8/8 next steps"
 cat <<EOF
 Remaining manual steps (see docs/DEPLOY.md and apps/polaris-cli/README.md):
   - Onboard each sending/receiving domain:      polaris-email domain onboard --apply <yourdomain>
-  - (Optional) Deploy a submission daemon:      see apps/submission-daemon/README.md
+  - (Optional) Deploy the on-prem mail bridge:  see apps/mail-bridge/README.md
   - Smoke test the stack:                       make smoke
   - Issue your first consumer key:              polaris-email cred issue --name acme --scopes mail:send
 EOF

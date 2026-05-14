@@ -14,7 +14,6 @@ export const daemons = new Hono<{ Bindings: Env }>();
 interface DaemonRow {
   id: string;
   name: string;
-  environment: string;
   hmac_key_secret_name: string | null;
   access_token_id: string | null;
   last_seen_at: string | null;
@@ -24,7 +23,7 @@ interface DaemonRow {
 
 daemons.get('/v1/admin/daemons', requireScope('admin:read'), async (c) => {
   const rows = await c.env.DB.prepare(
-    `SELECT id, name, environment, hmac_key_secret_name, access_token_id,
+    `SELECT id, name, hmac_key_secret_name, access_token_id,
             last_seen_at, created_at, disabled_at
      FROM daemons ORDER BY name ASC`,
   ).all<DaemonRow>();
@@ -33,9 +32,9 @@ daemons.get('/v1/admin/daemons', requireScope('admin:read'), async (c) => {
 
 daemons.post('/v1/admin/daemons', requireScope('admin:rotate'), async (c) => {
   const key = c.get('apiKey');
-  let body: { name?: string; environment?: string };
+  let body: { name?: string };
   try {
-    body = JSON.parse(bodyText(c) || '{}') as { name?: string; environment?: string };
+    body = JSON.parse(bodyText(c) || '{}') as { name?: string };
   } catch {
     return buildError(c, 'bad_request', 'invalid json');
   }
@@ -48,10 +47,10 @@ daemons.post('/v1/admin/daemons', requireScope('admin:rotate'), async (c) => {
   const nowIso = new Date().toISOString();
   try {
     await c.env.DB.prepare(
-      `INSERT INTO daemons (id, name, environment, hmac_key_secret_name, created_at)
-       VALUES (?, ?, ?, ?, ?)`,
+      `INSERT INTO daemons (id, name, hmac_key_secret_name, created_at)
+       VALUES (?, ?, ?, ?)`,
     )
-      .bind(id, body.name, body.environment ?? 'prod', hashed, nowIso)
+      .bind(id, body.name, hashed, nowIso)
       .run();
   } catch (e) {
     if (String(e).includes('UNIQUE')) return buildError(c, 'conflict', 'daemon name taken');
@@ -70,7 +69,7 @@ daemons.get('/v1/admin/daemons/lookup', requireScope('admin:read'), async (c) =>
   const name = c.req.query('name');
   if (!name) return buildError(c, 'bad_request', 'name required');
   const row = await c.env.DB.prepare(
-    `SELECT id, name, environment, hmac_key_secret_name, access_token_id,
+    `SELECT id, name, hmac_key_secret_name, access_token_id,
             last_seen_at, created_at, disabled_at
      FROM daemons WHERE name = ?`,
   )
@@ -83,7 +82,7 @@ daemons.get('/v1/admin/daemons/lookup', requireScope('admin:read'), async (c) =>
 daemons.get('/v1/admin/daemons/:id', requireScope('admin:read'), async (c) => {
   const id = c.req.param('id');
   const row = await c.env.DB.prepare(
-    `SELECT id, name, environment, hmac_key_secret_name, access_token_id,
+    `SELECT id, name, hmac_key_secret_name, access_token_id,
             last_seen_at, created_at, disabled_at
      FROM daemons WHERE id = ?`,
   )

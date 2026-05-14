@@ -1,24 +1,45 @@
 // polaris-email-fanout: queue consumer that signs + POSTs webhook events.
 //
-// Subscribers in webhook_subs route by (tenant_id, domain_id). A sub with
-// domain_id = NULL matches any domain for that tenant; a sub with both null
-// is account-global. Signed delivery uses the polaris-webhook.v1 HMAC scheme.
+// Canonical envelope:
+//   {
+//     event_id,
+//     event: 'message.received' | 'message.sent' | 'message.delivered'
+//          | 'message.bounced' | 'message.failed',
+//     occurred_at,
+//     message: <full Message JSON via mimeToMessage on the row>,
+//   }
+//
+// Signature header: `X-Polaris-Sig: v2=<hex>`.
+//
+// On the last successful `message_deliveries` row for a message, this worker
+// also flips `messages.status='delivered'` and stamps `delivered_at`
+// (terminal-success bookkeeping).
 import { sign, generateNonce } from '@polaris-email/hmac';
 import { ulid } from '@polaris-email/ids';
+import { mimeToMessage, type MessageRowMeta } from '@polaris-email/mime';
 import { safeFetch } from './ssrf.js';
 
 interface Env {
   DB: D1Database;
+  R2: R2Bucket;
 }
 
 interface FanoutEvent {
   event_id: string;
-  event: string;
+  event:
+    | 'message.received'
+    | 'message.sent'
+    | 'message.delivered'
+    | 'message.bounced'
+    | 'message.failed';
   message_id: string;
-  tenant_id: string | null;
-  domain_id: string | null;
+  mailbox_id: string | null;
+  /** Optional, present on outbound events for back-compat; ignored for v2. */
+  domain_id?: string | null;
+  /** Optional: when set, only this webhook_sub will receive the event. */
+  webhook_sub_id?: string;
   created_at: number;
-  data: Record<string, unknown>;
+  data?: Record<string, unknown>;
 }
 
 interface SubRow {
@@ -31,12 +52,12 @@ interface SubRow {
   paused_at: string | null;
 }
 
+interface MessageRowFull extends MessageRowMeta {
+  r2_key: string;
+}
+
 export default {
-  async queue(
-    batch: MessageBatch<FanoutEvent>,
-    env: Env,
-    _ctx: ExecutionContext,
-  ): Promise<void> {
+  async queue(batch: MessageBatch<FanoutEvent>, env: Env, _ctx: ExecutionContext): Promise<void> {
     for (const m of batch.messages) {
       try {
         await deliver(env, m.body);
@@ -50,22 +71,79 @@ export default {
   },
 };
 
-async function deliver(env: Env, ev: FanoutEvent): Promise<void> {
-  // Subs match when (tenant_id matches OR sub.tenant_id is NULL)
-  //              AND (domain_id matches OR sub.domain_id is NULL)
-  //              AND sub is not paused and not disabled.
-  const rows = await env.DB.prepare(
-    `SELECT id, url, kind, secret, secret_prev, events, paused_at
-     FROM webhook_subs
-     WHERE paused_at IS NULL
-       AND disabled_at IS NULL
-       AND (tenant_id = ?1 OR tenant_id IS NULL)
-       AND (domain_id = ?2 OR domain_id IS NULL)`,
+async function loadMessageRow(env: Env, id: string): Promise<MessageRowFull | null> {
+  return await env.DB.prepare(
+    `SELECT id, mailbox_id, direction, status, r2_key, thread_id, header_message_id,
+            auth_spf, auth_dkim, auth_dmarc, auth_remote_ip,
+            body_bytes, attachments_total_bytes,
+            received_at_daemon, received_at_api, queued_at, sending_at, sent_at,
+            delivered_at, failed_at, bounce_metadata, last_error, created_at
+       FROM messages WHERE id = ? LIMIT 1`,
   )
-    .bind(ev.tenant_id, ev.domain_id)
-    .all<SubRow>();
-  if (!rows.results.length) return;
-  for (const sub of rows.results) {
+    .bind(id)
+    .first<MessageRowFull>();
+}
+
+async function loadRawMime(env: Env, key: string): Promise<Uint8Array | null> {
+  const obj = await env.R2.get(key);
+  if (!obj) return null;
+  const buf = await (obj as unknown as { arrayBuffer(): Promise<ArrayBuffer> }).arrayBuffer();
+  return new Uint8Array(buf);
+}
+
+async function buildEnvelope(
+  env: Env,
+  ev: FanoutEvent,
+): Promise<{ body: string; messageStatus: string } | null> {
+  const row = await loadMessageRow(env, ev.message_id);
+  if (!row) return null;
+  const raw = await loadRawMime(env, row.r2_key);
+  if (!raw) return null;
+  const message = mimeToMessage(raw, row);
+  const envelope = {
+    event_id: ev.event_id,
+    event: ev.event,
+    occurred_at: new Date(ev.created_at).toISOString(),
+    message,
+  };
+  return { body: JSON.stringify(envelope), messageStatus: row.status };
+}
+
+async function deliver(env: Env, ev: FanoutEvent): Promise<void> {
+  // Resolve subs:
+  //   * If webhook_sub_id is on the event, deliver to just that sub (inbound
+  //     fanout list path).
+  //   * Otherwise resolve by mailbox_id (outbound `message.sent/bounced/failed`).
+  let rows: SubRow[];
+  if (ev.webhook_sub_id) {
+    const r = await env.DB.prepare(
+      `SELECT id, url, kind, secret, secret_prev, events, paused_at
+         FROM webhook_subs
+        WHERE id = ?1
+          AND paused_at IS NULL
+          AND disabled_at IS NULL
+        LIMIT 1`,
+    )
+      .bind(ev.webhook_sub_id)
+      .all<SubRow>();
+    rows = r.results;
+  } else {
+    const r = await env.DB.prepare(
+      `SELECT id, url, kind, secret, secret_prev, events, paused_at
+         FROM webhook_subs
+        WHERE mailbox_id = ?1
+          AND paused_at IS NULL
+          AND disabled_at IS NULL`,
+    )
+      .bind(ev.mailbox_id)
+      .all<SubRow>();
+    rows = r.results;
+  }
+  if (!rows.length) return;
+  const env2 = await buildEnvelope(env, ev);
+  if (!env2) return;
+
+  for (const sub of rows) {
     let events: string[] = [];
     try {
       events = JSON.parse(sub.events) as string[];
@@ -73,11 +151,11 @@ async function deliver(env: Env, ev: FanoutEvent): Promise<void> {
       continue;
     }
     if (!events.includes(ev.event)) continue;
-    await deliverToSub(env, ev, sub);
+    await deliverToSub(env, ev, sub, env2.body);
   }
 }
 
-async function deliverToSub(env: Env, ev: FanoutEvent, sub: SubRow): Promise<void> {
+async function deliverToSub(env: Env, ev: FanoutEvent, sub: SubRow, body: string): Promise<void> {
   const nowIso = new Date().toISOString();
   await env.DB.prepare(
     `INSERT OR IGNORE INTO message_deliveries
@@ -86,13 +164,7 @@ async function deliverToSub(env: Env, ev: FanoutEvent, sub: SubRow): Promise<voi
   )
     .bind(ev.message_id, sub.id, nowIso, nowIso)
     .run();
-  const payload = {
-    event_id: ev.event_id,
-    event: ev.event,
-    created_at: ev.created_at,
-    data: ev.data,
-  };
-  const body = JSON.stringify(payload);
+
   const u = new URL(sub.url);
   const ts = String(Date.now());
   const nonce = generateNonce();
@@ -112,7 +184,7 @@ async function deliverToSub(env: Env, ev: FanoutEvent, sub: SubRow): Promise<voi
     'content-type': 'application/json',
     'x-polaris-ts': ts,
     'x-polaris-nonce': nonce,
-    'x-polaris-sig': sig,
+    'x-polaris-sig': `v2=${sig}`,
     'x-polaris-event-id': ev.event_id,
     'x-polaris-event': ev.event,
   };
@@ -126,14 +198,18 @@ async function deliverToSub(env: Env, ev: FanoutEvent, sub: SubRow): Promise<voi
   if (result.ok) {
     await env.DB.prepare(
       `UPDATE message_deliveries
-       SET status = 'succeeded', last_response_code = ?
+         SET status = 'succeeded', last_response_code = ?
        WHERE message_id = ? AND webhook_sub_id = ?`,
     )
       .bind(result.status, ev.message_id, sub.id)
       .run();
+
+    // If every delivery for this message is now succeeded, flip
+    // messages.status='delivered' and stamp delivered_at.
+    await maybeMarkDelivered(env, ev.message_id);
     return;
   }
-  // Failed: bump attempts and either schedule a retry or move to DLQ.
+
   const prev = await env.DB.prepare(
     `SELECT attempts FROM message_deliveries WHERE message_id = ? AND webhook_sub_id = ?`,
   )
@@ -147,8 +223,8 @@ async function deliverToSub(env: Env, ev: FanoutEvent, sub: SubRow): Promise<voi
     : new Date(Date.now() + Math.min(60_000 * 2 ** attempts, 60 * 60_000)).toISOString();
   await env.DB.prepare(
     `UPDATE message_deliveries
-     SET status = ?, attempts = ?, last_error = ?, last_response_code = ?,
-         next_attempt_at = ?
+       SET status = ?, attempts = ?, last_error = ?, last_response_code = ?,
+           next_attempt_at = ?
      WHERE message_id = ? AND webhook_sub_id = ?`,
   )
     .bind(
@@ -162,7 +238,6 @@ async function deliverToSub(env: Env, ev: FanoutEvent, sub: SubRow): Promise<voi
     )
     .run();
   if (isTerminal) {
-    // Persist the terminal failure so /v1/admin/webhook-dlq can list it.
     const bodyHash = await sha256Hex(body);
     await env.DB.prepare(
       `INSERT INTO webhook_dlq
@@ -184,6 +259,28 @@ async function deliverToSub(env: Env, ev: FanoutEvent, sub: SubRow): Promise<voi
     return;
   }
   throw new Error(`webhook ${sub.id} failed ${result.status}`);
+}
+
+async function maybeMarkDelivered(env: Env, messageId: string): Promise<void> {
+  const row = await env.DB.prepare(
+    `SELECT
+        SUM(CASE WHEN status != 'succeeded' THEN 1 ELSE 0 END) AS unfinished,
+        COUNT(*) AS total
+       FROM message_deliveries
+      WHERE message_id = ?`,
+  )
+    .bind(messageId)
+    .first<{ unfinished: number | null; total: number | null }>();
+  if (!row || !row.total || row.total === 0) return;
+  if ((row.unfinished ?? 0) > 0) return;
+  const nowIso = new Date().toISOString();
+  await env.DB.prepare(
+    `UPDATE messages
+       SET status = 'delivered', delivered_at = ?
+     WHERE id = ? AND status != 'delivered'`,
+  )
+    .bind(nowIso, messageId)
+    .run();
 }
 
 async function sha256Hex(s: string): Promise<string> {

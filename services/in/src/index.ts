@@ -1,30 +1,29 @@
-// polaris-email-in: Cloudflare Email Routing handler. Parses inbound MIME,
-// stores raw in R2, inserts a canonical messages row, and emits a
-// `message.received` fanout event for matching webhook subs.
+// polaris-email-in: Cloudflare Email Routing handler.
+//
+// Validates inbound MIME + domain + rate-shedding + receiver mailbox lookup,
+// then hands off the entire pipeline (R2 PUT, messages row, audit, fanout
+// list) to `processMessage()` in services/api. This worker only owns the
+// edge-specific concerns (raw-stream reading, rate shed, recipient -> mailbox
+// resolution, forward primitive, fanout queue dispatch).
 import { ulid } from '@polaris-email/ids';
-import { parseMime, ParseError } from './parse.js';
+import { processMessage, type PipelineEnv } from '@polaris-email/pipeline';
+import { ParseError } from './parse.js';
 
 interface Env {
   DB: D1Database;
   R2: R2Bucket;
   KV_RATE_LIMIT: KVNamespace;
   FANOUT_QUEUE: Queue<FanoutInbound>;
+  OUTBOUND_QUEUE?: Queue<unknown>;
 }
 
 interface FanoutInbound {
   event_id: string;
   event: 'message.received';
   message_id: string;
-  tenant_id: string | null;
-  domain_id: string | null;
+  mailbox_id: string;
+  webhook_sub_id: string;
   created_at: number;
-  data: Record<string, unknown>;
-}
-
-function randomSuffix(): string {
-  const r = new Uint8Array(16);
-  crypto.getRandomValues(r);
-  return Array.from(r, (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
 async function readAll(stream: ReadableStream<Uint8Array>): Promise<Uint8Array> {
@@ -70,30 +69,23 @@ async function rateShed(env: Env, domainId: string, sourceIp: string | null): Pr
 }
 
 function addressMatches(pattern: string, addr: string): boolean {
-  // Patterns: exact `local@domain`, prefix `local@*`, suffix `*@domain`,
-  // or full-glob `*` (catch-all). Lower-cased.
   const a = addr.toLowerCase();
   const p = pattern.toLowerCase();
   if (p === '*') return true;
   if (!p.includes('*')) return p === a;
-  // Convert simple glob to regex (escape, replace \* with .*).
   const re = new RegExp('^' + p.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*') + '$');
   return re.test(a);
 }
 
 export default {
   /**
-   * Cloudflare's Email Worker handler. `message` exposes `.raw` (stream),
-   * `from`, `to`, `headers`, `forward()`, `setReject()`.
+   * Cloudflare Email Worker handler. Resolves recipient -> domain -> highest
+   * priority matching receiver mailbox, then delegates to processMessage().
+   * processMessage internally re-evaluates receiver matching to build the
+   * fanout list (returned via fanoutEnqueues), which this worker dispatches
+   * to FANOUT_QUEUE.
    */
-  async email(
-    message: ForwardableEmailMessage,
-    env: Env,
-    _ctx: ExecutionContext,
-  ): Promise<void> {
-    const id = ulid();
-    const r2KeyTmp = `in/_unrouted/${id}-${randomSuffix()}.eml`;
-
+  async email(message: ForwardableEmailMessage, env: Env, _ctx: ExecutionContext): Promise<void> {
     let raw: Uint8Array;
     try {
       raw = await readAll(message.raw);
@@ -106,142 +98,81 @@ export default {
       return;
     }
 
-    // Persist raw FIRST so we never lose evidence.
-    await env.R2.put(r2KeyTmp, raw, { httpMetadata: { contentType: 'message/rfc822' } });
-
     const envelopeTo = (message.to ?? '').toLowerCase();
     const envelopeFrom = (message.from ?? '').toLowerCase();
+    void envelopeFrom;
     const domainPart = envelopeTo.split('@')[1] ?? '';
 
-    // Resolve the recipient domain. If we don't host this domain at all,
-    // reject with permanent failure.
     const domainRow = await env.DB.prepare(
-      `SELECT md.id, t.id AS tenant_id
-       FROM mail_domains md
-       LEFT JOIN webhook_subs ws ON ws.domain_id = md.id
-       LEFT JOIN tenants t ON ws.tenant_id = t.id
-       WHERE md.name = ? AND md.disabled_at IS NULL
-       LIMIT 1`,
+      `SELECT id FROM mail_domains WHERE name = ? AND disabled_at IS NULL LIMIT 1`,
     )
       .bind(domainPart)
-      .first<{ id: string; tenant_id: string | null }>();
+      .first<{ id: string }>();
     if (!domainRow) {
       message.setReject('550 5.1.1 unknown domain');
-      await env.R2.delete(r2KeyTmp).catch(() => undefined);
       return;
     }
 
-    // Parse MIME — if it fails, still record the raw and emit parse_failed.
-    let parsed;
-    try {
-      parsed = await parseMime(raw);
-    } catch (e) {
-      const reason = e instanceof ParseError ? e.code : 'parse_error';
-      const now = Date.now();
-      const r2KeyParseFail = `in/${domainRow.id}/${id}-${randomSuffix()}.eml`;
-      await env.R2.put(r2KeyParseFail, raw, {
-        httpMetadata: { contentType: 'message/rfc822' },
-      });
-      await env.R2.delete(r2KeyTmp).catch(() => undefined);
-      await env.DB.prepare(
-        `INSERT INTO messages
-           (id, tenant_id, direction, status, from_addr, subject, r2_key,
-            received_at_api, created_at, last_error)
-         VALUES (?, ?, 'in', 'failed', ?, NULL, ?, ?, ?, ?)`,
-      )
-        .bind(
-          id,
-          domainRow.tenant_id ?? '',
-          envelopeFrom,
-          r2KeyParseFail,
-          new Date(now).toISOString(),
-          new Date(now).toISOString(),
-          reason,
-        )
-        .run();
-      message.setReject('554 5.6.0 parse failed');
-      return;
-    }
-
-    // Find a matching routing rule. Highest-priority (lowest number) wins.
-    const rules = await env.DB.prepare(
-      `SELECT id, priority, address_pattern, action, webhook_sub_id, forward_to
-       FROM routing_rules
+    // Resolve mailbox via receivers (highest-priority match wins).
+    const receivers = await env.DB.prepare(
+      `SELECT id, mailbox_id, address_pattern, action, forward_to
+       FROM mailbox_receivers
        WHERE domain_id = ? AND enabled = 1 AND disabled_at IS NULL
        ORDER BY priority ASC LIMIT 100`,
     )
       .bind(domainRow.id)
       .all<{
         id: string;
-        priority: number;
+        mailbox_id: string;
         address_pattern: string;
         action: string;
-        webhook_sub_id: string | null;
         forward_to: string | null;
       }>();
-
-    const match = rules.results.find((r) => addressMatches(r.address_pattern, envelopeTo));
+    const match = receivers.results.find((r) => addressMatches(r.address_pattern, envelopeTo));
     if (!match || match.action === 'drop') {
       message.setReject('550 5.1.1 unknown user');
-      await env.R2.delete(r2KeyTmp).catch(() => undefined);
       return;
     }
     if (match.action === 'forward' && match.forward_to) {
-      // Hand off to CF Email Routing's forward primitive. R2 evidence is kept.
+      // Hand off to CF Email Routing's forward primitive. No D1 / R2 / fanout
+      // write — the forward target owns the message lifecycle from here.
       await message.forward(match.forward_to);
       return;
     }
 
-    // Rate-shed by domain + IP to absorb bursts.
-    const ip = parsed.authResults.remoteIp ?? null;
-    if (await rateShed(env, domainRow.id, ip)) {
+    // Rate-shed by domain + (optional) source IP.
+    if (await rateShed(env, domainRow.id, null)) {
       message.setReject('451 4.7.1 rate limit');
-      await env.R2.delete(r2KeyTmp).catch(() => undefined);
       return;
     }
 
-    // Rekey R2 to the canonical per-domain path.
-    const r2KeyFinal = `in/${domainRow.id}/${id}.eml`;
-    await env.R2.put(r2KeyFinal, raw, {
-      httpMetadata: { contentType: 'message/rfc822' },
-    });
-    await env.R2.delete(r2KeyTmp).catch(() => undefined);
+    let result;
+    try {
+      result = await processMessage(env as unknown as PipelineEnv, {
+        direction: 'in',
+        mailboxId: match.mailbox_id,
+        rawMime: raw,
+        source: 'cf_email_routing',
+        recipientAddress: envelopeTo,
+        auth: {},
+      });
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.error('in: processMessage error', e instanceof Error ? e.message : 'unknown');
+      message.setReject('451 4.7.1 ingest error');
+      return;
+    }
 
-    const now = Date.now();
-    const nowIso = new Date(now).toISOString();
-    await env.DB.prepare(
-      `INSERT INTO messages
-         (id, tenant_id, direction, status, from_addr, subject, r2_key,
-          received_at_api, created_at)
-       VALUES (?, ?, 'in', 'received', ?, ?, ?, ?, ?)`,
-    )
-      .bind(
-        id,
-        domainRow.tenant_id ?? '',
-        envelopeFrom,
-        parsed.subject?.slice(0, 256) ?? null,
-        r2KeyFinal,
-        nowIso,
-        nowIso,
-      )
-      .run();
-
-    await env.FANOUT_QUEUE.send({
-      event_id: ulid(),
-      event: 'message.received',
-      message_id: id,
-      tenant_id: domainRow.tenant_id,
-      domain_id: domainRow.id,
-      created_at: now,
-      data: {
-        from: envelopeFrom,
-        to: envelopeTo,
-        subject: parsed.subject ?? null,
-        size_bytes: raw.byteLength,
-        auth: parsed.authResults,
-        matched_rule: match.id,
-        matched_webhook_sub: match.webhook_sub_id,
-      },
-    });
+    const occurred_at = Date.now();
+    for (const enq of result.fanoutEnqueues ?? []) {
+      await env.FANOUT_QUEUE.send({
+        event_id: ulid(),
+        event: enq.event,
+        message_id: result.messageId,
+        mailbox_id: match.mailbox_id,
+        webhook_sub_id: enq.webhookSubId,
+        created_at: occurred_at,
+      });
+    }
   },
 };

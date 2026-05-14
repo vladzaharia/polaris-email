@@ -62,9 +62,7 @@ describe('parseMime', () => {
     expect(p.textBody).toBe('Hello!');
     expect(p.attachments).toHaveLength(1);
     expect(p.attachments[0]?.filename).toBe('x.pdf');
-    expect(new TextDecoder().decode(p.attachments[0]?.bytes ?? new Uint8Array())).toBe(
-      'PDFBYTES',
-    );
+    expect(new TextDecoder().decode(p.attachments[0]?.bytes ?? new Uint8Array())).toBe('PDFBYTES');
   });
 
   it('extracts auth results', async () => {

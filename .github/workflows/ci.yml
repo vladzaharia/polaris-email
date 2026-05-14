@@ -6,6 +6,28 @@ on:
   pull_request:
 
 jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 9 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+
+  fmt-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 9 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm fmt:check
+
   typecheck:
     runs-on: ubuntu-latest
     steps:
@@ -41,7 +63,7 @@ jobs:
         with: { node-version: 22 }
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @polaris-email/test-vectors run generate
-      - working-directory: packages/webhook-verify-go
+      - working-directory: packages/sdk-go
         run: go test ./...
 
   python-test:
@@ -56,8 +78,27 @@ jobs:
         with: { node-version: 22 }
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @polaris-email/test-vectors run generate
-      - working-directory: packages/webhook-verify-python
-        run: python3 -m unittest discover -s tests -v
+      - working-directory: packages/sdk-python
+        run: python -m unittest discover -s tests -v
+
+  sdk-regen-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: { go-version: '1.22' }
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: '17' }
+      - uses: pnpm/action-setup@v4
+        with: { version: 9 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @polaris/sdk-codegen run generate
+      - name: Verify regen produces zero diff
+        run: |
+          git diff --exit-code packages/sdk-node packages/sdk-python packages/sdk-go \
+            || (echo 'SDK out of sync with openapi/polaris-email.yaml; run `pnpm --filter @polaris/sdk-codegen run generate` and commit'; exit 1)
 
   openapi-validate:
     runs-on: ubuntu-latest
@@ -75,4 +116,3 @@ jobs:
       - uses: actions/checkout@v4
       - run: sudo apt-get update && sudo apt-get install -y sqlite3
       - run: "sqlite3 ':memory:' < services/api/migrations/0001_init.sql"
-

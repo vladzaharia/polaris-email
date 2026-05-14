@@ -21,12 +21,13 @@ Is your service reachable on the public internet via HTTPS?
 ## What you must do as the consumer
 
 1. Pick one of the three patterns above and tell the operator your URL.
-2. Implement signature verification with the appropriate library:
-   - Node: `@polaris/webhook-verify`
-   - Go: `github.com/polaris-email/webhook-verify-go`
-   - Python: `polaris_webhook_verify` (single-file)
-3. Dedupe by `X-Polaris-Event-Id` for 24 h.
-4. Return 2xx within 10 s. Anything else (including 3xx) is a delivery failure and will be retried per the fanout queue's backoff (max 6 attempts, then DLQ).
+2. Implement signature verification with the appropriate library. The signature header is `X-Polaris-Sig: v2=…` and the body is the v2 envelope (`{event_id, event, occurred_at, message}`).
+   - Node: `@polaris/sdk/webhook` (from the `@polaris/sdk` package).
+   - Python: `polaris_sdk.webhook` (from the `polaris-sdk` PyPI package).
+   - Go: `polarissdkgo.VerifyWebhook` (from `github.com/vladzaharia/polaris-email/packages/sdk-go`).
+3. Read `message` directly from the envelope — no follow-up `GET /v1/messages/:id` is required. (You may still GET if you want signed attachment URLs that outlive the original delivery window.)
+4. Dedupe by `X-Polaris-Event-Id` for 24 h.
+5. Return 2xx within 10 s. Anything else (including 3xx) is a delivery failure and will be retried per the fanout queue's backoff (max 6 attempts, then DLQ).
 
 ## What goes wrong if you pick wrong
 
