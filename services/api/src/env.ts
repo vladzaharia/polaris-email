@@ -12,7 +12,6 @@ export interface Env {
 
   OUTBOUND_QUEUE: Queue<OutboundQueueMessage>;
   INBOUND_QUEUE: Queue<InboundQueueMessage>;
-  FORENSIC: Fetcher;
 
   /** Per-principal revocation Durable Object. Synchronous truth for revocation state. */
   REVOCATION_DO: DurableObjectNamespace;

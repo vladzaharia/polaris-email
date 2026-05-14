@@ -2,8 +2,8 @@
 # bin/_lib.sh — shared helpers for the polaris-email orchestration scripts.
 # Source this; do not execute.
 
-# Service list, in deploy order (forensic first because api depends on it).
-POLARIS_SERVICES=(forensic api out in fanout cron)
+# Service list, in deploy order.
+POLARIS_SERVICES=(api out in fanout cron)
 
 # Resolve the repo root from any cwd. Callers should `cd "$ROOT"`.
 polaris_root() {

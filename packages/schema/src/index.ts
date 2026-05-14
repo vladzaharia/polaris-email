@@ -34,7 +34,7 @@ export const SenderScope = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('regex'), pattern: z.string().max(512) }),
 ]);
 
-export const KeyScope = z.enum(['send', 'admin:rotate', 'admin:read', 'forensic:request']);
+export const KeyScope = z.enum(['send', 'admin:rotate', 'admin:read']);
 export const KeyScopes = z.array(KeyScope).min(1);
 
 // ---------- error envelope ----------
@@ -293,7 +293,6 @@ export const AuditAction = z.enum([
   'routing_rule.create',
   'routing_rule.update',
   'routing_rule.delete',
-  'forensic_decrypt',
   'dry_run_rotate',
   'panel.login',
   'panel.login_failure',
@@ -382,10 +381,3 @@ export const BulkRevokeTenantRequest = z.object({
   confirmation: z.string().min(1).max(64),
 });
 
-// ---------- panel forensic decrypt ----------
-
-export const ForensicDecryptRequest = z.object({
-  message_id: Ulid,
-  incident_ticket_id: z.string().min(1).max(120),
-  approver_subject: z.string().min(1).max(256), // second OIDC subject
-});

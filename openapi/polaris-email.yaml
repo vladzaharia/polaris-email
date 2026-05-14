@@ -84,7 +84,7 @@ components:
               - { type: object, required: [kind, pattern], properties: { kind: { const: regex }, pattern: { type: string } } }
         scopes:
           type: array
-          items: { type: string, enum: [send, "admin:rotate", "admin:read", "forensic:request"] }
+          items: { type: string, enum: [send, "admin:rotate", "admin:read"] }
         rate_limit_per_min: { type: integer, default: 1000 }
     IssueApiKeyResponse:
       type: object

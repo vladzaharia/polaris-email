@@ -404,9 +404,6 @@ export function mkEnv(overrides: Partial<Env> = {}): Env {
     KV_KEY_CACHE: new MockKV() as unknown as KVNamespace,
     OUTBOUND_QUEUE: new MockQueue<OutboundQueueMessage>() as unknown as Queue<OutboundQueueMessage>,
     INBOUND_QUEUE: new MockQueue<InboundQueueMessage>() as unknown as Queue<InboundQueueMessage>,
-    FORENSIC: {
-      fetch: async () => new Response('not-implemented', { status: 501 }),
-    } as unknown as Fetcher,
     REVOCATION_DO: mkRevocationDoNamespace() as unknown as DurableObjectNamespace,
     VERIFY_ALGORITHMS: 'v1',
     API_BASE_URL: 'https://polaris-email-api.workers.dev',

@@ -32,9 +32,6 @@
       { "binding": "INBOUND_QUEUE", "queue": "polaris-email-inbound" }
     ]
   },
-  "services": [
-    { "binding": "FORENSIC", "service": "polaris-email-forensic" }
-  ],
   "durable_objects": {
     "bindings": [
       {
