@@ -17,8 +17,10 @@ import { daemons } from './admin/daemons.js';
 import { domains } from './admin/domains.js';
 import { mailboxes as mailboxesRoutes } from './admin/mailboxes.js';
 import { senders as sendersRoutes } from './admin/senders.js';
+import { stats } from './admin/stats.js';
 import { status } from './admin/status.js';
 import { webhookDlq } from './admin/webhook-dlq.js';
+import { webhookSubs } from './admin/webhook-subs.js';
 import { zones } from './admin/zones.js';
 
 export const admin = new Hono<{ Bindings: Env }>();
@@ -40,8 +42,10 @@ admin.route('/', zones);
 admin.route('/', daemons);
 admin.route('/', credentials);
 admin.route('/', webhookDlq);
+admin.route('/', webhookSubs);
 admin.route('/', auditRoutes);
 admin.route('/', status);
+admin.route('/', stats);
 
 // ---------- api keys ----------
 

@@ -3,12 +3,11 @@
 // Thin layer over the panel server's /api/* surface (which itself proxies to
 // services/api over a Worker service binding). All requests go through
 // `apiFetch`, which translates HTTP 428 (Precondition Required) into a custom
-// `StepUpRequiredError` the client UI can catch to open the StepUpModal.
+// `StepUpRequiredError` or `ApprovalRequiredError` the UI can catch.
 //
-// In Phase I, this file will re-export the @polaris/sdk/react TanStack Query
-// hooks (which are codegen output). For now the panel makes plain fetches
-// against its own server routes.
-
+// A lightweight global event channel (`stepup:required`) is dispatched on
+// `window` whenever a step-up error is thrown; the RootLayout subscribes and
+// opens the StepUpModal. This avoids threading a context through every page.
 export class StepUpRequiredError extends Error {
   constructor(public readonly stepUpUrl: string) {
     super('step_up_required');
@@ -21,6 +20,11 @@ export class ApprovalRequiredError extends Error {
     super('approval_required');
     this.name = 'ApprovalRequiredError';
   }
+}
+
+export interface StepUpEventDetail {
+  stepUpUrl: string;
+  retry?: () => void;
 }
 
 export async function apiFetch<T = unknown>(
@@ -45,6 +49,13 @@ export async function apiFetch<T = unknown>(
   if (res.status === 428) {
     const b = body as { code?: string; step_up_url?: string; action?: string };
     if (b.code === 'step_up_required' && b.step_up_url) {
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(
+          new CustomEvent<StepUpEventDetail>('stepup:required', {
+            detail: { stepUpUrl: b.step_up_url },
+          }),
+        );
+      }
       throw new StepUpRequiredError(b.step_up_url);
     }
     if (b.code === 'approval_required' && b.action) {

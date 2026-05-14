@@ -464,6 +464,11 @@ export const AuditAction = z.enum([
   'domain.verify',
   'domain.verify_incomplete',
   'domain.dkim_rotate',
+  // domain inbound/outbound toggles
+  'domain.inbound.enable',
+  'domain.inbound.disable',
+  'domain.outbound.enable',
+  'domain.outbound.disable',
   // dkim_key direct events
   'dkim_key.create',
   'dkim_key.activate',
@@ -473,6 +478,7 @@ export const AuditAction = z.enum([
   'webhook_sub.update',
   'webhook_sub.delete',
   'webhook_sub.replay',
+  'webhook_sub.test',
   // messages (submit/receive/lifecycle)
   'message.submitted',
   'message.received',

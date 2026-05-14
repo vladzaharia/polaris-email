@@ -17,6 +17,8 @@ import { webhooksRoutes } from './routes/webhooks.js';
 import { routingRoutes } from './routes/routing.js';
 import { auditRoutes } from './routes/audit.js';
 import { diagnosticsRoutes } from './routes/diagnostics.js';
+import { adminProxyRoutes } from './routes/admin-proxy.js';
+import { testSendRoutes } from './routes/test-send.js';
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -43,6 +45,8 @@ guarded.route('/', webhooksRoutes);
 guarded.route('/', routingRoutes);
 guarded.route('/', auditRoutes);
 guarded.route('/', diagnosticsRoutes);
+guarded.route('/', adminProxyRoutes);
+guarded.route('/', testSendRoutes);
 app.route('/', guarded);
 
 // Fall through to the static SPA bundle for non-API paths. The ASSETS binding

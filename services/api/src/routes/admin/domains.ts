@@ -462,6 +462,73 @@ domains.post('/v1/admin/domains/:id/verify', requireScope('admin:rotate'), async
   });
 });
 
+// ---------- enable/disable inbound/outbound ----------
+//
+// Four near-identical endpoints; the matrix is bounded so we register them
+// explicitly rather than collapsing via a helper that loses Hono's per-route
+// context typing.
+type FlagSpec = {
+  readonly path: `/v1/admin/domains/:id/${'inbound' | 'outbound'}/${'enable' | 'disable'}`;
+  readonly column: 'inbound_enabled' | 'outbound_enabled';
+  readonly enabled: boolean;
+  readonly action:
+    | 'domain.inbound.enable'
+    | 'domain.inbound.disable'
+    | 'domain.outbound.enable'
+    | 'domain.outbound.disable';
+};
+
+const TOGGLES: readonly FlagSpec[] = [
+  {
+    path: '/v1/admin/domains/:id/inbound/enable',
+    column: 'inbound_enabled',
+    enabled: true,
+    action: 'domain.inbound.enable',
+  },
+  {
+    path: '/v1/admin/domains/:id/inbound/disable',
+    column: 'inbound_enabled',
+    enabled: false,
+    action: 'domain.inbound.disable',
+  },
+  {
+    path: '/v1/admin/domains/:id/outbound/enable',
+    column: 'outbound_enabled',
+    enabled: true,
+    action: 'domain.outbound.enable',
+  },
+  {
+    path: '/v1/admin/domains/:id/outbound/disable',
+    column: 'outbound_enabled',
+    enabled: false,
+    action: 'domain.outbound.disable',
+  },
+];
+
+for (const spec of TOGGLES) {
+  domains.post(spec.path, requireScope('admin:rotate'), async (c) => {
+    const key = c.get('apiKey');
+    const id = c.req.param('id');
+    const row = await c.env.DB.prepare(`SELECT id, name FROM mail_domains WHERE id = ?`)
+      .bind(id)
+      .first<{ id: string; name: string }>();
+    if (!row) return buildError(c, 'not_found', 'mail_domain not found');
+    const nowIso = new Date().toISOString();
+    await c.env.DB.prepare(
+      `UPDATE mail_domains SET ${spec.column} = ?, updated_at = ? WHERE id = ?`,
+    )
+      .bind(spec.enabled ? 1 : 0, nowIso, id)
+      .run();
+    await audit(c.env, {
+      actor: `key:${key.key_id}`,
+      action: spec.action,
+      target: id,
+      meta: { name: row.name },
+    });
+    return c.json({ id, [spec.column]: spec.enabled });
+  });
+}
+
 // ---------- soft-disable ----------
 domains.delete('/v1/admin/domains/:id', requireScope('admin:rotate'), async (c) => {
   const key = c.get('apiKey');

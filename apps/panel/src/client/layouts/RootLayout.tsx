@@ -11,6 +11,8 @@ import type { ErrorInfo, ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Toaster } from '../components/ui/sonner.js';
 import { TooltipProvider } from '../components/ui/tooltip.js';
+import { StepUpModal } from '../components/StepUpModal.js';
+import type { StepUpEventDetail } from '../lib/api.js';
 
 type Theme = 'light' | 'dark';
 
@@ -60,12 +62,23 @@ const queryClient = new QueryClient({
 
 export function RootLayout({ children }: { children: ReactNode }) {
   const [theme, setThemeState] = useState<Theme>(readInitialTheme);
+  const [stepUpOpen, setStepUpOpen] = useState(false);
 
   useEffect(() => {
     const root = document.documentElement;
     root.classList.toggle('dark', theme === 'dark');
     window.localStorage.setItem('polaris-theme', theme);
   }, [theme]);
+
+  useEffect(() => {
+    const handler = (_e: Event): void => {
+      // The detail (stepUpUrl) is consumed by the StepUpModal's POST /api/step-up
+      // call directly; we just need to open the dialog here.
+      setStepUpOpen(true);
+    };
+    window.addEventListener('stepup:required', handler as EventListener);
+    return () => window.removeEventListener('stepup:required', handler as EventListener);
+  }, []);
 
   const setTheme = (t: Theme) => setThemeState(t);
 
@@ -74,9 +87,14 @@ export function RootLayout({ children }: { children: ReactNode }) {
       <QueryClientProvider client={queryClient}>
         <TooltipProvider delayDuration={150}>
           <ErrorBoundary>{children}</ErrorBoundary>
+          <StepUpModal open={stepUpOpen} onClose={() => setStepUpOpen(false)} />
           <Toaster />
         </TooltipProvider>
       </QueryClientProvider>
     </ThemeCtx.Provider>
   );
 }
+
+// Re-export so consumers picking up the symbol from RootLayout don't need a
+// separate import path.
+export type { StepUpEventDetail };
