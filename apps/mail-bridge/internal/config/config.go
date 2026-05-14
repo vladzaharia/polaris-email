@@ -93,11 +93,11 @@ func Load() (*Config, error) {
 	}
 	sqlitePath := get("SQLITE_PATH")
 	if sqlitePath == "" {
-		sqlitePath = "/var/lib/polaris-daemon/credstore.db"
+		sqlitePath = "/var/lib/polaris-bridge/credstore.db"
 	}
 	auditPath := get("AUDIT_LOG_PATH")
 	if auditPath == "" {
-		auditPath = "/var/log/polaris-daemon/audit.log"
+		auditPath = "/var/log/polaris-bridge/audit.log"
 	}
 
 	if len(errs) > 0 {

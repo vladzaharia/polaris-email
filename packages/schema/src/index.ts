@@ -601,3 +601,79 @@ export const BulkRevokeTenantRequest = z.object({
   confirmation: z.string().min(1).max(64),
 });
 export type BulkRevokeTenantRequest = z.infer<typeof BulkRevokeTenantRequest>;
+
+// ---------- mail bridge (Phase L) ----------
+//
+// IMAP system flags are RFC 9051 §2.3.2 ("backslash"-prefixed identifiers).
+// Custom keywords are any bare-string label the client stores. Polaris does
+// not ship `\Draft` (INBOX-only model — no folder dimension).
+export const SystemFlag = z.enum(['\\Seen', '\\Answered', '\\Flagged', '\\Deleted']);
+export type SystemFlag = z.infer<typeof SystemFlag>;
+
+// A MessageFlag is either a system flag or a custom keyword (any non-empty
+// string up to 64 chars, no whitespace — matches IMAP atom rules loosely).
+export const MessageFlag = z.union([
+  SystemFlag,
+  z
+    .string()
+    .min(1)
+    .max(64)
+    .regex(/^[^\s\\][^\s]*$/u, 'custom keyword: no whitespace, no leading backslash'),
+]);
+export type MessageFlag = z.infer<typeof MessageFlag>;
+
+export const MailBridgeProtocol = z.enum(['imap', 'jmap', 'smtps']);
+export type MailBridgeProtocol = z.infer<typeof MailBridgeProtocol>;
+
+export const MailBridgeAuthType = z.enum(['password', 'bearer_token']);
+export type MailBridgeAuthType = z.infer<typeof MailBridgeAuthType>;
+
+// MailboxCredential: a row in `mailbox_credentials` (see migration 0002).
+// Plaintext passwords / bearer tokens are NEVER returned via the API; this
+// shape is the stored representation minus the plaintext column.
+export const MailboxCredential = z.object({
+  id: Ulid,
+  mailbox_id: Ulid,
+  protocol: MailBridgeProtocol,
+  auth_type: MailBridgeAuthType,
+  username: z.string().min(1).max(254).nullable().optional(),
+  // bcrypt hash is opaque to consumers; surfaced here for completeness.
+  bcrypt_hash: z.string().nullable().optional(),
+  // bearer token is a one-way reference; surfaced here as the stored value
+  // (NOT the plaintext, which is only ever returned at issue time).
+  bearer_token: z.string().nullable().optional(),
+  created_at: z.string(),
+  last_used_at: z.string().nullable().optional(),
+  disabled_at: z.string().nullable().optional(),
+});
+export type MailboxCredential = z.infer<typeof MailboxCredential>;
+
+// MailboxMessageState: one row per (mailbox_id, message_id) in
+// `mailbox_messages_state` (see migration 0002). `uid` + `uid_validity` drive
+// IMAP UID semantics; `change_id` drives IMAP CONDSTORE MODSEQ and JMAP
+// Email/changes deltas.
+export const MailboxMessageState = z.object({
+  message_id: Ulid,
+  mailbox_id: Ulid,
+  read_at: z.string().nullable().optional(),
+  expunged_at: z.string().nullable().optional(),
+  flags: z.array(MessageFlag),
+  uid: z.number().int().nonnegative(),
+  uid_validity: z.number().int().nonnegative(),
+  change_id: z.number().int().nonnegative(),
+});
+export type MailboxMessageState = z.infer<typeof MailboxMessageState>;
+
+export const JmapPushType = z.enum(['websocket', 'eventsource']);
+export type JmapPushType = z.infer<typeof JmapPushType>;
+
+// JmapPushSubscription: a row in `jmap_push_subscriptions` (see migration 0002).
+export const JmapPushSubscription = z.object({
+  id: Ulid,
+  mailbox_id: Ulid,
+  device_id: z.string().min(1).max(120),
+  push_type: JmapPushType,
+  expires_at: z.string().nullable().optional(),
+  created_at: z.string(),
+});
+export type JmapPushSubscription = z.infer<typeof JmapPushSubscription>;

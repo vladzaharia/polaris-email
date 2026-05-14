@@ -1,0 +1,83 @@
+# This is one of two equally-supported deployment modes for polaris-mail-bridge.
+# See README.md for the other (docker-compose.local.yml for host-network mode).
+#
+# Tailnet-fronted mode:
+#   - All listeners run inside the Tailscale sidecar's network namespace.
+#   - MagicDNS hostname: polaris-mail-${REGION}.<tailnet>.ts.net
+#   - TLS via Tailscale-issued certs (preferred) or Lego fallback.
+#   - Only tailnet members reach the bridge — no public ports.
+services:
+  tailscale:
+    image: tailscale/tailscale:stable
+    container_name: polaris-mail-tailscale
+    hostname: polaris-mail-${REGION:-us-east}
+    environment:
+      TS_AUTHKEY: ${TS_AUTHKEY}
+      TS_STATE_DIR: /var/lib/tailscale
+      TS_USERSPACE: 'false'
+      TS_EXTRA_ARGS: --advertise-tags=tag:polaris-mail
+    volumes:
+      - tailscale-state:/var/lib/tailscale
+      - /dev/net/tun:/dev/net/tun
+    cap_add: [NET_ADMIN, NET_RAW]
+    healthcheck:
+      test: ['CMD', 'tailscale', 'status', '--peers=0']
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  # Optional fallback cert manager. Tailscale-issued certs via tsnet are the
+  # primary path; lego is only useful when running with TLS_MODE=lego in
+  # bridge.toml.
+  lego:
+    image: goacme/lego:v4.14
+    container_name: polaris-mail-lego
+    network_mode: 'service:tailscale'
+    environment:
+      CF_DNS_API_TOKEN: ${CF_DNS_API_TOKEN:-}
+    volumes:
+      - lego-certs:/.lego
+    command: >
+      run --accept-tos --email ${ACME_EMAIL:-ops@example.com}
+          --domains ${BRIDGE_FQDN:-polaris-mail-${REGION:-us-east}.example.com}
+          --dns cloudflare
+          --path /.lego
+    profiles: [lego]
+
+  bridge:
+    image: ghcr.io/vladzaharia/polaris-mail-bridge:latest
+    container_name: polaris-mail-bridge
+    network_mode: 'service:tailscale'
+    depends_on:
+      tailscale:
+        condition: service_healthy
+    environment:
+      BRIDGE_TLS_MODE: tailscale
+      BRIDGE_POLARIS_API_URL: ${POLARIS_API_URL:-https://api.polaris.example.com}
+      BRIDGE_POLARIS_DAEMON_ID_FILE: /run/secrets/daemon_id
+      BRIDGE_POLARIS_HMAC_KEY_FILE: /run/secrets/hmac_key
+      BRIDGE_SMTPS_ENABLED: ${BRIDGE_SMTPS_ENABLED:-true}
+      BRIDGE_IMAP_ENABLED: ${BRIDGE_IMAP_ENABLED:-true}
+      BRIDGE_JMAP_ENABLED: ${BRIDGE_JMAP_ENABLED:-true}
+      BRIDGE_CREDSTORE_PATH: /var/lib/polaris-bridge/credstore.db
+      BRIDGE_MIRROR_PATH: /var/lib/polaris-bridge/mirror.db
+      BRIDGE_LOGGING_FILE: /var/log/polaris-bridge/audit.jsonl
+    volumes:
+      - bridge-data:/var/lib/polaris-bridge
+      - bridge-logs:/var/log/polaris-bridge
+      - lego-certs:/etc/polaris-bridge/lego:ro
+      - ./bridge.toml:/etc/polaris-bridge/bridge.toml:ro
+      - ./secrets:/run/secrets:ro
+    healthcheck:
+      test: ['CMD', 'pgrep', '-f', 'polaris-bridge']
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+volumes:
+  tailscale-state:
+  lego-certs:
+  bridge-data:
+  bridge-logs:

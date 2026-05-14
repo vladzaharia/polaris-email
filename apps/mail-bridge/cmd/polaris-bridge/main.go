@@ -1,4 +1,9 @@
-// Command polaris-daemon is the on-prem SMTP submission daemon.
+// Command polaris-bridge is the on-prem polaris mail bridge.
+//
+// In this slice (L.1) it ships only the SMTPS submission listener (port 465),
+// inherited from the renamed `apps/submission-daemon`. The IMAP4rev2 (:993)
+// and JMAP (:443) listeners arrive in slice L.2; backend endpoints (Email
+// changes, credential CRUD) land in slice L.3.
 package main
 
 import (
@@ -10,11 +15,11 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/vladzaharia/polaris-email/apps/submission-daemon/internal/audit"
-	"github.com/vladzaharia/polaris-email/apps/submission-daemon/internal/config"
-	"github.com/vladzaharia/polaris-email/apps/submission-daemon/internal/credstore"
-	"github.com/vladzaharia/polaris-email/apps/submission-daemon/internal/forwarder"
-	dsmtp "github.com/vladzaharia/polaris-email/apps/submission-daemon/internal/smtp"
+	"github.com/vladzaharia/polaris-email/apps/mail-bridge/internal/audit"
+	"github.com/vladzaharia/polaris-email/apps/mail-bridge/internal/config"
+	"github.com/vladzaharia/polaris-email/apps/mail-bridge/internal/credstore"
+	"github.com/vladzaharia/polaris-email/apps/mail-bridge/internal/forwarder"
+	dsmtp "github.com/vladzaharia/polaris-email/apps/mail-bridge/internal/smtp"
 )
 
 func main() {
@@ -22,7 +27,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("config: %v", err)
 	}
-	log.Printf("polaris-daemon starting: name=%s id=%s listen=%s", cfg.DaemonName, cfg.DaemonID, cfg.ListenAddr)
+	log.Printf("polaris-bridge starting: name=%s id=%s listen=%s", cfg.DaemonName, cfg.DaemonID, cfg.ListenAddr)
 
 	store, err := credstore.Open(cfg.SQLitePath)
 	if err != nil {
@@ -86,7 +91,7 @@ func main() {
 				return
 			case <-t.C:
 				if poller.Ready() {
-					log.Printf("polaris-daemon: ready (mirror_version=%d)", store.MirrorVersion())
+					log.Printf("polaris-bridge: ready (mirror_version=%d)", store.MirrorVersion())
 					return
 				}
 			}
@@ -98,7 +103,7 @@ func main() {
 	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
 	go func() {
 		s := <-sigCh
-		log.Printf("polaris-daemon: signal %s, shutting down", s)
+		log.Printf("polaris-bridge: signal %s, shutting down", s)
 		shutCtx, c := context.WithTimeout(context.Background(), 10*time.Second)
 		defer c()
 		_ = srv.Shutdown(shutCtx)

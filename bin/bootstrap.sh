@@ -257,7 +257,7 @@ log "8/8 next steps"
 cat <<EOF
 Remaining manual steps (see docs/DEPLOY.md and apps/polaris-cli/README.md):
   - Onboard each sending/receiving domain:      polaris-email domain onboard --apply <yourdomain>
-  - (Optional) Deploy a submission daemon:      see apps/submission-daemon/README.md
+  - (Optional) Deploy the on-prem mail bridge:  see apps/mail-bridge/README.md
   - Smoke test the stack:                       make smoke
   - Issue your first consumer key:              polaris-email cred issue --name acme --scopes mail:send
 EOF

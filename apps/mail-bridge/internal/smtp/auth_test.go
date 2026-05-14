@@ -13,9 +13,9 @@ import (
 	gosmtp "github.com/emersion/go-smtp"
 	"golang.org/x/crypto/bcrypt"
 
-	"github.com/vladzaharia/polaris-email/apps/submission-daemon/internal/audit"
-	"github.com/vladzaharia/polaris-email/apps/submission-daemon/internal/credstore"
-	"github.com/vladzaharia/polaris-email/apps/submission-daemon/internal/forwarder"
+	"github.com/vladzaharia/polaris-email/apps/mail-bridge/internal/audit"
+	"github.com/vladzaharia/polaris-email/apps/mail-bridge/internal/credstore"
+	"github.com/vladzaharia/polaris-email/apps/mail-bridge/internal/forwarder"
 )
 
 func newTestSession(t *testing.T, store *credstore.Store, fwd *forwarder.Forwarder) *Session {

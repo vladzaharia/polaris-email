@@ -373,7 +373,7 @@ paths:
       description: |
         Unified submission endpoint. Content-Type selects the auth flavor:
         - `application/json`: tenant API-key HMAC, body is a SendRequest.
-        - `message/rfc822`: submission-daemon HMAC, body is raw RFC822 bytes.
+        - `message/rfc822`: mail-bridge daemon HMAC, body is raw RFC822 bytes.
       parameters:
         - { $ref: '#/components/parameters/KeyId' }
         - { $ref: '#/components/parameters/Ts' }
@@ -776,7 +776,7 @@ paths:
       description: |
         Returns the current set of active SMTP submission credentials plus
         the set of disabled credentials to remove. Polled by the
-        submission-daemon to keep its local SQLite mirror current.
+        mail-bridge to keep its local SQLite mirror current.
       parameters:
         - { $ref: '#/components/parameters/KeyId' }
         - { $ref: '#/components/parameters/Ts' }

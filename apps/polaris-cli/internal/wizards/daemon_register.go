@@ -157,21 +157,20 @@ services:
       - ./submission-data:/data
 `))
 
-var systemdTpl = template.Must(template.New("systemd").Parse(`# /etc/systemd/system/polaris-daemon.service. Secrets shown ONCE — store them now.
+var systemdTpl = template.Must(template.New("systemd").Parse(`# /etc/systemd/system/polaris-mail-bridge.service. Secrets shown ONCE — store them now.
 [Unit]
-Description=polaris-email submission daemon
+Description=polaris-email mail bridge (SMTPS + IMAP + JMAP)
 After=network-online.target
 
 [Service]
 Environment=API_BASE_URL={{.APIURL}}
 Environment=DAEMON_ID={{.Daemon.ID}}
 Environment=DAEMON_NAME={{.Daemon.Name}}
-Environment=ENVIRONMENT={{.Daemon.Environment}}
 Environment=DAEMON_HMAC_KEY_ID={{.HMACKeyID}}
 Environment=DAEMON_HMAC_SECRET={{.HMACSec}}
 Environment=CF_ACCESS_CLIENT_ID={{.AccID}}
 Environment=CF_ACCESS_CLIENT_SECRET={{.AccSecret}}
-ExecStart=/usr/local/bin/polaris-daemon
+ExecStart=/usr/local/bin/polaris-bridge
 Restart=on-failure
 RestartSec=5
 

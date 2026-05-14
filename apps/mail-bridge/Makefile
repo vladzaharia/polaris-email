@@ -1,10 +1,10 @@
 .PHONY: build test vet lint docker tidy
 
 PKG := ./...
-IMAGE ?= polaris-daemon:dev
+IMAGE ?= polaris-bridge:dev
 
 build:
-	CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o bin/polaris-daemon ./cmd/polaris-daemon
+	CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o bin/polaris-bridge ./cmd/polaris-bridge
 
 test:
 	go test $(PKG)

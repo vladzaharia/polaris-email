@@ -8,9 +8,9 @@ import (
 	gosmtp "github.com/emersion/go-smtp"
 	"github.com/oklog/ulid/v2"
 
-	"github.com/vladzaharia/polaris-email/apps/submission-daemon/internal/audit"
-	"github.com/vladzaharia/polaris-email/apps/submission-daemon/internal/credstore"
-	"github.com/vladzaharia/polaris-email/apps/submission-daemon/internal/forwarder"
+	"github.com/vladzaharia/polaris-email/apps/mail-bridge/internal/audit"
+	"github.com/vladzaharia/polaris-email/apps/mail-bridge/internal/credstore"
+	"github.com/vladzaharia/polaris-email/apps/mail-bridge/internal/forwarder"
 )
 
 // Deps bundles everything a Backend needs to make Sessions.

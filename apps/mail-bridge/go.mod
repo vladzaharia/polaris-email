@@ -1,4 +1,4 @@
-module github.com/vladzaharia/polaris-email/apps/submission-daemon
+module github.com/vladzaharia/polaris-email/apps/mail-bridge
 
 go 1.25.0
 
