@@ -1,3 +1,10 @@
+// Package client wraps polaris-sdk-go for the polaris-email admin CLI.
+//
+// Phase F: the CLI was a standalone HMAC implementation; it now delegates
+// signing to `github.com/polaris-email/polaris-sdk-go`. The internal helpers
+// (CanonicalQuery / BuildCanonical / Sign / GenerateNonce / NowMillis in
+// hmac.go) are kept as thin re-exports so the existing 12 subcommand files
+// don't need to change shape.
 package client
 
 import (
@@ -10,6 +17,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	polarissdk "github.com/polaris-email/polaris-sdk-go"
 )
 
 // Client is a thin HMAC-signing HTTP client for the polaris-email admin API.
@@ -94,21 +103,32 @@ func (c *Client) Request(ctx context.Context, method, path string, query url.Val
 
 // Do executes the request and returns the raw response body. On non-2xx the
 // returned error includes the status line and body.
+//
+// The HTTP call routes through polaris-sdk-go's Client to keep the canonical
+// signing logic in one place. The dry-run path still goes through the local
+// Request() helper so the printed request is byte-identical to what would be
+// sent.
 func (c *Client) Do(ctx context.Context, method, path string, query url.Values, body []byte) ([]byte, error) {
-	req, err := c.Request(ctx, method, path, query, body)
-	if err != nil {
-		return nil, err
-	}
 	if c.DryRun {
+		req, err := c.Request(ctx, method, path, query, body)
+		if err != nil {
+			return nil, err
+		}
 		printDryRun(c.DryRunSink, req, body)
 		return []byte("{}"), nil
 	}
-	resp, err := c.HTTPClient.Do(req)
-	if err != nil {
-		return nil, err
+	rawQuery := ""
+	if query != nil {
+		rawQuery = query.Encode()
 	}
-	defer resp.Body.Close()
-	rb, err := io.ReadAll(resp.Body)
+	sdk := polarissdk.NewClient(c.BaseURL)
+	if c.HTTPClient != nil {
+		sdk.HTTPClient = c.HTTPClient
+	}
+	sdk.UserAgent = c.UserAgent
+	sdk.KeyID = c.KeyID
+	sdk.KeySecret = c.Secret
+	resp, rb, err := sdk.Do(ctx, method, path, rawQuery, body, "", nil)
 	if err != nil {
 		return nil, err
 	}

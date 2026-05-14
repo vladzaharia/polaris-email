@@ -2,6 +2,10 @@ module github.com/vladzaharia/polaris-email/apps/polaris-cli
 
 go 1.22
 
+require github.com/polaris-email/polaris-sdk-go v0.0.0
+
+replace github.com/polaris-email/polaris-sdk-go => ../../packages/sdk-go
+
 require (
 	github.com/atotto/clipboard v0.1.4 // indirect
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect

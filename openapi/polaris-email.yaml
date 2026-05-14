@@ -1,11 +1,17 @@
 openapi: 3.0.3
 info:
   title: polaris-email API
-  version: 0.1.0
+  version: 0.2.0
   description: |
     HMAC-authenticated REST surface for polaris-email. All requests are signed with
     `X-Polaris-Sig: v1=<hex(HMAC-SHA256(secret, canonical))>` where canonical is
     `polaris-api.v1\n<METHOD>\n<path>\n<canonical-query>\n<X-Polaris-Ts>\n<X-Polaris-Nonce>\n<sha256-hex(body)>`.
+
+    Webhooks delivered to subscribers (the WebhookEnvelope schema below) are signed
+    `X-Polaris-Sig: v2=<hex>` over the canonical string
+    `polaris-webhook.v1\nPOST\n<path>\n<canonical-query>\n<ts>\n<nonce>\n<sha256-hex(body)>`.
+    Consumers should verify with the SDK (`@polaris/sdk/webhook`, `polaris_sdk.webhook`,
+    or `polariswebhook.VerifyWebhook`).
 servers:
   - url: https://polaris-email-api.workers.dev
 security:
@@ -38,6 +44,17 @@ components:
       required: false
       schema: { type: string, pattern: '^[A-Za-z0-9_-]{8,128}$' }
   schemas:
+    Ulid:
+      type: string
+      pattern: '^[0-9A-HJKMNP-TV-Z]{26}$'
+    KeyScope:
+      type: string
+      enum:
+        - send
+        - 'messages:read'
+        - 'imap_bridge:read'
+        - 'admin:rotate'
+        - 'admin:read'
     Error:
       type: object
       required: [error]
@@ -50,6 +67,7 @@ components:
               type: string
               enum:
                 - bad_request
+                - bad_content_type
                 - bad_signature
                 - key_propagating
                 - clock_skew
@@ -60,6 +78,7 @@ components:
                 - domain_not_verified
                 - recipient_rejected
                 - rate_limited
+                - too_many_requests
                 - cf_upstream
                 - degraded
                 - not_found
@@ -69,34 +88,223 @@ components:
             message: { type: string }
             retryable: { type: boolean }
             request_id: { type: string }
-    IssueApiKeyRequest:
+    MessageAttachment:
       type: object
-      required: [tenant_id, sender_scopes]
+      required: [filename, content_type, size_bytes]
       properties:
-        tenant_id: { type: string, pattern: '^[a-z][a-z0-9-]{0,63}$' }
-        sender_scopes:
+        filename: { type: string }
+        content_type: { type: string }
+        size_bytes: { type: integer, minimum: 0 }
+        content_base64: { type: string }
+        content_url: { type: string, format: uri }
+    MessageAuth:
+      type: object
+      properties:
+        spf: { type: string }
+        dkim: { type: string }
+        dmarc: { type: string }
+        remote_ip: { type: string }
+    Message:
+      type: object
+      required: [id, mailbox_id, direction, status, from, to, attachments, created_at]
+      properties:
+        id: { $ref: '#/components/schemas/Ulid' }
+        mailbox_id: { $ref: '#/components/schemas/Ulid' }
+        direction: { type: string, enum: [in, out] }
+        status:
+          type: string
+          enum: [received, mime_stored, queued, sending, sent, bounced, delivered, failed]
+        from: { type: string }
+        to:
+          type: array
+          items: { type: string }
+        cc:
+          type: array
+          items: { type: string }
+        bcc:
+          type: array
+          items: { type: string }
+        subject: { type: string }
+        text: { type: string }
+        html: { type: string }
+        headers:
+          type: object
+          additionalProperties: { type: string }
+        attachments:
+          type: array
+          items: { $ref: '#/components/schemas/MessageAttachment' }
+        header_message_id: { type: string }
+        thread_id: { type: string }
+        auth: { $ref: '#/components/schemas/MessageAuth' }
+        body_bytes: { type: integer, minimum: 0 }
+        attachments_total_bytes: { type: integer, minimum: 0 }
+        received_at_daemon: { type: string }
+        received_at_api: { type: string }
+        queued_at: { type: string }
+        sending_at: { type: string }
+        sent_at: { type: string }
+        delivered_at: { type: string }
+        failed_at: { type: string }
+        bounce_metadata: {}
+        last_error: { type: string }
+        created_at: { type: string }
+    SendRequestAttachment:
+      type: object
+      required: [filename, content_type, content_base64]
+      properties:
+        filename: { type: string, minLength: 1, maxLength: 255 }
+        content_type: { type: string, minLength: 1, maxLength: 255 }
+        content_base64: { type: string }
+    SendRequest:
+      type: object
+      required: [from, to]
+      description: |
+        JSON submission body for `POST /v1/messages` with `Content-Type: application/json`.
+        Forbidden headers (date, message-id, from, to, cc, bcc, subject, content-type, etc.)
+        MUST NOT appear in `headers`.
+      properties:
+        from: { type: string }
+        to:
           type: array
           minItems: 1
-          items:
-            oneOf:
-              - {
-                  type: object,
-                  required: [kind, pattern],
-                  properties: { kind: { const: exact }, pattern: { type: string } },
-                }
-              - {
-                  type: object,
-                  required: [kind, pattern],
-                  properties: { kind: { const: glob }, pattern: { type: string } },
-                }
-              - {
-                  type: object,
-                  required: [kind, pattern],
-                  properties: { kind: { const: regex }, pattern: { type: string } },
-                }
+          items: { type: string }
+        cc:
+          type: array
+          items: { type: string }
+        bcc:
+          type: array
+          items: { type: string }
+        subject: { type: string }
+        text: { type: string }
+        html: { type: string }
+        headers:
+          type: object
+          additionalProperties: { type: string }
+        attachments:
+          type: array
+          items: { $ref: '#/components/schemas/SendRequestAttachment' }
+        reply_to: { type: string }
+        idempotency_key: { type: string }
+    SendResponse:
+      type: object
+      required: [message_id, status, fresh]
+      properties:
+        message_id: { $ref: '#/components/schemas/Ulid' }
+        status: { type: string }
+        fresh: { type: boolean }
+    MessageList:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/Message' }
+        next_offset:
+          type: integer
+          nullable: true
+    WebhookEventType:
+      type: string
+      enum:
+        - message.received
+        - message.sent
+        - message.delivered
+        - message.bounced
+        - message.failed
+    WebhookEnvelope:
+      type: object
+      required: [event_id, event, occurred_at, message]
+      description: |
+        v2 webhook envelope delivered to subscribers. The HTTP request carries
+        `X-Polaris-Sig: v2=<hex>`, `X-Polaris-Ts`, `X-Polaris-Nonce`,
+        `X-Polaris-Event-Id`, and `X-Polaris-Event` headers. Verify with the SDK
+        `verifyWebhook` helper.
+      properties:
+        event_id: { $ref: '#/components/schemas/Ulid' }
+        event: { $ref: '#/components/schemas/WebhookEventType' }
+        occurred_at: { type: string }
+        message: { $ref: '#/components/schemas/Message' }
+    Mailbox:
+      type: object
+      required: [id, name, created_at, updated_at]
+      properties:
+        id: { $ref: '#/components/schemas/Ulid' }
+        name: { type: string, minLength: 1, maxLength: 120 }
+        description: { type: string, nullable: true }
+        default_sender_id:
+          oneOf:
+            - { $ref: '#/components/schemas/Ulid' }
+            - { type: 'null' }
+        created_at: { type: string }
+        updated_at: { type: string }
+        disabled_at: { type: string, nullable: true }
+    MailboxSender:
+      type: object
+      required: [id, mailbox_id, domain_id, address, default_for_mailbox, created_at]
+      properties:
+        id: { $ref: '#/components/schemas/Ulid' }
+        mailbox_id: { $ref: '#/components/schemas/Ulid' }
+        domain_id: { $ref: '#/components/schemas/Ulid' }
+        address: { type: string }
+        local_part: { type: string, nullable: true }
+        display_name: { type: string, nullable: true }
+        default_for_mailbox: { type: integer, minimum: 0, maximum: 1 }
+        created_at: { type: string }
+        disabled_at: { type: string, nullable: true }
+    MailboxReceiver:
+      type: object
+      required: [id, mailbox_id, domain_id, priority, address_pattern, action, enabled, created_at]
+      properties:
+        id: { $ref: '#/components/schemas/Ulid' }
+        mailbox_id: { $ref: '#/components/schemas/Ulid' }
+        domain_id: { $ref: '#/components/schemas/Ulid' }
+        priority: { type: integer }
+        address_pattern: { type: string, minLength: 1, maxLength: 512 }
+        action: { type: string, enum: [webhook, forward, drop] }
+        webhook_sub_id:
+          oneOf:
+            - { $ref: '#/components/schemas/Ulid' }
+            - { type: 'null' }
+        forward_to: { type: string, nullable: true }
+        enabled: { type: integer, minimum: 0, maximum: 1 }
+        created_at: { type: string }
+        disabled_at: { type: string, nullable: true }
+    CreateMailboxRequest:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 120 }
+        description: { type: string, maxLength: 2000 }
+    CreateMailboxSenderRequest:
+      type: object
+      required: [local_part]
+      properties:
+        domain_id: { $ref: '#/components/schemas/Ulid' }
+        local_part: { type: string, pattern: '^[a-z0-9._+-]{1,64}$' }
+        display_name: { type: string, minLength: 1, maxLength: 120 }
+        default_for_mailbox: { type: boolean }
+    CreateMailboxReceiverRequest:
+      type: object
+      required: [domain_id, address_pattern]
+      properties:
+        domain_id: { $ref: '#/components/schemas/Ulid' }
+        priority: { type: integer, default: 100 }
+        address_pattern: { type: string, minLength: 1, maxLength: 512 }
+        action: { type: string, enum: [webhook, forward, drop], default: webhook }
+        webhook_sub_id: { $ref: '#/components/schemas/Ulid' }
+        forward_to: { type: string }
+    IssueApiKeyRequest:
+      type: object
+      required: [mailbox_id]
+      properties:
+        mailbox_id: { $ref: '#/components/schemas/Ulid' }
+        display_name: { type: string, minLength: 1, maxLength: 120 }
+        sender_ids:
+          type: array
+          items: { $ref: '#/components/schemas/Ulid' }
         scopes:
           type: array
-          items: { type: string, enum: [send, 'admin:rotate', 'admin:read'] }
+          minItems: 1
+          items: { $ref: '#/components/schemas/KeyScope' }
         rate_limit_per_min: { type: integer, default: 1000 }
     IssueApiKeyResponse:
       type: object
@@ -121,24 +329,36 @@ components:
         prev_status: { type: string }
     CreateWebhookSubRequest:
       type: object
-      required: [tenant_id, url, kind, events]
+      required: [mailbox_id, url, kind, events]
       properties:
-        tenant_id: { type: string }
-        domain_id: { type: string }
+        mailbox_id: { $ref: '#/components/schemas/Ulid' }
         url: { type: string, format: uri }
         kind: { type: string, enum: [external, tailnet] }
         events:
           type: array
+          minItems: 1
+          items: { $ref: '#/components/schemas/WebhookEventType' }
+    DaemonCredentialsResponse:
+      type: object
+      required: [updates, deletions, mirror_version]
+      properties:
+        updates:
+          type: array
           items:
-            type: string
-            enum:
-              - message.received
-              - message.bounced
-              - message.sent
-              - message.delivered
-              - message.failed
-              - credential.rotated
-              - credential.revoked
+            type: object
+            required: [id, username, bcrypt_hash, allowed_senders, mirror_version]
+            properties:
+              id: { type: string }
+              username: { type: string }
+              bcrypt_hash: { type: string }
+              allowed_senders:
+                type: array
+                items: { type: string }
+              mirror_version: { type: integer, format: int64 }
+        deletions:
+          type: array
+          items: { type: string }
+        mirror_version: { type: integer, format: int64 }
 paths:
   /healthz:
     get:
@@ -147,9 +367,334 @@ paths:
       responses:
         '200':
           description: ok
+  /v1/messages:
+    post:
+      summary: Submit a message (JSON or RFC822)
+      description: |
+        Unified submission endpoint. Content-Type selects the auth flavor:
+        - `application/json`: tenant API-key HMAC, body is a SendRequest.
+        - `message/rfc822`: submission-daemon HMAC, body is raw RFC822 bytes.
+      parameters:
+        - { $ref: '#/components/parameters/KeyId' }
+        - { $ref: '#/components/parameters/Ts' }
+        - { $ref: '#/components/parameters/Nonce' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SendRequest' }
+          message/rfc822:
+            schema:
+              type: string
+              format: binary
+      responses:
+        '202':
+          description: accepted for processing
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SendResponse' }
+        '400':
+          description: bad request
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+    get:
+      summary: List messages
+      description: |
+        Requires `messages:read` (or `admin:read` for cross-mailbox queries).
+      parameters:
+        - { $ref: '#/components/parameters/KeyId' }
+        - { $ref: '#/components/parameters/Ts' }
+        - { $ref: '#/components/parameters/Nonce' }
+        - in: query
+          name: mailbox_id
+          schema: { $ref: '#/components/schemas/Ulid' }
+        - in: query
+          name: direction
+          schema: { type: string, enum: [in, out] }
+        - in: query
+          name: status
+          schema: { type: string }
+        - in: query
+          name: from
+          schema: { type: string }
+        - in: query
+          name: to
+          schema: { type: string }
+        - in: query
+          name: since
+          schema: { type: string }
+        - in: query
+          name: until
+          schema: { type: string }
+        - in: query
+          name: q
+          schema: { type: string }
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+        - in: query
+          name: offset
+          schema: { type: integer, minimum: 0, default: 0 }
+      responses:
+        '200':
+          description: messages
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MessageList' }
+  /v1/messages/{id}:
+    get:
+      summary: Fetch one message
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { $ref: '#/components/schemas/Ulid' }
+        - { $ref: '#/components/parameters/KeyId' }
+        - { $ref: '#/components/parameters/Ts' }
+        - { $ref: '#/components/parameters/Nonce' }
+      responses:
+        '200':
+          description: message
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Message' }
+        '404':
+          description: not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /v1/messages/{id}/attachments/{n}:
+    get:
+      summary: Download an attachment via a signed URL
+      description: |
+        The URL itself is signed; HMAC headers are not required when following a
+        URL returned by `GET /v1/messages/:id`.
+      security: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { $ref: '#/components/schemas/Ulid' }
+        - in: path
+          name: n
+          required: true
+          schema: { type: integer, minimum: 0 }
+      responses:
+        '200':
+          description: attachment bytes
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+  /v1/admin/mailboxes:
+    get:
+      summary: List mailboxes
+      parameters:
+        - { $ref: '#/components/parameters/KeyId' }
+        - { $ref: '#/components/parameters/Ts' }
+        - { $ref: '#/components/parameters/Nonce' }
+      responses:
+        '200':
+          description: list
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Mailbox' }
+    post:
+      summary: Create a mailbox
+      parameters:
+        - { $ref: '#/components/parameters/KeyId' }
+        - { $ref: '#/components/parameters/Ts' }
+        - { $ref: '#/components/parameters/Nonce' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateMailboxRequest' }
+      responses:
+        '201':
+          description: created
+  /v1/admin/mailboxes/{id}:
+    get:
+      summary: Get mailbox detail (with nested senders/receivers/principals/webhook_subs)
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { $ref: '#/components/schemas/Ulid' }
+        - { $ref: '#/components/parameters/KeyId' }
+        - { $ref: '#/components/parameters/Ts' }
+        - { $ref: '#/components/parameters/Nonce' }
+      responses:
+        '200':
+          description: detail
+    patch:
+      summary: Update mailbox fields
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { $ref: '#/components/schemas/Ulid' }
+        - { $ref: '#/components/parameters/KeyId' }
+        - { $ref: '#/components/parameters/Ts' }
+        - { $ref: '#/components/parameters/Nonce' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                description: { type: string, nullable: true }
+                default_sender_id: { type: string, nullable: true }
+      responses:
+        '200':
+          description: updated
+  /v1/admin/mailboxes/{id}/disable:
+    post:
+      summary: Soft-disable a mailbox
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { $ref: '#/components/schemas/Ulid' }
+        - { $ref: '#/components/parameters/KeyId' }
+        - { $ref: '#/components/parameters/Ts' }
+        - { $ref: '#/components/parameters/Nonce' }
+      responses:
+        '200':
+          description: disabled
+  /v1/admin/mailboxes/{id}/enable:
+    post:
+      summary: Re-enable a mailbox
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { $ref: '#/components/schemas/Ulid' }
+        - { $ref: '#/components/parameters/KeyId' }
+        - { $ref: '#/components/parameters/Ts' }
+        - { $ref: '#/components/parameters/Nonce' }
+      responses:
+        '200':
+          description: enabled
+  /v1/admin/mailboxes/{id}/senders:
+    post:
+      summary: Create a mailbox_sender
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { $ref: '#/components/schemas/Ulid' }
+        - { $ref: '#/components/parameters/KeyId' }
+        - { $ref: '#/components/parameters/Ts' }
+        - { $ref: '#/components/parameters/Nonce' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateMailboxSenderRequest' }
+      responses:
+        '201':
+          description: created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MailboxSender' }
+  /v1/admin/mailboxes/{id}/senders/{senderId}:
+    delete:
+      summary: Soft-disable a mailbox_sender
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { $ref: '#/components/schemas/Ulid' }
+        - in: path
+          name: senderId
+          required: true
+          schema: { $ref: '#/components/schemas/Ulid' }
+        - { $ref: '#/components/parameters/KeyId' }
+        - { $ref: '#/components/parameters/Ts' }
+        - { $ref: '#/components/parameters/Nonce' }
+      responses:
+        '200':
+          description: disabled
+  /v1/admin/mailboxes/{id}/receivers:
+    post:
+      summary: Create a mailbox_receiver
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { $ref: '#/components/schemas/Ulid' }
+        - { $ref: '#/components/parameters/KeyId' }
+        - { $ref: '#/components/parameters/Ts' }
+        - { $ref: '#/components/parameters/Nonce' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateMailboxReceiverRequest' }
+      responses:
+        '201':
+          description: created
+  /v1/admin/mailboxes/{id}/receivers/{receiverId}:
+    patch:
+      summary: Update a mailbox_receiver
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { $ref: '#/components/schemas/Ulid' }
+        - in: path
+          name: receiverId
+          required: true
+          schema: { $ref: '#/components/schemas/Ulid' }
+        - { $ref: '#/components/parameters/KeyId' }
+        - { $ref: '#/components/parameters/Ts' }
+        - { $ref: '#/components/parameters/Nonce' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                priority: { type: integer }
+                address_pattern: { type: string }
+                action: { type: string, enum: [webhook, forward, drop] }
+                webhook_sub_id: { type: string, nullable: true }
+                forward_to: { type: string, nullable: true }
+                enabled: { type: boolean }
+      responses:
+        '200':
+          description: updated
+    delete:
+      summary: Soft-disable a mailbox_receiver
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { $ref: '#/components/schemas/Ulid' }
+        - in: path
+          name: receiverId
+          required: true
+          schema: { $ref: '#/components/schemas/Ulid' }
+        - { $ref: '#/components/parameters/KeyId' }
+        - { $ref: '#/components/parameters/Ts' }
+        - { $ref: '#/components/parameters/Nonce' }
+      responses:
+        '200':
+          description: disabled
   /v1/admin/api-keys:
     post:
-      summary: Issue an api key
+      summary: Issue an api key bound to a mailbox principal
       parameters:
         - { $ref: '#/components/parameters/KeyId' }
         - { $ref: '#/components/parameters/Ts' }
@@ -167,6 +712,7 @@ paths:
               schema: { $ref: '#/components/schemas/IssueApiKeyResponse' }
   /v1/admin/api-keys/{id}/rotate:
     post:
+      summary: Rotate an api key
       parameters:
         - in: path
           name: id
@@ -178,7 +724,6 @@ paths:
         - { $ref: '#/components/parameters/IdempotencyKey' }
         - in: query
           name: dry_run
-          required: false
           schema: { type: string, enum: ['1'] }
       requestBody:
         required: true
@@ -193,6 +738,7 @@ paths:
               schema: { $ref: '#/components/schemas/RotateResponse' }
   /v1/admin/api-keys/{id}/revoke:
     post:
+      summary: Revoke an api key
       parameters:
         - in: path
           name: id
@@ -211,6 +757,7 @@ paths:
           description: revoked
   /v1/admin/webhook-subs:
     post:
+      summary: Create a webhook subscription
       parameters:
         - { $ref: '#/components/parameters/KeyId' }
         - { $ref: '#/components/parameters/Ts' }
@@ -223,28 +770,6 @@ paths:
       responses:
         '201':
           description: created
-  /v1/admin/bulk/revoke-tenant:
-    post:
-      summary: Quarantine a tenant — revoke all its api keys
-      parameters:
-        - { $ref: '#/components/parameters/KeyId' }
-        - { $ref: '#/components/parameters/Ts' }
-        - { $ref: '#/components/parameters/Nonce' }
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [tenant_id, mode, confirmation, incident_ticket_id]
-              properties:
-                tenant_id: { type: string }
-                mode: { type: string, enum: [emergency] }
-                confirmation: { type: string }
-                incident_ticket_id: { type: string }
-      responses:
-        '200':
-          description: quarantined
   /v1/daemon/credentials:
     get:
       summary: Submission-daemon credential mirror
@@ -256,36 +781,15 @@ paths:
         - { $ref: '#/components/parameters/KeyId' }
         - { $ref: '#/components/parameters/Ts' }
         - { $ref: '#/components/parameters/Nonce' }
-        - name: since
-          in: query
-          required: false
+        - in: query
+          name: since
           schema: { type: integer }
       responses:
         '200':
           description: credential delta
           content:
             application/json:
-              schema:
-                type: object
-                required: [updates, deletions, mirror_version]
-                properties:
-                  updates:
-                    type: array
-                    items:
-                      type: object
-                      required: [id, username, bcrypt_hash, allowed_senders, mirror_version]
-                      properties:
-                        id: { type: string }
-                        username: { type: string }
-                        bcrypt_hash: { type: string }
-                        allowed_senders:
-                          type: array
-                          items: { type: string }
-                        mirror_version: { type: integer, format: int64 }
-                  deletions:
-                    type: array
-                    items: { type: string }
-                  mirror_version: { type: integer, format: int64 }
+              schema: { $ref: '#/components/schemas/DaemonCredentialsResponse' }
   /v1/admin/bootstrap:
     post:
       summary: One-time seed of the first admin key. Signed with POLARIS_SECRET_A.
@@ -303,3 +807,21 @@ paths:
           description: seeded
         '409':
           description: already consumed
+webhooks:
+  message:
+    post:
+      summary: Webhook delivered to a subscriber
+      description: |
+        polaris-email POSTs a `WebhookEnvelope` to each matching subscription URL.
+        The request carries `X-Polaris-Sig: v2=<hex>` signed over
+        `polaris-webhook.v1\nPOST\n<path>\n<canonical-query>\n<ts>\n<nonce>\n<sha256-hex(body)>`
+        with the subscription's secret. Verify with the SDK
+        `verifyWebhook(...)` helper.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WebhookEnvelope' }
+      responses:
+        '2XX':
+          description: acknowledged

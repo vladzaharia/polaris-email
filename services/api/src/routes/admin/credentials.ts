@@ -115,7 +115,7 @@ credentials.post('/v1/admin/credentials/:id/revoke', requireScope('admin:rotate'
       .bind(nowIso, id)
       .run();
   }
-  // Stamp the DO so /v1/send/raw rejects the next submission.
+  // Stamp the DO so the next POST /v1/messages (RFC822) rejects.
   const doId = c.env.REVOCATION_DO.idFromName(resolved.principal_id);
   await c.env.REVOCATION_DO.get(doId).fetch('https://revocation-do/revoke', {
     method: 'POST',

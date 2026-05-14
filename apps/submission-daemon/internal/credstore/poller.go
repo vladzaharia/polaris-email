@@ -4,13 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
+	"strconv"
 	"sync/atomic"
 	"time"
 
-	"github.com/vladzaharia/polaris-email/apps/submission-daemon/internal/sign"
+	polarissdk "github.com/polaris-email/polaris-sdk-go"
 )
 
 // PollerConfig configures the poller HTTP calls.
@@ -25,19 +25,23 @@ type PollerConfig struct {
 
 // Poller periodically pulls credential deltas from the daemon credentials API.
 type Poller struct {
-	cfg   PollerConfig
-	store *Store
-	http  *http.Client
-	ready atomic.Bool
+	cfg    PollerConfig
+	store  *Store
+	client *polarissdk.Client
+	ready  atomic.Bool
 }
 
 // NewPoller constructs a Poller.
 func NewPoller(cfg PollerConfig, store *Store) *Poller {
-	return &Poller{
-		cfg:   cfg,
-		store: store,
-		http:  &http.Client{Timeout: 30 * time.Second},
+	c := polarissdk.NewClient(cfg.APIURL)
+	c.HTTPClient = &http.Client{Timeout: 30 * time.Second}
+	c.DaemonID = cfg.DaemonID
+	c.DaemonSecret = cfg.HMACKey
+	c.ExtraHeaders = map[string]string{
+		"CF-Access-Client-Id":     cfg.AccessClientID,
+		"CF-Access-Client-Secret": cfg.AccessClientSecret,
 	}
+	return &Poller{cfg: cfg, store: store, client: c}
 }
 
 // Ready returns true after the first successful sync.
@@ -70,28 +74,16 @@ type deltaResponse struct {
 
 func (p *Poller) syncOnce(ctx context.Context) error {
 	since := p.store.MirrorVersion()
-	url := fmt.Sprintf("%s/v1/daemon/credentials?since=%d", p.cfg.APIURL, since)
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	query := "since=" + strconv.FormatInt(since, 10)
+	resp, body, err := p.client.Do(ctx, "GET", "/v1/daemon/credentials", query, nil, "", nil)
 	if err != nil {
 		return err
 	}
-	sign.Request(req, "GET", fmt.Sprintf("/v1/daemon/credentials?since=%d", since), nil, p.cfg.HMACKey)
-	req.Header.Set("CF-Access-Client-Id", p.cfg.AccessClientID)
-	req.Header.Set("CF-Access-Client-Secret", p.cfg.AccessClientSecret)
-	req.Header.Set("X-Polaris-Daemon-Id", p.cfg.DaemonID)
-
-	resp, err := p.http.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("status %d: %s", resp.StatusCode, string(body))
 	}
-
 	var dr deltaResponse
-	if err := json.NewDecoder(resp.Body).Decode(&dr); err != nil {
+	if err := json.Unmarshal(body, &dr); err != nil {
 		return err
 	}
 	if err := p.store.UpsertBatch(dr.Updates); err != nil {
@@ -108,4 +100,3 @@ func (p *Poller) syncOnce(ctx context.Context) error {
 	p.ready.Store(true)
 	return nil
 }
-

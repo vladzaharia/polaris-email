@@ -1,0 +1,20 @@
+{
+  "name": "@polaris/sdk-codegen",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Codegen pipeline for @polaris/sdk (TS, polaris-sdk (Python), polaris-sdk-go).",
+  "scripts": {
+    "generate": "bash bin/regen.sh",
+    "generate:ts": "hey-api-openapi-ts --config configs/hey-api.config.ts",
+    "generate:python": "openapi-generator-cli generate -g python -c configs/openapi-python.yaml -i ../../openapi/polaris-email.yaml -o ../sdk-python/polaris_sdk/generated",
+    "generate:go": "oapi-codegen -config configs/openapi-go.yaml ../../openapi/polaris-email.yaml",
+    "typecheck": "echo 'sdk-codegen has no TS source to typecheck'",
+    "test": "echo 'sdk-codegen has no tests; smoke is covered by sdk-{node,python,go}'",
+    "lint": "oxlint ."
+  },
+  "devDependencies": {
+    "@hey-api/openapi-ts": "^0.53.0",
+    "@openapitools/openapi-generator-cli": "^2.13.0"
+  }
+}

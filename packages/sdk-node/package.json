@@ -1,5 +1,5 @@
 {
-  "name": "@polaris/webhook-verify",
+  "name": "@polaris/sdk",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -9,6 +9,18 @@
     ".": {
       "import": "./dist/index.js",
       "types": "./dist/index.d.ts"
+    },
+    "./webhook": {
+      "import": "./dist/webhook.js",
+      "types": "./dist/webhook.d.ts"
+    },
+    "./node": {
+      "import": "./dist/node.js",
+      "types": "./dist/node.d.ts"
+    },
+    "./react": {
+      "import": "./dist/react.js",
+      "types": "./dist/react.d.ts"
     }
   },
   "scripts": {
@@ -16,6 +28,9 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "lint": "oxlint ."
+  },
+  "dependencies": {
+    "@polaris-email/hmac": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

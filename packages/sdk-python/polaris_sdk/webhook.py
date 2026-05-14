@@ -1,6 +1,6 @@
-"""polaris_webhook_verify — verify polaris-email HMAC signatures (inbound API + outbound webhooks).
+"""polaris-email webhook verifier (HMAC v1/v2).
 
-Single-file dependency. Python 3.10+.
+Single-file. Python 3.10+. No external dependencies.
 """
 from __future__ import annotations
 import hashlib
@@ -26,14 +26,14 @@ class VerifyResult:
 
 @dataclass
 class VerifyInput:
-    direction: Direction
-    method: str
-    path: str
+    direction: Direction = "polaris-webhook.v1"
+    method: str = "POST"
+    path: str = "/"
     query: str = ""
     headers: Mapping[str, str] = field(default_factory=dict)
     body: bytes = b""
     secret: bytes = b""
-    allowed_algorithms: Iterable[str] = ("v1",)
+    allowed_algorithms: Iterable[str] = ("v1", "v2")
     skew_seconds: int = 300
     now_ms: Optional[int] = None
 
@@ -70,7 +70,13 @@ def _canonical_query(raw: str) -> str:
     )
 
 
-def verify(inp: VerifyInput) -> VerifyResult:
+def verify_webhook(inp: VerifyInput) -> VerifyResult:
+    """Verify an HMAC-signed inbound webhook (or API) request.
+
+    Defaults to accepting both ``v1=`` and ``v2=`` algorithm tags so subscribers
+    can verify legacy deliveries during the v2 rollout. Restrict the allowlist
+    via ``inp.allowed_algorithms`` once you've fully migrated.
+    """
     ts_raw = _pick(inp.headers, "x-polaris-ts")
     nonce = _pick(inp.headers, "x-polaris-nonce")
     sig = _pick(inp.headers, "x-polaris-sig")

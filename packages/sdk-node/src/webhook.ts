@@ -1,20 +1,22 @@
-// @polaris/webhook-verify — Node verifier for polaris-email webhooks (and inbound API).
-// Pure Node `crypto`, no dependencies. Constant-time compare, algorithm allowlist, CRLF refusal.
+// `@polaris/sdk/webhook` — Verify polaris-email webhook deliveries.
+//
+// Mirrors the algorithm from `packages/webhook-verify-node/src/index.ts` but
+// bumps the accepted signature tag to `v2=` (the format fanout emits today).
+// The legacy `v1=` tag is still accepted so subscribers can verify deliveries
+// signed before the v2 rollout without a flag day.
 import { createHmac, createHash, timingSafeEqual } from 'node:crypto';
 
 export type Direction = 'polaris-api.v1' | 'polaris-webhook.v1';
 
-export interface VerifyInput {
-  direction: Direction;
-  method: string;
+export interface VerifyWebhookInput {
+  direction?: Direction;
+  method?: string;
   path: string;
-  /** Either a string ("a=1&b=2"), URLSearchParams, or { [k]: v | v[] }. */
   query?: string | URLSearchParams | Record<string, string | string[]>;
   headers: Headers | Record<string, string | string[] | undefined>;
-  /** Raw body bytes (Buffer recommended) — the exact bytes received off the wire. */
-  body: Buffer | string;
+  body: Buffer | Uint8Array | string;
   secret: string | Buffer;
-  /** Default `['v1']`. */
+  /** Default `['v1', 'v2']`. */
   allowedAlgorithms?: string[];
   /** Default 300 seconds. */
   skewSeconds?: number;
@@ -34,7 +36,7 @@ export type VerifyResult =
       message: string;
     };
 
-function pickHeader(h: VerifyInput['headers'], name: string): string | null {
+function pickHeader(h: VerifyWebhookInput['headers'], name: string): string | null {
   if (h instanceof Headers) return h.get(name);
   const key = Object.keys(h).find((k) => k.toLowerCase() === name.toLowerCase());
   if (!key) return null;
@@ -78,24 +80,18 @@ function canonicalQuery(
     if (a[1] > b[1]) return 1;
     return 0;
   });
-  return pairs
-    .map(
-      ([k, v]) =>
-        encodeURIComponent(k.toLowerCase()).replace(
-          /[!'()*]/g,
-          (c) => '%' + c.charCodeAt(0).toString(16).toUpperCase(),
-        ) +
-        '=' +
-        encodeURIComponent(v).replace(
-          /[!'()*]/g,
-          (c) => '%' + c.charCodeAt(0).toString(16).toUpperCase(),
-        ),
-    )
-    .join('&');
+  const enc = (s: string): string =>
+    encodeURIComponent(s).replace(
+      /[!'()*]/g,
+      (c) => '%' + c.charCodeAt(0).toString(16).toUpperCase(),
+    );
+  return pairs.map(([k, v]) => enc(k.toLowerCase()) + '=' + enc(v)).join('&');
 }
 
-export function verify(input: VerifyInput): VerifyResult {
-  const allowed = new Set(input.allowedAlgorithms ?? ['v1']);
+export function verifyWebhook(input: VerifyWebhookInput): VerifyResult {
+  const direction = input.direction ?? 'polaris-webhook.v1';
+  const method = (input.method ?? 'POST').toUpperCase();
+  const allowed = new Set(input.allowedAlgorithms ?? ['v1', 'v2']);
   const skew = (input.skewSeconds ?? 300) * 1000;
   const now = (input.now ?? Date.now)();
   const tsRaw = pickHeader(input.headers, 'x-polaris-ts');
@@ -122,17 +118,22 @@ export function verify(input: VerifyInput): VerifyResult {
   if (nonce.length < 16 || nonce.length > 128) {
     return { ok: false, code: 'header_invalid', message: 'nonce length' };
   }
-  if (!/^[A-Z]+$/.test(input.method.toUpperCase())) {
+  if (!/^[A-Z]+$/.test(method)) {
     return { ok: false, code: 'header_invalid', message: 'method' };
   }
   if (!input.path.startsWith('/')) {
     return { ok: false, code: 'header_invalid', message: 'path' };
   }
-  const bodyBuf = typeof input.body === 'string' ? Buffer.from(input.body, 'utf8') : input.body;
+  const bodyBuf =
+    typeof input.body === 'string'
+      ? Buffer.from(input.body, 'utf8')
+      : input.body instanceof Buffer
+        ? input.body
+        : Buffer.from(input.body);
   const bodyHash = createHash('sha256').update(bodyBuf).digest('hex');
   const canonical = [
-    input.direction,
-    input.method.toUpperCase(),
+    direction,
+    method,
     input.path,
     canonicalQuery(input.query),
     tsRaw,

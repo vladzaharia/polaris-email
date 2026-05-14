@@ -1,16 +1,17 @@
 // Package forwarder posts canonicalized RFC822 messages to the Polaris API.
+//
+// Phase F migration: this used to POST a JSON body to /v1/send/raw with a
+// custom 5-line HMAC. It now POSTs raw RFC822 bytes to /v1/messages with
+// `Content-Type: message/rfc822` via the shared polaris-sdk-go client, which
+// performs the canonical 7-line HMAC over the body bytes.
 package forwarder
 
 import (
-	"bytes"
 	"context"
-	"encoding/base64"
-	"encoding/json"
-	"io"
 	"net/http"
 	"time"
 
-	"github.com/vladzaharia/polaris-email/apps/submission-daemon/internal/sign"
+	polarissdk "github.com/polaris-email/polaris-sdk-go"
 )
 
 // Config carries the fixed bits each Forward call needs.
@@ -23,17 +24,27 @@ type Config struct {
 	HTTPClient         *http.Client
 }
 
-// Forwarder posts to /v1/send/raw.
+// Forwarder posts to POST /v1/messages (message/rfc822).
 type Forwarder struct {
-	cfg Config
+	cfg    Config
+	client *polarissdk.Client
 }
 
 // New creates a Forwarder.
 func New(cfg Config) *Forwarder {
-	if cfg.HTTPClient == nil {
-		cfg.HTTPClient = &http.Client{Timeout: 60 * time.Second}
+	httpClient := cfg.HTTPClient
+	if httpClient == nil {
+		httpClient = &http.Client{Timeout: 60 * time.Second}
 	}
-	return &Forwarder{cfg: cfg}
+	c := polarissdk.NewClient(cfg.APIURL)
+	c.HTTPClient = httpClient
+	c.DaemonID = cfg.DaemonID
+	c.DaemonSecret = cfg.HMACKey
+	c.ExtraHeaders = map[string]string{
+		"CF-Access-Client-Id":     cfg.AccessClientID,
+		"CF-Access-Client-Secret": cfg.AccessClientSecret,
+	}
+	return &Forwarder{cfg: cfg, client: c}
 }
 
 // ForwardRequest is the input to Forward.
@@ -54,52 +65,18 @@ type ForwardResult struct {
 	Category string
 }
 
-type sendBody struct {
-	EnvelopeFrom     string   `json:"envelope_from"`
-	EnvelopeTo       []string `json:"envelope_to"`
-	RFC822B64        string   `json:"rfc822_b64"`
-	DaemonID         string   `json:"daemon_id"`
-	SubmissionID     string   `json:"submission_id"`
-	ClientIP         string   `json:"client_ip"`
-	ReceivedAtDaemon string   `json:"received_at_daemon"`
-}
-
 // Forward posts the request and returns a typed result.
 func (f *Forwarder) Forward(ctx context.Context, in ForwardRequest) (*ForwardResult, error) {
-	body := sendBody{
-		EnvelopeFrom:     in.EnvelopeFrom,
-		EnvelopeTo:       in.EnvelopeTo,
-		RFC822B64:        base64.StdEncoding.EncodeToString(in.RFC822),
-		DaemonID:         f.cfg.DaemonID,
-		SubmissionID:     in.SubmissionID,
-		ClientIP:         in.ClientIP,
-		ReceivedAtDaemon: in.ReceivedAtDaemon.UTC().Format(time.RFC3339Nano),
+	extra := map[string]string{
+		"X-Polaris-Submission-Id":   in.SubmissionID,
+		"X-Polaris-Client-IP":       in.ClientIP,
+		"X-Polaris-Received-Daemon": in.ReceivedAtDaemon.UTC().Format(time.RFC3339Nano),
 	}
-	raw, err := json.Marshal(&body)
+	resp, body, err := f.client.Do(ctx, "POST", "/v1/messages", "", in.RFC822, "message/rfc822", extra)
 	if err != nil {
 		return nil, err
 	}
-
-	const path = "/v1/send/raw"
-	req, err := http.NewRequestWithContext(ctx, "POST", f.cfg.APIURL+path, bytes.NewReader(raw))
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("CF-Access-Client-Id", f.cfg.AccessClientID)
-	req.Header.Set("CF-Access-Client-Secret", f.cfg.AccessClientSecret)
-	req.Header.Set("X-Polaris-Daemon-Id", f.cfg.DaemonID)
-	req.Header.Set("X-Polaris-Submission-Id", in.SubmissionID)
-	sign.Request(req, "POST", path, raw, f.cfg.HMACKey)
-
-	resp, err := f.cfg.HTTPClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	respBody, _ := io.ReadAll(resp.Body)
-
-	res := &ForwardResult{StatusCode: resp.StatusCode, Body: respBody}
+	res := &ForwardResult{StatusCode: resp.StatusCode, Body: body}
 	switch {
 	case resp.StatusCode >= 200 && resp.StatusCode < 300:
 		res.Category = "ok"
@@ -112,4 +89,3 @@ func (f *Forwarder) Forward(ctx context.Context, in ForwardRequest) (*ForwardRes
 	}
 	return res, nil
 }
-
