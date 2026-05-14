@@ -42,8 +42,8 @@ make bootstrap       # runs preflight, then bin/bootstrap.sh end-to-end
 2. Creates **D1** (`polaris-email`), **R2** (`polaris-email`, EU jurisdiction, 90d compliance lock), **4 KV namespaces** (nonce, idempotency, rate-limit, key-cache), **5 Queues** (outbound, inbound, fanout, + 2 DLQs). All IDs are captured into `.deploy-state.json` (gitignored). Reruns skip already-known resources.
 3. Renders `services/*/wrangler.local.jsonc` from each `wrangler.local.template.jsonc` using `.deploy-state.json` + `.env.deploy`.
 4. Applies D1 migrations remotely.
-5. Seeds master secrets: `POLARIS_SECRET_A`, `ARGON2_PEPPER`, `FORENSIC_MASTER_KEY`, `ANCHOR_SIGNING_KEY`. Creation timestamps go to `secrets.created.json` (no values).
-6. `bin/deploy.sh --all` deploys every Worker in dependency order (forensic → api → out → in → fanout → cron).
+5. Seeds master secrets: `POLARIS_SECRET_A`, `ARGON2_PEPPER`, `ANCHOR_SIGNING_KEY`. Creation timestamps go to `secrets.created.json` (no values).
+6. `bin/deploy.sh --all` deploys every Worker in dependency order (api → out → in → fanout → cron → panel).
 7. HMAC-signs `POST /v1/admin/bootstrap`, captures the returned `admin_key_id` + `admin_key_secret` into `.bootstrap-output.json` (gitignored, mode 0600) **and** prints them once.
 
 **Copy the admin key into your password manager immediately.** It is not recoverable.
@@ -108,7 +108,19 @@ alongside A, wait for the propagation window, promote B → A, audit-log the rot
 
 ---
 
-## 7. Doctor
+## 7. Panel (`apps/panel`)
+
+The admin panel is a Cloudflare Worker deployed in the same account as the control plane. It is included in `bin/deploy.sh --all` and `make deploy-changed` picks it up automatically when files under `apps/panel/` change.
+
+Local dev:
+
+```sh
+pnpm --filter @polaris-email/panel wrangler-dev
+```
+
+The panel reads sessions from D1 and authenticates operators via better-auth + OIDC (default IdP: Cloudflare Access). Provide `OIDC_ISSUER`, `OIDC_CLIENT_ID`, and `OIDC_CLIENT_SECRET` as wrangler secrets before first deploy. Use `DEV_MODE=1` only for local development.
+
+## 8. Doctor
 
 ```sh
 make doctor
@@ -118,13 +130,13 @@ Runs `preflight` + `smoke` + a non-destructive check of `POLARIS_SECRET_A` rotat
 
 ---
 
-## 8. Manual steps that remain (and why)
+## 9. Manual steps that remain (and why)
 
 These cannot be fully automated from this repo and are intentionally left as checklist items:
 
 - **Cloudflare Email Routing enablement** (per domain): the dashboard flow needs human confirmation. Workers can only react once routing is on.
-- **OIDC client creation** for the panel: the IdP is outside our control plane.
-- **First-time WebAuthn enrollment** for the admin panel: by design, must happen on a trusted device.
+- **OIDC client creation** for the panel: the IdP is outside our control plane. Cloudflare Access is the default and recommended provider.
+- **Mail bridge mode selection**: pick **tailnet-fronted** or **local / host-network** per deployment. Neither is the default; both are first-class. See [`docs/mail-bridge.md`](mail-bridge.md) and the side-by-side compose files at `apps/mail-bridge/docker-compose.tailscale.yml` / `apps/mail-bridge/docker-compose.local.yml`.
 
 ---
 

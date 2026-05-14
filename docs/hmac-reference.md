@@ -23,10 +23,16 @@
 ## Signature header
 
 ```
+# API direction (polaris-api.v1)
 X-Polaris-Sig: v1=<lowercase-hex(HMAC-SHA256(secret, canonical))>
+
+# Webhook direction (polaris-webhook.v1)
+X-Polaris-Sig: v2=<lowercase-hex(HMAC-SHA256(secret, canonical))>
 ```
 
-The `v1=` prefix is mandatory and must match the verifier's `allowed_algorithms` list (default `["v1"]`). Verifiers MUST refuse anything else; downgrade is not silently accepted.
+The version tag (`v1` for API, `v2` for webhooks) is mandatory and must match the verifier's `allowed_algorithms` list. API verifiers default to `["v1"]`; webhook verifiers default to `["v2"]`. Verifiers MUST refuse anything else; downgrade is not silently accepted.
+
+The webhook tag was bumped to `v2` to mark the **envelope shape change** (the full `Message` is now inlined in the body — see [`messages.md`](messages.md)). The HMAC algorithm and canonical-string format are unchanged; only the envelope and the signature tag differ.
 
 ## Constant-time comparison
 
@@ -61,11 +67,25 @@ Verifiers are called with `now() => Number(ts)` to skip skew checks in tests.
 
 ## Outgoing webhooks
 
-Webhooks use `polaris-webhook.v1`. Same canonical-string structure. Additional headers:
+Webhooks use the `polaris-webhook.v1` HMAC direction tag and the `v2=` signature header tag. Same canonical-string structure as the API direction. Additional headers:
 
 ```
 X-Polaris-Event-Id: <ulid>       # dedupe for 24h on the receiver
-X-Polaris-Event: message.sent     # convenience
+X-Polaris-Event: message.received # convenience
+X-Polaris-Sig: v2=<hex>
+```
+
+The body is the v2 envelope:
+
+```json
+{
+  "event_id": "01J...",
+  "event": "message.received",
+  "occurred_at": 1700000000000,
+  "message": {
+    /* full Message — see docs/messages.md */
+  }
+}
 ```
 
 Receivers MUST verify the signature and SHOULD dedupe by `X-Polaris-Event-Id`.

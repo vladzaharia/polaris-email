@@ -172,6 +172,51 @@ Cost cliffs to look for (I19):
 - **D1 writes** surge → audit log row storm (rate-limit-storm, deploy
   failure replays).
 
+### "Mail bridge mirror is stale / clients see old credentials"
+
+The bridge holds a local SQLite mirror of `mailbox_credentials` and
+`mailbox_receivers`. The mirror polls the control plane on a 30s baseline;
+mutations should also arrive via the bridge's webhook subscription
+(`message.received`-style invalidation).
+
+```bash
+polaris-email bridge list
+polaris-email bridge logs <bridge-id> --since 5m
+# on the host:
+docker compose -f docker-compose.tailscale.yml logs polaris-mail-bridge --tail 200
+# (or docker-compose.local.yml depending on deployment mode)
+```
+
+Forced resync:
+
+```bash
+docker compose exec polaris-mail-bridge /usr/local/bin/bridgectl mirror-sync
+```
+
+If the mirror is wedged (stale > 5 min and forced sync fails), restart the
+bridge container; it re-pulls a fresh snapshot at boot.
+
+### "Webhook DLQ is filling for a bridge subscription"
+
+The bridge auto-registers a webhook subscription to receive push events. If
+the bridge is offline (host down, tailnet partition, expired cert), polaris
+parks events in the fanout DLQ.
+
+```bash
+polaris-email webhook dlq list --sub-id <bridge-sub-id>
+polaris-email webhook dlq inspect <id>
+# After confirming the bridge is healthy again:
+polaris-email webhook dlq replay <id>
+# Replay-all for a single sub:
+polaris-email webhook dlq replay-all --sub-id <bridge-sub-id>
+```
+
+Drops require the two-person rule:
+
+```bash
+polaris-email webhook dlq drop <id> --confirm <id>
+```
+
 ## Safety rules
 
 - **Never** run `wrangler d1 execute --remote` with destructive SQL without

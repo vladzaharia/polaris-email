@@ -1,9 +1,11 @@
 // `@polaris/sdk/webhook` — Verify polaris-email webhook deliveries.
 //
-// Mirrors the algorithm from `packages/webhook-verify-node/src/index.ts` but
-// bumps the accepted signature tag to `v2=` (the format fanout emits today).
-// The legacy `v1=` tag is still accepted so subscribers can verify deliveries
-// signed before the v2 rollout without a flag day.
+// Hand-written (not codegen output) so the constant-time compare and
+// header validation stay auditable. The accepted signature tag is `v2=`,
+// matching the envelope shape emitted by `services/fanout` and documented
+// in `docs/messages.md`. The underlying HMAC scheme and the
+// `polaris-webhook.v1` HMAC direction tag are unchanged from the prior
+// implementation.
 import { createHmac, createHash, timingSafeEqual } from 'node:crypto';
 
 export type Direction = 'polaris-api.v1' | 'polaris-webhook.v1';

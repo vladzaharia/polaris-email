@@ -4,7 +4,7 @@ This document binds your service to polaris-email. Read it before integrating.
 
 ## Stability
 
-- **Wire format**: `polaris-api.v1` and `polaris-webhook.v1`. Breaking changes will use `v2`, `v3`, ... and carry a 90-day overlap window during which both are accepted.
+- **Wire format**: `polaris-api.v1` (API direction) and `polaris-webhook.v1` (webhook direction, signed with `X-Polaris-Sig: v2=…` because the envelope inlines the full `Message`). The HMAC scheme itself is unchanged.
 - **Error envelope**: shape and code names are stable. New codes may be added; existing codes never change meaning.
 
 ## What you must do
@@ -20,6 +20,6 @@ This document binds your service to polaris-email. Read it before integrating.
 
 - Idempotent sends on `Idempotency-Key` for 24 h. Same key + same body → original `messageId`. Same key + different body → `409 idempotency_conflict`.
 - Emergency rotation invalidates the old credential within ≤5 s of the panel button click. Planned rotation gives 24 h.
-- Zero-payload logging by default. Plaintext recipients can only be reconstructed via the forensic Worker, gated by `incident_ticket_id` + 2-person rule + audit.
+- Zero-payload logging by default. **Recipients are unrecoverable post-submission**; the service does not retain plaintext recipient addresses past delivery. If you anticipate having to respond to subpoenas or otherwise reconstruct who you sent to, keep your own outbound logs on the consumer side — polaris-email cannot produce them after the fact.
 - Webhook deliveries retry with exponential backoff up to 6 attempts, then DLQ. DLQ messages can be replayed from the panel.
 - Audit chain is hash-linked and externally anchored. Tampering is detectable.

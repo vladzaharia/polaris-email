@@ -15,7 +15,12 @@ POLARIS_EMAIL_KEY_SECRET=...
 
 ## 1. Sign and send
 
-The signing scheme is **identical** for outbound API calls and inbound webhooks. Refer to [hmac-reference.md](../hmac-reference.md) for the formal spec.
+The signing scheme is **identical** for outbound API calls and inbound webhooks — only the signature header tag differs (`v1=` for API direction, `v2=` for webhook direction; see [hmac-reference.md](../hmac-reference.md) for the formal spec).
+
+`POST /v1/messages` accepts two content types:
+
+- `application/json` — the `SendRequest` shape used in the snippets below.
+- `message/rfc822` — raw RFC 5322 bytes; canonicalised by the API on receipt. Useful when forwarding an already-composed MIME message from a downstream tool or daemon.
 
 ### TypeScript (Node 20+)
 
@@ -132,7 +137,7 @@ req = urllib.request.Request(url, body, {
 print(urllib.request.urlopen(req).read().decode())
 ```
 
-### curl
+### curl (JSON)
 
 ```sh
 TS=$(date +%s)000
@@ -149,6 +154,38 @@ curl -sS -X POST "$POLARIS_EMAIL_URL/v1/messages" \
   -H "x-polaris-sig: v1=$SIG" \
   -d "$BODY"
 ```
+
+### curl (raw RFC822)
+
+Send an already-composed RFC 5322 message. The body hash is over the exact bytes on the wire, same as JSON.
+
+```sh
+TS=$(date +%s)000
+NONCE=$(openssl rand -hex 12)
+BODY=$(cat <<'EOF'
+From: noreply@example.com
+To: user@external.com
+Subject: Hello
+Content-Type: text/plain; charset=utf-8
+
+Hi from polaris-email
+EOF
+)
+BH=$(printf "%s" "$BODY" | openssl dgst -sha256 -hex | awk '{print $2}')
+CANON="polaris-api.v1\nPOST\n/v1/messages\n\n$TS\n$NONCE\n$BH"
+SIG=$(printf "%b" "$CANON" | openssl dgst -sha256 -hmac "$POLARIS_EMAIL_KEY_SECRET" -hex | awk '{print $2}')
+curl -sS -X POST "$POLARIS_EMAIL_URL/v1/messages" \
+  -H "content-type: message/rfc822" \
+  -H "x-polaris-key-id: $POLARIS_EMAIL_KEY_ID" \
+  -H "x-polaris-ts: $TS" \
+  -H "x-polaris-nonce: $NONCE" \
+  -H "x-polaris-sig: v1=$SIG" \
+  --data-binary "$BODY"
+```
+
+### SDK shortcuts
+
+If you don't want to hand-roll HMAC, use a first-party SDK — `@polaris/sdk` (Node), `polaris-sdk` (Python), or `polaris-sdk-go`. They cover signing, retries on `key_propagating`, and webhook verification. See [docs/sdk.md](../sdk.md).
 
 ## 2. Expected response
 
@@ -168,7 +205,13 @@ Send the same `Idempotency-Key` header twice and you'll get the original `messag
 
 ## 5. Receiving
 
-If your service needs to react to inbound mail, register a webhook subscription pointing at your service's URL. See the [decision tree](../webhook-decision-tree.md) for choosing between external HTTPS, Tailnet-direct, and bridge-proxied. Then verify the signature using the library in `packages/webhook-verify-{node,go,python}`.
+If your service needs to react to inbound mail, register a webhook subscription pointing at your service's URL. See the [decision tree](../webhook-decision-tree.md) for choosing between external HTTPS, Tailnet-direct, and bridge-proxied. Then verify the signature using one of the first-party SDK verifiers:
+
+- **Node**: `@polaris/sdk/webhook` (from `@polaris/sdk`).
+- **Python**: `polaris_sdk.webhook` (from `polaris-sdk`).
+- **Go**: `polarissdkgo.VerifyWebhook` (from `polaris-sdk-go`).
+
+The webhook body is the **v2 envelope**: `{event_id, event, occurred_at, message}`. The full `Message` is inlined; no follow-up GET is required. The signature header is `X-Polaris-Sig: v2=…`. See [docs/messages.md](../messages.md) and [docs/sdk.md](../sdk.md).
 
 ## 6. Caller-side rotation
 
