@@ -19,12 +19,7 @@
 // DMARC `rua=` mailbox) that need surgical adjustments.
 
 import type { CloudflareApiClient } from './client.js';
-import {
-  createRecord,
-  deleteRecord,
-  findRecord,
-  type DnsRecordInput,
-} from './dns.js';
+import { createRecord, deleteRecord, findRecord, type DnsRecordInput } from './dns.js';
 import type { ExpectedRecord } from './types.js';
 
 export interface OnboardSenderDomainOpts {
@@ -64,7 +59,7 @@ export interface OnboardResult {
  */
 export async function onboardSenderDomain(
   client: CloudflareApiClient,
-  opts: OnboardSenderDomainOpts
+  opts: OnboardSenderDomainOpts,
 ): Promise<OnboardResult> {
   const cfManaged = opts.cfManagedDns ?? true;
   const expected = expectedRecordsFor(opts);
@@ -74,14 +69,11 @@ export async function onboardSenderDomain(
     // If the endpoint 404s or 405s, fall through to the
     // manual-publish path.
     try {
-      await client.post(
-        `/accounts/${client.accountId}/email-service/sender-domains`,
-        {
-          domain: opts.domain,
-          dkim_selector: opts.dkimSelector,
-          wildcard_dkim: opts.wildcardDkim ?? true,
-        }
-      );
+      await client.post(`/accounts/${client.accountId}/email-service/sender-domains`, {
+        domain: opts.domain,
+        dkim_selector: opts.dkimSelector,
+        wildcard_dkim: opts.wildcardDkim ?? true,
+      });
       return { expectedRecords: expected, cfManaged: true };
     } catch (err) {
       // 404 / 405 / 501 from the API => endpoint not yet GA on this account.
@@ -122,7 +114,7 @@ export async function verifyOnboarding(
     dkimTarget?: string;
     /** Override DoH resolver fetch (test injection). */
     dohFetch?: typeof fetch;
-  } = {}
+  } = {},
 ): Promise<{ verified: boolean; missing: string[] }> {
   const expected = expectedRecordsFor({
     zoneId,
@@ -151,7 +143,7 @@ export async function unboardSenderDomain(
   client: CloudflareApiClient,
   zoneId: string,
   domain: string,
-  opts: { dkimSelector?: string } = {}
+  opts: { dkimSelector?: string } = {},
 ): Promise<void> {
   const expected = expectedRecordsFor({ zoneId, domain, dkimSelector: opts.dkimSelector });
   for (const r of expected) {
@@ -213,11 +205,7 @@ export function asExpectedRecords(records: DnsRecordInput[]): ExpectedRecord[] {
 }
 
 /** Resolve a name via DoH against 1.1.1.1; returns array of `data` strings. */
-async function dohResolve(
-  fetchImpl: typeof fetch,
-  name: string,
-  type: string
-): Promise<string[]> {
+async function dohResolve(fetchImpl: typeof fetch, name: string, type: string): Promise<string[]> {
   try {
     const url = `https://1.1.1.1/dns-query?name=${encodeURIComponent(name)}&type=${encodeURIComponent(type)}`;
     const r = await fetchImpl(url, { headers: { accept: 'application/dns-json' } });

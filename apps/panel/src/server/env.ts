@@ -27,7 +27,9 @@ export function readEnv(): PanelEnv {
     ADMIN_GROUP: process.env.ADMIN_GROUP ?? 'polaris-admins',
     ...(process.env.OIDC_ISSUER ? { OIDC_ISSUER: process.env.OIDC_ISSUER } : {}),
     ...(process.env.OIDC_CLIENT_ID ? { OIDC_CLIENT_ID: process.env.OIDC_CLIENT_ID } : {}),
-    ...(process.env.OIDC_CLIENT_SECRET ? { OIDC_CLIENT_SECRET: process.env.OIDC_CLIENT_SECRET } : {}),
+    ...(process.env.OIDC_CLIENT_SECRET
+      ? { OIDC_CLIENT_SECRET: process.env.OIDC_CLIENT_SECRET }
+      : {}),
     ...(process.env.OIDC_REDIRECT_URL ? { OIDC_REDIRECT_URL: process.env.OIDC_REDIRECT_URL } : {}),
     ...(process.env.DEV_MODE ? { DEV_MODE: process.env.DEV_MODE } : {}),
   };

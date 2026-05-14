@@ -140,9 +140,7 @@ describe('negative validation', () => {
     ).toThrow();
   });
   it('CreateTenantRequest rejects oversize name', () => {
-    expect(() =>
-      CreateTenantRequest.parse({ id: 'svc', name: 'a'.repeat(200) }),
-    ).toThrow();
+    expect(() => CreateTenantRequest.parse({ id: 'svc', name: 'a'.repeat(200) })).toThrow();
   });
   it('CreateRoutingRuleRequest rejects missing address_pattern', () => {
     expect(() =>

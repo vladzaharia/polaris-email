@@ -34,10 +34,7 @@ export type VerifyResult =
       message: string;
     };
 
-function pickHeader(
-  h: VerifyInput['headers'],
-  name: string,
-): string | null {
+function pickHeader(h: VerifyInput['headers'], name: string): string | null {
   if (h instanceof Headers) return h.get(name);
   const key = Object.keys(h).find((k) => k.toLowerCase() === name.toLowerCase());
   if (!key) return null;
@@ -49,7 +46,8 @@ function pickHeader(
 function noCrlf(s: string): boolean {
   for (let i = 0; i < s.length; i++) {
     const c = s.charCodeAt(i);
-    if (c === 0x0a || c === 0x0d || c === 0x00 || c === 0x09 || c === 0x20 || c > 0x7e) return false;
+    if (c === 0x0a || c === 0x0d || c === 0x00 || c === 0x09 || c === 0x20 || c > 0x7e)
+      return false;
   }
   return s.length > 0;
 }
@@ -83,12 +81,14 @@ function canonicalQuery(
   return pairs
     .map(
       ([k, v]) =>
-        encodeURIComponent(k.toLowerCase()).replace(/[!'()*]/g, (c) =>
-          '%' + c.charCodeAt(0).toString(16).toUpperCase(),
+        encodeURIComponent(k.toLowerCase()).replace(
+          /[!'()*]/g,
+          (c) => '%' + c.charCodeAt(0).toString(16).toUpperCase(),
         ) +
         '=' +
-        encodeURIComponent(v).replace(/[!'()*]/g, (c) =>
-          '%' + c.charCodeAt(0).toString(16).toUpperCase(),
+        encodeURIComponent(v).replace(
+          /[!'()*]/g,
+          (c) => '%' + c.charCodeAt(0).toString(16).toUpperCase(),
         ),
     )
     .join('&');
@@ -139,7 +139,8 @@ export function verify(input: VerifyInput): VerifyResult {
     nonce,
     bodyHash,
   ].join('\n');
-  const secretBuf = typeof input.secret === 'string' ? Buffer.from(input.secret, 'utf8') : input.secret;
+  const secretBuf =
+    typeof input.secret === 'string' ? Buffer.from(input.secret, 'utf8') : input.secret;
   const expected = createHmac('sha256', secretBuf).update(canonical).digest();
   let provided: Buffer;
   try {

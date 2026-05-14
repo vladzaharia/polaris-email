@@ -37,7 +37,14 @@ credentials.get('/v1/admin/credentials', requireScope('admin:read'), async (c) =
     .bind(mailbox)
     .all<PrincipalRow>();
   if (principals.results.length === 0) return c.json({ data: [] });
-  const data: { kind: 'api_key' | 'smtp'; id: string; principal_id: string; status: string; created_at: string; username?: string }[] = [];
+  const data: {
+    kind: 'api_key' | 'smtp';
+    id: string;
+    principal_id: string;
+    status: string;
+    created_at: string;
+    username?: string;
+  }[] = [];
   for (const p of principals.results) {
     const apiKeys = await c.env.DB.prepare(
       `SELECT id, principal_id, status, created_at FROM api_keys WHERE principal_id = ? ORDER BY created_at DESC`,
@@ -45,7 +52,13 @@ credentials.get('/v1/admin/credentials', requireScope('admin:read'), async (c) =
       .bind(p.id)
       .all<ApiKeyRow>();
     for (const k of apiKeys.results) {
-      data.push({ kind: 'api_key', id: k.id, principal_id: k.principal_id, status: k.status, created_at: k.created_at });
+      data.push({
+        kind: 'api_key',
+        id: k.id,
+        principal_id: k.principal_id,
+        status: k.status,
+        created_at: k.created_at,
+      });
     }
     const smtps = await c.env.DB.prepare(
       `SELECT id, principal_id, username, created_at, disabled_at FROM submission_credentials WHERE principal_id = ?`,
@@ -66,7 +79,10 @@ credentials.get('/v1/admin/credentials', requireScope('admin:read'), async (c) =
   return c.json({ data });
 });
 
-async function resolveCredential(c: { env: Env }, id: string): Promise<{ kind: 'api_key' | 'smtp'; principal_id: string } | null> {
+async function resolveCredential(
+  c: { env: Env },
+  id: string,
+): Promise<{ kind: 'api_key' | 'smtp'; principal_id: string } | null> {
   const ak = await c.env.DB.prepare(`SELECT principal_id FROM api_keys WHERE id = ?`)
     .bind(id)
     .first<{ principal_id: string }>();
@@ -125,8 +141,9 @@ credentials.post('/v1/admin/credentials/:id/rotate', requireScope('admin:rotate'
   return c.json({
     id,
     kind: resolved.kind,
-    message: resolved.kind === 'api_key'
-      ? `use POST /v1/admin/api-keys/${id}/rotate to receive the new secret`
-      : 'SMTP credentials rotate by issuing a new one via POST /v1/admin/senders/:senderId/smtp-credentials',
+    message:
+      resolved.kind === 'api_key'
+        ? `use POST /v1/admin/api-keys/${id}/rotate to receive the new secret`
+        : 'SMTP credentials rotate by issuing a new one via POST /v1/admin/senders/:senderId/smtp-credentials',
   });
 });

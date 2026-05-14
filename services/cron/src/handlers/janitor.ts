@@ -62,9 +62,7 @@ export async function janitor(env: Env): Promise<void> {
  * for future callers that purge individual messages outside the nightly loop.
  */
 export async function purgeMessage(env: Env, row: MessageRow): Promise<void> {
-  const other = await env.DB.prepare(
-    `SELECT 1 FROM messages WHERE r2_key = ? AND id != ? LIMIT 1`,
-  )
+  const other = await env.DB.prepare(`SELECT 1 FROM messages WHERE r2_key = ? AND id != ? LIMIT 1`)
     .bind(row.r2_key, row.id)
     .first<{ 1: number }>()
     .catch(() => null);

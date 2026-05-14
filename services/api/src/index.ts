@@ -25,7 +25,9 @@ app.route('/', sendRaw);
 app.route('/', admin);
 app.route('/', bootstrap);
 
-app.notFound((c) => buildError(c, 'not_found', `no route for ${c.req.method} ${new URL(c.req.url).pathname}`));
+app.notFound((c) =>
+  buildError(c, 'not_found', `no route for ${c.req.method} ${new URL(c.req.url).pathname}`),
+);
 
 app.onError((err, c) => {
   console.error('unhandled', err.stack);

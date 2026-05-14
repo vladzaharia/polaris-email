@@ -165,7 +165,9 @@ describe('out worker', () => {
       retries: 0,
     });
     await worker.queue(batch, env as unknown as Parameters<typeof worker.queue>[1]);
-    const sent = (env.FANOUT_QUEUE as unknown as FakeQueue<{ event: string; data: { test?: boolean } }>).sent;
+    const sent = (
+      env.FANOUT_QUEUE as unknown as FakeQueue<{ event: string; data: { test?: boolean } }>
+    ).sent;
     expect(sent[0]?.data.test).toBe(true);
     expect(db.statuses.get('M')?.status).toBe('sent');
   });

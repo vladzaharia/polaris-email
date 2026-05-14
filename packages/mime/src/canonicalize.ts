@@ -67,7 +67,7 @@ export interface Header {
 export class MimeError extends Error {
   constructor(
     message: string,
-    public readonly code: string
+    public readonly code: string,
   ) {
     super(message);
   }
@@ -103,10 +103,7 @@ export function parseStrict(input: Uint8Array): ParsedMime {
   // Header bytes are [0, crlfBoundary) — already validated CRLF-only.
   const headerBytes = input.subarray(0, crlfBoundary);
   if (headerBytes.length > MAX_TOTAL_HEADER_BYTES) {
-    throw new MimeError(
-      `headers exceed ${MAX_TOTAL_HEADER_BYTES} bytes`,
-      'headers_too_large'
-    );
+    throw new MimeError(`headers exceed ${MAX_TOTAL_HEADER_BYTES} bytes`, 'headers_too_large');
   }
 
   const headers = parseHeaders(headerBytes);

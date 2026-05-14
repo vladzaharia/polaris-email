@@ -40,7 +40,7 @@ export interface BulkOnboardProgress {
  * just the failures.
  */
 export async function* bulkOnboardPattern(
-  opts: BulkOnboardOpts
+  opts: BulkOnboardOpts,
 ): AsyncIterable<BulkOnboardProgress> {
   const concurrency = Math.max(1, opts.concurrency ?? 4);
   const queue = Array.from(opts.domains);

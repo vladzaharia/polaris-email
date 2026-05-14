@@ -54,12 +54,7 @@ export type HeadersLike = {
 export type VerifyResultOk = { ok: true; algorithm: string; ts: number; nonce: string };
 export type VerifyResultErr = {
   ok: false;
-  code:
-    | 'missing_header'
-    | 'header_invalid'
-    | 'clock_skew'
-    | 'algorithm_rejected'
-    | 'bad_signature';
+  code: 'missing_header' | 'header_invalid' | 'clock_skew' | 'algorithm_rejected' | 'bad_signature';
   message: string;
 };
 export type VerifyResult = VerifyResultOk | VerifyResultErr;
@@ -123,15 +118,7 @@ export async function buildCanonical(input: CanonicalInput): Promise<string> {
   if (!/^[A-Z]+$/.test(method)) throw new Error('hmac: invalid HTTP method');
   if (!input.path.startsWith('/')) throw new Error('hmac: path must start with /');
   const query = canonicalQuery(input.query);
-  return [
-    input.direction,
-    method,
-    input.path,
-    query,
-    input.ts,
-    input.nonce,
-    bodyHash,
-  ].join('\n');
+  return [input.direction, method, input.path, query, input.ts, input.nonce, bodyHash].join('\n');
 }
 
 // ---------- crypto helpers ----------
@@ -187,10 +174,7 @@ function secretBytes(secret: string | Uint8Array): Uint8Array {
 
 // ---------- sign + verify ----------
 
-export async function sign(
-  input: CanonicalInput,
-  secret: string | Uint8Array,
-): Promise<string> {
+export async function sign(input: CanonicalInput, secret: string | Uint8Array): Promise<string> {
   const canonical = await buildCanonical(input);
   const tag = await hmacSha256(secretBytes(secret), new TextEncoder().encode(canonical));
   return 'v1=' + toHex(tag);
@@ -221,8 +205,7 @@ export async function verify(input: VerifyInput): Promise<VerifyResult> {
   if (!tsHeader) return { ok: false, code: 'missing_header', message: 'X-Polaris-Ts missing' };
   if (!nonceHeader)
     return { ok: false, code: 'missing_header', message: 'X-Polaris-Nonce missing' };
-  if (!sigHeader)
-    return { ok: false, code: 'missing_header', message: 'X-Polaris-Sig missing' };
+  if (!sigHeader) return { ok: false, code: 'missing_header', message: 'X-Polaris-Sig missing' };
   try {
     assertNoCrlf('X-Polaris-Ts', tsHeader);
     assertNoCrlf('X-Polaris-Nonce', nonceHeader);

@@ -1,12 +1,8 @@
 {
   "account_id": "${CF_ACCOUNT_ID}",
   "d1_databases": [
-    { "binding": "DB", "database_name": "polaris-email", "database_id": "${D1_ID}" }
+    { "binding": "DB", "database_name": "polaris-email", "database_id": "${D1_ID}" },
   ],
-  "r2_buckets": [
-    { "binding": "R2", "bucket_name": "polaris-email", "jurisdiction": "eu" }
-  ],
-  "kv_namespaces": [
-    { "binding": "KV_RATE_LIMIT", "id": "${KV_RATE_LIMIT_ID}" }
-  ]
+  "r2_buckets": [{ "binding": "R2", "bucket_name": "polaris-email", "jurisdiction": "eu" }],
+  "kv_namespaces": [{ "binding": "KV_RATE_LIMIT", "id": "${KV_RATE_LIMIT_ID}" }],
 }

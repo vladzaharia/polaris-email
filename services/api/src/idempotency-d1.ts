@@ -30,19 +30,18 @@ export async function tryClaim(
   env: Env,
   key: string,
   mailboxId: string,
-  principalId: string | null
+  principalId: string | null,
 ): Promise<IdemClaim> {
   if (!key) {
     throw new Error('idempotency key required');
   }
   // SQLite's INSERT OR IGNORE + RETURNING gives us the atomic semantics we need.
   // If a row exists, RETURNING is empty; we then SELECT to fetch the message_id.
-  const insert = await env.DB
-    .prepare(
-      `INSERT OR IGNORE INTO idempotency_keys (key, mailbox_id, principal_id, message_id, created_at)
+  const insert = await env.DB.prepare(
+    `INSERT OR IGNORE INTO idempotency_keys (key, mailbox_id, principal_id, message_id, created_at)
        VALUES (?1, ?2, ?3, NULL, ?4)
-       RETURNING key`
-    )
+       RETURNING key`,
+  )
     .bind(key, mailboxId, principalId, new Date().toISOString())
     .first<{ key: string }>();
   if (insert?.key === key) {
@@ -50,8 +49,7 @@ export async function tryClaim(
   }
   // Duplicate — fetch the existing row's message_id (may be null if the original
   // request hasn't reached recordClaim() yet).
-  const row = await env.DB
-    .prepare(`SELECT message_id FROM idempotency_keys WHERE key = ?1`)
+  const row = await env.DB.prepare(`SELECT message_id FROM idempotency_keys WHERE key = ?1`)
     .bind(key)
     .first<{ message_id: string | null }>();
   return { first: false, messageId: row?.message_id ?? undefined };
@@ -59,8 +57,9 @@ export async function tryClaim(
 
 /** Attach the message_id to the claim; called after the messages row is created. */
 export async function recordClaim(env: Env, key: string, messageId: string): Promise<void> {
-  await env.DB
-    .prepare(`UPDATE idempotency_keys SET message_id = ?2 WHERE key = ?1 AND message_id IS NULL`)
+  await env.DB.prepare(
+    `UPDATE idempotency_keys SET message_id = ?2 WHERE key = ?1 AND message_id IS NULL`,
+  )
     .bind(key, messageId)
     .run();
 }

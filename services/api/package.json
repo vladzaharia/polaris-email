@@ -7,7 +7,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "build": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
-    "lint": "echo ok",
+    "lint": "oxlint .",
     "deploy": "../../bin/deploy.sh services/api"
   },
   "dependencies": {

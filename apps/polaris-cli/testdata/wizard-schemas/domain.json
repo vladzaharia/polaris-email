@@ -10,14 +10,14 @@
       "type": "string",
       "pattern": "^([a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\\.)+[a-zA-Z]{2,}$"
     },
-    "inbound_enabled":  { "type": "boolean", "default": false },
-    "outbound_enabled": { "type": "boolean", "default": true  },
+    "inbound_enabled": { "type": "boolean", "default": false },
+    "outbound_enabled": { "type": "boolean", "default": true },
     "wildcard_subdomains": { "type": "boolean", "default": true },
     "override": { "type": "boolean", "default": false },
     "dkim_algo": { "type": "string", "enum": ["ed25519", "rsa2048"], "default": "ed25519" }
   },
   "anyOf": [
-    { "properties": { "inbound_enabled":  { "const": true } } },
+    { "properties": { "inbound_enabled": { "const": true } } },
     { "properties": { "outbound_enabled": { "const": true } } }
   ]
 }

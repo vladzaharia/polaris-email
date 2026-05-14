@@ -5,7 +5,9 @@
   "compatibility_date": "2025-01-01",
   "observability": { "enabled": true },
   "logpush": true,
-  "d1_databases": [{ "binding": "DB", "database_name": "polaris-email", "database_id": "REPLACE_WITH_LOCAL" }],
+  "d1_databases": [
+    { "binding": "DB", "database_name": "polaris-email", "database_id": "REPLACE_WITH_LOCAL" },
+  ],
   "queues": {
     "consumers": [
       {
@@ -13,8 +15,8 @@
         "max_batch_size": 50,
         "max_batch_timeout": 5,
         "max_retries": 6,
-        "dead_letter_queue": "polaris-email-fanout-dlq"
-      }
-    ]
-  }
+        "dead_letter_queue": "polaris-email-fanout-dlq",
+      },
+    ],
+  },
 }

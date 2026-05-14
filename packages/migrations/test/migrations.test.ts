@@ -81,7 +81,11 @@ const m1: SchemaMigration = {
   up: 'CREATE TABLE foo (id INTEGER); CREATE INDEX idx_foo_id ON foo(id);',
 };
 const m2: SchemaMigration = { version: 2, sha: 'bbb', up: 'ALTER TABLE foo ADD COLUMN bar TEXT;' };
-const m3: SchemaMigration = { version: 3, sha: 'ccc', up: 'CREATE TABLE baz (k TEXT PRIMARY KEY);' };
+const m3: SchemaMigration = {
+  version: 3,
+  sha: 'ccc',
+  up: 'CREATE TABLE baz (k TEXT PRIMARY KEY);',
+};
 
 describe('applyMigrations', () => {
   it('applies all migrations on a fresh DB', async () => {

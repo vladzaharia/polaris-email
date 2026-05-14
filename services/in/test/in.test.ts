@@ -154,7 +154,10 @@ function mkMessage(opts: { to: string; raw: Uint8Array }): ForwardableEmailMessa
   } as unknown as ForwardableEmailMessage;
 }
 
-const ctx = { waitUntil: () => undefined, passThroughOnException: () => undefined } as unknown as ExecutionContext;
+const ctx = {
+  waitUntil: () => undefined,
+  passThroughOnException: () => undefined,
+} as unknown as ExecutionContext;
 
 describe('services/in email handler', () => {
   it('calls processMessage on a routable inbound message and enqueues fanout entries', async () => {

@@ -144,9 +144,7 @@ async function authenticateApiKey(
   const nonceKey = `nonce:${keyId}:${result.nonce}`;
   const seen = await env.KV_NONCE.get(nonceKey);
   if (seen) return buildError(c, 'nonce_replay', 'nonce already used for this key');
-  c.executionCtx.waitUntil(
-    env.KV_NONCE.put(nonceKey, '1', { expirationTtl: 10 * 60 }),
-  );
+  c.executionCtx.waitUntil(env.KV_NONCE.put(nonceKey, '1', { expirationTtl: 10 * 60 }));
 
   let parsedScopes: string[] = [];
   try {
@@ -323,11 +321,7 @@ messages.post('/v1/messages', async (c) => {
 
   if (contentType === 'application/json') {
     if (hasDaemonId && !hasKeyId) {
-      return buildError(
-        c,
-        'bad_content_type',
-        'daemon auth requires Content-Type: message/rfc822',
-      );
+      return buildError(c, 'bad_content_type', 'daemon auth requires Content-Type: message/rfc822');
     }
     const authResult = await authenticateApiKey(c, bodyBytes);
     if (authResult instanceof Response) return authResult;
@@ -484,8 +478,7 @@ messages.post('/v1/messages', async (c) => {
       throw e;
     }
 
-    const idempotencyKey =
-      c.req.header('idempotency-key') ?? `smtp-${submissionId}`;
+    const idempotencyKey = c.req.header('idempotency-key') ?? `smtp-${submissionId}`;
 
     try {
       const result = await processMessage(env, {
@@ -660,8 +653,7 @@ messages.get('/v1/messages', async (c) => {
 // ---------- GET /v1/messages/:id/attachments/:n ----------
 
 messages.get('/v1/messages/:id/attachments/:n', async (c) => {
-  const ip =
-    c.req.header('cf-connecting-ip') ?? c.req.header('x-forwarded-for') ?? 'unknown';
+  const ip = c.req.header('cf-connecting-ip') ?? c.req.header('x-forwarded-for') ?? 'unknown';
   const rl = await rateLimit(c.env, `att:${ip}`, ATTACHMENT_IP_RATE_PER_MIN);
   if (!rl.ok) {
     return buildError(c, 'too_many_requests', 'rate limit exceeded', {
@@ -696,10 +688,7 @@ messages.get('/v1/messages/:id/attachments/:n', async (c) => {
   });
 });
 
-function extractAttachmentBytes(
-  raw: Uint8Array,
-  index: number,
-): { bytes: Uint8Array } | null {
+function extractAttachmentBytes(raw: Uint8Array, index: number): { bytes: Uint8Array } | null {
   const text = new TextDecoder('latin1').decode(raw);
   const sep = text.indexOf('\r\n\r\n');
   const split = sep >= 0 ? sep : text.indexOf('\n\n');
@@ -735,9 +724,7 @@ function walkAttachmentParts(body: string, boundary: string, out: Uint8Array[]):
       const pBody = chunk.slice(hsplit + (cutter >= 0 ? 4 : 2));
       const subCt = /\bcontent-type:\s*([^\r\n]+)/i.exec(hStr)?.[1] ?? 'text/plain';
       const subDisp = /\bcontent-disposition:\s*([^\r\n]+)/i.exec(hStr)?.[1] ?? '';
-      const subXfer = (
-        /\bcontent-transfer-encoding:\s*([^\r\n]+)/i.exec(hStr)?.[1] ?? ''
-      )
+      const subXfer = (/\bcontent-transfer-encoding:\s*([^\r\n]+)/i.exec(hStr)?.[1] ?? '')
         .toLowerCase()
         .trim();
       const inner = subCt.split(';')[0]?.toLowerCase().trim() ?? '';
@@ -746,8 +733,7 @@ function walkAttachmentParts(body: string, boundary: string, out: Uint8Array[]):
         walkAttachmentParts(pBody, innerBoundary[2] ?? innerBoundary[3] ?? '', out);
       } else {
         const isAttachment =
-          /attachment/i.test(subDisp) ||
-          /^application\/|^image\/|^video\/|^audio\//.test(inner);
+          /attachment/i.test(subDisp) || /^application\/|^image\/|^video\/|^audio\//.test(inner);
         if (isAttachment) {
           out.push(decodeAttachment(pBody, subXfer));
         }

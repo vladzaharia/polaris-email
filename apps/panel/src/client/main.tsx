@@ -9,7 +9,10 @@ interface Me {
   groups?: string[];
 }
 
-async function api<T = unknown>(path: string, init?: RequestInit): Promise<{ status: number; body: T }> {
+async function api<T = unknown>(
+  path: string,
+  init?: RequestInit,
+): Promise<{ status: number; body: T }> {
   const res = await fetch(path, init);
   const text = await res.text();
   let body: unknown = text;
@@ -28,7 +31,8 @@ function App() {
     void api<Me>('/api/me').then((r) => setMe(r.body));
   }, []);
   if (me == null) return <div>Loading...</div>;
-  if (!me.authenticated) return <Login onLoggedIn={() => api<Me>('/api/me').then((r) => setMe(r.body))} />;
+  if (!me.authenticated)
+    return <Login onLoggedIn={() => api<Me>('/api/me').then((r) => setMe(r.body))} />;
   return (
     <>
       <nav>
@@ -41,7 +45,10 @@ function App() {
         <a onClick={() => setPage('audit')}>Audit</a>
         <a onClick={() => setPage('diagnostics')}>Diagnostics</a>
         <span style={{ marginLeft: 'auto' }}>
-          {me.email} <button onClick={() => api('/api/logout', { method: 'POST' }).then(() => setMe(null))}>Logout</button>
+          {me.email}{' '}
+          <button onClick={() => api('/api/logout', { method: 'POST' }).then(() => setMe(null))}>
+            Logout
+          </button>
         </span>
       </nav>
       <main>
@@ -91,9 +98,8 @@ function Overview() {
     <div>
       <h2>Overview</h2>
       <p>
-        polaris-email runs on Cloudflare Workers, with on-prem submission daemons for legacy
-        SMTPS clients. Use the nav above to manage tenants, keys, webhooks, routing
-        rules, and audit.
+        polaris-email runs on Cloudflare Workers, with on-prem submission daemons for legacy SMTPS
+        clients. Use the nav above to manage tenants, keys, webhooks, routing rules, and audit.
       </p>
       <p>
         Critical operational pages: <strong>Diagnostics</strong> for the green-tick self-test;{' '}
@@ -108,7 +114,9 @@ function Tenants() {
   const [id, setId] = useState('');
   const [name, setName] = useState('');
   useEffect(() => {
-    void api<{ data: { id: string; name: string }[] }>('/api/tenants').then((r) => setRows(r.body?.data ?? []));
+    void api<{ data: { id: string; name: string }[] }>('/api/tenants').then((r) =>
+      setRows(r.body?.data ?? []),
+    );
   }, []);
   return (
     <div>
@@ -169,7 +177,9 @@ function Tenants() {
 }
 
 function ApiKeys() {
-  const [rows, setRows] = useState<{ id: string; principal_id: string | null; status: string }[]>([]);
+  const [rows, setRows] = useState<{ id: string; principal_id: string | null; status: string }[]>(
+    [],
+  );
   const [showSecret, setShowSecret] = useState<{ key_id: string; key_secret: string } | null>(null);
   useEffect(() => {
     void api<{ data: { id: string; principal_id: string | null; status: string }[] }>(
@@ -244,7 +254,10 @@ function ApiKeys() {
           <p>
             <strong>One-time reveal.</strong> Copy now — you will not see this again.
           </p>
-          <pre>POLARIS_EMAIL_KEY_ID={showSecret.key_id}{'\n'}POLARIS_EMAIL_KEY_SECRET={showSecret.key_secret}</pre>
+          <pre>
+            POLARIS_EMAIL_KEY_ID={showSecret.key_id}
+            {'\n'}POLARIS_EMAIL_KEY_SECRET={showSecret.key_secret}
+          </pre>
           <button onClick={() => setShowSecret(null)}>I've copied it</button>
         </div>
       )}
@@ -311,9 +324,10 @@ function Diagnostics() {
       <h2>Diagnostics</h2>
       <button
         onClick={async () => {
-          const r = await api<{ ok: boolean; checks: { name: string; ok: boolean; detail?: string }[] }>(
-            '/api/diagnostics',
-          );
+          const r = await api<{
+            ok: boolean;
+            checks: { name: string; ok: boolean; detail?: string }[];
+          }>('/api/diagnostics');
           setResult(r.body);
         }}
       >

@@ -101,20 +101,13 @@ async function audit(
 ): Promise<void> {
   const at = Date.now();
   const meta = JSON.stringify(args.meta ?? {});
-  const prev = await env.DB.prepare(
-    `SELECT row_hash FROM audit_log ORDER BY id DESC LIMIT 1`,
-  )
+  const prev = await env.DB.prepare(`SELECT row_hash FROM audit_log ORDER BY id DESC LIMIT 1`)
     .first<{ row_hash: string }>()
     .catch(() => null);
   const prevHash = prev?.row_hash ?? '0'.repeat(64);
-  const canonical = [
-    args.actor,
-    args.action,
-    args.target ?? '',
-    meta,
-    prevHash,
-    String(at),
-  ].join('\n');
+  const canonical = [args.actor, args.action, args.target ?? '', meta, prevHash, String(at)].join(
+    '\n',
+  );
   const rowHash = await sha256Hex(new TextEncoder().encode(canonical));
   await env.DB.prepare(
     `INSERT INTO audit_log (actor, action, target, meta, prev_hash, row_hash, at)
@@ -143,9 +136,7 @@ async function tryClaim(
     .bind(key, mailboxId, principalId, new Date().toISOString())
     .first<{ key: string }>();
   if (insert?.key === key) return { first: true };
-  const row = await env.DB.prepare(
-    `SELECT message_id FROM idempotency_keys WHERE key = ?1`,
-  )
+  const row = await env.DB.prepare(`SELECT message_id FROM idempotency_keys WHERE key = ?1`)
     .bind(key)
     .first<{ message_id: string | null }>();
   return { first: false, messageId: row?.message_id ?? undefined };
@@ -187,7 +178,10 @@ async function computeThreadId(
     if (row?.thread_id) return row.thread_id;
   }
   if (subject) {
-    const normalized = subject.replace(/^(re:|fwd?:)\s*/i, '').trim().toLowerCase();
+    const normalized = subject
+      .replace(/^(re:|fwd?:)\s*/i, '')
+      .trim()
+      .toLowerCase();
     if (normalized) {
       const sevenDaysAgo = new Date(Date.now() - 7 * 86400_000).toISOString();
       const row = await env.DB.prepare(
@@ -271,8 +265,7 @@ export async function processMessage(
   }
 
   const messageId = ulid();
-  const fromAddr =
-    summary.from || (args.direction === 'in' ? args.recipientAddress ?? '' : '');
+  const fromAddr = summary.from || (args.direction === 'in' ? (args.recipientAddress ?? '') : '');
   const subject = summary.subject ?? '';
   const headerMessageId = summary.headerMessageId ?? null;
   const threadId = await computeThreadId(
@@ -385,9 +378,7 @@ export async function processMessage(
   const fanoutEnqueues: FanoutEnqueue[] = [];
   if (args.recipientAddress) {
     const domainPart = args.recipientAddress.split('@')[1] ?? '';
-    const domain = await env.DB.prepare(
-      `SELECT id FROM mail_domains WHERE name = ?1 LIMIT 1`,
-    )
+    const domain = await env.DB.prepare(`SELECT id FROM mail_domains WHERE name = ?1 LIMIT 1`)
       .bind(domainPart)
       .first<{ id: string }>()
       .catch(() => null);

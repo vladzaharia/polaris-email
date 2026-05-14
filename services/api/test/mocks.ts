@@ -128,9 +128,7 @@ function executeSql<T>(
     // param vs an inline literal (number / 'string' / NULL).
     const valsM = trimmed.match(/values\s*\(([^)]*)\)\s*(returning\s+.*)?$/is);
     if (!valsM) throw new Error('mock: insert values ' + trimmed);
-    const valTokens = valsM[1]!
-      .split(',')
-      .map((v) => v.trim());
+    const valTokens = valsM[1]!.split(',').map((v) => v.trim());
     const row: TableRow = {};
     let pi = 0;
     cols.forEach((c, i) => {

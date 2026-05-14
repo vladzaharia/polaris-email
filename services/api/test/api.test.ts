@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import app from '../src/index.js';
 import { mkEnv } from './mocks.js';
 import { sign, generateNonce } from '@polaris-email/hmac';
-import { mintAttachmentUrl } from '@polaris-email/cf-api';
 
 // Use an execution context that captures waitUntil promises so KV writes complete
 const ctx = {
@@ -264,7 +263,15 @@ describe('admin api-keys', () => {
         `INSERT INTO mail_domains (id, zone_id, name, status, verified_at, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, ?)`,
       )
-        .bind('01HX00DOMAIN0000000000ABCE', '01HX00ZONE000000000000ABCE', 'example.com', 'verified', isoNow, isoNow, isoNow)
+        .bind(
+          '01HX00DOMAIN0000000000ABCE',
+          '01HX00ZONE000000000000ABCE',
+          'example.com',
+          'verified',
+          isoNow,
+          isoNow,
+          isoNow,
+        )
         .run();
     }
 
@@ -343,7 +350,15 @@ describe('admin api-keys', () => {
       `INSERT INTO mail_domains (id, zone_id, name, status, verified_at, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
     )
-      .bind('01HX00DOMAIN0000000000ABCD', '01HX00ZONE000000000000ABCD', 'example.com', 'verified', new Date().toISOString(), new Date().toISOString(), new Date().toISOString())
+      .bind(
+        '01HX00DOMAIN0000000000ABCD',
+        '01HX00ZONE000000000000ABCD',
+        'example.com',
+        'verified',
+        new Date().toISOString(),
+        new Date().toISOString(),
+        new Date().toISOString(),
+      )
       .run();
     const issued = (await (
       await app.fetch(

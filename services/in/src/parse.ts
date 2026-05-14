@@ -37,7 +37,10 @@ const MAX_HEADER_BYTES = 64 * 1024;
 const MAX_PART_BYTES = 25 * 1024 * 1024;
 
 export class ParseError extends Error {
-  constructor(public code: string, message: string) {
+  constructor(
+    public code: string,
+    message: string,
+  ) {
     super(message);
   }
 }
@@ -96,9 +99,7 @@ export async function parseMime(raw: Uint8Array): Promise<ParsedMime> {
     attachments,
     authResults: {
       ...auth,
-      ...(getHeader(headers, 'x-real-ip')
-        ? { remoteIp: getHeader(headers, 'x-real-ip')! }
-        : {}),
+      ...(getHeader(headers, 'x-real-ip') ? { remoteIp: getHeader(headers, 'x-real-ip')! } : {}),
     },
   };
 }

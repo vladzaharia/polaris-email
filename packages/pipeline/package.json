@@ -9,7 +9,7 @@
     "build": "tsc -p tsconfig.json --noEmit",
     "test": "echo ok",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "lint": "echo ok"
+    "lint": "oxlint ."
   },
   "dependencies": {
     "@polaris-email/ids": "workspace:*",

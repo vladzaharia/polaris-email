@@ -62,9 +62,7 @@ class FakeStmt {
           attempts: 0,
         });
       }
-    } else if (
-      /UPDATE message_deliveries[\s\S]+SET status = 'succeeded'/i.test(s)
-    ) {
+    } else if (/UPDATE message_deliveries[\s\S]+SET status = 'succeeded'/i.test(s)) {
       const [_code, mid, wid] = this.params;
       const r = this.db.deliveries.find(
         (d) => d['message_id'] === mid && d['webhook_sub_id'] === wid,
@@ -116,27 +114,22 @@ function rfc822(): Uint8Array {
   return new TextEncoder().encode(lines.join('\r\n'));
 }
 
-let captured:
-  | { url: string; headers: Record<string, string>; body: string }
-  | undefined;
+let captured: { url: string; headers: Record<string, string>; body: string } | undefined;
 let mode: 'ok' | 'fail' = 'ok';
 
 beforeEach(() => {
   captured = undefined;
   mode = 'ok';
-  vi.stubGlobal(
-    'fetch',
-    async (input: RequestInfo, init?: RequestInit) => {
-      const u = typeof input === 'string' ? input : (input as Request).url;
-      const headersIn = (init?.headers ?? {}) as Record<string, string>;
-      const headers: Record<string, string> = {};
-      for (const [k, v] of Object.entries(headersIn)) headers[k.toLowerCase()] = String(v);
-      const bodyStr = init?.body ? String(init.body) : '';
-      captured = { url: u, headers, body: bodyStr };
-      if (mode === 'ok') return new Response('', { status: 200 });
-      return new Response('boom', { status: 500 });
-    },
-  );
+  vi.stubGlobal('fetch', async (input: RequestInfo, init?: RequestInit) => {
+    const u = typeof input === 'string' ? input : (input as Request).url;
+    const headersIn = (init?.headers ?? {}) as Record<string, string>;
+    const headers: Record<string, string> = {};
+    for (const [k, v] of Object.entries(headersIn)) headers[k.toLowerCase()] = String(v);
+    const bodyStr = init?.body ? String(init.body) : '';
+    captured = { url: u, headers, body: bodyStr };
+    if (mode === 'ok') return new Response('', { status: 200 });
+    return new Response('boom', { status: 500 });
+  });
 });
 
 afterEach(() => {

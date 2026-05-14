@@ -26,7 +26,7 @@ export interface NormalizedAddress {
 export class AddressError extends Error {
   constructor(
     message: string,
-    public readonly code: 'no_at' | 'multi_at' | 'empty_local' | 'empty_domain' | 'idn_failed'
+    public readonly code: 'no_at' | 'multi_at' | 'empty_local' | 'empty_domain' | 'idn_failed',
   ) {
     super(message);
   }
@@ -97,7 +97,7 @@ export function addressesEqual(a: string, b: string): boolean {
  */
 export function longestSuffixMatch(
   recipientDomain: string,
-  candidateDomains: ReadonlyArray<string>
+  candidateDomains: ReadonlyArray<string>,
 ): string | null {
   let normRecipient: string;
   try {

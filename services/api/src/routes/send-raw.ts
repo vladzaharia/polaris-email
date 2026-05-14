@@ -9,7 +9,12 @@
 // `Content-Type: message/rfc822`.
 
 import { Hono } from 'hono';
-import { parseStrict, MimeError, enforceSenderPolicy, SenderPolicyError } from '@polaris-email/mime';
+import {
+  parseStrict,
+  MimeError,
+  enforceSenderPolicy,
+  SenderPolicyError,
+} from '@polaris-email/mime';
 import type { Env } from '../env.js';
 import { daemonHmacAuth } from '../daemon-auth.js';
 import { buildError } from '../errors.js';
@@ -30,7 +35,7 @@ sendRaw.use('/v1/send/raw', daemonHmacAuth());
 sendRaw.post('/v1/send/raw', async (c) => {
   let body: SendRawRequest;
   try {
-    body = JSON.parse(((c.req as unknown as { _cachedBody: string })._cachedBody) ?? '');
+    body = JSON.parse((c.req as unknown as { _cachedBody: string })._cachedBody ?? '');
   } catch {
     return buildError(c, 'bad_request', 'invalid JSON body');
   }

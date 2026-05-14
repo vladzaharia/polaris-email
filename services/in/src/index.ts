@@ -73,9 +73,7 @@ function addressMatches(pattern: string, addr: string): boolean {
   const p = pattern.toLowerCase();
   if (p === '*') return true;
   if (!p.includes('*')) return p === a;
-  const re = new RegExp(
-    '^' + p.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*') + '$',
-  );
+  const re = new RegExp('^' + p.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*') + '$');
   return re.test(a);
 }
 
@@ -87,11 +85,7 @@ export default {
    * fanout list (returned via fanoutEnqueues), which this worker dispatches
    * to FANOUT_QUEUE.
    */
-  async email(
-    message: ForwardableEmailMessage,
-    env: Env,
-    _ctx: ExecutionContext,
-  ): Promise<void> {
+  async email(message: ForwardableEmailMessage, env: Env, _ctx: ExecutionContext): Promise<void> {
     let raw: Uint8Array;
     try {
       raw = await readAll(message.raw);

@@ -56,9 +56,7 @@ bootstrap.post('/v1/admin/bootstrap', async (c) => {
 
   // 1) Insert (or reuse) the canonical operator mailbox. The bootstrap mailbox
   //    is a real, usable mailbox per A11 — not a placeholder.
-  const existingMb = await c.env.DB.prepare(
-    `SELECT id FROM mailboxes WHERE name = ?`,
-  )
+  const existingMb = await c.env.DB.prepare(`SELECT id FROM mailboxes WHERE name = ?`)
     .bind('operator')
     .first<{ id: string }>();
   const effectiveMailboxId = existingMb?.id ?? mailboxId;
@@ -67,13 +65,7 @@ bootstrap.post('/v1/admin/bootstrap', async (c) => {
       `INSERT INTO mailboxes (id, name, description, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?)`,
     )
-      .bind(
-        mailboxId,
-        'operator',
-        'Bootstrap mailbox for the operator admin key',
-        nowIso,
-        nowIso,
-      )
+      .bind(mailboxId, 'operator', 'Bootstrap mailbox for the operator admin key', nowIso, nowIso)
       .run();
   }
 
@@ -92,29 +84,17 @@ bootstrap.post('/v1/admin/bootstrap', async (c) => {
         rate_limit_per_min, status, created_at)
      VALUES (?, ?, ?, ?, ?, ?, 'primary', ?)`,
   )
-    .bind(
-      keyId,
-      principalId,
-      'pk_admin_',
-      hashed,
-      '["admin:rotate","admin:read"]',
-      60,
-      nowIso,
-    )
+    .bind(keyId, principalId, 'pk_admin_', hashed, '["admin:rotate","admin:read"]', 60, nowIso)
     .run();
   await c.env.KV_KEY_CACHE.put(`plain:${keyId}`, secret, {
     expirationTtl: 60 * 60 * 24 * 365,
   });
   if (row) {
-    await c.env.DB.prepare(
-      `UPDATE bootstrap SET consumed_at = ?, admin_key_id = ? WHERE id = ?`,
-    )
+    await c.env.DB.prepare(`UPDATE bootstrap SET consumed_at = ?, admin_key_id = ? WHERE id = ?`)
       .bind(nowIso, keyId, 1)
       .run();
   } else {
-    await c.env.DB.prepare(
-      `INSERT INTO bootstrap (id, consumed_at, admin_key_id) VALUES (?, ?, ?)`,
-    )
+    await c.env.DB.prepare(`INSERT INTO bootstrap (id, consumed_at, admin_key_id) VALUES (?, ?, ?)`)
       .bind(1, nowIso, keyId)
       .run();
   }

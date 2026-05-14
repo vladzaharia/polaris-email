@@ -7,7 +7,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "build": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
-    "lint": "echo ok"
+    "lint": "oxlint ."
   },
   "dependencies": {
     "@polaris-email/hmac": "workspace:*",

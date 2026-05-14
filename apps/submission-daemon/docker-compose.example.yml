@@ -9,7 +9,7 @@ services:
     environment:
       TS_AUTHKEY: ${TS_AUTHKEY}
       TS_STATE_DIR: /var/lib/tailscale
-      TS_USERSPACE: "false"
+      TS_USERSPACE: 'false'
       TS_EXTRA_ARGS: --advertise-tags=tag:polaris-daemon
     volumes:
       - tailscale-state:/var/lib/tailscale
@@ -20,7 +20,7 @@ services:
   lego:
     image: goacme/lego:latest
     container_name: polaris-lego
-    network_mode: "service:tailscale"
+    network_mode: 'service:tailscale'
     environment:
       CF_DNS_API_TOKEN: ${CF_DNS_API_TOKEN}
     volumes:
@@ -35,7 +35,7 @@ services:
   daemon:
     image: ghcr.io/vladzaharia/polaris-daemon:latest
     container_name: polaris-daemon
-    network_mode: "service:tailscale"
+    network_mode: 'service:tailscale'
     depends_on: [tailscale]
     environment:
       POLARIS_API_URL: https://api.polaris.example.com
@@ -46,9 +46,9 @@ services:
       ACCESS_CLIENT_SECRET: ${ACCESS_CLIENT_SECRET}
       TLS_CERT: /lego/certificates/${DAEMON_FQDN}.crt
       TLS_KEY: /lego/certificates/${DAEMON_FQDN}.key
-      LISTEN_ADDR: ":465"
+      LISTEN_ADDR: ':465'
       POLL_INTERVAL: 5s
-      MAX_MESSAGE_SIZE: "26214400"
+      MAX_MESSAGE_SIZE: '26214400'
       SQLITE_PATH: /var/lib/polaris-daemon/credstore.db
       AUDIT_LOG_PATH: /var/log/polaris-daemon/audit.log
     volumes:

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import {
   planRotation,
   promotePending,
@@ -126,7 +126,7 @@ describe('retireOldKey', () => {
             result: [
               { id: 'rec-1', type: 'TXT', name: 's2025-1._domainkey.acme.com', content: 'old' },
             ],
-          })
+          }),
         );
       }
       return new Response(JSON.stringify({ success: true, errors: [], messages: [], result: {} }));

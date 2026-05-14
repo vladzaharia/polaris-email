@@ -1,0 +1,11 @@
+node_modules
+dist
+build
+coverage
+.wrangler
+**/*.d.ts
+**/generated/**
+packages/sdk-node/**
+packages/sdk-python/**
+packages/sdk-go/**
+.worktrees

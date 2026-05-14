@@ -3,11 +3,7 @@
 // (replaces the legacy routing_rules endpoints).
 // All HMAC-auth + `admin:*` scope.
 import { Hono } from 'hono';
-import {
-  CreateWebhookSubRequest,
-  IssueApiKeyRequest,
-  RotateRequest,
-} from '@polaris-email/schema';
+import { CreateWebhookSubRequest, IssueApiKeyRequest, RotateRequest } from '@polaris-email/schema';
 import { audit } from '../audit.js';
 import { bodyText, hmacAuth, requireScope } from '../auth.js';
 import type { Env } from '../env.js';
@@ -144,9 +140,7 @@ admin.get('/v1/admin/api-keys', requireScope('admin:read'), async (c) => {
   const mailbox = c.req.query('mailbox') ?? c.req.query('mailbox_id');
   if (mailbox) {
     // Two-step lookup: principals → api_keys (mock D1 doesn't parse joins).
-    const principals = await c.env.DB.prepare(
-      `SELECT id FROM principals WHERE mailbox_id = ?`,
-    )
+    const principals = await c.env.DB.prepare(`SELECT id FROM principals WHERE mailbox_id = ?`)
       .bind(mailbox)
       .all<{ id: string }>();
     const out: unknown[] = [];
@@ -262,9 +256,7 @@ admin.post('/v1/admin/api-keys/:id/rotate', requireScope('admin:rotate'), async 
     expirationTtl: 60 * 60 * 24 * 365,
   });
   if (body.mode === 'planned') {
-    await c.env.DB.prepare(`UPDATE api_keys SET status = 'secondary' WHERE id = ?`)
-      .bind(id)
-      .run();
+    await c.env.DB.prepare(`UPDATE api_keys SET status = 'secondary' WHERE id = ?`).bind(id).run();
     await audit(c.env, {
       actor: `key:${key.key_id}`,
       action: 'api_key.rotate',
@@ -314,9 +306,7 @@ admin.post('/v1/admin/api-keys/:id/revoke', requireScope('admin:rotate'), async 
   const now = Date.now();
   const nowIso = new Date(now).toISOString();
   // Look up the principal_id so we can stamp the revocation Durable Object.
-  const keyRow = await c.env.DB.prepare(
-    `SELECT principal_id FROM api_keys WHERE id = ?`,
-  )
+  const keyRow = await c.env.DB.prepare(`SELECT principal_id FROM api_keys WHERE id = ?`)
     .bind(id)
     .first<{ principal_id: string }>();
   const r = await c.env.DB.prepare(
@@ -324,7 +314,8 @@ admin.post('/v1/admin/api-keys/:id/revoke', requireScope('admin:rotate'), async 
   )
     .bind(nowIso, id)
     .run();
-  if (r.meta.changes === 0) return buildError(c, 'not_found', 'api key not found or already revoked');
+  if (r.meta.changes === 0)
+    return buildError(c, 'not_found', 'api key not found or already revoked');
   await c.env.KV_KEY_CACHE.delete(`plain:${id}`);
   await c.env.KV_KEY_CACHE.delete(`key:${id}`);
   if (keyRow?.principal_id) {
@@ -376,15 +367,7 @@ admin.post('/v1/admin/webhook-subs', requireScope('admin:rotate'), async (c) => 
        (id, mailbox_id, url, kind, secret, events, created_at)
      VALUES (?, ?, ?, ?, ?, ?, ?)`,
   )
-    .bind(
-      id,
-      body.mailbox_id,
-      body.url,
-      body.kind,
-      secret,
-      JSON.stringify(body.events),
-      nowIso,
-    )
+    .bind(id, body.mailbox_id, body.url, body.kind, secret, JSON.stringify(body.events), nowIso)
     .run();
   await audit(c.env, {
     actor: `key:${key.key_id}`,
@@ -431,9 +414,7 @@ admin.get('/v1/daemon/credentials', requireScope('admin:read'), async (c) => {
       `SELECT id, principal_id, sender_id, username, bcrypt_hash, disabled_at, last_used_at
        FROM submission_credentials`,
     ).all<CredRow>();
-    senderRows = await c.env.DB.prepare(
-      `SELECT id, address FROM mailbox_senders`,
-    ).all<SenderRow>();
+    senderRows = await c.env.DB.prepare(`SELECT id, address FROM mailbox_senders`).all<SenderRow>();
   } catch {
     // Tables absent (degraded environment). Treat as empty.
   }
@@ -449,8 +430,6 @@ admin.get('/v1/daemon/credentials', requireScope('admin:read'), async (c) => {
       allowed_senders: r.sender_id ? [senderAddrById.get(r.sender_id) ?? ''].filter(Boolean) : [],
       mirror_version: mirrorVersion,
     }));
-  const deletions = credRows.results
-    .filter((r) => r.disabled_at != null)
-    .map((r) => r.id);
+  const deletions = credRows.results.filter((r) => r.disabled_at != null).map((r) => r.id);
   return c.json({ updates, deletions, mirror_version: mirrorVersion });
 });

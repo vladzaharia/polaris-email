@@ -56,7 +56,7 @@
   `polaris-webhook.v1`), canonical-string includes method+path+query+ts+nonce+body-hash.
   Constant-time compare. `v1=` allowlist refuses downgrade.
 - **Forensic AEAD** AES-GCM with HKDF-per-row key derivation from a 256-bit master.
-  Master held in `wrangler secret` for the *forensic* Worker only.
+  Master held in `wrangler secret` for the _forensic_ Worker only.
 - **Audit chain** SHA-256 prev_hash linking, hourly anchor signed and pushed to R2 under
   Object Lock. Anchor signing key is held separately.
 - **Argon2id parameters** OWASP 2024 minimums; declared in `packages/crypto-utils`.

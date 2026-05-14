@@ -34,7 +34,9 @@ async function send(body: object) {
   const query = '';
   const bodyHash = createHash('sha256').update(text).digest('hex');
   const canonical = ['polaris-api.v1', 'POST', path, query, ts, n, bodyHash].join('\n');
-  const sig = 'v1=' + createHmac('sha256', process.env.POLARIS_EMAIL_KEY_SECRET!).update(canonical).digest('hex');
+  const sig =
+    'v1=' +
+    createHmac('sha256', process.env.POLARIS_EMAIL_KEY_SECRET!).update(canonical).digest('hex');
   const res = await fetch(process.env.POLARIS_EMAIL_URL! + path, {
     method: 'POST',
     headers: {

@@ -7,9 +7,7 @@ import { z } from 'zod';
 
 // ---------- primitives ----------
 
-export const Ulid = z
-  .string()
-  .regex(/^[0-9A-HJKMNP-TV-Z]{26}$/, 'invalid ulid');
+export const Ulid = z.string().regex(/^[0-9A-HJKMNP-TV-Z]{26}$/, 'invalid ulid');
 export const ServiceSlug = z.string().regex(/^[a-z][a-z0-9-]{0,63}$/);
 export const RuleSlug = z.string().regex(/^[a-z][a-z0-9-]{0,63}$/);
 export const Address = z.string().email().max(320);
@@ -172,13 +170,7 @@ export type MailboxReceiver = z.infer<typeof MailboxReceiver>;
 
 // ---------- mail domain ----------
 
-export const MailDomainStatus = z.enum([
-  'pending',
-  'verifying',
-  'verified',
-  'failed',
-  'disabled',
-]);
+export const MailDomainStatus = z.enum(['pending', 'verifying', 'verified', 'failed', 'disabled']);
 export type MailDomainStatus = z.infer<typeof MailDomainStatus>;
 
 export const DmarcPolicy = z.enum(['none', 'quarantine', 'reject']);

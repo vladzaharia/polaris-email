@@ -6,9 +6,9 @@
   "additionalProperties": false,
   "required": ["name"],
   "properties": {
-    "name":        { "type": "string", "minLength": 1 },
+    "name": { "type": "string", "minLength": 1 },
     "environment": { "type": "string", "enum": ["prod", "staging", "dev"], "default": "prod" },
-    "output_form": { "type": "string", "enum": ["compose", "systemd"],     "default": "compose" },
-    "write_file":  { "type": "string" }
+    "output_form": { "type": "string", "enum": ["compose", "systemd"], "default": "compose" },
+    "write_file": { "type": "string" }
   }
 }

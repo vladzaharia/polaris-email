@@ -25,7 +25,12 @@ const t = nodemailer.createTransport({
   secure: true, // implicit TLS
   auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
 });
-await t.sendMail({ from: 'noreply@example.com', to: 'user@external.com', subject: 'Hi', text: 'Hello' });
+await t.sendMail({
+  from: 'noreply@example.com',
+  to: 'user@external.com',
+  subject: 'Hi',
+  text: 'Hello',
+});
 ```
 
 ### PHPMailer
@@ -117,15 +122,15 @@ set folder="imaps://polaris-email.example.ts.net:993"
 
 When the bridge translates polaris-email REST errors back to SMTP reply codes, it uses this table:
 
-| polaris-email code     | SMTP reply             |
-|------------------------|------------------------|
-| `scope_violation`      | `550 5.7.1`           |
-| `rate_limited`         | `451 4.7.1`           |
-| `domain_not_verified`  | `550 5.7.10`          |
-| `key_revoked`          | `535 5.7.8`           |
-| `bad_signature`        | `535 5.7.8`           |
-| `cf_upstream`          | `421 4.3.0`           |
-| `nonce_replay`         | `550 5.7.1`           |
-| `recipient_rejected`   | `550 5.1.1`           |
-| `idempotency_conflict` | `550 5.7.1`           |
-| `degraded`             | `421 4.3.0`           |
+| polaris-email code     | SMTP reply   |
+| ---------------------- | ------------ |
+| `scope_violation`      | `550 5.7.1`  |
+| `rate_limited`         | `451 4.7.1`  |
+| `domain_not_verified`  | `550 5.7.10` |
+| `key_revoked`          | `535 5.7.8`  |
+| `bad_signature`        | `535 5.7.8`  |
+| `cf_upstream`          | `421 4.3.0`  |
+| `nonce_replay`         | `550 5.7.1`  |
+| `recipient_rejected`   | `550 5.1.1`  |
+| `idempotency_conflict` | `550 5.7.1`  |
+| `degraded`             | `421 4.3.0`  |

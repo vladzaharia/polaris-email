@@ -14,37 +14,31 @@
       "binding": "DB",
       "database_name": "polaris-email",
       "database_id": "REPLACE_WITH_LOCAL",
-      "migrations_dir": "migrations"
-    }
+      "migrations_dir": "migrations",
+    },
   ],
-  "r2_buckets": [
-    { "binding": "R2", "bucket_name": "polaris-email", "jurisdiction": "default" }
-  ],
+  "r2_buckets": [{ "binding": "R2", "bucket_name": "polaris-email", "jurisdiction": "default" }],
   "kv_namespaces": [
     { "binding": "KV_NONCE", "id": "REPLACE_WITH_LOCAL" },
     { "binding": "KV_IDEMPOTENCY", "id": "REPLACE_WITH_LOCAL" },
     { "binding": "KV_RATE_LIMIT", "id": "REPLACE_WITH_LOCAL" },
-    { "binding": "KV_KEY_CACHE", "id": "REPLACE_WITH_LOCAL" }
+    { "binding": "KV_KEY_CACHE", "id": "REPLACE_WITH_LOCAL" },
   ],
   "queues": {
-    "producers": [
-      { "binding": "OUTBOUND_QUEUE", "queue": "polaris-email-outbound" }
-    ]
+    "producers": [{ "binding": "OUTBOUND_QUEUE", "queue": "polaris-email-outbound" }],
   },
   "durable_objects": {
     "bindings": [
       {
         "name": "REVOCATION_DO",
         "class_name": "RevocationDO",
-        "script_name": "polaris-email-api"
-      }
-    ]
+        "script_name": "polaris-email-api",
+      },
+    ],
   },
-  "migrations": [
-    { "tag": "v1", "new_classes": ["RevocationDO"] }
-  ],
+  "migrations": [{ "tag": "v1", "new_classes": ["RevocationDO"] }],
   "vars": {
     "VERIFY_ALGORITHMS": "v1",
-    "API_BASE_URL": "https://polaris-email-api.workers.dev"
-  }
+    "API_BASE_URL": "https://polaris-email-api.workers.dev",
+  },
 }

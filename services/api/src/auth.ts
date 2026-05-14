@@ -32,8 +32,7 @@ export function hmacAuth(direction: 'polaris-api.v1'): MiddlewareHandler<{ Bindi
   return async (c, next) => {
     const env = c.env;
     const keyId = c.req.header('x-polaris-key-id');
-    if (!keyId)
-      return buildError(c, 'unauthorized', 'X-Polaris-Key-Id required');
+    if (!keyId) return buildError(c, 'unauthorized', 'X-Polaris-Key-Id required');
     if (!/^[0-9A-HJKMNP-TV-Z]{26}$/.test(keyId))
       return buildError(c, 'unauthorized', 'X-Polaris-Key-Id format');
 
@@ -120,7 +119,9 @@ export function hmacAuth(direction: 'polaris-api.v1'): MiddlewareHandler<{ Bindi
         row = null;
       }
       if (row) {
-        c.executionCtx.waitUntil(env.KV_KEY_CACHE.put(cacheKey, JSON.stringify(row), { expirationTtl: 60 }));
+        c.executionCtx.waitUntil(
+          env.KV_KEY_CACHE.put(cacheKey, JSON.stringify(row), { expirationTtl: 60 }),
+        );
       }
     }
     if (!row) {
@@ -164,8 +165,7 @@ export function hmacAuth(direction: 'polaris-api.v1'): MiddlewareHandler<{ Bindi
       allowedAlgorithms: env.VERIFY_ALGORITHMS.split(','),
     });
     if (!result.ok) {
-      if (result.code === 'clock_skew')
-        return buildError(c, 'clock_skew', result.message);
+      if (result.code === 'clock_skew') return buildError(c, 'clock_skew', result.message);
       if (result.code === 'algorithm_rejected')
         return buildError(c, 'bad_signature', `algorithm not allowed: ${result.message}`);
       if (result.code === 'missing_header' || result.code === 'header_invalid')
@@ -179,9 +179,7 @@ export function hmacAuth(direction: 'polaris-api.v1'): MiddlewareHandler<{ Bindi
     if (seen) {
       return buildError(c, 'nonce_replay', 'nonce already used for this key');
     }
-    c.executionCtx.waitUntil(
-      env.KV_NONCE.put(nonceKey, '1', { expirationTtl: NONCE_TTL_SECONDS }),
-    );
+    c.executionCtx.waitUntil(env.KV_NONCE.put(nonceKey, '1', { expirationTtl: NONCE_TTL_SECONDS }));
 
     c.set('apiKey', {
       key_id: row.id,

@@ -57,11 +57,7 @@ interface MessageRowFull extends MessageRowMeta {
 }
 
 export default {
-  async queue(
-    batch: MessageBatch<FanoutEvent>,
-    env: Env,
-    _ctx: ExecutionContext,
-  ): Promise<void> {
+  async queue(batch: MessageBatch<FanoutEvent>, env: Env, _ctx: ExecutionContext): Promise<void> {
     for (const m of batch.messages) {
       try {
         await deliver(env, m.body);
@@ -159,12 +155,7 @@ async function deliver(env: Env, ev: FanoutEvent): Promise<void> {
   }
 }
 
-async function deliverToSub(
-  env: Env,
-  ev: FanoutEvent,
-  sub: SubRow,
-  body: string,
-): Promise<void> {
+async function deliverToSub(env: Env, ev: FanoutEvent, sub: SubRow, body: string): Promise<void> {
   const nowIso = new Date().toISOString();
   await env.DB.prepare(
     `INSERT OR IGNORE INTO message_deliveries

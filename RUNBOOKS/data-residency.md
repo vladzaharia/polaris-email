@@ -27,7 +27,7 @@ info` and `wrangler r2 bucket info`.
 Erasure is not yet a first-class operation. The current path:
 
 1. Identify the affected messages via the audit log + `messages` table (`tenant_id`
-   + recipient hash columns).
+   - recipient hash columns).
 2. Manually `wrangler d1 execute` a DELETE for the relevant rows.
 3. R2 Object Lock blocks immediate erasure; place delete markers and accept that the
    underlying objects expire on the configured retention window.

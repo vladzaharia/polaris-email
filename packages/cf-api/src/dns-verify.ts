@@ -122,7 +122,9 @@ export class DohDnsVerifier implements DnsVerifier {
     u.searchParams.set('name', record.name);
     u.searchParams.set('type', String(type));
     try {
-      const res = await this.fetchImpl(u.toString(), { headers: { Accept: 'application/dns-json' } });
+      const res = await this.fetchImpl(u.toString(), {
+        headers: { Accept: 'application/dns-json' },
+      });
       if (!res.ok) return [];
       const json = (await res.json()) as DohResponse;
       return (json.Answer ?? []).map((a) => a.data);

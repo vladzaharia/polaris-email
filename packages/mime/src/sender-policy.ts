@@ -16,7 +16,7 @@ export interface SenderPolicy {
 export class SenderPolicyError extends Error {
   constructor(
     message: string,
-    public readonly code: string
+    public readonly code: string,
   ) {
     super(message);
   }
@@ -87,16 +87,10 @@ export function enforceSenderPolicy(mime: ParsedMime, policy: SenderPolicy): voi
   }
   const fromAddr = extractSingleAddress(fromValue);
   if (!fromAddr) {
-    throw new SenderPolicyError(
-      'From: must contain exactly one mailbox',
-      'multi_mailbox_from'
-    );
+    throw new SenderPolicyError('From: must contain exactly one mailbox', 'multi_mailbox_from');
   }
   if (!allowed.has(fromAddr)) {
-    throw new SenderPolicyError(
-      `From: ${fromAddr} not in allowed_senders`,
-      'from_not_allowed'
-    );
+    throw new SenderPolicyError(`From: ${fromAddr} not in allowed_senders`, 'from_not_allowed');
   }
 
   const senderValue = getHeader(mime, 'sender');
@@ -105,7 +99,7 @@ export function enforceSenderPolicy(mime: ParsedMime, policy: SenderPolicy): voi
     if (!senderAddr || !allowed.has(senderAddr)) {
       throw new SenderPolicyError(
         `Sender: ${senderAddr ?? '<malformed>'} not in allowed_senders`,
-        'sender_not_allowed'
+        'sender_not_allowed',
       );
     }
   }
@@ -114,17 +108,14 @@ export function enforceSenderPolicy(mime: ParsedMime, policy: SenderPolicy): voi
   if (replyTo) {
     const replyAddr = extractSingleAddress(replyTo);
     if (!replyAddr) {
-      throw new SenderPolicyError(
-        'Reply-To: must be a single mailbox',
-        'multi_mailbox_reply_to'
-      );
+      throw new SenderPolicyError('Reply-To: must be a single mailbox', 'multi_mailbox_reply_to');
     }
     if (!allowed.has(replyAddr)) {
       // Reply-To allowed if it's any address on a domain the principal can send from.
       // Conservative: require exact match.
       throw new SenderPolicyError(
         `Reply-To: ${replyAddr} not in allowed_senders`,
-        'reply_to_not_allowed'
+        'reply_to_not_allowed',
       );
     }
   }

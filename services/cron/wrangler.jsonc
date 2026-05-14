@@ -5,23 +5,16 @@
   "compatibility_date": "2025-01-01",
   "observability": { "enabled": true },
   "triggers": {
-    "crons": [
-      "0 * * * *",
-      "0 9 * * 1",
-      "* * * * *",
-      "0 3 * * *"
-    ]
+    "crons": ["0 * * * *", "0 9 * * 1", "* * * * *", "0 3 * * *"],
   },
   "d1_databases": [
-    { "binding": "DB", "database_name": "polaris-email", "database_id": "REPLACE_WITH_LOCAL" }
+    { "binding": "DB", "database_name": "polaris-email", "database_id": "REPLACE_WITH_LOCAL" },
   ],
-  "r2_buckets": [
-    { "binding": "R2", "bucket_name": "polaris-email" }
-  ],
+  "r2_buckets": [{ "binding": "R2", "bucket_name": "polaris-email" }],
   "vars": {
     "ANCHOR_R2_PREFIX": "anchors/",
     "ALERT_WEBHOOK": "https://alerts.example.com/polaris-email",
     "API_BASE_URL": "https://polaris-email-api.workers.dev",
-    "MAX_LATENCY_MS": "300000"
-  }
+    "MAX_LATENCY_MS": "300000",
+  },
 }

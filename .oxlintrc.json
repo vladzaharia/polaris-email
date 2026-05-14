@@ -1,0 +1,47 @@
+{
+  "$schema": "https://raw.githubusercontent.com/oxc-project/oxc/main/npm/oxlint/configuration_schema.json",
+  "plugins": ["typescript", "react", "import"],
+  "env": {
+    "node": true,
+    "browser": true,
+    "es2025": true
+  },
+  "globals": {
+    "ScheduledEvent": "readonly",
+    "ExecutionContext": "readonly",
+    "KVNamespace": "readonly",
+    "R2Bucket": "readonly",
+    "D1Database": "readonly",
+    "DurableObjectNamespace": "readonly",
+    "Queue": "readonly",
+    "Fetcher": "readonly"
+  },
+  "rules": {
+    "typescript/no-floating-promises": "error",
+    "typescript/no-unused-vars": [
+      "error",
+      { "argsIgnorePattern": "^_", "varsIgnorePattern": "^_" }
+    ],
+    "typescript/no-explicit-any": "warn",
+    "no-console": "warn"
+  },
+  "overrides": [
+    {
+      "files": ["**/test/**", "**/*.test.ts"],
+      "rules": {
+        "typescript/no-explicit-any": "off",
+        "no-console": "off"
+      }
+    },
+    {
+      "files": ["services/in/**", "services/fanout/**", "services/out/**"],
+      "rules": {
+        "typescript/no-floating-promises": "warn"
+      }
+    },
+    {
+      "files": ["**/generated/**"],
+      "rules": {}
+    }
+  ]
+}

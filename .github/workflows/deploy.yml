@@ -23,7 +23,7 @@ jobs:
     if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     permissions:
-      contents: write   # to push the deployed/main tag
+      contents: write # to push the deployed/main tag
     env:
       DEPLOY_ALL: ${{ github.event.inputs.all }}
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -31,7 +31,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0   # need full history to diff against deployed/main
+          fetch-depth: 0 # need full history to diff against deployed/main
 
       - uses: pnpm/action-setup@v4
         with: { version: 9 }
@@ -43,13 +43,13 @@ jobs:
       - name: Restore deploy config from secrets
         env:
           CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
-          CF_API_TOKEN:  ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CF_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           SYNTHETIC_MONITOR_DOMAIN: ${{ vars.SYNTHETIC_MONITOR_DOMAIN }}
           POLARIS_API_HOSTNAME: ${{ vars.POLARIS_API_HOSTNAME }}
           BRIDGE_HOST: ${{ vars.BRIDGE_HOST }}
           ALERT_WEBHOOK: ${{ vars.ALERT_WEBHOOK }}
           SYNTHETIC_FROM: ${{ vars.SYNTHETIC_FROM }}
-          SYNTHETIC_TO:   ${{ vars.SYNTHETIC_TO }}
+          SYNTHETIC_TO: ${{ vars.SYNTHETIC_TO }}
           DEPLOY_STATE_JSON: ${{ secrets.DEPLOY_STATE_JSON }}
           BOOTSTRAP_OUTPUT_JSON: ${{ secrets.BOOTSTRAP_OUTPUT_JSON }}
         run: |

@@ -36,7 +36,7 @@ builds:
 archives:
   - id: default
     formats: [tar.gz]
-    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    name_template: '{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}'
     format_overrides:
       - goos: windows
         formats: [zip]
@@ -50,10 +50,10 @@ archives:
 # polaris-email pml` after extraction (Brew formula handles it automatically).
 
 checksum:
-  name_template: "checksums.txt"
+  name_template: 'checksums.txt'
 
 snapshot:
-  version_template: "{{ incpatch .Version }}-snapshot"
+  version_template: '{{ incpatch .Version }}-snapshot'
 
 changelog:
   sort: asc
@@ -71,8 +71,8 @@ release:
 
 brews:
   - name: polaris-email
-    homepage: "https://github.com/vladzaharia/polaris-email"
-    description: "Operator CLI for the polaris-email control plane"
+    homepage: 'https://github.com/vladzaharia/polaris-email'
+    description: 'Operator CLI for the polaris-email control plane'
     license: MIT
     repository:
       owner: vladzaharia

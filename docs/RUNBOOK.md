@@ -45,7 +45,7 @@ Look at error class:
   polaris-email domain show acme.com   # look for dkim_keys with state
   ```
   If `retiring` was removed from DNS prematurely, restore via `polaris-email
-  domain rotate-dkim acme.com --rollback`.
+domain rotate-dkim acme.com --rollback`.
 - **rate_limited**: tenant exceeding per-tenant rate limit. Coordinate with
   tenant; if legitimate, raise their `tenants.rate_limit_per_min` via
   `polaris-email tenant update`.
@@ -182,4 +182,4 @@ Cost cliffs to look for (I19):
 - **Never** run `polaris-email domain delete` without checking for live
   webhook subscriptions first; orphan subs lose inbound mail silently.
 - **Two-person rule** is enforced by Cloudflare Access for: `tenant
-  rotate-pepper`, `domain delete`, `webhook dlq drop`, anchor key rotation.
+rotate-pepper`, `domain delete`, `webhook dlq drop`, anchor key rotation.

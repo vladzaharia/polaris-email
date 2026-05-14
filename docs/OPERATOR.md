@@ -66,7 +66,7 @@ Steps the wizard walks you through:
    MX records pointing at `route1/2/3.mx.cloudflare.net`) + single
    catch-all rule `*@<zone>` → `workers/in` (per I8 catch-all-only routing).
 5. DNS verification state machine (A10): `published → seen_via_authoritative
-   → seen_via_three_resolvers → confirmed`. The `published` step now means
+→ seen_via_three_resolvers → confirmed`. The `published` step now means
    "CF reports the record exists in its zone" — a CF API check, not a
    write-and-poll. The remaining steps are DoH-only and confirm the
    public-internet view matches.
@@ -86,7 +86,8 @@ polaris-email tenant disable newsletter
 ```
 
 A tenant is a consumer aggregate. It has zero or more **principals** (API keys
-+ SMTP credentials). Senders are attached implicitly via `polaris-email cred
+
+- SMTP credentials). Senders are attached implicitly via `polaris-email cred
 issue --tenant <name> --senders <list>`.
 
 ### C. Manage credentials

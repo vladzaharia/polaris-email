@@ -30,21 +30,21 @@ AUDIT_LOG_PATH=/var/log/polaris-daemon/audit.log \
 
 ## Environment variables
 
-| Variable | Required | Default | Description |
-|---|---|---|---|
-| `POLARIS_API_URL` | yes | — | Base URL of the Polaris API. |
-| `DAEMON_NAME` | yes | — | Hostname used for SMTP `EHLO`. |
-| `DAEMON_ID` / `DAEMON_ID_FILE` | one of | — | Daemon ULID. |
-| `DAEMON_HMAC_KEY` / `DAEMON_HMAC_KEY_FILE` | one of | — | Shared HMAC secret. |
-| `ACCESS_CLIENT_ID` | yes | — | Cloudflare Access service token id. |
-| `ACCESS_CLIENT_SECRET` | yes | — | Cloudflare Access service token secret. |
-| `TLS_CERT` | yes | — | PEM cert path (hot-reloaded). |
-| `TLS_KEY` | yes | — | PEM key path. |
-| `LISTEN_ADDR` | no | `:465` | Implicit-TLS SMTPS listen addr. |
-| `POLL_INTERVAL` | no | `5s` | Credential mirror poll interval. |
-| `MAX_MESSAGE_SIZE` | no | `26214400` | Bytes. |
-| `SQLITE_PATH` | no | `/var/lib/polaris-daemon/credstore.db` | Mirror DB. |
-| `AUDIT_LOG_PATH` | no | `/var/log/polaris-daemon/audit.log` | JSON-lines audit. |
+| Variable                                   | Required | Default                                | Description                             |
+| ------------------------------------------ | -------- | -------------------------------------- | --------------------------------------- |
+| `POLARIS_API_URL`                          | yes      | —                                      | Base URL of the Polaris API.            |
+| `DAEMON_NAME`                              | yes      | —                                      | Hostname used for SMTP `EHLO`.          |
+| `DAEMON_ID` / `DAEMON_ID_FILE`             | one of   | —                                      | Daemon ULID.                            |
+| `DAEMON_HMAC_KEY` / `DAEMON_HMAC_KEY_FILE` | one of   | —                                      | Shared HMAC secret.                     |
+| `ACCESS_CLIENT_ID`                         | yes      | —                                      | Cloudflare Access service token id.     |
+| `ACCESS_CLIENT_SECRET`                     | yes      | —                                      | Cloudflare Access service token secret. |
+| `TLS_CERT`                                 | yes      | —                                      | PEM cert path (hot-reloaded).           |
+| `TLS_KEY`                                  | yes      | —                                      | PEM key path.                           |
+| `LISTEN_ADDR`                              | no       | `:465`                                 | Implicit-TLS SMTPS listen addr.         |
+| `POLL_INTERVAL`                            | no       | `5s`                                   | Credential mirror poll interval.        |
+| `MAX_MESSAGE_SIZE`                         | no       | `26214400`                             | Bytes.                                  |
+| `SQLITE_PATH`                              | no       | `/var/lib/polaris-daemon/credstore.db` | Mirror DB.                              |
+| `AUDIT_LOG_PATH`                           | no       | `/var/log/polaris-daemon/audit.log`    | JSON-lines audit.                       |
 
 ## Multi-host operation
 

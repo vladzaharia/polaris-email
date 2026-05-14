@@ -130,13 +130,13 @@ These cannot be fully automated from this repo and are intentionally left as che
 
 ## State files (all gitignored)
 
-| File | Purpose |
-|---|---|
-| `.env.deploy` | Environment-specific config written by `make configure`. |
-| `.deploy-state.json` | All Cloudflare resource IDs + last deployed version per service + rotation state. |
+| File                     | Purpose                                                                               |
+| ------------------------ | ------------------------------------------------------------------------------------- |
+| `.env.deploy`            | Environment-specific config written by `make configure`.                              |
+| `.deploy-state.json`     | All Cloudflare resource IDs + last deployed version per service + rotation state.     |
 | `.bootstrap-output.json` | Admin `key_id` + `key_secret` from the one-time bootstrap. **Treat as a credential.** |
-| `secrets.created.json` | Timestamps for master secret seeding (names only, no values). |
-| `.deploy-state.last-sha` | Last SHA `bin/deploy.sh --changed` deployed, for diff computation. |
+| `secrets.created.json`   | Timestamps for master secret seeding (names only, no values).                         |
+| `.deploy-state.last-sha` | Last SHA `bin/deploy.sh --changed` deployed, for diff computation.                    |
 
 If you lose `.deploy-state.json`, run `make state-rebuild` (or `make state-rebuild DRY=1` to preview). It queries `wrangler d1 list`, `wrangler kv namespace list`, and `wrangler queues list`, matches resources by name, and writes a fresh state file (the previous one, if any, is backed up to `.deploy-state.json.bak.<timestamp>`). Then re-run `bin/render-wrangler-local.sh` to materialize the local configs.
 
@@ -151,7 +151,7 @@ If you lose `.deploy-state.json`, run `make state-rebuild` (or `make state-rebui
 - `DEPLOY_STATE_JSON` — contents of `.deploy-state.json`.
 - `BOOTSTRAP_OUTPUT_JSON` — contents of `.bootstrap-output.json`.
 
-And these repo-level *variables* (non-secret):
+And these repo-level _variables_ (non-secret):
 
 - `POLARIS_API_HOSTNAME`, `ALERT_WEBHOOK`.
 

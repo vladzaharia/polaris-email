@@ -144,9 +144,7 @@ mailboxes.patch('/v1/admin/mailboxes/:id', requireScope('admin:rotate'), async (
   sets.push('updated_at = ?');
   binds.push(nowIso);
   binds.push(id);
-  const r = await c.env.DB.prepare(
-    `UPDATE mailboxes SET ${sets.join(', ')} WHERE id = ?`,
-  )
+  const r = await c.env.DB.prepare(`UPDATE mailboxes SET ${sets.join(', ')} WHERE id = ?`)
     .bind(...binds)
     .run();
   if (r.meta.changes === 0) return buildError(c, 'not_found', 'mailbox not found');
@@ -248,8 +246,7 @@ mailboxes.post('/v1/admin/mailboxes/:id/senders', requireScope('admin:rotate'), 
       )
       .run();
   } catch (e) {
-    if (String(e).includes('UNIQUE'))
-      return buildError(c, 'conflict', 'address already in use');
+    if (String(e).includes('UNIQUE')) return buildError(c, 'conflict', 'address already in use');
     throw e;
   }
   await audit(c.env, {
@@ -286,8 +283,7 @@ mailboxes.delete(
     )
       .bind(nowIso, senderId)
       .run();
-    if (r.meta.changes === 0)
-      return buildError(c, 'not_found', 'not found or already disabled');
+    if (r.meta.changes === 0) return buildError(c, 'not_found', 'not found or already disabled');
     await audit(c.env, {
       actor: `key:${key.key_id}`,
       action: 'mailbox_sender.disable',
@@ -299,55 +295,51 @@ mailboxes.delete(
 );
 
 // ---------- create mailbox_receiver ----------
-mailboxes.post(
-  '/v1/admin/mailboxes/:id/receivers',
-  requireScope('admin:rotate'),
-  async (c) => {
-    const key = c.get('apiKey');
-    const mailboxId = c.req.param('id');
-    let body;
-    try {
-      // The schema's mailbox_id is taken from the URL path; fold it in before parse.
-      const raw = JSON.parse(bodyText(c) || '{}');
-      raw.mailbox_id = mailboxId;
-      body = CreateMailboxReceiverRequest.parse(raw);
-    } catch (e) {
-      return buildError(c, 'bad_request', e instanceof Error ? e.message : 'invalid body');
-    }
-    const id = ulid();
-    const nowIso = new Date().toISOString();
-    await c.env.DB.prepare(
-      `INSERT INTO mailbox_receivers
+mailboxes.post('/v1/admin/mailboxes/:id/receivers', requireScope('admin:rotate'), async (c) => {
+  const key = c.get('apiKey');
+  const mailboxId = c.req.param('id');
+  let body;
+  try {
+    // The schema's mailbox_id is taken from the URL path; fold it in before parse.
+    const raw = JSON.parse(bodyText(c) || '{}');
+    raw.mailbox_id = mailboxId;
+    body = CreateMailboxReceiverRequest.parse(raw);
+  } catch (e) {
+    return buildError(c, 'bad_request', e instanceof Error ? e.message : 'invalid body');
+  }
+  const id = ulid();
+  const nowIso = new Date().toISOString();
+  await c.env.DB.prepare(
+    `INSERT INTO mailbox_receivers
          (id, mailbox_id, domain_id, priority, address_pattern, action,
           webhook_sub_id, forward_to, enabled, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`,
+  )
+    .bind(
+      id,
+      mailboxId,
+      body.domain_id,
+      body.priority,
+      body.address_pattern,
+      body.action,
+      body.webhook_sub_id ?? null,
+      body.forward_to ?? null,
+      nowIso,
     )
-      .bind(
-        id,
-        mailboxId,
-        body.domain_id,
-        body.priority,
-        body.address_pattern,
-        body.action,
-        body.webhook_sub_id ?? null,
-        body.forward_to ?? null,
-        nowIso,
-      )
-      .run();
-    await audit(c.env, {
-      actor: `key:${key.key_id}`,
-      action: 'mailbox_receiver.create',
-      target: id,
-      meta: {
-        mailbox_id: mailboxId,
-        domain_id: body.domain_id,
-        priority: body.priority,
-        action: body.action,
-      },
-    });
-    return c.json({ id }, 201);
-  },
-);
+    .run();
+  await audit(c.env, {
+    actor: `key:${key.key_id}`,
+    action: 'mailbox_receiver.create',
+    target: id,
+    meta: {
+      mailbox_id: mailboxId,
+      domain_id: body.domain_id,
+      priority: body.priority,
+      action: body.action,
+    },
+  });
+  return c.json({ id }, 201);
+});
 
 // ---------- patch mailbox_receiver (toggle enabled/pattern/action) ----------
 mailboxes.patch(
@@ -400,13 +392,10 @@ mailboxes.patch(
     }
     if (sets.length === 0) return buildError(c, 'bad_request', 'no fields to update');
     binds.push(receiverId);
-    const r = await c.env.DB.prepare(
-      `UPDATE mailbox_receivers SET ${sets.join(', ')} WHERE id = ?`,
-    )
+    const r = await c.env.DB.prepare(`UPDATE mailbox_receivers SET ${sets.join(', ')} WHERE id = ?`)
       .bind(...binds)
       .run();
-    if (r.meta.changes === 0)
-      return buildError(c, 'not_found', 'mailbox_receiver not found');
+    if (r.meta.changes === 0) return buildError(c, 'not_found', 'mailbox_receiver not found');
     await audit(c.env, {
       actor: `key:${key.key_id}`,
       action: 'mailbox_receiver.update',
@@ -432,8 +421,7 @@ mailboxes.delete(
     )
       .bind(nowIso, receiverId)
       .run();
-    if (r.meta.changes === 0)
-      return buildError(c, 'not_found', 'not found or already disabled');
+    if (r.meta.changes === 0) return buildError(c, 'not_found', 'not found or already disabled');
     await audit(c.env, {
       actor: `key:${key.key_id}`,
       action: 'mailbox_receiver.disable',

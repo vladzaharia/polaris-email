@@ -174,7 +174,10 @@ function parseSubHeaders(s: string): { name: string; value: string }[] {
   return out;
 }
 
-function getSubHeader(headers: { name: string; value: string }[], name: string): string | undefined {
+function getSubHeader(
+  headers: { name: string; value: string }[],
+  name: string,
+): string | undefined {
   const n = name.toLowerCase();
   for (const h of headers) if (h.name === n) return h.value;
   return undefined;
@@ -358,7 +361,8 @@ export function mimeToMessage(raw: Uint8Array, row: MessageRowMeta): UnifiedMess
   if (Object.keys(s.headers).length) msg.headers = s.headers;
   if (s.headerMessageId) msg.header_message_id = s.headerMessageId;
   if (row.thread_id) msg.thread_id = row.thread_id;
-  if (row.header_message_id && !msg.header_message_id) msg.header_message_id = row.header_message_id;
+  if (row.header_message_id && !msg.header_message_id)
+    msg.header_message_id = row.header_message_id;
   const auth: NonNullable<UnifiedMessage['auth']> = {};
   if (row.auth_spf) auth.spf = row.auth_spf;
   if (row.auth_dkim) auth.dkim = row.auth_dkim;
@@ -418,8 +422,7 @@ export function composeFromJson(req: SendRequestLike): Uint8Array {
   headerList.push({ nameLc: 'to', name: 'To', value: req.to.join(', ') });
   if (req.cc?.length) headerList.push({ nameLc: 'cc', name: 'Cc', value: req.cc.join(', ') });
   if (req.bcc?.length) headerList.push({ nameLc: 'bcc', name: 'Bcc', value: req.bcc.join(', ') });
-  if (req.reply_to)
-    headerList.push({ nameLc: 'reply-to', name: 'Reply-To', value: req.reply_to });
+  if (req.reply_to) headerList.push({ nameLc: 'reply-to', name: 'Reply-To', value: req.reply_to });
   if (req.subject !== undefined)
     headerList.push({ nameLc: 'subject', name: 'Subject', value: encodeHeaderValue(req.subject) });
   headerList.push({ nameLc: 'mime-version', name: 'MIME-Version', value: '1.0' });
@@ -446,14 +449,24 @@ export function composeFromJson(req: SendRequestLike): Uint8Array {
     const parts: string[] = [];
     if (hasHtml && hasText) {
       const altBoundary = randomBoundary();
-      parts.push(`--${outerBoundary}\r\nContent-Type: multipart/alternative; boundary="${altBoundary}"\r\n\r\n`);
-      parts.push(`--${altBoundary}\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Transfer-Encoding: 8bit\r\n\r\n${req.text}\r\n`);
-      parts.push(`--${altBoundary}\r\nContent-Type: text/html; charset=utf-8\r\nContent-Transfer-Encoding: 8bit\r\n\r\n${req.html}\r\n`);
+      parts.push(
+        `--${outerBoundary}\r\nContent-Type: multipart/alternative; boundary="${altBoundary}"\r\n\r\n`,
+      );
+      parts.push(
+        `--${altBoundary}\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Transfer-Encoding: 8bit\r\n\r\n${req.text}\r\n`,
+      );
+      parts.push(
+        `--${altBoundary}\r\nContent-Type: text/html; charset=utf-8\r\nContent-Transfer-Encoding: 8bit\r\n\r\n${req.html}\r\n`,
+      );
       parts.push(`--${altBoundary}--\r\n`);
     } else if (hasHtml) {
-      parts.push(`--${outerBoundary}\r\nContent-Type: text/html; charset=utf-8\r\nContent-Transfer-Encoding: 8bit\r\n\r\n${req.html}\r\n`);
+      parts.push(
+        `--${outerBoundary}\r\nContent-Type: text/html; charset=utf-8\r\nContent-Transfer-Encoding: 8bit\r\n\r\n${req.html}\r\n`,
+      );
     } else {
-      parts.push(`--${outerBoundary}\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Transfer-Encoding: 8bit\r\n\r\n${req.text ?? ''}\r\n`);
+      parts.push(
+        `--${outerBoundary}\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Transfer-Encoding: 8bit\r\n\r\n${req.text ?? ''}\r\n`,
+      );
     }
     for (const a of req.attachments!) {
       const wrapped = a.content_base64.replace(/\s+/g, '').replace(/(.{76})/g, '$1\r\n');
