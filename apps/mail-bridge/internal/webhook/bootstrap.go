@@ -24,10 +24,10 @@ type Bootstrap struct {
 
 // Result is one entry returned from Bootstrap.Run.
 type Result struct {
-	MailboxID  string
-	SubID      string
-	Secret     string
-	Reused     bool
+	MailboxID string
+	SubID     string
+	Secret    string
+	Reused    bool
 }
 
 // Run registers webhook subscriptions for each mailbox.

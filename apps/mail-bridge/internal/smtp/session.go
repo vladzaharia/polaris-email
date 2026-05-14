@@ -36,11 +36,11 @@ type Session struct {
 	clientIP     string
 	submissionID string
 
-	authedUser    string
-	authedCred    *credstore.Credential
-	envelopeFrom  string
-	envelopeTo    []string
-	receivedAt    time.Time
+	authedUser   string
+	authedCred   *credstore.Credential
+	envelopeFrom string
+	envelopeTo   []string
+	receivedAt   time.Time
 }
 
 // AuthMechanisms advertises only PLAIN.

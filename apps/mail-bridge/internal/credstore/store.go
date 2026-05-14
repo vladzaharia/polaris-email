@@ -13,13 +13,13 @@ import (
 
 // Credential is one daemon credential row.
 type Credential struct {
-	ID              string   `json:"id"`
-	Username        string   `json:"username"`
-	BcryptHash      string   `json:"bcrypt_hash"`
-	AllowedSenders  []string `json:"allowed_senders"`
-	RevokedAt       *int64   `json:"revoked_at,omitempty"`
-	LastUsedAt      *int64   `json:"last_used_at,omitempty"`
-	MirrorVersion   int64    `json:"mirror_version"`
+	ID             string   `json:"id"`
+	Username       string   `json:"username"`
+	BcryptHash     string   `json:"bcrypt_hash"`
+	AllowedSenders []string `json:"allowed_senders"`
+	RevokedAt      *int64   `json:"revoked_at,omitempty"`
+	LastUsedAt     *int64   `json:"last_used_at,omitempty"`
+	MirrorVersion  int64    `json:"mirror_version"`
 }
 
 // Store is a SQLite-backed credential mirror.

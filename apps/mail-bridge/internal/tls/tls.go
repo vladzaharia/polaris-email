@@ -3,7 +3,7 @@
 // Two first-class modes (per memory `feedback_tailscale_sidecar.md`):
 //
 //   - mode = "local"      : load cert/key PEMs from disk, optional hot-reload
-//                            via fsnotify watch (stubbed — see TODO below).
+//     via fsnotify watch (stubbed — see TODO below).
 //   - mode = "tailscale"  : delegate to `tsnet.Server.ListenTLS`.
 //
 // The tsnet path is intentionally stubbed in this slice: the dependency
@@ -46,10 +46,10 @@ type Config struct {
 // listener factories are wired into each protocol server (SMTPS / IMAP /
 // JMAP).
 type Source struct {
-	cfg       Config
-	mu        sync.Mutex
-	cert      *tls.Certificate
-	certAtNS  int64
+	cfg      Config
+	mu       sync.Mutex
+	cert     *tls.Certificate
+	certAtNS int64
 }
 
 // New validates the config and constructs a Source.

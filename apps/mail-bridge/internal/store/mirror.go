@@ -45,12 +45,12 @@ type MailboxState struct {
 
 // MailboxSummary is the aggregate state used for IMAP SELECT.
 type MailboxSummary struct {
-	Exists       int
-	Unseen       int
-	UIDValidity  int64
-	UIDNext      int64
+	Exists        int
+	Unseen        int
+	UIDValidity   int64
+	UIDNext       int64
 	HighestModSeq int64
-	LastState    int64
+	LastState     int64
 }
 
 // Mirror wraps the SQLite database.
