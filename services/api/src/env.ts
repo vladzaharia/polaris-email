@@ -7,17 +7,18 @@ export interface Env {
   KV_IDEMPOTENCY: KVNamespace;
   KV_RATE_LIMIT: KVNamespace;
   KV_KEY_CACHE: KVNamespace;
-  /** Best-effort revocation hint for the daemon's poller. */
-  KV_REVOKED_HINT?: KVNamespace;
 
   OUTBOUND_QUEUE: Queue<OutboundQueueMessage>;
-  INBOUND_QUEUE: Queue<InboundQueueMessage>;
 
   /** Per-principal revocation Durable Object. Synchronous truth for revocation state. */
   REVOCATION_DO: DurableObjectNamespace;
 
   VERIFY_ALGORITHMS: string;
   API_BASE_URL: string;
+
+  /** Max raw body bytes returned inline on GET responses. Larger ⇒ signed-url path. */
+  INLINE_BODY_BYTES_MAX?: string;
+  INLINE_ATTACHMENTS_BYTES_MAX?: string;
 
   // Secrets via `wrangler secret put`:
   POLARIS_SECRET_A?: string;
@@ -31,8 +32,8 @@ export interface Env {
 
 export interface OutboundQueueMessage {
   messageId: string;
-  /** Pre-rendered RFC822 stored in R2; or structured body. */
-  source: 'json' | 'raw';
+  /** Pre-rendered RFC822 stored in R2; outbound is always raw. */
+  source: 'raw';
   r2KeyOrInline: string;
   fromDomain: string;
   fromAddress: string;
@@ -40,10 +41,4 @@ export interface OutboundQueueMessage {
   domainId: string | null;
   mode: 'live' | 'test';
   retries: number;
-}
-
-export interface InboundQueueMessage {
-  messageId: string;
-  domainId: string;
-  tenantId: string | null;
 }

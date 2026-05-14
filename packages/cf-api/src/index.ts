@@ -70,3 +70,10 @@ export {
   type BulkOnboardOpts,
   type BulkOnboardProgress,
 } from './bulk-onboard.js';
+
+export {
+  mintAttachmentUrl,
+  verifyAttachmentUrl,
+  type SignedUrlEnv,
+  type VerifiedAttachmentRef,
+} from './signed-urls.js';

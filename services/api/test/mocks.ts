@@ -1,5 +1,5 @@
 // Minimal in-memory mocks for D1, KV, R2, Queues. Just enough for unit tests.
-import type { Env, InboundQueueMessage, OutboundQueueMessage } from '../src/env.js';
+import type { Env, OutboundQueueMessage } from '../src/env.js';
 
 export class MockKV {
   private map = new Map<string, { v: string; expiresAt: number | null }>();
@@ -186,6 +186,14 @@ function executeSql<T>(
       row['id'] = maxId + 1;
     }
     rows.push(row);
+    // RETURNING support: parse the captured fragment, return the named cols.
+    const retMatch = trimmed.match(/returning\s+(.+)$/is);
+    if (retMatch) {
+      const colsRet = retMatch[1]!.split(',').map((s) => s.trim());
+      const out: TableRow = {};
+      for (const col of colsRet) out[col] = row[col];
+      return { results: [out as unknown as T], meta: { changes: 1 } };
+    }
     return { results: [], meta: { changes: 1 } };
   }
   if (lower.startsWith('update ')) {
@@ -204,8 +212,11 @@ function executeSql<T>(
       if (!setM) continue;
       const col = setM[1]!;
       const val = setM[2]!.trim();
+      const numMatch = val.match(/^\?(\d+)$/);
       if (val === '?') {
         setOps.push({ col, idx: pi++ });
+      } else if (numMatch) {
+        setOps.push({ col, idx: Number(numMatch[1]) - 1 });
       } else if (rows.length && val.match(/^[A-Za-z_]\w*$/) && val in rows[0]!) {
         // column-to-column copy (e.g. imap_pw_bcrypt_prev = imap_pw_bcrypt)
         setOps.push({ col, idx: null, literal: val });
@@ -217,26 +228,34 @@ function executeSql<T>(
         setOps.push({ col, idx: null, literal: val });
       }
     }
-    // WHERE: support patterns we use (col = ?, col = literal, col IS NOT NULL, col <> 'lit')
+    // WHERE: support patterns we use (col = ?, col = ?N, col = literal, IS NULL, etc.)
     const whereParams = params.slice(pi);
     const whereMatches = (row: TableRow): boolean => {
       let wp = 0;
       for (const cond of whereClause.split(/\s+and\s+/i)) {
+        const cTrim = cond.trim();
+        const numMatch = cTrim.match(/^(\w+)\s*=\s*\?(\d+)$/);
         const cm =
-          cond.trim().match(/^(\w+)\s*=\s*\?$/) ??
-          cond.trim().match(/^(\w+)\s*<>\s*'([^']+)'$/) ??
-          cond.trim().match(/^(\w+)\s+IS NOT NULL$/i) ??
-          cond.trim().match(/^(\w+)\s+IS NULL$/i) ??
-          cond.trim().match(/^(\w+)\s*=\s*'([^']+)'$/);
-        if (!cm) throw new Error('mock: where part ' + cond);
-        const col = cm[1]!;
-        if (/IS NOT NULL/i.test(cond)) {
+          cTrim.match(/^(\w+)\s*=\s*\?$/) ??
+          cTrim.match(/^(\w+)\s*<>\s*'([^']+)'$/) ??
+          cTrim.match(/^(\w+)\s+IS NOT NULL$/i) ??
+          cTrim.match(/^(\w+)\s+IS NULL$/i) ??
+          cTrim.match(/^(\w+)\s*=\s*'([^']+)'$/);
+        if (!cm && !numMatch) throw new Error('mock: where part ' + cond);
+        if (numMatch) {
+          const col = numMatch[1]!;
+          const want = params[Number(numMatch[2]) - 1];
+          if (row[col] != want) return false;
+          continue;
+        }
+        const col = cm![1]!;
+        if (/IS NOT NULL/i.test(cTrim)) {
           if (row[col] == null) return false;
-        } else if (/IS NULL/i.test(cond)) {
+        } else if (/IS NULL/i.test(cTrim)) {
           if (row[col] != null) return false;
-        } else if (cm[2] !== undefined) {
-          const lit = cm[2];
-          if (cond.includes('<>')) {
+        } else if (cm![2] !== undefined) {
+          const lit = cm![2];
+          if (cTrim.includes('<>')) {
             if (row[col] == lit) return false;
           } else {
             if (row[col] != lit) return false;
@@ -300,11 +319,40 @@ function executeSql<T>(
             if (!any) return false;
           } else {
             const eq = t.match(/^(\w+)\s*=\s*\?$/);
+            const eqN = t.match(/^(\w+)\s*=\s*\?(\d+)$/);
             const neq = t.match(/^(\w+)\s*<>\s*'([^']+)'$/);
+            const like = t.match(/^(\w+)\s+LIKE\s+\?$/i);
+            const likeN = t.match(/^(\w+)\s+LIKE\s+\?(\d+)$/i);
+            const gte = t.match(/^(\w+)\s*>=\s*\?$/);
+            const lte = t.match(/^(\w+)\s*<=\s*\?$/);
+            const gt = t.match(/^(\w+)\s*>\s*\?$/);
+            const lt = t.match(/^(\w+)\s*<\s*\?$/);
             if (eq) {
               if (row[eq[1]!] != params[wp++]) return false;
+            } else if (eqN) {
+              const idx = Number(eqN[2]) - 1;
+              if (row[eqN[1]!] != params[idx]) return false;
             } else if (neq) {
               if (row[neq[1]!] == neq[2]) return false;
+            } else if (like) {
+              const v = params[wp++];
+              const pat = String(v ?? '').replace(/%/g, '');
+              if (!String(row[like[1]!] ?? '').includes(pat)) return false;
+            } else if (likeN) {
+              const idx = Number(likeN[2]) - 1;
+              const pat = String(params[idx] ?? '').replace(/%/g, '');
+              if (!String(row[likeN[1]!] ?? '').includes(pat)) return false;
+            } else if (gte || lte || gt || lt) {
+              const m = (gte ?? lte ?? gt ?? lt)!;
+              const col = m[1]!;
+              const want = params[wp++];
+              const have = row[col];
+              if (have == null) return false;
+              const cmp = String(have).localeCompare(String(want));
+              if (gte && cmp < 0) return false;
+              if (lte && cmp > 0) return false;
+              if (gt && cmp <= 0) return false;
+              if (lt && cmp >= 0) return false;
             } else {
               throw new Error('mock: where cond ' + t);
             }
@@ -318,13 +366,16 @@ function executeSql<T>(
       filtered = [...filtered].sort((a, b) => Number(b['id']) - Number(a['id']));
     }
     if (/order\s+by\s+created_at\s+desc/i.test(trimmed)) {
-      filtered = [...filtered].sort(
-        (a, b) => Number(b['created_at']) - Number(a['created_at']),
+      filtered = [...filtered].sort((a, b) =>
+        String(b['created_at']).localeCompare(String(a['created_at'])),
       );
     }
     if (/order\s+by\s+id\s+asc/i.test(trimmed)) {
       filtered = [...filtered].sort((a, b) => Number(a['id']) - Number(b['id']));
     }
+    const offsetM = trimmed.match(/offset\s+(\d+)/i);
+    const offset = offsetM ? Number(offsetM[1]) : 0;
+    if (offset > 0) filtered = filtered.slice(offset);
     const limitM = trimmed.match(/limit\s+(\d+)/i);
     const limit = limitM ? Number(limitM[1]) : undefined;
     if (limit != null) filtered = filtered.slice(0, limit);
@@ -337,17 +388,28 @@ function executeSql<T>(
 }
 
 export class MockR2 {
-  private map = new Map<string, { body: string; meta: Record<string, string> }>();
-  async put(key: string, body: string, opts?: { httpMetadata?: { contentType?: string } }) {
-    this.map.set(key, { body, meta: { contentType: opts?.httpMetadata?.contentType ?? '' } });
+  private map = new Map<string, { body: Uint8Array; meta: Record<string, string> }>();
+  async put(
+    key: string,
+    body: string | Uint8Array,
+    opts?: { httpMetadata?: { contentType?: string } },
+  ) {
+    const bytes = typeof body === 'string' ? new TextEncoder().encode(body) : body;
+    this.map.set(key, {
+      body: bytes,
+      meta: { contentType: opts?.httpMetadata?.contentType ?? '' },
+    });
     return { key } as unknown;
   }
   async get(key: string) {
     const e = this.map.get(key);
     if (!e) return null;
+    const bytes = e.body;
+    const buf = new ArrayBuffer(bytes.byteLength);
+    new Uint8Array(buf).set(bytes);
     return {
-      text: async () => e.body,
-      arrayBuffer: async () => new TextEncoder().encode(e.body).buffer,
+      text: async () => new TextDecoder().decode(bytes),
+      arrayBuffer: async () => buf,
     } as unknown;
   }
   async head(key: string) {
@@ -403,7 +465,6 @@ export function mkEnv(overrides: Partial<Env> = {}): Env {
     KV_RATE_LIMIT: new MockKV() as unknown as KVNamespace,
     KV_KEY_CACHE: new MockKV() as unknown as KVNamespace,
     OUTBOUND_QUEUE: new MockQueue<OutboundQueueMessage>() as unknown as Queue<OutboundQueueMessage>,
-    INBOUND_QUEUE: new MockQueue<InboundQueueMessage>() as unknown as Queue<InboundQueueMessage>,
     REVOCATION_DO: mkRevocationDoNamespace() as unknown as DurableObjectNamespace,
     VERIFY_ALGORITHMS: 'v1',
     API_BASE_URL: 'https://polaris-email-api.workers.dev',

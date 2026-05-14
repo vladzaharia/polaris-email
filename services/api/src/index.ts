@@ -3,6 +3,7 @@ import { Hono } from 'hono';
 import { admin } from './routes/admin.js';
 import { bootstrap } from './routes/bootstrap.js';
 import type { Env } from './env.js';
+import { messages } from './routes/messages.js';
 import { sendRaw } from './routes/send-raw.js';
 import { requestId } from '@polaris-email/ids';
 import { buildError } from './errors.js';
@@ -19,6 +20,7 @@ app.use('*', async (c, next) => {
 
 app.get('/healthz', (c) => c.json({ ok: true }));
 
+app.route('/', messages);
 app.route('/', sendRaw);
 app.route('/', admin);
 app.route('/', bootstrap);

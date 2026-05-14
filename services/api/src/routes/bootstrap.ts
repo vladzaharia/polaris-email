@@ -1,9 +1,9 @@
 // /v1/admin/bootstrap: one-time seed of the operator mailbox + first admin key.
 // Protected by POLARIS_SECRET_A (control-plane HMAC); idempotent (subsequent calls 409).
 //
-// Per Phase A11 of the final-architecture plan, bootstrap creates the canonical
-// `operator` mailbox, a principal bound to it, and the admin api_key. The
-// `bootstrap` table's single row acts as the gate (`consumed_at IS NULL`).
+// Bootstrap creates the canonical `operator` mailbox, a principal bound to
+// it, and the admin api_key. The `bootstrap` table's single row acts as the
+// gate (`consumed_at IS NULL`).
 import { Hono } from 'hono';
 import type { Env } from '../env.js';
 import { audit } from '../audit.js';

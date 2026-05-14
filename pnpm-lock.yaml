@@ -211,6 +211,9 @@ importers:
 
   services/api:
     dependencies:
+      '@polaris-email/cf-api':
+        specifier: workspace:*
+        version: link:../../packages/cf-api
       '@polaris-email/hmac':
         specifier: workspace:*
         version: link:../../packages/hmac

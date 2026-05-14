@@ -1,8 +1,8 @@
-// JSON <-> RFC822 bridge for the unified Message shape (Phase C).
+// JSON <-> RFC822 bridge for the unified Message shape.
 //
 // `mimeToMessage()` parses canonical RFC822 bytes and emits the unified Message
 // JSON used by both inbound webhooks and the GET /v1/messages API. Attachment
-// metadata only - bodies are populated at read time (Phase C2 inline-small /
+// metadata only - bodies are populated at read time (inline-small /
 // url-large strategy).
 //
 // `composeFromJson()` does the reverse: takes a SendRequest and produces
@@ -336,7 +336,7 @@ export function summarizeMime(raw: Uint8Array): ParsedMimeSummary {
 /**
  * Build the unified Message JSON for a stored row. Attachment bodies are
  * intentionally omitted - those are populated at API GET time using the
- * inline-small / url-large strategy (Phase C2).
+ * inline-small / url-large strategy.
  */
 export function mimeToMessage(raw: Uint8Array, row: MessageRowMeta): UnifiedMessage {
   const s = summarizeMime(raw);

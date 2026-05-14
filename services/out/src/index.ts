@@ -1,13 +1,13 @@
 // polaris-email-out: queue consumer that drives Cloudflare's send_email bindings.
 //
-// Phase C: dead `source='json'` path is gone. The queue handler always reads
-// the canonical MIME bytes from R2 (via messages.r2_key, content-addressed),
-// hands them to the per-domain `send_email` binding, writes the canonical
-// status to D1 (messages table), and emits a fanout event.
+// The queue handler reads canonical MIME bytes from R2 (via messages.r2_key,
+// content-addressed), hands them to the per-domain `send_email` binding,
+// writes the canonical status to D1 (messages table), and emits a fanout
+// event.
 //
 // The `delivered` transition is the responsibility of services/fanout (it
 // flips messages.status to 'delivered' on the last successful webhook
-// delivery — Phase C4). This worker only handles received → sending →
+// delivery). This worker only handles received → sending →
 // sent | bounced | failed.
 //
 // The per-domain binding name is derived from mail_domains.name by uppercasing

@@ -167,9 +167,9 @@ Cost cliffs to look for (I19):
   moved out of request path. If still in path, escalate.
 - **Queue operations** dominated by webhook retries → check fanout DLQ for
   poison messages.
-- **R2 Class A operations** spike → buggy retry loop re-PUTting MIME (I14).
+- **R2 Class A operations** surge → buggy retry loop re-PUTting MIME (I14).
   Check `messages.send_attempt_id` distribution for tight clustering.
-- **D1 writes** spike → audit log row storm (rate-limit-storm, deploy
+- **D1 writes** surge → audit log row storm (rate-limit-storm, deploy
   failure replays).
 
 ## Safety rules

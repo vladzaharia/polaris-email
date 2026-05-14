@@ -1,6 +1,6 @@
 // polaris-email-fanout: queue consumer that signs + POSTs webhook events.
 //
-// Phase C envelope (v2):
+// Canonical envelope:
 //   {
 //     event_id,
 //     event: 'message.received' | 'message.sent' | 'message.delivered'
@@ -9,12 +9,11 @@
 //     message: <full Message JSON via mimeToMessage on the row>,
 //   }
 //
-// Signature header: `X-Polaris-Sig: v2=<hex>`. Canonical signing string is
-// unchanged from v1; the wrapping envelope is what flipped.
+// Signature header: `X-Polaris-Sig: v2=<hex>`.
 //
 // On the last successful `message_deliveries` row for a message, this worker
 // also flips `messages.status='delivered'` and stamps `delivered_at`
-// (Phase C4 terminal-success bookkeeping).
+// (terminal-success bookkeeping).
 import { sign, generateNonce } from '@polaris-email/hmac';
 import { ulid } from '@polaris-email/ids';
 import { mimeToMessage, type MessageRowMeta } from '@polaris-email/mime';
@@ -214,7 +213,7 @@ async function deliverToSub(
       .bind(result.status, ev.message_id, sub.id)
       .run();
 
-    // Phase C4: if every delivery for this message is now succeeded, flip
+    // If every delivery for this message is now succeeded, flip
     // messages.status='delivered' and stamp delivered_at.
     await maybeMarkDelivered(env, ev.message_id);
     return;

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import app from '../src/index.js';
 import { mkEnv } from './mocks.js';
 import { sign, generateNonce } from '@polaris-email/hmac';
+import { mintAttachmentUrl } from '@polaris-email/cf-api';
 
 // Use an execution context that captures waitUntil promises so KV writes complete
 const ctx = {

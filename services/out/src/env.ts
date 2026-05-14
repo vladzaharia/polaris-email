@@ -8,7 +8,7 @@ export interface Env {
 
 export interface OutboundQueueMessage {
   messageId: string;
-  /** Always 'raw' post Phase C — legacy `source='json'` is gone. */
+  /** Always 'raw' — the queue handler reads canonical MIME bytes from R2. */
   source: 'raw';
   /** R2 key for the canonical MIME bytes. Mirrors messages.r2_key. */
   r2KeyOrInline: string;

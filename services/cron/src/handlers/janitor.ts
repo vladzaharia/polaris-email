@@ -1,8 +1,8 @@
 // Nightly: enforce per-mailbox retention by deleting old messages and their
 // R2 bodies, plus purge expired idempotency_keys.
 //
-// Reference-counted R2 deletion (Phase C1.1)
-// ===========================================
+// Reference-counted R2 deletion
+// ==============================
 // `messages.r2_key` is content-addressed (`mime/XX/YY/SHA256`), so two
 // different `messages` rows can legitimately reference the same R2 object —
 // e.g. inbound dedup or two clients submitting the identical RFC822. Before
@@ -31,8 +31,8 @@ interface MessageRow {
 
 export async function janitor(env: Env): Promise<void> {
   // Mailbox retention is not yet a column on `mailboxes`; this loop walks the
-  // table but no work is done today. The next phase will add a retention_days
-  // column and wire it up; the reference-counted delete below stays as-is.
+  // table but no work is done today. A retention_days column is planned; the
+  // reference-counted delete below stays as-is once it lands.
   const mailboxes = await env.DB.prepare(
     `SELECT id FROM mailboxes WHERE disabled_at IS NULL`,
   ).all<MailboxRow>();

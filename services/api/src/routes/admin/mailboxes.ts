@@ -1,4 +1,4 @@
-// Admin mailbox CRUD endpoints (Phase I2 of the final-architecture plan).
+// Admin mailbox CRUD endpoints.
 //
 // Mailbox is the first-class organizing entity in the mailbox-centric schema:
 // senders, receivers, principals, and webhook_subs all hang off a mailbox.

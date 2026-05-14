@@ -1,16 +1,16 @@
-// Unified message pipeline (Phase C).
+// Unified message pipeline.
 //
 // `processMessage()` is the single entry point for both inbound (CF Email
 // Routing -> services/in) and outbound (REST /v1/messages, SMTP /v1/send/raw
 // -> services/api) flows. All callers normalize their bytes into canonical
 // RFC822 and call this function. It:
 //
-//   1. SHA-256 the canonical bytes and HEAD-then-PUT to R2 (C1.1 reference
-//      counting friendly).
+//   1. SHA-256 the canonical bytes and HEAD-then-PUT to R2 (reference-counted
+//      so the janitor can delete unreferenced objects).
 //   2. Parse + summarize MIME via `@polaris-email/mime`.
 //   3. Outbound only: claim idempotency key in D1.
 //   4. INSERT messages row at `status='received'` with thread_id +
-//      header_message_id (A10a columns).
+//      header_message_id.
 //   5. Outbound: enqueue OUTBOUND_QUEUE, transition to `queued`.
 //      Inbound: resolve mailbox_receivers and return fanout enqueues; the
 //      caller is responsible for dispatching to FANOUT_QUEUE.

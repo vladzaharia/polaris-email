@@ -1,11 +1,12 @@
-// POST /v1/send/raw — daemon-only RFC822 submission endpoint (Phase D6 alias).
+// POST /v1/send/raw — daemon-only RFC822 submission endpoint.
 //
 // Thin wrapper that validates daemon auth + Content-Type, then delegates the
 // entire pipeline to `processMessage()`. The daemon already canonicalizes MIME
 // before forwarding, but processMessage re-validates server-side.
 //
-// NOTE: this file is scheduled for deletion in Phase F7 once the daemon
-// migrates to POST /v1/messages with `Content-Type: message/rfc822`.
+// This route is kept as an alias for the on-prem submission daemon until it
+// migrates to the SDK and the unified POST /v1/messages with
+// `Content-Type: message/rfc822`.
 
 import { Hono } from 'hono';
 import { parseStrict, MimeError, enforceSenderPolicy, SenderPolicyError } from '@polaris-email/mime';
@@ -93,7 +94,7 @@ sendRaw.post('/v1/send/raw', async (c) => {
     }
   }
 
-  // C1: allow-list enforcement on the From/Sender/Reply-To headers.
+  // Allow-list enforcement on the From/Sender/Reply-To headers.
   const senderRow = await c.env.DB.prepare(
     `SELECT address FROM mailbox_senders
       WHERE id = ?1 AND disabled_at IS NULL LIMIT 1`,

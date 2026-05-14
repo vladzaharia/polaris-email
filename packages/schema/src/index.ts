@@ -1,9 +1,8 @@
 // Shared zod schemas + TypeScript types for polaris-email.
 //
-// Mailbox-centric model (Phase C/D of the final-architecture plan). Tenant /
-// environment / forensic / routing-rule types are gone; mailbox, sender, and
-// receiver shapes replace them. See `services/api/migrations/0001_init.sql`
-// for the canonical D1 schema.
+// Mailbox-centric model. Tenant / environment / forensic / routing-rule
+// types are gone; mailbox, sender, and receiver shapes replace them. See
+// `services/api/migrations/0001_init.sql` for the canonical D1 schema.
 import { z } from 'zod';
 
 // ---------- primitives ----------
@@ -304,7 +303,7 @@ export const MessageAttachment = z.object({
   content_type: z.string(),
   size_bytes: z.number().int().nonnegative(),
   // Exactly one of content_base64 or content_url is populated per
-  // inline-small/url-large strategy decided at read time (Phase C2).
+  // inline-small/url-large strategy decided at read time.
   content_base64: z.string().optional(),
   content_url: z.string().url().optional(),
 });
@@ -318,7 +317,7 @@ export const MessageAuth = z.object({
 });
 export type MessageAuth = z.infer<typeof MessageAuth>;
 
-// Unified inbound/outbound message JSON shape (Phase C).
+// Unified inbound/outbound message JSON shape.
 // Bodies (`text`, `html`, attachment content) are optional and resolved at
 // read time. `parsed_json` on the D1 row caches everything except the
 // attachment bodies themselves.
@@ -430,7 +429,7 @@ export type IdempotencyClaim = z.infer<typeof IdempotencyClaim>;
 export const AuditAction = z.enum([
   // bootstrap
   'bootstrap.consume',
-  // mailbox CRUD (Phases C/D)
+  // mailbox CRUD
   'mailbox.create',
   'mailbox.update',
   'mailbox.disable',
@@ -567,10 +566,9 @@ export type CreateMailboxSenderRequest = z.infer<typeof CreateMailboxSenderReque
 
 // ---------- legacy compat aliases ----------
 //
-// Phase C only rewrites types — the SQL strings + route paths these names
-// guard still exist in services/api and apps/panel until C-process / C-routes
-// land. Keeping aliases keeps imports compiling; new code MUST use the
-// mailbox-* names above.
+// Aliases preserved for the SQL strings + route paths that still ship under
+// the legacy names. Keeping aliases keeps imports compiling; new code MUST
+// use the mailbox-* names above.
 export const CreateEmailSenderRequest = CreateMailboxSenderRequest;
 export type CreateEmailSenderRequest = z.infer<typeof CreateEmailSenderRequest>;
 

@@ -28,8 +28,7 @@
   ],
   "queues": {
     "producers": [
-      { "binding": "OUTBOUND_QUEUE", "queue": "polaris-email-outbound" },
-      { "binding": "INBOUND_QUEUE", "queue": "polaris-email-inbound" }
+      { "binding": "OUTBOUND_QUEUE", "queue": "polaris-email-outbound" }
     ]
   },
   "durable_objects": {

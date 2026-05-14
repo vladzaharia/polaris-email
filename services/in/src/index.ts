@@ -1,4 +1,4 @@
-// polaris-email-in: Cloudflare Email Routing handler (Phase C).
+// polaris-email-in: Cloudflare Email Routing handler.
 //
 // Validates inbound MIME + domain + rate-shedding + receiver mailbox lookup,
 // then hands off the entire pipeline (R2 PUT, messages row, audit, fanout
