@@ -5,5 +5,5 @@
 # otherwise pollute blame). Configure git locally with:
 #   git config blame.ignoreRevsFile .git-blame-ignore-revs
 
-# Phase M: initial oxfmt format pass across the tree
-# <sha-will-be-added-after-commit>
+# Initial oxfmt format pass across the tree (oxlint + oxfmt rollout)
+1eec2723d1e2d7e12db9135b7814d2b765d020b6
