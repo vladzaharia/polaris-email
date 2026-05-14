@@ -7,11 +7,12 @@ import { buildError } from './errors.js';
 
 export interface AuthenticatedKey {
   key_id: string;
-  /** Tenant id (canonical column on principals table). */
-  tenant_id: string | null;
+  /** Mailbox id resolved via principals.mailbox_id (mailbox-centric model). */
+  mailbox_id: string | null;
   /** Principal id (api_keys.principal_id → principals.id). */
   principal_id: string | null;
-  sender_scopes_raw: string;
+  /** ULIDs of mailbox_senders this key is restricted to (empty = unrestricted). */
+  sender_scope_ids: string[];
   scopes_raw: string;
   rate_limit_per_min: number;
   status: 'primary' | 'secondary' | 'revoked';
@@ -51,10 +52,10 @@ export function hmacAuth(direction: 'polaris-api.v1'): MiddlewareHandler<{ Bindi
     });
     type RowShape = {
       id: string;
-      tenant_id: string | null;
+      mailbox_id: string | null;
       principal_id: string | null;
       secret_argon2id: string;
-      sender_scopes: string | null;
+      sender_scope_ids: string[];
       scopes: string;
       rate_limit_per_min: number;
       status: 'primary' | 'secondary' | 'revoked';
@@ -64,12 +65,12 @@ export function hmacAuth(direction: 'polaris-api.v1'): MiddlewareHandler<{ Bindi
     if (cached) {
       row = cached as RowShape;
     } else {
-      // Two-query lookup so the in-memory mock D1 (which doesn't parse JOINs)
-      // can satisfy this path. Production D1 sees both queries against the
-      // single-region SQLite store so the cost is one extra round-trip on
+      // Three-query lookup so the in-memory mock D1 (which doesn't parse JOINs)
+      // can satisfy this path. Production D1 sees the queries against the
+      // single-region SQLite store so the cost is two extra round-trips on
       // cold KV cache only (warm requests skip both via KV_KEY_CACHE).
       const keyRow = await env.DB.prepare(
-        `SELECT id, principal_id, secret_argon2id, sender_scopes, scopes,
+        `SELECT id, principal_id, secret_argon2id, scopes,
                 rate_limit_per_min, status, revoked_at
          FROM api_keys WHERE id = ?`,
       )
@@ -78,31 +79,38 @@ export function hmacAuth(direction: 'polaris-api.v1'): MiddlewareHandler<{ Bindi
           id: string;
           principal_id: string | null;
           secret_argon2id: string;
-          sender_scopes: string | null;
           scopes: string;
           rate_limit_per_min: number;
           status: 'primary' | 'secondary' | 'revoked';
           revoked_at: number | null;
         }>();
       if (keyRow) {
-        let tenantId: string | null = null;
+        let mailboxId: string | null = null;
         if (keyRow.principal_id) {
           const principalRow = await env.DB.prepare(
-            `SELECT tenant_id, disabled_at FROM principals WHERE id = ?`,
+            `SELECT mailbox_id, disabled_at FROM principals WHERE id = ?`,
           )
             .bind(keyRow.principal_id)
-            .first<{ tenant_id: string; disabled_at: string | null }>();
+            .first<{ mailbox_id: string; disabled_at: string | null }>();
           if (!principalRow || principalRow.disabled_at) {
             return buildError(c, 'key_revoked', 'principal disabled');
           }
-          tenantId = principalRow.tenant_id;
+          mailboxId = principalRow.mailbox_id;
         }
+        // Look up sender-scope junction rows. Empty set = unrestricted.
+        const scopeRows = await env.DB.prepare(
+          `SELECT sender_id FROM api_key_sender_scopes WHERE api_key_id = ?`,
+        )
+          .bind(keyRow.id)
+          .all<{ sender_id: string }>()
+          .catch(() => ({ results: [] as { sender_id: string }[] }));
+        const senderScopeIds = (scopeRows.results ?? []).map((r) => r.sender_id);
         row = {
           id: keyRow.id,
-          tenant_id: tenantId,
+          mailbox_id: mailboxId,
           principal_id: keyRow.principal_id,
           secret_argon2id: keyRow.secret_argon2id,
-          sender_scopes: keyRow.sender_scopes,
+          sender_scope_ids: senderScopeIds,
           scopes: keyRow.scopes,
           rate_limit_per_min: keyRow.rate_limit_per_min,
           status: keyRow.status,
@@ -165,7 +173,7 @@ export function hmacAuth(direction: 'polaris-api.v1'): MiddlewareHandler<{ Bindi
       return buildError(c, 'bad_signature', 'hmac mismatch');
     }
 
-    // Nonce dedup (namespaced by key_id to prevent cross-tenant pollution).
+    // Nonce dedup (namespaced by key_id to prevent cross-mailbox pollution).
     const nonceKey = `nonce:${keyId}:${result.nonce}`;
     const seen = await env.KV_NONCE.get(nonceKey);
     if (seen) {
@@ -177,9 +185,9 @@ export function hmacAuth(direction: 'polaris-api.v1'): MiddlewareHandler<{ Bindi
 
     c.set('apiKey', {
       key_id: row.id,
-      tenant_id: row.tenant_id,
+      mailbox_id: row.mailbox_id,
       principal_id: row.principal_id,
-      sender_scopes_raw: row.sender_scopes ?? '[]',
+      sender_scope_ids: row.sender_scope_ids,
       scopes_raw: row.scopes,
       rate_limit_per_min: row.rate_limit_per_min,
       status: row.status,

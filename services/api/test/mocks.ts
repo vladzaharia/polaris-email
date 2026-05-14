@@ -35,18 +35,18 @@ export class MockD1 {
     // Pre-create the canonical (v1) tables used by tests.
     this.tables.set('schema_migrations', []);
     this.tables.set('bootstrap', []);
-    this.tables.set('tenants', []);
     this.tables.set('zones', []);
+    this.tables.set('mailboxes', []);
     this.tables.set('mail_domains', []);
-    this.tables.set('email_senders', []);
+    this.tables.set('mailbox_senders', []);
+    this.tables.set('mailbox_receivers', []);
     this.tables.set('principals', []);
     this.tables.set('api_keys', []);
+    this.tables.set('api_key_sender_scopes', []);
     this.tables.set('submission_credentials', []);
-    this.tables.set('principal_sender_scopes', []);
     this.tables.set('dkim_keys', []);
     this.tables.set('daemons', []);
     this.tables.set('webhook_subs', []);
-    this.tables.set('routing_rules', []);
     this.tables.set('messages', []);
     this.tables.set('message_attempts', []);
     this.tables.set('message_deliveries', []);

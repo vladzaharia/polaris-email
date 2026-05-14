@@ -8,13 +8,13 @@ export interface Env {
 
 export interface OutboundQueueMessage {
   messageId: string;
-  source: 'json' | 'raw';
+  /** Always 'raw' post Phase C — legacy `source='json'` is gone. */
+  source: 'raw';
+  /** R2 key for the canonical MIME bytes. Mirrors messages.r2_key. */
   r2KeyOrInline: string;
   fromDomain: string;
   fromAddress: string;
-  /** Tenant that owns the sending domain (canonical). */
   tenantId: string;
-  /** Optional mail_domains.id (canonical FK). */
   domainId: string | null;
   mode: 'live' | 'test';
   retries: number;
@@ -27,14 +27,12 @@ export interface FanoutEvent {
     | 'message.bounced'
     | 'message.sent'
     | 'message.delivered'
-    | 'message.failed'
-    | 'credential.rotated'
-    | 'credential.revoked';
+    | 'message.failed';
   message_id: string;
-  tenant_id: string | null;
+  mailbox_id: string | null;
   domain_id: string | null;
   created_at: number;
-  data: Record<string, unknown>;
+  data?: Record<string, unknown>;
 }
 
 /** Cloudflare's send_email binding type (mirror of @cloudflare/workers-types). */
@@ -42,10 +40,11 @@ export interface SendEmailBinding {
   send(message: {
     from: string;
     to: string | string[];
+    raw?: ArrayBuffer | Uint8Array | string;
     cc?: string | string[];
     bcc?: string | string[];
     replyTo?: string;
-    subject: string;
+    subject?: string;
     html?: string;
     text?: string;
     headers?: Record<string, string>;

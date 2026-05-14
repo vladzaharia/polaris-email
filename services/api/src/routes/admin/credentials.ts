@@ -24,17 +24,17 @@ interface SmtpCredRow {
 }
 interface PrincipalRow {
   id: string;
-  tenant_id: string;
+  mailbox_id: string;
 }
 
 credentials.get('/v1/admin/credentials', requireScope('admin:read'), async (c) => {
-  const tenant = c.req.query('tenant');
-  if (!tenant) return buildError(c, 'bad_request', 'tenant required');
+  const mailbox = c.req.query('mailbox') ?? c.req.query('mailbox_id');
+  if (!mailbox) return buildError(c, 'bad_request', 'mailbox required');
   // Two-step lookup (mock D1 doesn't parse joins).
   const principals = await c.env.DB.prepare(
-    `SELECT id, tenant_id FROM principals WHERE tenant_id = ?`,
+    `SELECT id, mailbox_id FROM principals WHERE mailbox_id = ?`,
   )
-    .bind(tenant)
+    .bind(mailbox)
     .all<PrincipalRow>();
   if (principals.results.length === 0) return c.json({ data: [] });
   const data: { kind: 'api_key' | 'smtp'; id: string; principal_id: string; status: string; created_at: string; username?: string }[] = [];

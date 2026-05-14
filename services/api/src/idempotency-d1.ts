@@ -4,6 +4,9 @@
 // in different colos. Two retries of the same key can both miss the cache and
 // both write. D1 is single-region serializable; INSERT ... ON CONFLICT
 // DO NOTHING ... RETURNING gives us a true atomic claim.
+//
+// Keys are scoped by `(mailbox_id, idempotency_key)` per the mailbox-centric
+// schema (services/api/migrations/0001_init.sql).
 
 import type { Env } from './env.js';
 
@@ -26,7 +29,7 @@ export interface IdemClaim {
 export async function tryClaim(
   env: Env,
   key: string,
-  tenantId: string,
+  mailboxId: string,
   principalId: string | null
 ): Promise<IdemClaim> {
   if (!key) {
@@ -36,11 +39,11 @@ export async function tryClaim(
   // If a row exists, RETURNING is empty; we then SELECT to fetch the message_id.
   const insert = await env.DB
     .prepare(
-      `INSERT OR IGNORE INTO idempotency_keys (key, tenant_id, principal_id, message_id, created_at)
+      `INSERT OR IGNORE INTO idempotency_keys (key, mailbox_id, principal_id, message_id, created_at)
        VALUES (?1, ?2, ?3, NULL, ?4)
        RETURNING key`
     )
-    .bind(key, tenantId, principalId, new Date().toISOString())
+    .bind(key, mailboxId, principalId, new Date().toISOString())
     .first<{ key: string }>();
   if (insert?.key === key) {
     return { first: true };

@@ -1,11 +1,9 @@
-// Admin REST routes: tenants, domains, api-keys, webhooks, routing,
-// bulk-revoke, rotation, daemon credential mirror.
+// Admin REST routes: api-key issuance/rotation/revoke, webhook subs.
+// Mailbox CRUD lives in `./admin/mailboxes.ts`; receiver CRUD does too
+// (replaces the legacy routing_rules endpoints).
 // All HMAC-auth + `admin:*` scope.
 import { Hono } from 'hono';
 import {
-  BulkRevokeTenantRequest,
-  CreateRoutingRuleRequest,
-  CreateTenantRequest,
   CreateWebhookSubRequest,
   IssueApiKeyRequest,
   RotateRequest,
@@ -21,6 +19,7 @@ import { auditRoutes } from './admin/audit.js';
 import { credentials } from './admin/credentials.js';
 import { daemons } from './admin/daemons.js';
 import { domains } from './admin/domains.js';
+import { mailboxes as mailboxesRoutes } from './admin/mailboxes.js';
 import { senders as sendersRoutes } from './admin/senders.js';
 import { status } from './admin/status.js';
 import { webhookDlq } from './admin/webhook-dlq.js';
@@ -38,6 +37,7 @@ admin.use('/v1/admin/*', async (c, next) => {
 admin.use('/v1/daemon/*', adminHmac);
 
 // Sub-routers. All rely on the admin middleware above.
+admin.route('/', mailboxesRoutes);
 admin.route('/', domains);
 admin.route('/', sendersRoutes);
 admin.route('/', zones);
@@ -46,129 +46,6 @@ admin.route('/', credentials);
 admin.route('/', webhookDlq);
 admin.route('/', auditRoutes);
 admin.route('/', status);
-
-// ---------- tenants ----------
-
-admin.post('/v1/admin/tenants', requireScope('admin:rotate'), async (c) => {
-  const key = c.get('apiKey');
-  let body;
-  try {
-    body = CreateTenantRequest.parse(JSON.parse(bodyText(c)));
-  } catch (e) {
-    return buildError(c, 'bad_request', e instanceof Error ? e.message : 'invalid body');
-  }
-  const now = Date.now();
-  const nowIso = new Date(now).toISOString();
-  try {
-    await c.env.DB.prepare(
-      `INSERT INTO tenants (id, name, description, environment, pepper_version, created_at, updated_at)
-       VALUES (?, ?, ?, 'prod', 1, ?, ?)`,
-    )
-      .bind(body.id, body.name, body.description ?? null, nowIso, nowIso)
-      .run();
-  } catch (e) {
-    if (String(e).includes('UNIQUE')) return buildError(c, 'conflict', 'tenant id or name taken');
-    throw e;
-  }
-  await audit(c.env, {
-    actor: `key:${key.key_id}`,
-    action: 'tenant.create',
-    target: body.id,
-    meta: { name: body.name },
-  });
-  return c.json({ id: body.id, created_at: now }, 201);
-});
-
-admin.get('/v1/admin/tenants', requireScope('admin:read'), async (c) => {
-  const rows = await c.env.DB.prepare(
-    `SELECT id, name, description, environment, retention_days, created_at, disabled_at
-     FROM tenants ORDER BY id ASC`,
-  ).all();
-  return c.json({ data: rows.results });
-});
-
-admin.get('/v1/admin/tenants/lookup', requireScope('admin:read'), async (c) => {
-  const id = c.req.query('id');
-  const name = c.req.query('name');
-  if (!id && !name) return buildError(c, 'bad_request', 'id or name required');
-  const sql = id
-    ? `SELECT id, name, description, environment, retention_days, created_at, disabled_at FROM tenants WHERE id = ?`
-    : `SELECT id, name, description, environment, retention_days, created_at, disabled_at FROM tenants WHERE name = ?`;
-  const row = await c.env.DB.prepare(sql).bind(id ?? name).first();
-  if (!row) return buildError(c, 'not_found', 'tenant not found');
-  return c.json(row);
-});
-
-admin.patch('/v1/admin/tenants/:id', requireScope('admin:rotate'), async (c) => {
-  const key = c.get('apiKey');
-  const id = c.req.param('id');
-  let body: { description?: string | null; retention_days?: number; disabled?: boolean };
-  try {
-    body = JSON.parse(bodyText(c) || '{}');
-  } catch {
-    return buildError(c, 'bad_request', 'invalid json');
-  }
-  const sets: string[] = [];
-  const binds: unknown[] = [];
-  if (body.description !== undefined) {
-    sets.push('description = ?');
-    binds.push(body.description);
-  }
-  if (body.retention_days !== undefined) {
-    if (!Number.isInteger(body.retention_days) || body.retention_days < 0) {
-      return buildError(c, 'bad_request', 'retention_days must be a non-negative integer');
-    }
-    sets.push('retention_days = ?');
-    binds.push(body.retention_days);
-  }
-  const nowIso = new Date().toISOString();
-  if (body.disabled === true) {
-    sets.push('disabled_at = ?');
-    binds.push(nowIso);
-  } else if (body.disabled === false) {
-    sets.push('disabled_at = NULL');
-  }
-  if (sets.length === 0) return buildError(c, 'bad_request', 'no fields to update');
-  sets.push('updated_at = ?');
-  binds.push(nowIso);
-  binds.push(id);
-  const r = await c.env.DB.prepare(`UPDATE tenants SET ${sets.join(', ')} WHERE id = ?`)
-    .bind(...binds)
-    .run();
-  if (r.meta.changes === 0) return buildError(c, 'not_found', 'tenant not found');
-  await audit(c.env, {
-    actor: `key:${key.key_id}`,
-    action: 'tenant.update',
-    target: id,
-    meta: { fields: Object.keys(body) },
-  });
-  return c.json({ id, updated_at: Date.now() });
-});
-
-admin.post('/v1/admin/tenants/:id/rotate-pepper', requireScope('admin:rotate'), async (c) => {
-  const key = c.get('apiKey');
-  const id = c.req.param('id');
-  const existing = await c.env.DB.prepare(`SELECT id, pepper_version FROM tenants WHERE id = ?`)
-    .bind(id)
-    .first<{ id: string; pepper_version: number }>();
-  if (!existing) return buildError(c, 'not_found', 'tenant not found');
-  const nextVersion = existing.pepper_version + 1;
-  const nowIso = new Date().toISOString();
-  await c.env.DB.prepare(`UPDATE tenants SET pepper_version = ?, updated_at = ? WHERE id = ?`)
-    .bind(nextVersion, nowIso, id)
-    .run();
-  // Flag every message in this tenant for re-hash by the janitor / hashing worker.
-  await c.env.DB.prepare(`UPDATE messages SET to_hash_pending = 1 WHERE tenant_id = ?`)
-    .bind(id)
-    .run();
-  await audit(c.env, {
-    actor: `key:${key.key_id}`,
-    action: 'tenant.rotate_pepper',
-    target: id,
-    meta: { pepper_version: nextVersion },
-  });
-  return c.json({ id, pepper_version: nextVersion });
-});
 
 // ---------- api keys ----------
 
@@ -180,7 +57,16 @@ admin.post('/v1/admin/api-keys', requireScope('admin:rotate'), async (c) => {
   } catch (e) {
     return buildError(c, 'bad_request', e instanceof Error ? e.message : 'invalid body');
   }
-  const tenantId = body.tenant_id;
+  const mailboxId = body.mailbox_id;
+  if (!mailboxId) {
+    return buildError(c, 'bad_request', 'mailbox_id required');
+  }
+  // Verify the mailbox exists.
+  const mbRow = await c.env.DB.prepare(`SELECT id FROM mailboxes WHERE id = ?`)
+    .bind(mailboxId)
+    .first<{ id: string }>();
+  if (!mbRow) return buildError(c, 'not_found', 'mailbox not found');
+
   const id = ulid();
   const principalId = ulid();
   const secret = generateSecret();
@@ -189,17 +75,18 @@ admin.post('/v1/admin/api-keys', requireScope('admin:rotate'), async (c) => {
   const nowIso = new Date(now).toISOString();
   // 1) Create principal row (kind='api_key').
   await c.env.DB.prepare(
-    `INSERT INTO principals (id, tenant_id, kind, display_name, environment, created_at)
-     VALUES (?, ?, 'api_key', ?, 'prod', ?)`,
+    `INSERT INTO principals (id, mailbox_id, kind, display_name, created_at)
+     VALUES (?, ?, 'api_key', ?, ?)`,
   )
-    .bind(principalId, tenantId, body.display_name ?? null, nowIso)
+    .bind(principalId, mailboxId, body.display_name ?? null, nowIso)
     .run();
-  // 2) Create the api_key row pointing at the principal.
+  // 2) Create the api_key row pointing at the principal. No sender_scopes JSON
+  //    column — scoping is via the api_key_sender_scopes junction (below).
   await c.env.DB.prepare(
     `INSERT INTO api_keys
-       (id, principal_id, prefix, secret_argon2id, scopes, sender_scopes,
+       (id, principal_id, prefix, secret_argon2id, scopes,
         rate_limit_per_min, status, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, 'primary', ?)`,
+     VALUES (?, ?, ?, ?, ?, ?, 'primary', ?)`,
   )
     .bind(
       id,
@@ -207,11 +94,20 @@ admin.post('/v1/admin/api-keys', requireScope('admin:rotate'), async (c) => {
       'pk_live_',
       hashed,
       JSON.stringify(body.scopes),
-      JSON.stringify(body.sender_scopes),
       body.rate_limit_per_min,
       nowIso,
     )
     .run();
+  // 3) Optional sender-scope restrictions. Empty/omitted = unrestricted.
+  const senderIds = body.sender_ids ?? [];
+  for (const senderId of senderIds) {
+    await c.env.DB.prepare(
+      `INSERT INTO api_key_sender_scopes (api_key_id, sender_id, created_at)
+       VALUES (?, ?, ?)`,
+    )
+      .bind(id, senderId, nowIso)
+      .run();
+  }
   // Cache plaintext for 60s so other colos can verify recent sigs without a DB hit.
   await c.env.KV_KEY_CACHE.put(`plain:${id}`, secret, { expirationTtl: 60 * 60 * 24 * 365 });
   // Cache the row for warm lookups too.
@@ -219,10 +115,10 @@ admin.post('/v1/admin/api-keys', requireScope('admin:rotate'), async (c) => {
     `key:${id}`,
     JSON.stringify({
       id,
-      tenant_id: tenantId,
+      mailbox_id: mailboxId,
       principal_id: principalId,
       secret_argon2id: hashed,
-      sender_scopes: JSON.stringify(body.sender_scopes),
+      sender_scope_ids: senderIds,
       scopes: JSON.stringify(body.scopes),
       rate_limit_per_min: body.rate_limit_per_min,
       status: 'primary',
@@ -235,28 +131,28 @@ admin.post('/v1/admin/api-keys', requireScope('admin:rotate'), async (c) => {
     action: 'api_key.issue',
     target: id,
     meta: {
-      tenant_id: tenantId,
+      mailbox_id: mailboxId,
       principal_id: principalId,
       scopes: body.scopes,
-      sender_scope_count: body.sender_scopes.length,
+      sender_scope_count: senderIds.length,
     },
   });
   return c.json({ key_id: id, key_secret: secret, prefix: 'pk_live_', created_at: now }, 201);
 });
 
 admin.get('/v1/admin/api-keys', requireScope('admin:read'), async (c) => {
-  const tenant = c.req.query('tenant');
-  if (tenant) {
+  const mailbox = c.req.query('mailbox') ?? c.req.query('mailbox_id');
+  if (mailbox) {
     // Two-step lookup: principals → api_keys (mock D1 doesn't parse joins).
     const principals = await c.env.DB.prepare(
-      `SELECT id FROM principals WHERE tenant_id = ?`,
+      `SELECT id FROM principals WHERE mailbox_id = ?`,
     )
-      .bind(tenant)
+      .bind(mailbox)
       .all<{ id: string }>();
     const out: unknown[] = [];
     for (const p of principals.results) {
       const rows = await c.env.DB.prepare(
-        `SELECT id, principal_id, prefix, scopes, sender_scopes, status, created_at,
+        `SELECT id, principal_id, prefix, scopes, status, created_at,
                 revoked_at, last_used_at, last_used_ip
          FROM api_keys WHERE principal_id = ? ORDER BY created_at DESC`,
       )
@@ -267,7 +163,7 @@ admin.get('/v1/admin/api-keys', requireScope('admin:read'), async (c) => {
     return c.json({ data: out });
   }
   const rows = await c.env.DB.prepare(
-    `SELECT id, principal_id, prefix, scopes, sender_scopes, status, created_at,
+    `SELECT id, principal_id, prefix, scopes, status, created_at,
             revoked_at, last_used_at, last_used_ip
      FROM api_keys ORDER BY created_at DESC LIMIT 500`,
   ).all();
@@ -321,12 +217,11 @@ admin.post('/v1/admin/api-keys/:id/rotate', requireScope('admin:rotate'), async 
   const nowIso = new Date(now).toISOString();
   // Copy the old row's scopes etc. to the new secondary row.
   const fullOld = await c.env.DB.prepare(
-    `SELECT principal_id, sender_scopes, scopes, rate_limit_per_min, prefix FROM api_keys WHERE id = ?`,
+    `SELECT principal_id, scopes, rate_limit_per_min, prefix FROM api_keys WHERE id = ?`,
   )
     .bind(id)
     .first<{
       principal_id: string | null;
-      sender_scopes: string | null;
       scopes: string;
       rate_limit_per_min: number;
       prefix: string;
@@ -334,9 +229,9 @@ admin.post('/v1/admin/api-keys/:id/rotate', requireScope('admin:rotate'), async 
   if (!fullOld) return buildError(c, 'not_found', 'race: api key vanished');
   await c.env.DB.prepare(
     `INSERT INTO api_keys
-       (id, principal_id, prefix, secret_argon2id, scopes, sender_scopes,
+       (id, principal_id, prefix, secret_argon2id, scopes,
         rate_limit_per_min, status, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, 'primary', ?)`,
+     VALUES (?, ?, ?, ?, ?, ?, 'primary', ?)`,
   )
     .bind(
       newId,
@@ -344,11 +239,25 @@ admin.post('/v1/admin/api-keys/:id/rotate', requireScope('admin:rotate'), async 
       fullOld.prefix,
       newHashed,
       fullOld.scopes,
-      fullOld.sender_scopes,
       fullOld.rate_limit_per_min,
       nowIso,
     )
     .run();
+  // Copy sender-scope junction rows so the rotated key inherits restrictions.
+  const oldScopes = await c.env.DB.prepare(
+    `SELECT sender_id FROM api_key_sender_scopes WHERE api_key_id = ?`,
+  )
+    .bind(id)
+    .all<{ sender_id: string }>()
+    .catch(() => ({ results: [] as { sender_id: string }[] }));
+  for (const s of oldScopes.results ?? []) {
+    await c.env.DB.prepare(
+      `INSERT INTO api_key_sender_scopes (api_key_id, sender_id, created_at)
+       VALUES (?, ?, ?)`,
+    )
+      .bind(newId, s.sender_id, nowIso)
+      .run();
+  }
   await c.env.KV_KEY_CACHE.put(`plain:${newId}`, newSecret, {
     expirationTtl: 60 * 60 * 24 * 365,
   });
@@ -444,6 +353,9 @@ admin.post('/v1/admin/webhook-subs', requireScope('admin:rotate'), async (c) => 
   } catch (e) {
     return buildError(c, 'bad_request', e instanceof Error ? e.message : 'invalid body');
   }
+  if (!body.mailbox_id) {
+    return buildError(c, 'bad_request', 'mailbox_id required');
+  }
   // Validate URL host
   try {
     const url = new URL(body.url);
@@ -458,17 +370,15 @@ admin.post('/v1/admin/webhook-subs', requireScope('admin:rotate'), async (c) => 
   }
   const id = ulid();
   const secret = generateSecret();
-  const tenantId = body.tenant_id;
   const nowIso = new Date().toISOString();
   await c.env.DB.prepare(
     `INSERT INTO webhook_subs
-       (id, tenant_id, domain_id, url, kind, secret, events, environment, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, 'prod', ?)`,
+       (id, mailbox_id, url, kind, secret, events, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
   )
     .bind(
       id,
-      tenantId,
-      body.domain_id ?? null,
+      body.mailbox_id,
       body.url,
       body.kind,
       secret,
@@ -480,237 +390,14 @@ admin.post('/v1/admin/webhook-subs', requireScope('admin:rotate'), async (c) => 
     actor: `key:${key.key_id}`,
     action: 'webhook_sub.create',
     target: id,
-    meta: { kind: body.kind, url_host: new URL(body.url).hostname, events: body.events },
-  });
-  return c.json({ id, secret }, 201);
-});
-
-// ---------- routing rules ----------
-
-admin.post('/v1/admin/routing-rules', requireScope('admin:rotate'), async (c) => {
-  const key = c.get('apiKey');
-  let body;
-  try {
-    body = CreateRoutingRuleRequest.parse(JSON.parse(bodyText(c)));
-  } catch (e) {
-    return buildError(c, 'bad_request', e instanceof Error ? e.message : 'invalid body');
-  }
-  const id = ulid();
-  const nowIso = new Date().toISOString();
-  await c.env.DB.prepare(
-    `INSERT INTO routing_rules
-       (id, domain_id, priority, address_pattern, action, webhook_sub_id, forward_to,
-        environment, enabled, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, 'prod', 1, ?)`,
-  )
-    .bind(
-      id,
-      body.domain_id,
-      body.priority,
-      body.address_pattern,
-      body.action,
-      body.webhook_sub_id ?? null,
-      body.forward_to ?? null,
-      nowIso,
-    )
-    .run();
-  await audit(c.env, {
-    actor: `key:${key.key_id}`,
-    action: 'routing_rule.create',
-    target: id,
-    meta: { domain_id: body.domain_id, priority: body.priority, action: body.action },
-  });
-  return c.json({ id }, 201);
-});
-
-admin.get('/v1/admin/routing-rules', requireScope('admin:read'), async (c) => {
-  const domainId = c.req.query('domain_id');
-  const rows = domainId
-    ? await c.env.DB.prepare(
-        `SELECT id, domain_id, priority, address_pattern, action, webhook_sub_id,
-                forward_to, environment, enabled, created_at, disabled_at
-         FROM routing_rules WHERE domain_id = ? ORDER BY priority ASC`,
-      )
-        .bind(domainId)
-        .all()
-    : await c.env.DB.prepare(
-        `SELECT id, domain_id, priority, address_pattern, action, webhook_sub_id,
-                forward_to, environment, enabled, created_at, disabled_at
-         FROM routing_rules ORDER BY priority ASC LIMIT 500`,
-      ).all();
-  return c.json({ data: rows.results });
-});
-
-admin.patch('/v1/admin/routing-rules/:id', requireScope('admin:rotate'), async (c) => {
-  const key = c.get('apiKey');
-  const id = c.req.param('id');
-  let body: { priority?: number; address_pattern?: string; enabled?: boolean };
-  try {
-    body = JSON.parse(bodyText(c) || '{}');
-  } catch {
-    return buildError(c, 'bad_request', 'invalid json');
-  }
-  const sets: string[] = [];
-  const binds: unknown[] = [];
-  if (body.priority !== undefined) {
-    sets.push('priority = ?');
-    binds.push(body.priority);
-  }
-  if (body.address_pattern !== undefined) {
-    sets.push('address_pattern = ?');
-    binds.push(body.address_pattern);
-  }
-  if (body.enabled !== undefined) {
-    sets.push('enabled = ?');
-    binds.push(body.enabled ? 1 : 0);
-  }
-  if (sets.length === 0) return buildError(c, 'bad_request', 'no fields to update');
-  binds.push(id);
-  const r = await c.env.DB.prepare(`UPDATE routing_rules SET ${sets.join(', ')} WHERE id = ?`)
-    .bind(...binds)
-    .run();
-  if (r.meta.changes === 0) return buildError(c, 'not_found', 'routing rule not found');
-  await audit(c.env, {
-    actor: `key:${key.key_id}`,
-    action: 'routing_rule.update',
-    target: id,
-    meta: { fields: Object.keys(body) },
-  });
-  return c.json({ id });
-});
-
-admin.delete('/v1/admin/routing-rules/:id', requireScope('admin:rotate'), async (c) => {
-  const key = c.get('apiKey');
-  const id = c.req.param('id');
-  const nowIso = new Date().toISOString();
-  const r = await c.env.DB.prepare(
-    `UPDATE routing_rules SET disabled_at = ?, enabled = 0 WHERE id = ? AND disabled_at IS NULL`,
-  )
-    .bind(nowIso, id)
-    .run();
-  if (r.meta.changes === 0) return buildError(c, 'not_found', 'not found or already disabled');
-  await audit(c.env, {
-    actor: `key:${key.key_id}`,
-    action: 'routing_rule.delete',
-    target: id,
-    meta: {},
-  });
-  return c.json({ id, disabled_at: Date.now() });
-});
-
-// Bulk apply: replace the rule set for a domain with the provided list.
-admin.post('/v1/admin/routing-rules/apply', requireScope('admin:rotate'), async (c) => {
-  const key = c.get('apiKey');
-  let body: {
-    domain_id?: string;
-    rules?: { priority?: number; address_pattern: string; action: string; webhook_sub_id?: string; forward_to?: string }[];
-  };
-  try {
-    body = JSON.parse(bodyText(c) || '{}');
-  } catch {
-    return buildError(c, 'bad_request', 'invalid json');
-  }
-  if (!body.domain_id || !Array.isArray(body.rules)) {
-    return buildError(c, 'bad_request', 'domain_id and rules[] required');
-  }
-  const nowIso = new Date().toISOString();
-  // Soft-disable existing rules for this domain, then insert the new set.
-  await c.env.DB.prepare(
-    `UPDATE routing_rules SET disabled_at = ?, enabled = 0
-     WHERE domain_id = ? AND disabled_at IS NULL`,
-  )
-    .bind(nowIso, body.domain_id)
-    .run();
-  const inserted: string[] = [];
-  for (const rule of body.rules) {
-    const id = ulid();
-    await c.env.DB.prepare(
-      `INSERT INTO routing_rules
-         (id, domain_id, priority, address_pattern, action, webhook_sub_id,
-          forward_to, environment, enabled, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 'prod', 1, ?)`,
-    )
-      .bind(
-        id,
-        body.domain_id,
-        rule.priority ?? 100,
-        rule.address_pattern,
-        rule.action,
-        rule.webhook_sub_id ?? null,
-        rule.forward_to ?? null,
-        nowIso,
-      )
-      .run();
-    inserted.push(id);
-  }
-  await audit(c.env, {
-    actor: `key:${key.key_id}`,
-    action: 'routing_rule.update',
-    target: body.domain_id,
-    meta: { applied: inserted.length, via: 'bulk_apply' },
-  });
-  return c.json({ domain_id: body.domain_id, applied: inserted });
-});
-
-// ---------- bulk revoke tenant ----------
-
-admin.post('/v1/admin/bulk/revoke-tenant', requireScope('admin:rotate'), async (c) => {
-  const key = c.get('apiKey');
-  let body;
-  try {
-    body = BulkRevokeTenantRequest.parse(JSON.parse(bodyText(c)));
-  } catch (e) {
-    return buildError(c, 'bad_request', e instanceof Error ? e.message : 'invalid body');
-  }
-  if (body.confirmation !== body.tenant_id) {
-    return buildError(c, 'bad_request', 'confirmation does not match tenant_id');
-  }
-  const nowIso = new Date().toISOString();
-  // Find all principals for this tenant, then all api_keys for those principals.
-  const principals = await c.env.DB.prepare(
-    `SELECT id FROM principals WHERE tenant_id = ?`,
-  )
-    .bind(body.tenant_id)
-    .all<{ id: string }>();
-  const allKeys: { id: string }[] = [];
-  for (const p of principals.results) {
-    const ks = await c.env.DB.prepare(
-      `SELECT id FROM api_keys WHERE principal_id = ? AND status <> 'revoked'`,
-    )
-      .bind(p.id)
-      .all<{ id: string }>();
-    for (const k of ks.results) allKeys.push(k);
-  }
-  for (const k of allKeys) {
-    await c.env.DB.prepare(
-      `UPDATE api_keys SET status = 'revoked', revoked_at = ? WHERE id = ?`,
-    )
-      .bind(nowIso, k.id)
-      .run();
-    await c.env.KV_KEY_CACHE.delete(`plain:${k.id}`);
-    await c.env.KV_KEY_CACHE.delete(`key:${k.id}`);
-  }
-  // Stamp the revocation DO for every affected principal so /v1/send/raw
-  // and /v1/admin checks see the revocation synchronously.
-  for (const p of principals.results) {
-    const doId = c.env.REVOCATION_DO.idFromName(p.id);
-    await c.env.REVOCATION_DO.get(doId).fetch('https://revocation-do/revoke', {
-      method: 'POST',
-      body: JSON.stringify({ reason: 'tenant_quarantine', tenant_id: body.tenant_id }),
-    });
-  }
-  await audit(c.env, {
-    actor: `key:${key.key_id}`,
-    action: 'tenant.disable',
-    target: body.tenant_id,
     meta: {
-      incident_ticket_id: body.incident_ticket_id,
-      revoked_api_keys: allKeys.map((k) => k.id),
+      mailbox_id: body.mailbox_id,
+      kind: body.kind,
+      url_host: new URL(body.url).hostname,
+      events: body.events,
     },
   });
-  return c.json({
-    revoked_api_keys: allKeys.map((k) => k.id),
-  });
+  return c.json({ id, secret }, 201);
 });
 
 // ---------- daemon credential mirror ----------
@@ -723,43 +410,35 @@ admin.get('/v1/daemon/credentials', requireScope('admin:read'), async (c) => {
   // The `since` query param is accepted for forward-compat but currently we always
   // return the full active set — the daemon's UpsertBatch + DeleteByID handle
   // reconciliation idempotently.
+  //
+  // Submission credentials are 1:1 with mailbox_senders via
+  // `submission_credentials.sender_id` per the canonical schema. The
+  // `allowed_senders` array surfaces that single bound address.
   type CredRow = {
     id: string;
     principal_id: string;
+    sender_id: string | null;
     username: string;
     bcrypt_hash: string;
     disabled_at: string | null;
     last_used_at: string | null;
   };
-  type ScopeRow = { principal_id: string; sender_id: string };
   type SenderRow = { id: string; address: string };
   let credRows: { results: CredRow[] } = { results: [] };
-  let scopeRows: { results: ScopeRow[] } = { results: [] };
   let senderRows: { results: SenderRow[] } = { results: [] };
   try {
     credRows = await c.env.DB.prepare(
-      `SELECT id, principal_id, username, bcrypt_hash, disabled_at, last_used_at
+      `SELECT id, principal_id, sender_id, username, bcrypt_hash, disabled_at, last_used_at
        FROM submission_credentials`,
     ).all<CredRow>();
-    scopeRows = await c.env.DB.prepare(
-      `SELECT principal_id, sender_id FROM principal_sender_scopes`,
-    ).all<ScopeRow>();
     senderRows = await c.env.DB.prepare(
-      `SELECT id, address FROM email_senders`,
+      `SELECT id, address FROM mailbox_senders`,
     ).all<SenderRow>();
   } catch {
     // Tables absent (degraded environment). Treat as empty.
   }
   const senderAddrById = new Map<string, string>();
   for (const s of senderRows.results) senderAddrById.set(s.id, s.address);
-  const sendersByPrincipal = new Map<string, string[]>();
-  for (const sc of scopeRows.results) {
-    const addr = senderAddrById.get(sc.sender_id);
-    if (!addr) continue;
-    const arr = sendersByPrincipal.get(sc.principal_id) ?? [];
-    arr.push(addr);
-    sendersByPrincipal.set(sc.principal_id, arr);
-  }
   const mirrorVersion = Date.now();
   const updates = credRows.results
     .filter((r) => r.disabled_at == null)
@@ -767,7 +446,7 @@ admin.get('/v1/daemon/credentials', requireScope('admin:read'), async (c) => {
       id: r.id,
       username: r.username,
       bcrypt_hash: r.bcrypt_hash,
-      allowed_senders: sendersByPrincipal.get(r.principal_id) ?? [],
+      allowed_senders: r.sender_id ? [senderAddrById.get(r.sender_id) ?? ''].filter(Boolean) : [],
       mirror_version: mirrorVersion,
     }));
   const deletions = credRows.results

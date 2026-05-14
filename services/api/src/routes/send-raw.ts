@@ -1,35 +1,25 @@
-// POST /v1/send/raw — daemon-only RFC822 submission endpoint.
+// POST /v1/send/raw — daemon-only RFC822 submission endpoint (Phase D6 alias).
 //
-// Accepts pre-built RFC822 from the submission daemon. The daemon has already
-// authenticated the SMTP client and validated MAIL FROM against its credential
-// allow-list, but we re-validate everything server-side because the API is
-// truth (defense-in-depth at the daemon).
+// Thin wrapper that validates daemon auth + Content-Type, then delegates the
+// entire pipeline to `processMessage()`. The daemon already canonicalizes MIME
+// before forwarding, but processMessage re-validates server-side.
 //
-// C1 mitigation: parse the MIME, validate From:/Sender:/Reply-To: against the
-// principal's allow-list, strip Return-Path and re-author server-side, reject
-// forbidden submitter headers.
-//
-// C2 mitigation: parse with strict canonicalizer; re-serialize to canonical
-// CRLF before storing in R2 (which is what the provider sees).
+// NOTE: this file is scheduled for deletion in Phase F7 once the daemon
+// migrates to POST /v1/messages with `Content-Type: message/rfc822`.
 
 import { Hono } from 'hono';
-import { parseStrict, serialize, getHeader, setHeader, MimeError } from '@polaris-email/mime';
-import { enforceSenderPolicy, SenderPolicyError } from '@polaris-email/mime';
+import { parseStrict, MimeError, enforceSenderPolicy, SenderPolicyError } from '@polaris-email/mime';
 import type { Env } from '../env.js';
 import { daemonHmacAuth } from '../daemon-auth.js';
 import { buildError } from '../errors.js';
-import { submitMessage, SubmissionError } from '../submit-message.js';
+import { processMessage, ProcessMessageError } from '../process-message.js';
 
 interface SendRawRequest {
   envelope_from: string;
   envelope_to: string[];
-  /** RFC822 message, base64-encoded. */
   rfc822_b64: string;
-  /** ULID minted by the daemon for this SMTP session. */
   submission_id: string;
-  /** Optional client IP (Tailnet identity). */
   client_ip?: string;
-  /** Daemon's receipt timestamp (RFC3339). */
   received_at_daemon?: string;
 }
 
@@ -50,7 +40,6 @@ sendRaw.post('/v1/send/raw', async (c) => {
     return buildError(c, 'bad_request', 'envelope_to length out of bounds');
   }
 
-  // Decode base64 → bytes.
   let rfc822: Uint8Array;
   try {
     const bin = atob(body.rfc822_b64);
@@ -60,7 +49,6 @@ sendRaw.post('/v1/send/raw', async (c) => {
     return buildError(c, 'bad_request', 'rfc822_b64 not valid base64');
   }
 
-  // C2: strict parse + canonical re-serialize.
   let mime;
   try {
     mime = parseStrict(rfc822);
@@ -71,36 +59,31 @@ sendRaw.post('/v1/send/raw', async (c) => {
     throw e;
   }
 
-  // Look up the daemon's principal binding to get the allow-list. For v1 we
-  // resolve via the username embedded in the daemon's auth context — the
-  // daemon includes the SMTP-authenticated username in submission metadata.
-  // The principal's allowed_senders list lives in principal_sender_scopes ⋈
-  // email_senders.
-  //
-  // For the migration window we accept the daemon's submitted envelope_from as
-  // the principal hint and look up the allow-list via the username header.
   const username = c.req.header('x-polaris-smtp-username');
   if (!username) {
     return buildError(c, 'bad_request', 'X-Polaris-SMTP-Username header required');
   }
-  const principal = await c.env.DB.prepare(
-    `SELECT p.id AS principal_id, p.tenant_id
-       FROM principals p
-       JOIN submission_credentials sc ON sc.principal_id = p.id
-      WHERE sc.username = ?1 AND sc.disabled_at IS NULL AND p.disabled_at IS NULL
-      LIMIT 1`
+  const credRow = await c.env.DB.prepare(
+    `SELECT principal_id, sender_id FROM submission_credentials
+      WHERE username = ?1 AND disabled_at IS NULL
+      LIMIT 1`,
   )
     .bind(username)
-    .first<{ principal_id: string; tenant_id: string }>();
-
-  if (!principal) {
+    .first<{ principal_id: string; sender_id: string }>();
+  if (!credRow) {
+    return buildError(c, 'unauthorized', 'unknown principal for SMTP username');
+  }
+  const principalRow = await c.env.DB.prepare(
+    `SELECT id, mailbox_id, disabled_at FROM principals WHERE id = ?1 LIMIT 1`,
+  )
+    .bind(credRow.principal_id)
+    .first<{ id: string; mailbox_id: string; disabled_at: string | null }>();
+  if (!principalRow || principalRow.disabled_at) {
     return buildError(c, 'unauthorized', 'unknown principal for SMTP username');
   }
 
-  // Synchronous revocation check against the Durable Object (single source of truth).
-  // The DO is updated by /v1/admin/api-keys/:id/revoke and /v1/admin/credentials/:id/revoke;
-  // a positive hit here is final.
-  const doId = c.env.REVOCATION_DO.idFromName(principal.principal_id);
+  // Revocation DO truth check.
+  const doId = c.env.REVOCATION_DO.idFromName(principalRow.id);
   const doStub = c.env.REVOCATION_DO.get(doId);
   const revRes = await doStub.fetch('https://revocation-do/check');
   if (revRes.ok) {
@@ -110,21 +93,17 @@ sendRaw.post('/v1/send/raw', async (c) => {
     }
   }
 
-  // C1 mitigation: load allowed_senders for this principal and enforce on MIME.
-  const allowedSenders = await c.env.DB.prepare(
-    `SELECT es.address
-       FROM principal_sender_scopes pss
-       JOIN email_senders es ON es.id = pss.sender_id
-      WHERE pss.principal_id = ?1 AND es.disabled_at IS NULL`
+  // C1: allow-list enforcement on the From/Sender/Reply-To headers.
+  const senderRow = await c.env.DB.prepare(
+    `SELECT address FROM mailbox_senders
+      WHERE id = ?1 AND disabled_at IS NULL LIMIT 1`,
   )
-    .bind(principal.principal_id)
-    .all<{ address: string }>()
-    .catch(() => ({ results: [] as { address: string }[] }));
-
+    .bind(credRow.sender_id)
+    .first<{ address: string }>()
+    .catch(() => null);
+  const allowedSenders: string[] = senderRow?.address ? [senderRow.address] : [];
   try {
-    enforceSenderPolicy(mime, {
-      allowedSenders: (allowedSenders.results ?? []).map((r) => r.address),
-    });
+    enforceSenderPolicy(mime, { allowedSenders });
   } catch (e) {
     if (e instanceof SenderPolicyError) {
       return buildError(c, 'forbidden', `sender policy: ${e.code}`);
@@ -132,48 +111,28 @@ sendRaw.post('/v1/send/raw', async (c) => {
     throw e;
   }
 
-  // Strip and re-author Return-Path server-side (C1).
-  setHeader(mime, 'Return-Path', `<${body.envelope_from}>`);
-
-  const fromAddr = getHeader(mime, 'from') ?? body.envelope_from;
-  const subject = getHeader(mime, 'subject') ?? '';
-  const canonical = serialize(mime);
-
-  // Idempotency key: use submission_id (each SMTP session is uniquely identified
-  // by its ULID, so retries from the same daemon use the same key).
+  // Idempotency key: SMTP session id is unique per session, retries reuse it.
   const idempotencyKey = `smtp-${body.submission_id}`;
 
   try {
-    const result = await submitMessage(c.env, {
-      tenantId: principal.tenant_id,
-      principalId: principal.principal_id,
+    const result = await processMessage(c.env, {
+      direction: 'out',
+      mailboxId: principalRow.mailbox_id,
+      principalId: principalRow.id,
       daemonId: c.var.daemonId,
-      submissionId: body.submission_id,
-      envelopeFrom: body.envelope_from,
-      envelopeTo: body.envelope_to,
-      fromAddr: extractAddrSpec(fromAddr) ?? body.envelope_from,
-      subject,
-      idempotencyKey,
+      rawMime: rfc822,
       source: 'smtp',
-      clientIp: body.client_ip,
-      receivedAtDaemon: body.received_at_daemon,
-      rfc822: canonical,
+      idempotencyKey,
+      envelopeTo: body.envelope_to,
     });
-    return c.json({ message_id: result.messageId, status: 'queued', fresh: result.fresh }, 202);
+    return c.json(
+      { message_id: result.messageId, status: result.status, fresh: result.fresh },
+      202,
+    );
   } catch (e) {
-    if (e instanceof SubmissionError) {
+    if (e instanceof ProcessMessageError) {
       return c.json({ error: e.code, message: e.message }, e.httpStatus as 400 | 425 | 500);
     }
     throw e;
   }
 });
-
-function extractAddrSpec(headerValue: string): string | null {
-  const angleStart = headerValue.lastIndexOf('<');
-  const angleEnd = headerValue.lastIndexOf('>');
-  if (angleStart >= 0 && angleEnd > angleStart) {
-    return headerValue.slice(angleStart + 1, angleEnd).toLowerCase();
-  }
-  const trimmed = headerValue.trim().toLowerCase();
-  return /@/.test(trimmed) ? trimmed : null;
-}

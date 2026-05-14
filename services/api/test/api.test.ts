@@ -69,7 +69,11 @@ async function bootstrapEnv() {
   if (res.status !== 200) {
     throw new Error('bootstrap failed: ' + res.status + ' ' + (await res.text()));
   }
-  const j = (await res.json()) as { admin_key_id: string; admin_key_secret: string };
+  const j = (await res.json()) as {
+    admin_key_id: string;
+    admin_key_secret: string;
+    mailbox_id: string;
+  };
   return { env, admin: j };
 }
 
@@ -82,10 +86,16 @@ describe('healthz', () => {
 });
 
 describe('bootstrap', () => {
-  it('issues an admin key once', async () => {
+  it('issues an admin key + operator mailbox once', async () => {
     const { env, admin } = await bootstrapEnv();
     expect(admin.admin_key_id).toMatch(/^[0-9A-HJKMNP-TV-Z]{26}$/);
     expect(admin.admin_key_secret).toMatch(/^[0-9A-Z]+$/);
+    expect(admin.mailbox_id).toMatch(/^[0-9A-HJKMNP-TV-Z]{26}$/);
+
+    // operator mailbox exists in the DB
+    const mockDb = env.DB as unknown as { tables: Map<string, Record<string, unknown>[]> };
+    const mb = (mockDb.tables.get('mailboxes') ?? []).find((r) => r['name'] === 'operator');
+    expect(mb?.['id']).toBe(admin.mailbox_id);
 
     // Second call should 409
     const req = await signedRequest(
@@ -123,21 +133,128 @@ describe('bootstrap', () => {
   });
 });
 
-describe('admin api-keys', () => {
-  it('issues a service-scoped key and uses it', async () => {
-    const { env, admin } = await bootstrapEnv();
-
-    // Create service
-    let body = JSON.stringify({ id: 'expresscharge', name: 'ExpressCharge' });
-    let req = await signedRequest(
-      'https://x/v1/admin/tenants',
-      body,
+async function createMailbox(
+  env: ReturnType<typeof mkEnv>,
+  admin: { admin_key_id: string; admin_key_secret: string },
+  name: string,
+): Promise<string> {
+  const res = await app.fetch(
+    await signedRequest(
+      'https://x/v1/admin/mailboxes',
+      JSON.stringify({ name }),
       'POST',
       admin.admin_key_secret,
       admin.admin_key_id,
+    ),
+    env,
+    ctx,
+  );
+  if (res.status !== 201) throw new Error('createMailbox failed ' + res.status);
+  return ((await res.json()) as { id: string }).id;
+}
+
+describe('admin mailboxes', () => {
+  it('creates and lists mailboxes', async () => {
+    const { env, admin } = await bootstrapEnv();
+    const mbId = await createMailbox(env, admin, 'expresscharge');
+    expect(mbId).toMatch(/^[0-9A-HJKMNP-TV-Z]{26}$/);
+
+    const listRes = await app.fetch(
+      await signedRequest(
+        'https://x/v1/admin/mailboxes',
+        '',
+        'GET',
+        admin.admin_key_secret,
+        admin.admin_key_id,
+      ),
+      env,
+      ctx,
     );
-    let res = await app.fetch(req, env, ctx);
-    expect(res.status).toBe(201);
+    expect(listRes.status).toBe(200);
+    const list = (await listRes.json()) as { data: { name: string }[] };
+    const names = list.data.map((r) => r.name);
+    expect(names).toContain('operator');
+    expect(names).toContain('expresscharge');
+  });
+
+  it('returns mailbox detail with senders + receivers + principals', async () => {
+    const { env, admin } = await bootstrapEnv();
+    const mbId = await createMailbox(env, admin, 'detail-mb');
+    const res = await app.fetch(
+      await signedRequest(
+        `https://x/v1/admin/mailboxes/${mbId}`,
+        '',
+        'GET',
+        admin.admin_key_secret,
+        admin.admin_key_id,
+      ),
+      env,
+      ctx,
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      mailbox: { id: string };
+      senders: unknown[];
+      receivers: unknown[];
+      principals: unknown[];
+      webhook_subs: unknown[];
+    };
+    expect(body.mailbox.id).toBe(mbId);
+    expect(Array.isArray(body.senders)).toBe(true);
+    expect(Array.isArray(body.receivers)).toBe(true);
+  });
+
+  it('rejects duplicate mailbox name with 409', async () => {
+    const { env, admin } = await bootstrapEnv();
+    await createMailbox(env, admin, 'dup');
+    const res = await app.fetch(
+      await signedRequest(
+        'https://x/v1/admin/mailboxes',
+        JSON.stringify({ name: 'dup' }),
+        'POST',
+        admin.admin_key_secret,
+        admin.admin_key_id,
+      ),
+      env,
+      ctx,
+    );
+    expect(res.status).toBe(409);
+  });
+
+  it('disables and re-enables a mailbox', async () => {
+    const { env, admin } = await bootstrapEnv();
+    const mbId = await createMailbox(env, admin, 'toggleable');
+    const dRes = await app.fetch(
+      await signedRequest(
+        `https://x/v1/admin/mailboxes/${mbId}/disable`,
+        '{}',
+        'POST',
+        admin.admin_key_secret,
+        admin.admin_key_id,
+      ),
+      env,
+      ctx,
+    );
+    expect(dRes.status).toBe(200);
+    const eRes = await app.fetch(
+      await signedRequest(
+        `https://x/v1/admin/mailboxes/${mbId}/enable`,
+        '{}',
+        'POST',
+        admin.admin_key_secret,
+        admin.admin_key_id,
+      ),
+      env,
+      ctx,
+    );
+    expect(eRes.status).toBe(200);
+  });
+});
+
+describe('admin api-keys', () => {
+  it('issues a mailbox-scoped key and uses it', async () => {
+    const { env, admin } = await bootstrapEnv();
+    const mbId = await createMailbox(env, admin, 'expresscharge');
 
     // Create domain (verified)
     {
@@ -150,20 +267,19 @@ describe('admin api-keys', () => {
         .run();
     }
 
-    // Issue api key
-    body = JSON.stringify({
-      tenant_id: 'expresscharge',
-      sender_scopes: [{ kind: 'exact', pattern: 'noreply@example.com' }],
+    // Issue api key bound to the mailbox.
+    const body = JSON.stringify({
+      mailbox_id: mbId,
       scopes: ['send'],
     });
-    req = await signedRequest(
+    const req = await signedRequest(
       'https://x/v1/admin/api-keys',
       body,
       'POST',
       admin.admin_key_secret,
       admin.admin_key_id,
     );
-    res = await app.fetch(req, env, ctx);
+    const res = await app.fetch(req, env, ctx);
     expect(res.status).toBe(201);
     const issued = (await res.json()) as { key_id: string; key_secret: string };
     expect(issued.key_id).toMatch(/^[0-9A-HJKMNP-TV-Z]{26}$/);
@@ -172,25 +288,12 @@ describe('admin api-keys', () => {
 
   it('rotation does not leak secret on idem replay', async () => {
     const { env, admin } = await bootstrapEnv();
-    await app.fetch(
-      await signedRequest(
-        'https://x/v1/admin/tenants',
-        JSON.stringify({ id: 'svc', name: 'Svc' }),
-        'POST',
-        admin.admin_key_secret,
-        admin.admin_key_id,
-      ),
-      env,
-      ctx,
-    );
+    const mbId = await createMailbox(env, admin, 'svc');
     const issued = (await (
       await app.fetch(
         await signedRequest(
           'https://x/v1/admin/api-keys',
-          JSON.stringify({
-            tenant_id: 'svc',
-            sender_scopes: [{ kind: 'exact', pattern: 'a@example.com' }],
-          }),
+          JSON.stringify({ mailbox_id: mbId }),
           'POST',
           admin.admin_key_secret,
           admin.admin_key_id,
@@ -234,17 +337,7 @@ describe('admin api-keys', () => {
 
   it('emergency revoke kills the key immediately', async () => {
     const { env, admin } = await bootstrapEnv();
-    await app.fetch(
-      await signedRequest(
-        'https://x/v1/admin/tenants',
-        JSON.stringify({ id: 'svc', name: 'Svc' }),
-        'POST',
-        admin.admin_key_secret,
-        admin.admin_key_id,
-      ),
-      env,
-      ctx,
-    );
+    const mbId = await createMailbox(env, admin, 'svc');
     await env.DB.prepare(
       `INSERT INTO mail_domains (id, zone_id, name, status, verified_at, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
@@ -255,10 +348,7 @@ describe('admin api-keys', () => {
       await app.fetch(
         await signedRequest(
           'https://x/v1/admin/api-keys',
-          JSON.stringify({
-            tenant_id: 'svc',
-            sender_scopes: [{ kind: 'exact', pattern: 'a@example.com' }],
-          }),
+          JSON.stringify({ mailbox_id: mbId }),
           'POST',
           admin.admin_key_secret,
           admin.admin_key_id,
@@ -279,9 +369,6 @@ describe('admin api-keys', () => {
       ctx,
     );
     expect(revRes.status).toBe(200);
-    // After revoke, the key row's status flips to 'revoked' and any KV-cached
-    // entry for the secret is invalidated. Subsequent admin requests using the
-    // revoked key will 401.
     const mockDb = env.DB as unknown as { tables: Map<string, Record<string, unknown>[]> };
     const keyRow = (mockDb.tables.get('api_keys') ?? []).find((r) => r['id'] === issued.key_id);
     expect(keyRow?.['status']).toBe('revoked');
@@ -291,10 +378,12 @@ describe('admin api-keys', () => {
 describe('webhook subs', () => {
   it('rejects external http (must be https)', async () => {
     const { env, admin } = await bootstrapEnv();
+    const mbId = await createMailbox(env, admin, 'wh-mb-a');
     const res = await app.fetch(
       await signedRequest(
         'https://x/v1/admin/webhook-subs',
         JSON.stringify({
+          mailbox_id: mbId,
           url: 'http://evil.example/hook',
           kind: 'external',
           events: ['message.received'],
@@ -310,10 +399,12 @@ describe('webhook subs', () => {
   });
   it('rejects tailnet without .ts.net', async () => {
     const { env, admin } = await bootstrapEnv();
+    const mbId = await createMailbox(env, admin, 'wh-mb-b');
     const res = await app.fetch(
       await signedRequest(
         'https://x/v1/admin/webhook-subs',
         JSON.stringify({
+          mailbox_id: mbId,
           url: 'https://service.local/hook',
           kind: 'tailnet',
           events: ['message.received'],
@@ -332,6 +423,7 @@ describe('webhook subs', () => {
 describe('domains + senders', () => {
   it('full create→sender→smtp-credential flow', async () => {
     const { env, admin } = await bootstrapEnv();
+    const mbId = await createMailbox(env, admin, 'plrs-mb');
 
     // Create mail domain
     let res = await app.fetch(
@@ -380,11 +472,15 @@ describe('domains + senders', () => {
     const list = (await res.json()) as { data: { name: string; status: string }[] };
     expect(list.data[0]?.name).toBe('plrs.im');
 
-    // Add sender
+    // Add sender (mailbox_id supplied in body)
     res = await app.fetch(
       await signedRequest(
         `https://x/v1/admin/domains/${dom.id}/senders`,
-        JSON.stringify({ local_part: 'noreply', default_for_domain: true }),
+        JSON.stringify({
+          mailbox_id: mbId,
+          local_part: 'noreply',
+          default_for_mailbox: true,
+        }),
         'POST',
         admin.admin_key_secret,
         admin.admin_key_id,
@@ -413,15 +509,14 @@ describe('domains + senders', () => {
     expect(cred.username).toBe('noreply@plrs.im');
     expect(cred.secret.length).toBeGreaterThan(20);
 
-    // Issuing the credential must persist a submission_credentials row with
-    // the bcrypt_hash (NOT the plaintext) — the daemon polls /v1/daemon/credentials
-    // and mirrors the hash locally. The plaintext is returned to the caller
-    // in the response exactly once and never stored anywhere queryable.
+    // The submission_credentials row carries the bcrypt_hash (NOT the
+    // plaintext) and binds 1:1 to the sender via `sender_id`.
     const mockDb = env.DB as unknown as { tables: Map<string, Record<string, unknown>[]> };
     const credRows = mockDb.tables.get('submission_credentials') ?? [];
     const credRow = credRows.find((r) => r['username'] === 'noreply@plrs.im');
     expect(credRow).toBeTruthy();
     expect(credRow?.['id']).toBe(cred.id);
+    expect(credRow?.['sender_id']).toBe(sender.id);
     expect(typeof credRow?.['bcrypt_hash']).toBe('string');
     expect(credRow?.['bcrypt_hash']).not.toBe(cred.secret);
     // Plaintext must not appear in any column of any row of any table.
@@ -463,6 +558,7 @@ describe('domains + senders', () => {
 describe('daemon credential mirror', () => {
   it('returns the issued SMTP credential to the daemon poller', async () => {
     const { env, admin } = await bootstrapEnv();
+    const mbId = await createMailbox(env, admin, 'daemon-mb');
     await app.fetch(
       await signedRequest(
         'https://x/v1/admin/domains',
@@ -491,7 +587,11 @@ describe('daemon credential mirror', () => {
       await app.fetch(
         await signedRequest(
           `https://x/v1/admin/domains/${dom.id}/senders`,
-          JSON.stringify({ local_part: 'noreply', default_for_domain: true }),
+          JSON.stringify({
+            mailbox_id: mbId,
+            local_part: 'noreply',
+            default_for_mailbox: true,
+          }),
           'POST',
           admin.admin_key_secret,
           admin.admin_key_id,
@@ -537,6 +637,7 @@ describe('daemon credential mirror', () => {
     expect(u?.username).toBe('noreply@plrs.im');
     expect(typeof u?.bcrypt_hash).toBe('string');
     expect(u?.bcrypt_hash).not.toBe(cred.secret);
+    expect(u?.allowed_senders).toEqual(['noreply@plrs.im']);
     expect(body.mirror_version).toBeGreaterThan(0);
     expect(Array.isArray(body.deletions)).toBe(true);
   });

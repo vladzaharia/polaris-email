@@ -81,10 +81,10 @@ domains.post('/v1/admin/domains', requireScope('admin:rotate'), async (c) => {
   try {
     await c.env.DB.prepare(
       `INSERT INTO mail_domains
-         (id, zone_id, name, environment, status, wildcard_subdomains, dmarc_policy,
+         (id, zone_id, name, status, wildcard_subdomains, dmarc_policy,
           dmarc_rua, inbound_enabled, outbound_enabled, provider, dkim_selector,
           created_at, updated_at)
-       VALUES (?, ?, ?, 'prod', 'pending', 1, ?, ?, 0, 1, 'cloudflare', ?, ?, ?)`,
+       VALUES (?, ?, ?, 'pending', 1, ?, ?, 0, 1, 'cloudflare', ?, ?, ?)`,
     )
       .bind(id, zoneId, body.name, policy, rua, selector, nowIso, nowIso)
       .run();
@@ -161,10 +161,10 @@ domains.post('/v1/admin/domains/bulk-onboard', requireScope('admin:rotate'), asy
       const zoneId = await ensureZone(c, null, name);
       await c.env.DB.prepare(
         `INSERT INTO mail_domains
-           (id, zone_id, name, environment, status, wildcard_subdomains, dmarc_policy,
+           (id, zone_id, name, status, wildcard_subdomains, dmarc_policy,
             dmarc_rua, inbound_enabled, outbound_enabled, provider, dkim_selector,
             created_at, updated_at)
-         VALUES (?, ?, ?, 'prod', 'pending', 1, 'none', ?, 0, 1, 'cloudflare', 'cf', ?, ?)`,
+         VALUES (?, ?, ?, 'pending', 1, 'none', ?, 0, 1, 'cloudflare', 'cf', ?, ?)`,
       )
         .bind(id, zoneId, name, `mailto:postmaster@${name}`, nowIso, nowIso)
         .run();
