@@ -51,6 +51,12 @@ export class MockD1 {
     this.tables.set('message_attempts', []);
     this.tables.set('message_deliveries', []);
     this.tables.set('idempotency_keys', []);
+    // Phase L bridge tables (0002_bridge.sql).
+    this.tables.set('mailbox_messages_state', []);
+    this.tables.set('mailbox_uid_counter', []);
+    this.tables.set('mailbox_change_counter', []);
+    this.tables.set('mailbox_credentials', []);
+    this.tables.set('jmap_push_subscriptions', []);
     this.tables.set('audit_log', [
       {
         id: 0,
@@ -321,10 +327,10 @@ function executeSql<T>(
             const neq = t.match(/^(\w+)\s*<>\s*'([^']+)'$/);
             const like = t.match(/^(\w+)\s+LIKE\s+\?$/i);
             const likeN = t.match(/^(\w+)\s+LIKE\s+\?(\d+)$/i);
-            const gte = t.match(/^(\w+)\s*>=\s*\?$/);
-            const lte = t.match(/^(\w+)\s*<=\s*\?$/);
-            const gt = t.match(/^(\w+)\s*>\s*\?$/);
-            const lt = t.match(/^(\w+)\s*<\s*\?$/);
+            const gte = t.match(/^(\w+)\s*>=\s*\?(\d*)$/);
+            const lte = t.match(/^(\w+)\s*<=\s*\?(\d*)$/);
+            const gt = t.match(/^(\w+)\s*>\s*\?(\d*)$/);
+            const lt = t.match(/^(\w+)\s*<\s*\?(\d*)$/);
             if (eq) {
               if (row[eq[1]!] != params[wp++]) return false;
             } else if (eqN) {
@@ -343,10 +349,17 @@ function executeSql<T>(
             } else if (gte || lte || gt || lt) {
               const m = (gte ?? lte ?? gt ?? lt)!;
               const col = m[1]!;
-              const want = params[wp++];
+              const placeholderIdx = m[2];
+              const want = placeholderIdx ? params[Number(placeholderIdx) - 1] : params[wp++];
               const have = row[col];
               if (have == null) return false;
-              const cmp = String(have).localeCompare(String(want));
+              // Numeric comparison if both sides look numeric; otherwise string-collate.
+              let cmp: number;
+              if (typeof have === 'number' || typeof want === 'number') {
+                cmp = Number(have) - Number(want);
+              } else {
+                cmp = String(have).localeCompare(String(want));
+              }
               if (gte && cmp < 0) return false;
               if (lte && cmp > 0) return false;
               if (gt && cmp <= 0) return false;
@@ -371,6 +384,14 @@ function executeSql<T>(
     if (/order\s+by\s+id\s+asc/i.test(trimmed)) {
       filtered = [...filtered].sort((a, b) => Number(a['id']) - Number(b['id']));
     }
+    if (/order\s+by\s+change_id\s+asc/i.test(trimmed)) {
+      filtered = [...filtered].sort((a, b) => Number(a['change_id']) - Number(b['change_id']));
+    }
+    if (/order\s+by\s+created_at\s+asc/i.test(trimmed)) {
+      filtered = [...filtered].sort((a, b) =>
+        String(a['created_at']).localeCompare(String(b['created_at'])),
+      );
+    }
     const offsetM = trimmed.match(/offset\s+(\d+)/i);
     const offset = offsetM ? Number(offsetM[1]) : 0;
     if (offset > 0) filtered = filtered.slice(offset);
@@ -380,7 +401,55 @@ function executeSql<T>(
     return { results: filtered as T[], meta: { changes: 0 } };
   }
   if (lower.startsWith('delete from ')) {
-    return { results: [], meta: { changes: 0 } };
+    const m = trimmed.match(/delete\s+from\s+(\w+)(?:\s+where\s+(.+))?$/is);
+    if (!m) return { results: [], meta: { changes: 0 } };
+    const table = m[1]!;
+    const whereClause = m[2];
+    const rows = db.tables.get(table);
+    if (!rows) return { results: [], meta: { changes: 0 } };
+    if (!whereClause) {
+      const n = rows.length;
+      rows.length = 0;
+      return { results: [], meta: { changes: n } };
+    }
+    const matchRow = (row: TableRow): boolean => {
+      let pi = 0;
+      for (const cond of whereClause.split(/\s+and\s+/i)) {
+        const t = cond.trim();
+        const eq = t.match(/^(\w+)\s*=\s*\?$/);
+        const eqN = t.match(/^(\w+)\s*=\s*\?(\d+)$/);
+        const isNull = t.match(/^(\w+)\s+IS\s+NULL$/i);
+        const isNotNull = t.match(/^(\w+)\s+IS\s+NOT\s+NULL$/i);
+        const lt = t.match(/^(\w+)\s*<\s*\?$/);
+        if (eq) {
+          if (row[eq[1]!] != params[pi++]) return false;
+        } else if (eqN) {
+          const idx = Number(eqN[2]) - 1;
+          if (row[eqN[1]!] != params[idx]) return false;
+        } else if (isNull) {
+          if (row[isNull[1]!] != null) return false;
+        } else if (isNotNull) {
+          if (row[isNotNull[1]!] == null) return false;
+        } else if (lt) {
+          const want = params[pi++];
+          const have = row[lt[1]!];
+          if (have == null) return false;
+          if (String(have).localeCompare(String(want)) >= 0) return false;
+        } else {
+          // Unsupported condition shape — fail closed (no delete).
+          return false;
+        }
+      }
+      return true;
+    };
+    let changes = 0;
+    for (let i = rows.length - 1; i >= 0; i--) {
+      if (matchRow(rows[i]!)) {
+        rows.splice(i, 1);
+        changes++;
+      }
+    }
+    return { results: [], meta: { changes } };
   }
   throw new Error('mock: unsupported sql: ' + trimmed.slice(0, 120));
 }
@@ -412,6 +481,12 @@ export class MockR2 {
   }
   async head(key: string) {
     return this.map.has(key) ? ({} as unknown) : null;
+  }
+  async delete(key: string) {
+    this.map.delete(key);
+  }
+  size() {
+    return this.map.size;
   }
 }
 

@@ -32,6 +32,7 @@ import { buildError } from '../errors.js';
 import { audit } from '../audit.js';
 import { processMessage, ProcessMessageError } from '../process-message.js';
 import { rateLimit } from '../rate-limit.js';
+import { autoMarkRead } from './messages-state.js';
 
 export const messages = new Hono<{ Bindings: Env }>();
 
@@ -554,6 +555,9 @@ messages.get('/v1/messages/:id', async (c) => {
   if (!raw) return buildError(c, 'degraded', 'message body missing from R2');
   const msg = mimeToMessage(raw, rowMeta(row));
   const rendered = await renderMessageBodies(c.env, msg, raw, { listMode: false });
+  if (apiKey.scopes.includes('imap_bridge:read')) {
+    await autoMarkRead(c.env, row.mailbox_id, row.id);
+  }
   return c.json(rendered);
 });
 

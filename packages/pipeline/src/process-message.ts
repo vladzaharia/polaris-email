@@ -142,6 +142,70 @@ async function tryClaim(
   return { first: false, messageId: row?.message_id ?? undefined };
 }
 
+/**
+ * Allocate a `mailbox_messages_state` row for a freshly-arrived inbound
+ * message, plus bumping `mailbox_uid_counter` and `mailbox_change_counter`.
+ * Mirrors `services/api/src/lib/state.ts#ensureMailboxState`. Inlined here so
+ * the pipeline package stays self-contained and the API + Email Routing
+ * Workers both pick up state allocation through `processMessage()`.
+ */
+async function allocateInboundState(
+  env: PipelineEnv,
+  mailboxId: string,
+  messageId: string,
+): Promise<void> {
+  const uidRow = await env.DB.prepare(
+    `SELECT next_uid, uid_validity FROM mailbox_uid_counter WHERE mailbox_id = ?1`,
+  )
+    .bind(mailboxId)
+    .first<{ next_uid: number; uid_validity: number }>();
+  let uid: number;
+  let uidValidity: number;
+  if (!uidRow) {
+    uid = 1;
+    uidValidity = Math.floor(Date.now() / 1000);
+    await env.DB.prepare(
+      `INSERT INTO mailbox_uid_counter (mailbox_id, next_uid, uid_validity) VALUES (?1, ?2, ?3)`,
+    )
+      .bind(mailboxId, uid + 1, uidValidity)
+      .run();
+  } else {
+    uid = uidRow.next_uid;
+    uidValidity = uidRow.uid_validity;
+    await env.DB.prepare(`UPDATE mailbox_uid_counter SET next_uid = ?1 WHERE mailbox_id = ?2`)
+      .bind(uid + 1, mailboxId)
+      .run();
+  }
+  const counter = await env.DB.prepare(
+    `SELECT next_change_id FROM mailbox_change_counter WHERE mailbox_id = ?1`,
+  )
+    .bind(mailboxId)
+    .first<{ next_change_id: number }>();
+  let changeId: number;
+  if (!counter) {
+    changeId = 1;
+    await env.DB.prepare(
+      `INSERT INTO mailbox_change_counter (mailbox_id, next_change_id) VALUES (?1, ?2)`,
+    )
+      .bind(mailboxId, changeId + 1)
+      .run();
+  } else {
+    changeId = counter.next_change_id;
+    await env.DB.prepare(
+      `UPDATE mailbox_change_counter SET next_change_id = ?1 WHERE mailbox_id = ?2`,
+    )
+      .bind(changeId + 1, mailboxId)
+      .run();
+  }
+  await env.DB.prepare(
+    `INSERT INTO mailbox_messages_state
+      (message_id, mailbox_id, read_at, expunged_at, flags_json, uid, uid_validity, change_id)
+     VALUES (?1, ?2, NULL, NULL, '[]', ?3, ?4, ?5)`,
+  )
+    .bind(messageId, mailboxId, uid, uidValidity, changeId)
+    .run();
+}
+
 async function recordClaim(env: PipelineEnv, key: string, messageId: string): Promise<void> {
   await env.DB.prepare(
     `UPDATE idempotency_keys SET message_id = ?2 WHERE key = ?1 AND message_id IS NULL`,
@@ -323,6 +387,23 @@ export async function processMessage(
 
   if (args.direction === 'out' && args.idempotencyKey) {
     await recordClaim(env, args.idempotencyKey, messageId);
+  }
+
+  // Inbound: allocate a mailbox_messages_state row so the message is visible
+  // on the IMAP / JMAP wire the moment it lands. Outbound stays invisible per
+  // Phase L scope (sent-folder semantics are deferred). Failures are logged
+  // but don't fail the ingest — state allocation is recoverable from the
+  // janitor + bridge backfill paths.
+  if (args.direction === 'in') {
+    try {
+      await allocateInboundState(env, args.mailboxId, messageId);
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        'pipeline: state allocation failed (will be repaired on next read)',
+        e instanceof Error ? e.message : 'unknown',
+      );
+    }
   }
 
   if (args.direction === 'out') {

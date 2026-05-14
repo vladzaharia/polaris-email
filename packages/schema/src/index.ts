@@ -426,6 +426,8 @@ export const AuditAction = z.enum([
   'mailbox.update',
   'mailbox.disable',
   'mailbox.delete',
+  // mailbox bridge ops (Phase L)
+  'mailbox.expunge',
   // sender CRUD
   'mailbox_sender.create',
   'mailbox_sender.update',
@@ -452,6 +454,10 @@ export const AuditAction = z.enum([
   'smtp_credential.issue',
   'smtp_credential.disable',
   'smtp_credential.rotate',
+  // unified mailbox credentials (Phase L)
+  'mailbox_credential.issue',
+  'mailbox_credential.rotate',
+  'mailbox_credential.disable',
   'dry_run_rotate',
   // daemon lifecycle
   'daemon.register',

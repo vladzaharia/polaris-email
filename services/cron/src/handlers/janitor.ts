@@ -50,10 +50,50 @@ export async function janitor(env: Env): Promise<void> {
     .bind(nowIso)
     .run();
 
+  // Sweep expunged mailbox_messages_state rows past the grace window.
+  const graceDays = expungeGraceDays(env);
+  const graceCutoff = new Date(Date.now() - graceDays * 86400_000).toISOString();
+  const stales = await env.DB.prepare(
+    `SELECT message_id, mailbox_id FROM mailbox_messages_state
+     WHERE expunged_at IS NOT NULL AND expunged_at < ?`,
+  )
+    .bind(graceCutoff)
+    .all<{ message_id: string; mailbox_id: string }>()
+    .catch(() => ({ results: [] as { message_id: string; mailbox_id: string }[] }));
+  let expungedRows = 0;
+  for (const s of stales.results) {
+    await env.DB.prepare(
+      `DELETE FROM mailbox_messages_state WHERE message_id = ? AND mailbox_id = ?`,
+    )
+      .bind(s.message_id, s.mailbox_id)
+      .run();
+    expungedRows += 1;
+    const otherState = await env.DB.prepare(
+      `SELECT 1 AS one FROM mailbox_messages_state WHERE message_id = ? LIMIT 1`,
+    )
+      .bind(s.message_id)
+      .first<{ one: number }>()
+      .catch(() => null);
+    if (otherState) continue;
+    const msgRow = await env.DB.prepare(`SELECT id, r2_key FROM messages WHERE id = ? LIMIT 1`)
+      .bind(s.message_id)
+      .first<MessageRow>()
+      .catch(() => null);
+    if (msgRow) {
+      await purgeMessage(env, msgRow);
+    }
+  }
+
   // eslint-disable-next-line no-console
   console.log(
-    `janitor: deleted ${deletedMessages} messages, ${idemDeleted.meta.changes ?? 0} idempotency rows`,
+    `janitor: deleted ${deletedMessages} messages, ${idemDeleted.meta.changes ?? 0} idempotency rows, expunged ${expungedRows} state rows`,
   );
+}
+
+function expungeGraceDays(env: Env): number {
+  const raw = (env as unknown as { BRIDGE_EXPUNGE_GRACE_DAYS?: string }).BRIDGE_EXPUNGE_GRACE_DAYS;
+  const n = raw ? Number(raw) : NaN;
+  return Number.isFinite(n) && n >= 0 ? n : 7;
 }
 
 /**
