@@ -1,9 +1,12 @@
-// `@polaris/sdk/react` — TanStack Query hooks.
+// `@polaris/sdk/react` — TanStack Query hooks (placeholder).
 //
-// Hey API's TanStack Query plugin emits hook wrappers here. The current
-// generation step ships a placeholder so the export map is honored without
-// taking a hard dependency on `@tanstack/react-query` (the panel will pull
-// that in when Phase H wires the UI). Regenerate via
-// `pnpm --filter @polaris/sdk-codegen run generate`.
+// Reserved for hand-written TanStack Query hook wrappers around the SDK's
+// API surface. Honoring the `./react` subpath in `package.json` lets
+// consumers `import { ... } from '@polaris/sdk/react'` once hooks land
+// without bumping the SDK major version. The panel currently calls the
+// SDK directly via TanStack Query, so this file is empty by design.
+//
+// SDKs are hand-written and kept in sync with `openapi/polaris-email.yaml`
+// manually; see `docs/sdk.md` for the contract.
 
 export {};

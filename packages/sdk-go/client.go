@@ -1,6 +1,6 @@
-// Hand-written HMAC client. The generated low-level operations (when codegen
-// runs) live in `generated.go`; the bridge and CLI use this client as the
-// auth-aware transport.
+// Hand-written HMAC client. The bridge and CLI use this client as the
+// auth-aware transport; the typed request/response structs live in
+// `messages.go`.
 package polarissdk
 
 import (

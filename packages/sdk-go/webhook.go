@@ -1,14 +1,17 @@
 // Package polarissdk provides the Go SDK for polaris-email.
 //
-// `webhook.go` is the hand-written HMAC verifier; consumers receiving webhook
-// deliveries should call `VerifyWebhook` (strict canonical-string form) to
-// validate the request before trusting its body.
+// All files in this package are **hand-written** and kept in sync with
+// `openapi/polaris-email.yaml` manually (see `docs/sdk.md` for the
+// contract). The prior `packages/sdk-codegen/` orchestrator was deleted
+// in Phase M (commit 71f6e41); it never produced real output.
 //
-// `client.go` (hand-written) wraps the generated low-level operations with
-// HMAC signing for the API direction.
+// `webhook.go` is the HMAC verifier; consumers receiving webhook
+// deliveries should call `VerifyWebhook` (strict canonical-string form)
+// to validate the request before trusting its body.
 //
-// `generated.go` is the oapi-codegen output — DO NOT EDIT directly; rerun
-// `pnpm --filter @polaris/sdk-codegen run generate`.
+// `client.go` is the low-level HTTP client; it handles HMAC signing for
+// the API direction. `messages.go` defines the typed request/response
+// structs.
 //
 // BREAKING CHANGE (cleanup plan A9): the prior `VerifyWebhook(payload []byte,
 // sigHeader, secret string) bool` short overload has been removed. It HMAC'd
@@ -310,9 +313,7 @@ func canonicalQuery(raw string) string {
 	if raw == "" {
 		return ""
 	}
-	if strings.HasPrefix(raw, "?") {
-		raw = raw[1:]
-	}
+	raw = strings.TrimPrefix(raw, "?")
 	if raw == "" {
 		return ""
 	}

@@ -38,8 +38,10 @@ export function hmacAuth(direction: 'polaris-api'): MiddlewareHandler<{ Bindings
       return buildError(c, 'unauthorized', 'X-Polaris-Key-Id format');
 
     // Read body once; needed for HMAC verification and for downstream handlers.
+    // The request is augmented with a `_cachedBody` slot so downstream
+    // handlers can read the same bytes without consuming the stream twice.
     const bodyText = await c.req.text();
-    (c.req as any)._cachedBody = bodyText;
+    (c.req as { _cachedBody?: string })._cachedBody = bodyText;
 
     // Load key from KV cache (warm path) or D1 (cold path). Cache miss is
     // expected and falls through to D1; transport errors are logged so they
@@ -225,5 +227,6 @@ export function requireScope(scope: string): MiddlewareHandler<{ Bindings: Env }
 }
 
 export function bodyText(c: Context): string {
-  return (c.req as any)._cachedBody ?? '';
+  // Mirrors the `_cachedBody` slot populated in `hmacAuth` above.
+  return (c.req as { _cachedBody?: string })._cachedBody ?? '';
 }

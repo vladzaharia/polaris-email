@@ -41,6 +41,9 @@ app.notFound((c) =>
 );
 
 app.onError((err, c) => {
+  // Workers logpush + tail captures console.error; this is the only
+  // observability surface for unhandled errors in production.
+  // eslint-disable-next-line no-console
   console.error('unhandled', err.stack);
   return buildError(c, 'degraded', 'unhandled error');
 });
