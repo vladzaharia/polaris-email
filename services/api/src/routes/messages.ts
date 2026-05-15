@@ -27,6 +27,7 @@ import {
   extractAttachmentParts,
   mimeToMessage,
   parseStrict,
+  MAX_MESSAGE_SIZE_VERIFIED,
   MimeError,
   SenderPolicyError,
   type UnifiedMessage,
@@ -449,6 +450,18 @@ messages.post('/v1/messages', async (c) => {
     }
 
     const rawMime = composeFromJson(req);
+    // Phase A.6 — reject before parseStrict (and before enqueue) so callers see
+    // a typed `message_too_large` (HTTP 413) rather than a generic MIME error.
+    // The 25 MiB cap is the CF Email Service verified-domain ceiling; it is a
+    // separate contract from the canonicalizer's 64 KiB header cap, so the
+    // check lives here at the route boundary, not inside parseStrict.
+    if (rawMime.byteLength > MAX_MESSAGE_SIZE_VERIFIED) {
+      return buildError(
+        c,
+        'message_too_large',
+        `message ${rawMime.byteLength} bytes exceeds ${MAX_MESSAGE_SIZE_VERIFIED}`,
+      );
+    }
     try {
       parseStrict(rawMime);
     } catch (e) {
@@ -499,6 +512,18 @@ messages.post('/v1/messages', async (c) => {
       return buildError(c, 'too_many_requests', 'rate limit exceeded', {
         'retry-after': String(rl.retryAfterSec),
       });
+    }
+
+    // Phase A.6 — reject oversized bodies before parseStrict (and before any
+    // pipeline work) so the bridge submitter sees a typed `message_too_large`.
+    // The check sits after HMAC auth so we don't leak the rejection to
+    // unauthenticated callers, but before any parsing per the contract.
+    if (bodyBytes.byteLength > MAX_MESSAGE_SIZE_VERIFIED) {
+      return buildError(
+        c,
+        'message_too_large',
+        `message ${bodyBytes.byteLength} bytes exceeds ${MAX_MESSAGE_SIZE_VERIFIED}`,
+      );
     }
 
     let mime;
