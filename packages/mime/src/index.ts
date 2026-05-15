@@ -43,3 +43,5 @@ export {
   parseAuthResults,
   type AuthResults,
 } from './headers.js';
+
+export * from './limits.js';
