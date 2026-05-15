@@ -566,6 +566,7 @@ export function mkEnv(overrides: Partial<Env> = {}): Env {
   const env = {
     DB: new MockD1() as unknown as D1Database,
     R2: new MockR2() as unknown as R2Bucket,
+    R2_ANCHORS: new MockR2() as unknown as R2Bucket,
     KV_NONCE: new MockKV() as unknown as KVNamespace,
     KV_IDEMPOTENCY: new MockKV() as unknown as KVNamespace,
     KV_RATE_LIMIT: new MockKV() as unknown as KVNamespace,

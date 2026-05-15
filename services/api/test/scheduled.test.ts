@@ -47,7 +47,9 @@ describe('scheduled dispatch', () => {
           };
         },
       } as unknown as D1Database,
-      R2: {
+      R2: {} as unknown as R2Bucket,
+      // O0: anchors land in the private R2_ANCHORS bucket, not R2.
+      R2_ANCHORS: {
         async put(key: string, body: string) {
           r2Writes.push({ key, body });
         },

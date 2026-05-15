@@ -21,7 +21,18 @@
       "migrations_dir": "migrations",
     },
   ],
-  "r2_buckets": [{ "binding": "R2", "bucket_name": "polaris-email", "jurisdiction": "default" }],
+  "r2_buckets": [
+    { "binding": "R2", "bucket_name": "polaris-email", "jurisdiction": "default" },
+    // Private audit-anchor bucket (O0). MUST NOT be attached to the
+    // public custom domain `r2.mail.plrs.im` — anchors are tamper-evidence
+    // and must stay non-enumerable. Phase O1 will replace this binding
+    // with an external Object-Lock target via packages/object-lock.
+    {
+      "binding": "R2_ANCHORS",
+      "bucket_name": "polaris-email-anchors",
+      "jurisdiction": "default",
+    },
+  ],
   "kv_namespaces": [
     { "binding": "KV_NONCE", "id": "REPLACE_WITH_LOCAL" },
     { "binding": "KV_IDEMPOTENCY", "id": "REPLACE_WITH_LOCAL" },

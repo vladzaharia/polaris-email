@@ -52,7 +52,12 @@ export async function anchor(env: Env): Promise<void> {
     signed_at: signedAt,
     sig: sigHex,
   };
-  await env.R2.put(externalRef, JSON.stringify(payload), {
+  // Write to the private R2_ANCHORS bucket, NOT the public `R2` bucket.
+  // The public bucket is fronted by `r2.mail.plrs.im` (B5), so anchors
+  // written there would be publicly readable — the audit chain must stay
+  // non-enumerable. (O0 fixes the B5 regression; O1 will replace this with
+  // an external Object-Lock target via packages/object-lock.)
+  await env.R2_ANCHORS.put(externalRef, JSON.stringify(payload), {
     httpMetadata: { contentType: 'application/json' },
   });
   await env.DB.prepare(

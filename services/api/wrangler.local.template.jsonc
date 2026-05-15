@@ -6,7 +6,13 @@
   "d1_databases": [
     { "binding": "DB", "database_name": "polaris-email", "database_id": "${D1_ID}" },
   ],
-  "r2_buckets": [{ "binding": "R2", "bucket_name": "polaris-email", "jurisdiction": "eu" }],
+  "r2_buckets": [
+    { "binding": "R2", "bucket_name": "polaris-email", "jurisdiction": "eu" },
+    // Private audit-anchor bucket (O0 — see services/api/wrangler.jsonc note).
+    // Create via `wrangler r2 bucket create polaris-email-anchors --location ENAM`
+    // before first deploy.
+    { "binding": "R2_ANCHORS", "bucket_name": "polaris-email-anchors", "jurisdiction": "eu" },
+  ],
   "kv_namespaces": [
     { "binding": "KV_NONCE", "id": "${KV_NONCE_ID}" },
     { "binding": "KV_IDEMPOTENCY", "id": "${KV_IDEMPOTENCY_ID}" },

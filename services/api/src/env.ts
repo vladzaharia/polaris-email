@@ -3,6 +3,15 @@ export interface Env {
   DB: D1Database;
 
   R2: R2Bucket;
+  /**
+   * Private R2 bucket for audit anchors (O0 — fixes the B5 regression
+   * where anchors written to the public `R2` bucket leaked at
+   * `https://${R2_PUBLIC_HOST}/anchors/...`). NOT fronted by a public
+   * custom domain. Phase O1 will replace this with an external Object-Lock
+   * target (Backblaze B2 via packages/object-lock); this binding bridges
+   * the gap.
+   */
+  R2_ANCHORS: R2Bucket;
   KV_NONCE: KVNamespace;
   KV_IDEMPOTENCY: KVNamespace;
   KV_RATE_LIMIT: KVNamespace;
