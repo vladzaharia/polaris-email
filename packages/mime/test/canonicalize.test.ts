@@ -97,6 +97,57 @@ describe('parseStrict', () => {
   });
 });
 
+describe('TRANSPORT_FORBIDDEN_HEADERS CF additions', () => {
+  function msgWith(header: string): Uint8Array {
+    return mime(
+      'From: a@example.com\r\n' +
+        'To: b@example.com\r\n' +
+        'Subject: t\r\n' +
+        `${header}: x\r\n` +
+        '\r\n' +
+        'hi\r\n',
+    );
+  }
+
+  function expectForbidden(header: string): void {
+    try {
+      parseStrict(msgWith(header));
+      throw new Error(`expected parseStrict to throw for header ${header}`);
+    } catch (err) {
+      expect(err).toBeInstanceOf(MimeError);
+      expect((err as MimeError).code).toBe('forbidden_header');
+    }
+  }
+
+  it('rejects Content-Transfer-Encoding', () => {
+    expectForbidden('Content-Transfer-Encoding');
+  });
+
+  it('rejects Feedback-ID', () => {
+    expectForbidden('Feedback-ID');
+  });
+
+  it('rejects CFBL-Address', () => {
+    expectForbidden('CFBL-Address');
+  });
+
+  it('rejects CFBL-Feedback-ID', () => {
+    expectForbidden('CFBL-Feedback-ID');
+  });
+
+  it('rejects TLS-Required', () => {
+    expectForbidden('TLS-Required');
+  });
+
+  it('rejects TLS-Report-Domain', () => {
+    expectForbidden('TLS-Report-Domain');
+  });
+
+  it('rejects TLS-Report-Submitter', () => {
+    expectForbidden('TLS-Report-Submitter');
+  });
+});
+
 describe('serialize', () => {
   it('round-trips a parsed message preserving body bytes', () => {
     const original = mime(
