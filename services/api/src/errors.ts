@@ -23,6 +23,14 @@ export const ERROR_HTTP: Record<ErrorCode, number> = {
   unauthorized: 401,
   forbidden: 403,
   conflict: 409,
+  // Phase A — CF Email Service compliance
+  too_many_recipients: 400,
+  subject_too_long: 400,
+  message_too_large: 413,
+  header_not_allowed: 400,
+  header_too_long: 400,
+  too_many_custom_headers: 400,
+  custom_headers_too_large: 400,
 };
 
 export const ERROR_RETRYABLE: Record<ErrorCode, boolean> = {
@@ -45,6 +53,14 @@ export const ERROR_RETRYABLE: Record<ErrorCode, boolean> = {
   unauthorized: false,
   forbidden: false,
   conflict: false,
+  // Phase A — CF Email Service compliance
+  too_many_recipients: false,
+  subject_too_long: false,
+  message_too_large: false,
+  header_not_allowed: false,
+  header_too_long: false,
+  too_many_custom_headers: false,
+  custom_headers_too_large: false,
 };
 
 export function buildError(
