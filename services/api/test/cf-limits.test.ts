@@ -4,9 +4,14 @@
 // `Record<ErrorCode, …>` maps in errors.ts are not, which TypeScript would
 // also block at compile time — the runtime assertion below is a belt-and-
 // braces guard against `as` casts or future widening.
+//
+// Phase A.5 — additionally covers the zod-issue → typed-ErrorCode translator
+// used at POST /v1/messages.
 import { describe, expect, it } from 'vitest';
-import { ErrorCode } from '@polaris-email/schema';
+import type { z } from 'zod';
+import { ErrorCode, SendRequest } from '@polaris-email/schema';
 import { ERROR_HTTP, ERROR_RETRYABLE } from '../src/errors.js';
+import { classifyZodIssue } from '../src/routes/messages.js';
 
 describe('Phase A CF compliance error code mapping', () => {
   const cases: Array<{ code: string; http: number; retryable: boolean }> = [
@@ -37,6 +42,64 @@ describe('Phase A CF compliance error code mapping', () => {
     expect(Object.keys(ERROR_RETRYABLE).length).toBe(ErrorCode.options.length);
     for (const code of ErrorCode.options) {
       expect(ERROR_RETRYABLE).toHaveProperty(code);
+    }
+  });
+});
+
+// Phase A.5 — POST /v1/messages translates the first zod issue from
+// SendRequest.safeParse() into a typed ErrorCode + human-readable detail.
+// The contract between schema and API is: issue.message === "<code>:<detail>"
+// for codes in CF_TYPED_CODES, otherwise we fall back to bad_request and
+// preserve the original message verbatim.
+describe('POST /v1/messages — CF compliance errors', () => {
+  // Helper to build a minimal ZodIssue-shaped object for testing. We only
+  // exercise the `message` field; the classifier intentionally ignores
+  // `path` / `code` to keep its contract surface narrow.
+  const issue = (message: string): z.ZodIssue =>
+    ({ code: 'custom', path: [], message }) as unknown as z.ZodIssue;
+
+  it('extracts typed code + detail for too_many_recipients', () => {
+    expect(classifyZodIssue(issue('too_many_recipients:51 exceeds 50'))).toEqual({
+      code: 'too_many_recipients',
+      message: '51 exceeds 50',
+    });
+  });
+
+  it('extracts typed code + detail for header_not_allowed', () => {
+    expect(classifyZodIssue(issue('header_not_allowed:platform_controlled'))).toEqual({
+      code: 'header_not_allowed',
+      message: 'platform_controlled',
+    });
+  });
+
+  it('falls back to bad_request when message has no colon prefix', () => {
+    expect(classifyZodIssue(issue('some_other_message'))).toEqual({
+      code: 'bad_request',
+      message: 'some_other_message',
+    });
+  });
+
+  it('falls back to bad_request when prefix is not an allowlisted typed code', () => {
+    expect(classifyZodIssue(issue('unknown_code:detail'))).toEqual({
+      code: 'bad_request',
+      message: 'unknown_code:detail',
+    });
+  });
+
+  it('end-to-end: SendRequest.safeParse(51 recipients) → too_many_recipients', () => {
+    const tooMany = Array.from({ length: 51 }, (_, i) => `r${i}@example.com`);
+    const result = SendRequest.safeParse({
+      from: 'sender@example.com',
+      to: tooMany,
+      subject: 'hello',
+      text: 'hi',
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const classified = classifyZodIssue(result.error.issues[0]);
+      expect(classified.code).toBe('too_many_recipients');
+      // Detail should be non-empty and reference the offending count.
+      expect(classified.message).toContain('51');
     }
   });
 });
