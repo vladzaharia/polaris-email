@@ -2,7 +2,7 @@
 // Originally lived at services/cron/test/cron.test.ts; folded in during the
 // B1 worker consolidation. Drives the default-export `worker.scheduled(...)`
 // so the production wiring (router + Env shape) is exercised.
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import worker from '../src/index.js';
 import type { Env } from '../src/env.js';
 
@@ -19,9 +19,19 @@ function masterB64() {
   return btoa(s);
 }
 
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
 describe('scheduled dispatch', () => {
-  it('hourly cron runs the anchor handler', async () => {
-    const r2Writes: { key: string; body: string }[] = [];
+  it('hourly cron runs the anchor handler (writes via SigV4 PUT to B2)', async () => {
+    // Phase O1: anchors are written via packages/object-lock against an
+    // external S3 endpoint. Capture the signed PUT by mocking global fetch.
+    const fetched: Request[] = [];
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      fetched.push(new Request(String(input), init as RequestInit));
+      return new Response('', { status: 200 });
+    });
     const dbInserts: unknown[] = [];
     const env = {
       DB: {
@@ -48,20 +58,25 @@ describe('scheduled dispatch', () => {
         },
       } as unknown as D1Database,
       R2: {} as unknown as R2Bucket,
-      // O0: anchors land in the private R2_ANCHORS bucket, not R2.
-      R2_ANCHORS: {
-        async put(key: string, body: string) {
-          r2Writes.push({ key, body });
-        },
-      } as unknown as R2Bucket,
       ANCHOR_R2_PREFIX: 'anchors/',
       ANCHOR_SIGNING_KEY: masterB64(),
+      ANCHOR_S3_ENDPOINT: 'https://s3.us-west-005.backblazeb2.com',
+      ANCHOR_S3_BUCKET: 'polaris-anchors-test',
+      ANCHOR_S3_REGION: 'us-west-005',
+      ANCHOR_S3_ACCESS_KEY_ID: 'test-access-key',
+      ANCHOR_S3_SECRET_ACCESS_KEY: 'test-secret-key',
       ALERT_WEBHOOK: '',
       API_BASE_URL: '',
       MAX_LATENCY_MS: '30000',
     } as unknown as Env;
     await worker.scheduled!({ cron: '0 * * * *' } as ScheduledEvent, env, ctx);
-    expect(r2Writes.length).toBe(1);
+    expect(fetched.length).toBe(1);
+    expect(fetched[0]!.method).toBe('PUT');
+    expect(fetched[0]!.url).toMatch(
+      /^https:\/\/s3\.us-west-005\.backblazeb2\.com\/polaris-anchors-test\/anchors\//,
+    );
+    expect(fetched[0]!.headers.get('x-amz-object-lock-mode')).toBe('COMPLIANCE');
+    expect(fetched[0]!.headers.get('authorization')).toMatch(/^AWS4-HMAC-SHA256 /);
     expect(dbInserts.length).toBe(1);
   });
 

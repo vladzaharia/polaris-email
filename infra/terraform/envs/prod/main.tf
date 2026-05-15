@@ -1,12 +1,21 @@
-# Prod environment composition.
+# Prod (and only) environment composition.
 #
 # Owns:
 #   - All Polaris-managed sender/recipient zones (DNS + Email Routing + Email
 #     Service onboarding).
 #   - Cloudflare Access apps fronting admin endpoints + `/v1/send/raw`.
+#   - The R2 public custom domain for the `polaris-email` bucket.
 #
-# Does NOT own (Wrangler does): Workers, D1, KV, R2 (in this account),
-# Queues, Durable Objects.
+# Does NOT own (Wrangler does): Workers, D1, KV, R2 buckets, Queues, Durable
+# Objects.
+#
+# Phase O1 note: this is now the only composition under `envs/`. The prior
+# `staging/` (empty stub) and `anchors/` (audit-anchor R2 bucket) roots were
+# removed — staging was never reconciled to code, and anchors moved off-CF
+# to a Backblaze B2 bucket with Object Lock COMPLIANCE (see
+# `packages/object-lock` + `services/api/src/scheduled/anchor.ts`). The
+# Backblaze credentials live in the operator's password vault and are
+# delivered to the Worker via `wrangler secret put`, NOT via Terraform.
 
 terraform {
   required_version = ">= 1.5.0"
@@ -38,7 +47,7 @@ variable "cloudflare_api_token" {
   sensitive = true
 }
 
-variable "cloudflare_account_id_prod" {
+variable "cloudflare_account_id" {
   type = string
 }
 
@@ -56,7 +65,7 @@ provider "cloudflare" {
 # module "zone_example_com" {
 #   source = "../../modules/zone"
 #
-#   cf_account_id     = var.cloudflare_account_id_prod
+#   cf_account_id     = var.cloudflare_account_id
 #   cf_zone_id        = "REPLACE_WITH_ZONE_ID"
 #   domain_name       = "example.com"
 #   dkim_selector     = "polaris1"
@@ -77,7 +86,7 @@ provider "cloudflare" {
 # module "access_admin" {
 #   source = "../../modules/access-app"
 #
-#   cf_account_id = var.cloudflare_account_id_prod
+#   cf_account_id = var.cloudflare_account_id
 #   cf_zone_id    = "REPLACE_WITH_ZONE_ID"
 #   app_name      = "polaris-admin"
 #   domain        = "admin.polaris.example.com"
@@ -91,7 +100,7 @@ provider "cloudflare" {
 # module "access_send_raw" {
 #   source = "../../modules/access-app"
 #
-#   cf_account_id = var.cloudflare_account_id_prod
+#   cf_account_id = var.cloudflare_account_id
 #   cf_zone_id    = "REPLACE_WITH_ZONE_ID"
 #   app_name      = "polaris-send-raw"
 #   domain        = "submit.polaris.example.com"
@@ -108,14 +117,15 @@ provider "cloudflare" {
 # and per-attachment R2 objects are served from this hostname; the API
 # embeds the full URL in `Message.body_url` and `attachment.url`.
 #
-# The `polaris-anchors` bucket stays PRIVATE — DO NOT wire it through this
-# module. Audit anchors must not be publicly readable.
+# Audit anchors live OFF Cloudflare (Phase O1) in Backblaze B2 with Object
+# Lock COMPLIANCE — they are never in any R2 bucket and never publicly
+# readable. See `packages/object-lock` and `services/api/src/scheduled/anchor.ts`.
 # -----------------------------------------------------------------------------
 #
 # module "r2_public_polaris_email" {
 #   source = "../../modules/r2-public"
 #
-#   cf_account_id = var.cloudflare_account_id_prod
+#   cf_account_id = var.cloudflare_account_id
 #   cf_zone_id    = "REPLACE_WITH_MAIL_PLRS_IM_ZONE_ID"
 #   bucket_name   = "polaris-email"
 #   public_host   = "r2.mail.plrs.im"

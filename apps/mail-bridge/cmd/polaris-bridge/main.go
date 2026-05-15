@@ -14,6 +14,7 @@ import (
 	"context"
 	"crypto/tls"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -21,6 +22,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/emersion/go-imap/v2"
+	"github.com/emersion/go-imap/v2/imapserver"
 	polarissdk "github.com/polaris-email/polaris-sdk-go"
 
 	"github.com/vladzaharia/polaris-email/apps/mail-bridge/internal/audit"
@@ -181,22 +184,47 @@ func main() {
 		}()
 	}
 
-	// IMAP listener.
+	// IMAP listener — emersion/go-imap v2 imapserver wrapping our backend.
+	// IMAP4rev2 is advertised when supported; the library handles all wire
+	// concerns + capability honesty. INBOX-only is enforced inside the
+	// backend's Session methods.
 	if enabled("BRIDGE_IMAP_ENABLED", true) {
-		imapSrv := bridgeimap.New(bridgeimap.Options{
-			ListenAddr: getenvDefault("BRIDGE_IMAP_LISTEN_ADDR", ":993"),
-			TLSConfig:  tlsConfigFor(tlsSrc),
-		}, bridgeimap.Deps{
+		imapBackend := &bridgeimap.Backend{
 			Client: sdkClient,
 			Mirror: mirrorDB,
 			Push:   pushMgr,
+		}
+		imapTLSCfg := tlsConfigFor(tlsSrc)
+		imapSrv := imapserver.New(&imapserver.Options{
+			NewSession: imapBackend.NewSession,
+			Caps: imap.CapSet{
+				imap.CapIMAP4rev2:        {},
+				imap.CapIMAP4rev1:        {},
+				imap.AuthCap("PLAIN"):    {},
+			},
+			TLSConfig:    imapTLSCfg,
+			InsecureAuth: imapTLSCfg == nil,
 		})
+		imapAddr := getenvDefault("BRIDGE_IMAP_LISTEN_ADDR", ":993")
+		var imapLn net.Listener
+		if imapTLSCfg != nil {
+			imapLn, err = tls.Listen("tcp", imapAddr, imapTLSCfg)
+		} else {
+			imapLn, err = net.Listen("tcp", imapAddr)
+		}
+		if err != nil {
+			log.Fatalf("imap listen: %v", err)
+		}
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			if err := imapSrv.Serve(ctx); err != nil {
+			if err := imapSrv.Serve(imapLn); err != nil {
 				log.Printf("imap server exited: %v", err)
 			}
+		}()
+		go func() {
+			<-ctx.Done()
+			_ = imapSrv.Close()
 		}()
 	}
 

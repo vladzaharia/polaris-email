@@ -197,6 +197,18 @@ importers:
         specifier: ^2.0.0
         version: 2.1.9(@types/node@22.19.18)(lightningcss@1.32.0)
 
+  packages/object-lock:
+    devDependencies:
+      '@cloudflare/workers-types':
+        specifier: ^4.20240909.0
+        version: 4.20260511.1
+      typescript:
+        specifier: ^5.5.0
+        version: 5.9.3
+      vitest:
+        specifier: ^2.0.0
+        version: 2.1.9(@types/node@22.19.18)(lightningcss@1.32.0)
+
   packages/pipeline:
     dependencies:
       '@polaris-email/ids':
@@ -296,6 +308,9 @@ importers:
       '@polaris-email/mime':
         specifier: workspace:*
         version: link:../../packages/mime
+      '@polaris-email/object-lock':
+        specifier: workspace:*
+        version: link:../../packages/object-lock
       '@polaris-email/pipeline':
         specifier: workspace:*
         version: link:../../packages/pipeline

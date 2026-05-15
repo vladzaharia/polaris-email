@@ -1,6 +1,17 @@
 # HMAC reference
 
+polaris-email HMAC signatures are **un-versioned**. There is one canonical
+string format, two domain-separation tags, and one signature header. The
+historical `v1=` / `v2=` envelope tags and `.v1` suffixes were removed in
+phase B3 — this document is the source of truth for the current shape.
+
+The machine-readable source of truth is
+[`packages/test-vectors/vectors.json`](../packages/test-vectors/vectors.json);
+every SDK and verifier MUST pass it.
+
 ## Canonical signing string
+
+Seven lines joined by a single `\n` (no trailing newline, no `\r`):
 
 ```
 <direction>\n
@@ -12,70 +23,103 @@
 <lowercase-hex(SHA-256(raw-body-bytes))>
 ```
 
-- `<direction>` is **`polaris-api.v1`** for inbound API requests, **`polaris-webhook.v1`** for outbound webhook deliveries. Domain separation prevents cross-protocol confusion.
-- `<METHOD>` is the uppercased HTTP method (`POST`, `GET`, ...).
-- `<path>` is the URL path with leading `/`, **no** fragment.
-- `<canonical-query>` is RFC3986 percent-encoded, sorted by lowercased key, then value. Empty string when no query.
-- `<X-Polaris-Ts>` is the millisecond unix timestamp as a base-10 integer string (no leading zeros).
-- `<X-Polaris-Nonce>` is 16–128 ASCII characters (no whitespace, CR, LF, tab, NUL, non-ASCII).
-- Body hash is over the **exact raw bytes** sent on the wire (no canonicalization, no whitespace normalisation).
+| Field             | Value                                                                                                                                                               |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `direction`       | `polaris-api` (HTTP requests to the REST surface) **or** `polaris-webhook` (outgoing webhook deliveries). Domain separation, no `.v1` suffix.                       |
+| `METHOD`          | Uppercased HTTP method: `POST`, `GET`, `PATCH`, `DELETE`, …                                                                                                         |
+| `path`            | URL path with leading `/`. No fragment, no scheme, no host.                                                                                                         |
+| `canonical-query` | RFC3986 percent-encoded query string, sorted first by lowercased key then by raw value. Empty string when there is no query. No leading `?`.                        |
+| `X-Polaris-Ts`    | Millisecond Unix timestamp as a base-10 integer string. No leading zeros.                                                                                           |
+| `X-Polaris-Nonce` | 16–128 ASCII chars. No whitespace, CR, LF, tab, NUL, or non-ASCII.                                                                                                  |
+| Body hash         | `lowercase-hex(SHA-256(body))` over the **exact raw bytes** sent on the wire. No canonicalisation, no whitespace normalisation. Empty body hashes the empty string. |
 
 ## Signature header
 
 ```
-# API direction (polaris-api.v1)
-X-Polaris-Sig: v1=<lowercase-hex(HMAC-SHA256(secret, canonical))>
-
-# Webhook direction (polaris-webhook.v1)
-X-Polaris-Sig: v2=<lowercase-hex(HMAC-SHA256(secret, canonical))>
+X-Polaris-Sig: <lowercase-hex(HMAC-SHA256(secret, canonical))>
 ```
 
-The version tag (`v1` for API, `v2` for webhooks) is mandatory and must match the verifier's `allowed_algorithms` list. API verifiers default to `["v1"]`; webhook verifiers default to `["v2"]`. Verifiers MUST refuse anything else; downgrade is not silently accepted.
+No `v1=` / `v2=` / algorithm prefix. The hex string is exactly 64 characters
+(SHA-256 → 32 bytes → 64 hex chars). Verifiers MUST refuse anything else.
 
-The webhook tag was bumped to `v2` to mark the **envelope shape change** (the full `Message` is now inlined in the body — see [`messages.md`](messages.md)). The HMAC algorithm and canonical-string format are unchanged; only the envelope and the signature tag differ.
+## Required request headers
+
+| Header             | Format                                                         |
+| ------------------ | -------------------------------------------------------------- |
+| `X-Polaris-Key-Id` | Opaque key identifier (e.g. ULID).                             |
+| `X-Polaris-Ts`     | Milliseconds since Unix epoch.                                 |
+| `X-Polaris-Nonce`  | 16–128 ASCII chars, unique per request within the skew window. |
+| `X-Polaris-Sig`    | 64 lowercase hex chars.                                        |
+
+Reject any of the four if they contain space, tab, CR, LF, NUL, or any byte
+above `0x7e` — **before** running HMAC verification.
+
+## Clock skew tolerance
+
+Verifiers reject requests where `abs(now_ms - ts_ms) > 300_000` (±5 minutes).
+Tests pin `now_ms` to the vector's `ts` to skip the skew check.
 
 ## Constant-time comparison
 
-Verifiers MUST use a constant-time byte comparison (`crypto.timingSafeEqual` Node, `hmac.compare_digest` Python, `subtle.ConstantTimeCompare` Go).
+Verifiers MUST compare signatures with a constant-time byte comparison:
 
-## Header validation
+- Node: `crypto.timingSafeEqual`
+- Python: `hmac.compare_digest`
+- Go: `subtle.ConstantTimeCompare`
+- Shell: `polaris-email auth verify` (which wraps the Go primitive)
 
-Reject `X-Polaris-Ts`, `X-Polaris-Nonce`, `X-Polaris-Sig`, `X-Polaris-Key-Id` if they contain any of: space, tab, CR, LF, NUL, byte > 0x7e. Reject before HMAC verification.
+## Worked example
 
-## Test vectors
+Taken **verbatim** from the first happy-path vector in
+[`packages/test-vectors/vectors.json`](../packages/test-vectors/vectors.json):
 
-`packages/test-vectors/vectors.json` ships canonical fixtures. Every verifier library MUST pass them. Each entry has:
+| Field     | Value                                                                      |
+| --------- | -------------------------------------------------------------------------- |
+| direction | `polaris-api`                                                              |
+| method    | `POST`                                                                     |
+| path      | `/v1/send/raw`                                                             |
+| query     | `mode=test`                                                                |
+| ts        | `1700000000000`                                                            |
+| nonce     | `AAAABBBBCCCCDDDD`                                                         |
+| secret    | `XBNRJYZ8WS5KQDVPM7T4F2H6CG3A1E9N`                                         |
+| body      | `{"from":"a@b.com","to":["c@d.com"],"subject":"hi","category":"svc.test"}` |
+
+Canonical string (literal bytes, `\n` is a single byte `0x0a`):
 
 ```
-{
-  "name": "api/POST/messages/happy",
-  "direction": "polaris-api.v1" | "polaris-webhook.v1",
-  "method": "POST",
-  "path": "/v1/messages",
-  "query": "mode=test",
-  "ts": "1700000000000",
-  "nonce": "AAAABBBBCCCCDDDD",
-  "secret": "...",
-  "body": "...",
-  "expected_sig": "v1=...",
-  "must_verify": true | false,
-  "expected_error": "bad_signature" | "algorithm_rejected" | "header_invalid" | "clock_skew" | "missing_header" | null
-}
+polaris-api
+POST
+/v1/send/raw
+mode=test
+1700000000000
+AAAABBBBCCCCDDDD
+4f5be64fbe43e9989dfd64b3a3b91c1f59d2d4d52d676d96fab2cf3d3b8b3a32
 ```
 
-Verifiers are called with `now() => Number(ts)` to skip skew checks in tests.
+(The last line is the SHA-256 hex of the body bytes.)
+
+Expected signature header:
+
+```
+X-Polaris-Sig: 3dc5920cc9bd7db06e6001fd75bb3225802c01381e3b079fec05a6e70dae0c27
+```
 
 ## Outgoing webhooks
 
-Webhooks use the `polaris-webhook.v1` HMAC direction tag and the `v2=` signature header tag. Same canonical-string structure as the API direction. Additional headers:
+The webhook direction signs the **v2 envelope** (full `Message` inlined; see
+[`messages.md`](messages.md)). The HMAC scheme is identical to the API
+direction — only the `direction` value and the body shape differ. Required
+headers on every delivery:
 
 ```
-X-Polaris-Event-Id: <ulid>       # dedupe for 24h on the receiver
-X-Polaris-Event: message.received # convenience
-X-Polaris-Sig: v2=<hex>
+X-Polaris-Event-Id: <ulid>            # dedupe for 24h on the receiver
+X-Polaris-Event: message.received     # convenience
+X-Polaris-Ts:    <ms-unix>
+X-Polaris-Nonce: <16-128 chars>
+X-Polaris-Sig:   <64 hex chars>
 ```
 
-The body is the v2 envelope:
+Body:
 
 ```json
 {
@@ -88,4 +132,32 @@ The body is the v2 envelope:
 }
 ```
 
-Receivers MUST verify the signature and SHOULD dedupe by `X-Polaris-Event-Id`.
+Receivers MUST verify the signature with `direction = "polaris-webhook"`
+and SHOULD dedupe by `X-Polaris-Event-Id`.
+
+## Test vectors
+
+[`packages/test-vectors/vectors.json`](../packages/test-vectors/vectors.json)
+ships canonical fixtures. Each entry has:
+
+```json
+{
+  "name": "api/POST/messages/happy",
+  "direction": "polaris-api",
+  "method": "POST",
+  "path": "/v1/send/raw",
+  "query": "mode=test",
+  "ts": "1700000000000",
+  "nonce": "AAAABBBBCCCCDDDD",
+  "secret": "...",
+  "body": "...",
+  "must_verify": true,
+  "expected_sig": "3dc5920cc9bd7db06e6001fd75bb3225802c01381e3b079fec05a6e70dae0c27",
+  "expected_error": null
+}
+```
+
+Every first-party verifier (`packages/hmac`, `packages/sdk-node`,
+`packages/sdk-go`, `polaris-email auth verify`) MUST pass every vector;
+CI's `sdk-test-vectors` job enforces this. Verifiers are invoked with
+`now_ms == vector.ts` so the clock-skew gate is skipped during tests.

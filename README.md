@@ -113,8 +113,8 @@ pnpm --filter @polaris-email/panel wrangler-dev
 
 ## Quick start
 
-See [`docs/OPERATOR.md`](docs/OPERATOR.md) for day-to-day workflows. The cold-start
-bootstrap + infra runbook lives in [`docs/DEPLOY.md`](docs/DEPLOY.md).
+See [`docs/operator.md`](docs/operator.md) for day-to-day workflows. The cold-start
+bootstrap + infra runbook lives in [`docs/deploy.md`](docs/deploy.md).
 
 ```sh
 make preflight      # verify required tools and env
@@ -132,5 +132,5 @@ CLI — see `apps/polaris-cli/README.md` for the subcommand tree.
 ## Security
 
 See [`SECURITY.md`](SECURITY.md) for the threat model,
-[`RUNBOOKS/cf-account-compromise.md`](RUNBOOKS/cf-account-compromise.md) for the kill
-switch, and [`docs/RUNBOOK.md`](docs/RUNBOOK.md) for incident response.
+[`docs/runbooks/cf-account-compromise.md`](docs/runbooks/cf-account-compromise.md) for the kill
+switch, and [`docs/runbook.md`](docs/runbook.md) for incident response.

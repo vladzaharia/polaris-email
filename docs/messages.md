@@ -140,14 +140,15 @@ X-Polaris-Event-Id: 01JG...
 X-Polaris-Event: message.received
 X-Polaris-Ts: 1700000000000
 X-Polaris-Nonce: ...
-X-Polaris-Sig: v2=<lowercase-hex(HMAC-SHA256(secret, canonical))>
+X-Polaris-Sig: <lowercase-hex(HMAC-SHA256(secret, canonical))>
 ```
 
-The signature header tag is `v2=`. The HMAC canonical-string format and
-domain tag (`polaris-webhook.v1`) are unchanged from the previous
-implementation; the bump to `v2=` signals the envelope shape change (the
-full message is inlined; consumers no longer need a follow-up GET). See
-[`docs/hmac-reference.md`](hmac-reference.md) for the signing spec.
+The signature header carries the raw lowercase-hex MAC — no `v1=` /
+`v2=` prefix (HMAC is un-versioned per phase B3). The canonical-string
+format and `polaris-webhook` domain tag are the same as for API
+requests; only the envelope shape (full `Message` inlined, no follow-up
+GET) differs. See [`docs/hmac-reference.md`](hmac-reference.md) for the
+signing spec.
 
 Events emitted:
 

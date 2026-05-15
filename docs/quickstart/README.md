@@ -15,7 +15,7 @@ POLARIS_EMAIL_KEY_SECRET=...
 
 ## 1. Sign and send
 
-The signing scheme is **identical** for outbound API calls and inbound webhooks — only the signature header tag differs (`v1=` for API direction, `v2=` for webhook direction; see [hmac-reference.md](../hmac-reference.md) for the formal spec).
+The signing scheme is **identical** for outbound API calls and inbound webhooks — what differs is the domain tag in the canonical string (`polaris-api` vs `polaris-webhook`). The signature header is the same un-versioned `X-Polaris-Sig: <hex>` (64 lowercase hex chars, no prefix). See [hmac-reference.md](../hmac-reference.md) for the formal spec.
 
 `POST /v1/messages` accepts two content types:
 
@@ -38,10 +38,10 @@ async function send(body: object) {
   const path = '/v1/messages';
   const query = '';
   const bodyHash = createHash('sha256').update(text).digest('hex');
-  const canonical = ['polaris-api.v1', 'POST', path, query, ts, n, bodyHash].join('\n');
-  const sig =
-    'v1=' +
-    createHmac('sha256', process.env.POLARIS_EMAIL_KEY_SECRET!).update(canonical).digest('hex');
+  const canonical = ['polaris-api', 'POST', path, query, ts, n, bodyHash].join('\n');
+  const sig = createHmac('sha256', process.env.POLARIS_EMAIL_KEY_SECRET!)
+    .update(canonical)
+    .digest('hex');
   const res = await fetch(process.env.POLARIS_EMAIL_URL! + path, {
     method: 'POST',
     headers: {
@@ -98,10 +98,10 @@ func main() {
 	ts := strconv.FormatInt(time.Now().UnixMilli(), 10)
 	n := nonce()
 	bh := sha256.Sum256(body)
-	canonical := strings.Join([]string{"polaris-api.v1", "POST", "/v1/messages", "", ts, n, hex.EncodeToString(bh[:])}, "\n")
+	canonical := strings.Join([]string{"polaris-api", "POST", "/v1/messages", "", ts, n, hex.EncodeToString(bh[:])}, "\n")
 	m := hmac.New(sha256.New, []byte(os.Getenv("POLARIS_EMAIL_KEY_SECRET")))
 	m.Write([]byte(canonical))
-	sig := "v1=" + hex.EncodeToString(m.Sum(nil))
+	sig := hex.EncodeToString(m.Sum(nil))
 	req, _ := http.NewRequest("POST", url, bytes.NewReader(body))
 	req.Header.Set("content-type", "application/json")
 	req.Header.Set("x-polaris-key-id", os.Getenv("POLARIS_EMAIL_KEY_ID"))
@@ -125,8 +125,8 @@ url = os.environ["POLARIS_EMAIL_URL"] + "/v1/messages"
 body = json.dumps({"from":"noreply@example.com","to":["user@external.com"],"subject":"Hello","text":"Hi","category":"svc.test"}).encode()
 ts = str(int(time.time()*1000))
 nonce = secrets.token_urlsafe(12)
-canonical = "\n".join(["polaris-api.v1","POST","/v1/messages","",ts,nonce,hashlib.sha256(body).hexdigest()]).encode()
-sig = "v1=" + hmac.new(os.environ["POLARIS_EMAIL_KEY_SECRET"].encode(), canonical, hashlib.sha256).hexdigest()
+canonical = "\n".join(["polaris-api","POST","/v1/messages","",ts,nonce,hashlib.sha256(body).hexdigest()]).encode()
+sig = hmac.new(os.environ["POLARIS_EMAIL_KEY_SECRET"].encode(), canonical, hashlib.sha256).hexdigest()
 req = urllib.request.Request(url, body, {
   "content-type":"application/json",
   "x-polaris-key-id": os.environ["POLARIS_EMAIL_KEY_ID"],
@@ -144,14 +144,14 @@ TS=$(date +%s)000
 NONCE=$(openssl rand -hex 12)
 BODY='{"from":"noreply@example.com","to":["user@external.com"],"subject":"Hello","text":"Hi","category":"svc.test"}'
 BH=$(printf "%s" "$BODY" | openssl dgst -sha256 -hex | awk '{print $2}')
-CANON="polaris-api.v1\nPOST\n/v1/messages\n\n$TS\n$NONCE\n$BH"
+CANON="polaris-api\nPOST\n/v1/messages\n\n$TS\n$NONCE\n$BH"
 SIG=$(printf "%b" "$CANON" | openssl dgst -sha256 -hmac "$POLARIS_EMAIL_KEY_SECRET" -hex | awk '{print $2}')
 curl -sS -X POST "$POLARIS_EMAIL_URL/v1/messages" \
   -H "content-type: application/json" \
   -H "x-polaris-key-id: $POLARIS_EMAIL_KEY_ID" \
   -H "x-polaris-ts: $TS" \
   -H "x-polaris-nonce: $NONCE" \
-  -H "x-polaris-sig: v1=$SIG" \
+  -H "x-polaris-sig: $SIG" \
   -d "$BODY"
 ```
 
@@ -172,14 +172,14 @@ Hi from polaris-email
 EOF
 )
 BH=$(printf "%s" "$BODY" | openssl dgst -sha256 -hex | awk '{print $2}')
-CANON="polaris-api.v1\nPOST\n/v1/messages\n\n$TS\n$NONCE\n$BH"
+CANON="polaris-api\nPOST\n/v1/messages\n\n$TS\n$NONCE\n$BH"
 SIG=$(printf "%b" "$CANON" | openssl dgst -sha256 -hmac "$POLARIS_EMAIL_KEY_SECRET" -hex | awk '{print $2}')
 curl -sS -X POST "$POLARIS_EMAIL_URL/v1/messages" \
   -H "content-type: message/rfc822" \
   -H "x-polaris-key-id: $POLARIS_EMAIL_KEY_ID" \
   -H "x-polaris-ts: $TS" \
   -H "x-polaris-nonce: $NONCE" \
-  -H "x-polaris-sig: v1=$SIG" \
+  -H "x-polaris-sig: $SIG" \
   --data-binary "$BODY"
 ```
 
@@ -210,7 +210,7 @@ If your service needs to react to inbound mail, register a webhook subscription 
 - **Node**: `@polaris/sdk/webhook` (from `@polaris/sdk`).
 - **Go**: `polarissdkgo.VerifyWebhook` (from `polaris-sdk-go`).
 
-The webhook body is the **v2 envelope**: `{event_id, event, occurred_at, message}`. The full `Message` is inlined; no follow-up GET is required. The signature header is `X-Polaris-Sig: v2=…`. See [docs/messages.md](../messages.md) and [docs/sdk.md](../sdk.md).
+The webhook body is the **v2 envelope**: `{event_id, event, occurred_at, message}`. The full `Message` is inlined; no follow-up GET is required. The signature header is `X-Polaris-Sig: <hex>` (un-versioned per B3 — 64 lowercase hex chars, no prefix). See [docs/messages.md](../messages.md) and [docs/sdk.md](../sdk.md).
 
 ## 6. Caller-side rotation
 

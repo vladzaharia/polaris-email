@@ -23,15 +23,12 @@
   ],
   "r2_buckets": [
     { "binding": "R2", "bucket_name": "polaris-email", "jurisdiction": "default" },
-    // Private audit-anchor bucket (O0). MUST NOT be attached to the
-    // public custom domain `r2.mail.plrs.im` — anchors are tamper-evidence
-    // and must stay non-enumerable. Phase O1 will replace this binding
-    // with an external Object-Lock target via packages/object-lock.
-    {
-      "binding": "R2_ANCHORS",
-      "bucket_name": "polaris-email-anchors",
-      "jurisdiction": "default",
-    },
+    // Audit anchors no longer live in R2 — Phase O1 moved them to an
+    // external Object-Lock target (Backblaze B2 by default) written via
+    // `packages/object-lock` from `src/scheduled/anchor.ts`. The endpoint /
+    // bucket / region land in `vars` below; the access key + secret go
+    // through `wrangler secret put ANCHOR_S3_ACCESS_KEY_ID` and
+    // `... ANCHOR_S3_SECRET_ACCESS_KEY`.
   ],
   "kv_namespaces": [
     { "binding": "KV_NONCE", "id": "REPLACE_WITH_LOCAL" },
@@ -72,6 +69,14 @@
     "R2_PUBLIC_HOST": "r2.mail.plrs.im",
     // Scheduled-handler config — absorbed from services/cron.
     "ANCHOR_R2_PREFIX": "anchors/",
+    // External Object-Lock target for audit anchors (Phase O1). These three
+    // are non-secret config; the access-key id + secret are pushed via
+    // `wrangler secret put ANCHOR_S3_ACCESS_KEY_ID` and
+    // `wrangler secret put ANCHOR_S3_SECRET_ACCESS_KEY`. See
+    // `packages/object-lock` and `infra/terraform/README.md`.
+    "ANCHOR_S3_ENDPOINT": "https://s3.us-west-005.backblazeb2.com",
+    "ANCHOR_S3_BUCKET": "polaris-anchors",
+    "ANCHOR_S3_REGION": "us-west-005",
     "ALERT_WEBHOOK": "https://alerts.example.com/polaris-email",
     "MAX_LATENCY_MS": "300000",
   },

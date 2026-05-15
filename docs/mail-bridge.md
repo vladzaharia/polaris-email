@@ -1,9 +1,16 @@
 # polaris-mail-bridge — operator guide
 
 A single Go binary (`apps/mail-bridge/`) that consolidates the two on-prem
-mail protocols polaris supports: SMTPS submission and IMAP4rev2 retrieval.
-Replaces the old `apps/submission-bridge`; the SMTPS code path is the same,
-joined by an IMAP listener and a bridge-local SQLite mirror.
+mail protocols polaris supports: **SMTPS submission and IMAP4rev2
+retrieval**. (No JMAP — the hand-rolled JMAP listener was deleted in
+phase C1.) Replaces the old `apps/submission-bridge`; the SMTPS code path
+is the same, joined by an IMAP listener and a bridge-local SQLite mirror.
+
+The IMAP listener will be migrated to
+[`github.com/emersion/go-imap/v2`](https://github.com/emersion/go-imap)
+(sibling of `go-smtp` and `go-sasl` already in use). **In progress** — the
+current commit still ships the hand-rolled handler; the migration lands in
+phase O2. The on-the-wire protocol the operator sees does not change.
 
 ## Architecture
 
@@ -78,6 +85,20 @@ Configure each client against the bridge's hostname (Mode 1: MagicDNS;
 Mode 2: whatever DNS you publish for the host). Username + password are
 issued via `POST /v1/admin/mailboxes/:id/credentials`.
 
+## Authentication
+
+Both SMTPS and IMAP use the same auth surface: per-mailbox
+`mailbox_credentials` rows. The control plane stores **bcrypt password
+hashes only** (the plaintext is revealed exactly once at creation or
+rotation, per the read-once secrets policy). The bridge mirrors the
+hashed credentials locally via the SQLite mirror; clients authenticate
+with PLAIN/LOGIN over implicit TLS and the bridge compares with bcrypt.
+
+There are **no bearer tokens** on this bridge — the JMAP-era
+`mailbox_credentials.bearer_token` column was dropped along with JMAP.
+Bridge-to-control-plane traffic uses HMAC over the service binding /
+HTTPS path; client-to-bridge traffic uses bcrypt passwords only.
+
 ## IMAP IDLE push flow
 
 ```
@@ -95,23 +116,17 @@ issued via `POST /v1/admin/mailboxes/:id/credentials`.
 If the bridge is offline when polaris fires, the event lands in webhook DLQ;
 once the bridge is back, the operator replays from the DLQ browser.
 
+## IMAP capability advertisement
+
+The bridge does not hand-enumerate IMAP capability strings — the
+`go-imap/v2` server library publishes whatever capabilities the
+backend actually implements. Trust what the library advertises; do not
+parse this doc as the authoritative capability list. The wire
+behaviour and supported `CAPABILITY` extensions are determined by the
+library version in `apps/mail-bridge/go.mod`.
+
 ## Roadmap — what this iteration leaves as TODO
 
-The first commit of `apps/mail-bridge/` lands the structural foundation:
-directory rename, schema (`0002_bridge.sql`), the two compose files,
-`bridge.toml`, and this guide. The IMAP protocol handler ships in
-follow-up slices:
-
-- **L.2 — backend endpoints**: PATCH/DELETE/expunge, bulk get, changes,
-  bulk metadata, mailbox credentials CRUD. Auto-mark-read when called
-  with `imap_bridge:read` scope. Reference-counted R2 deletion honoring
-  `expunged_at`.
-- **L.3 — IMAP server**: LOGIN, CAPABILITY, LIST, SELECT/EXAMINE, FETCH
-  (UID + FLAGS + ENVELOPE + RFC822.SIZE + BODYSTRUCTURE), STORE
-  (`\Seen`/`\Flagged`/`\Deleted` and custom keywords), EXPUNGE, IDLE with
-  webhook-driven push, CONDSTORE (MODSEQ = `mailbox_messages_state.change_id`),
-  header/flag SEARCH (FROM, TO, SUBJECT, FLAGGED, SEEN, UNSEEN, SINCE,
-  BEFORE, ON, LARGER, SMALLER, HEADER).
 - **L.5 — bridge-local mirror reactive refresh**: react to incoming
   webhooks to invalidate / refresh affected mailbox state in
   `mirror.db`. Today the mirror does a 30s baseline pull.
@@ -120,6 +135,11 @@ follow-up slices:
   body FETCH hits the nearest replica. Documented operational notes for
   region-pair latency (target: < 10ms intra-region for FETCH metadata,
   < 100ms cross-region for body bytes).
+- **O2 — IMAP migration to `emersion/go-imap` v2**: replace the
+  hand-rolled handler with the upstream library (LOGIN, AUTHENTICATE
+  PLAIN, CAPABILITY, LIST, SELECT/EXAMINE, FETCH, STORE, EXPUNGE,
+  IDLE, CONDSTORE, header/flag SEARCH). The bridge-side `internal/store/`
+  and webhook-driven push fan-out are preserved as-is.
 
 Out of polaris-mail-bridge product scope (deliberate cuts, not deferrals):
 

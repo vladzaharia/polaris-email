@@ -11,6 +11,6 @@ We're investigating a possible compromise of polaris-email's Cloudflare account 
 - **Owner**: <name>.
 - **Linear ticket**: <id>.
 
-We're operating under the runbook at `RUNBOOKS/cf-account-compromise.md`. Next update in 60 minutes.
+We're operating under the runbook at `docs/runbooks/cf-account-compromise.md`. Next update in 60 minutes.
 
 Please do not communicate externally until the customer comms draft is approved.

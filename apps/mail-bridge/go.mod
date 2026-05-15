@@ -3,6 +3,7 @@ module github.com/vladzaharia/polaris-email/apps/mail-bridge
 go 1.25.0
 
 require (
+	github.com/emersion/go-imap/v2 v2.0.0-beta.8
 	github.com/emersion/go-sasl v0.0.0-20241020182733-b788ff22d5a6
 	github.com/emersion/go-smtp v0.24.0
 	github.com/oklog/ulid/v2 v2.1.1
@@ -15,6 +16,7 @@ replace github.com/polaris-email/polaris-sdk-go => ../../packages/sdk-go
 
 require (
 	github.com/dustin/go-humanize v1.0.1 // indirect
+	github.com/emersion/go-message v0.18.2 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/hashicorp/golang-lru/v2 v2.0.7 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect

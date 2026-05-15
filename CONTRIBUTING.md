@@ -43,4 +43,4 @@ JS/TS/JSON files. See `lefthook.yml`.
 - Do not add `eslint`, `prettier`, or other rival tooling — the project uses
   Oxc exclusively.
 
-See `LINTING.md` for rule overrides and `RUNBOOKS/` for operational guidance.
+See `LINTING.md` for rule overrides and `docs/runbooks/` for operational guidance.

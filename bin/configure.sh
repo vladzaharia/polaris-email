@@ -21,6 +21,7 @@ ENV_VARS=(
   CF_API_TOKEN CF_ZONE_ID
   SYNTHETIC_MONITOR_DOMAIN ALERT_WEBHOOK SYNTHETIC_FROM SYNTHETIC_TO
   OIDC_ISSUER OIDC_CLIENT_ID
+  ANCHOR_S3_ENDPOINT ANCHOR_S3_BUCKET ANCHOR_S3_REGION
 )
 
 # Atomically rewrite .env.deploy from the current shell environment.
@@ -97,6 +98,13 @@ ask SYNTHETIC_TO          "Synthetic monitor to-address (optional)"   "${SYNTHET
 # Panel OIDC — optional, consumed by better-auth when the panel is fronted.
 ask OIDC_ISSUER           "Panel OIDC issuer URL (optional)"
 ask OIDC_CLIENT_ID        "Panel OIDC client ID (optional)"
+
+# External Object-Lock target for audit anchors (Phase O1). Backblaze B2 is
+# the default vendor; the access-key id + secret are pushed separately via
+# `wrangler secret put ANCHOR_S3_*`. See infra/terraform/README.md.
+ask ANCHOR_S3_ENDPOINT    "Anchor S3 endpoint URL"                                 "${ANCHOR_S3_ENDPOINT:-https://s3.us-west-005.backblazeb2.com}"
+ask ANCHOR_S3_BUCKET      "Anchor S3 bucket (Object Lock COMPLIANCE)"              "${ANCHOR_S3_BUCKET:-polaris-anchors}"
+ask ANCHOR_S3_REGION      "Anchor S3 region (e.g. us-west-005)"                    "${ANCHOR_S3_REGION:-us-west-005}"
 
 echo
 echo "wrote $ENV_FILE"

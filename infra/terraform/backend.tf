@@ -1,17 +1,16 @@
 # Remote state backend.
 #
 # We use the `s3` backend pointed at Cloudflare R2 (R2 is S3-compatible enough
-# for state storage). Each env (`envs/prod`, `envs/staging`, `envs/anchors`)
-# overrides the `key` via `-backend-config=key=...` during `terraform init`
-# so the three environments share a bucket but have distinct state objects.
+# for state storage). The single `envs/prod` composition (Phase O1 collapsed
+# the prior three-account topology) sets its `key` via
+# `-backend-config=key=prod/terraform.tfstate` during `terraform init`.
 #
 # Why R2 instead of Terraform Cloud or S3?
 #   - We're already a Cloudflare shop; one fewer vendor.
 #   - The state itself rides in a bucket we already pay for.
 #   - R2 has no egress fees if we ever need to mirror it.
 #
-# TODO(operator): create the state bucket in `polaris-prod` (NOT anchors —
-# anchors is compliance-locked and unsuitable for mutable state):
+# TODO(operator): create the state bucket in `polaris-prod`:
 #   wrangler r2 bucket create polaris-tfstate
 # Then enable versioning + lifecycle for old versions (>30 days → delete).
 # Also create an R2 access key restricted to that one bucket.

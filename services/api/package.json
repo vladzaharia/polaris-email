@@ -15,6 +15,7 @@
     "@polaris-email/hmac": "workspace:*",
     "@polaris-email/ids": "workspace:*",
     "@polaris-email/mime": "workspace:*",
+    "@polaris-email/object-lock": "workspace:*",
     "@polaris-email/pipeline": "workspace:*",
     "@polaris-email/providers": "workspace:*",
     "@polaris-email/revocation": "workspace:*",

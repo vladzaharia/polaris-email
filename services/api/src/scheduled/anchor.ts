@@ -1,5 +1,13 @@
-// Hourly: sign the latest audit_log row_hash and write the anchor to R2.
-// R2 has Object Lock; this is the off-platform tamper-evidence record.
+// Hourly: sign the latest audit_log row_hash and write the anchor to an
+// external Object-Lock target (Backblaze B2 by default — see
+// `infra/terraform/README.md` for setup). The off-platform write is the
+// integrity fence for the single-account Cloudflare topology: a fully
+// compromised CF account cannot rewrite history because the B2 credentials
+// live outside CF and the bucket enforces Object Lock COMPLIANCE.
+//
+// Phase O1 replaced the prior `env.R2_ANCHORS.put(...)` (the O0 stop-gap)
+// with `putObjectWithLock` against an S3-compatible endpoint.
+import { putObjectWithLock } from '@polaris-email/object-lock';
 import type { Env } from '../env.js';
 
 function asBuf(u8: Uint8Array): ArrayBuffer {
@@ -52,14 +60,10 @@ export async function anchor(env: Env): Promise<void> {
     signed_at: signedAt,
     sig: sigHex,
   };
-  // Write to the private R2_ANCHORS bucket, NOT the public `R2` bucket.
-  // The public bucket is fronted by `r2.mail.plrs.im` (B5), so anchors
-  // written there would be publicly readable — the audit chain must stay
-  // non-enumerable. (O0 fixes the B5 regression; O1 will replace this with
-  // an external Object-Lock target via packages/object-lock.)
-  await env.R2_ANCHORS.put(externalRef, JSON.stringify(payload), {
-    httpMetadata: { contentType: 'application/json' },
-  });
+  // Write to the external Object-Lock target (B2 by default). The
+  // `externalRef` is the S3 object key; `audit_anchors.external_ref`
+  // stores just the key — the bucket/endpoint live in env.
+  await putObjectWithLock(env, externalRef, JSON.stringify(payload));
   await env.DB.prepare(
     `INSERT INTO audit_anchors (last_audit_id, last_row_hash, signature, signed_at, external_ref)
      VALUES (?, ?, ?, ?, ?)`,

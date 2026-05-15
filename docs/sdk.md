@@ -118,3 +118,14 @@ if !result.OK { http.Error(w, "bad sig", 401); return }
 
 Both verifiers share canonical test vectors from
 `packages/test-vectors/vectors.json`; every verifier MUST pass them in CI.
+
+## How the SDKs are kept in sync
+
+SDKs are **hand-written**, not generated. The contract is `openapi/polaris-email.yaml`. When you add or change a REST endpoint:
+
+1. Update `openapi/polaris-email.yaml` first (the contract).
+2. Add the method to `packages/sdk-node/src/index.ts` (TypeScript) AND `packages/sdk-go/messages.go` (Go).
+3. Add response/request types to `packages/schema/src/index.ts` (TypeScript — sdk-node imports from there). sdk-go has its own struct definitions in `packages/sdk-go/messages.go`.
+4. HMAC parity: `packages/test-vectors/vectors.json` is the source of truth. CI runs `sdk-test-vectors` to verify all SDKs agree on canonical-string + signature for the same inputs.
+
+The old `packages/sdk-codegen/` generator was deleted in commit `71f6e41` (Phase M / D1). It never produced anything real — the "generated" outputs in each SDK package were placeholder stubs, never refreshed.
