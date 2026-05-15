@@ -571,10 +571,10 @@ describe('domains + senders', () => {
   });
 });
 
-describe('daemon credential mirror', () => {
-  it('returns the issued SMTP credential to the daemon poller', async () => {
+describe('bridge credential mirror', () => {
+  it('returns the issued SMTP credential to the bridge poller', async () => {
     const { env, admin } = await bootstrapEnv();
-    const mbId = await createMailbox(env, admin, 'daemon-mb');
+    const mbId = await createMailbox(env, admin, 'bridge-mb');
     await app.fetch(
       await signedRequest(
         'https://x/v1/admin/domains',
@@ -632,7 +632,7 @@ describe('daemon credential mirror', () => {
 
     const r = await app.fetch(
       await signedRequest(
-        'https://x/v1/daemon/credentials?since=0',
+        'https://x/v1/bridge/credentials?since=0',
         '',
         'GET',
         admin.admin_key_secret,
@@ -712,7 +712,7 @@ async function seedMessage(
     id,
     mailbox_id: mailboxId,
     principal_id: null,
-    daemon_id: null,
+    bridge_id: null,
     direction: 'in',
     status: 'received',
     from_addr: 'sender@example.com',
@@ -728,7 +728,7 @@ async function seedMessage(
     header_message_id: null,
     thread_id: id,
     send_attempt_id: null,
-    received_at_daemon: null,
+    received_at_bridge: null,
     received_at_api: nowIso,
     queued_at: null,
     sending_at: null,

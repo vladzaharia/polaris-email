@@ -70,8 +70,8 @@ func newTestServer(t *testing.T) (*Server, net.Conn, func()) {
 	srv := New(Options{ListenAddr: "pipe"}, Deps{
 		Client: func() *polarissdk.Client {
 			c := polarissdk.NewClient("http://stub")
-			c.DaemonID = "test-daemon"
-			c.DaemonSecret = []byte("test-secret")
+			c.BridgeID = "test-bridge"
+			c.BridgeSecret = []byte("test-secret")
 			return c
 		}(),
 		Mirror: mirror,

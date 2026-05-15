@@ -49,6 +49,27 @@
 - **Recipient recovery after submission** — by design, plaintext recipients are
   not retained server-side; see [`CONSUMER-CONTRACT.md`](CONSUMER-CONTRACT.md).
 
+## R2 public custom domain (B5)
+
+Message bodies and per-attachment R2 objects are served from the public
+custom domain `r2.mail.plrs.im`. Object keys are content-addressed
+(`mime/<aa>/<bb>/<sha256>` for bodies, `att/<sha256>/<filename>` for
+attachments), so the SHA-256 in the URL provides the unguessability
+boundary — there is no signature, no expiry, no HMAC header.
+
+**Privacy implication**: a polaris-email URL **is** a capability token.
+Anyone with the URL can read the bytes forever. Because the audit log
+records the content SHA-256 of every message, an audit-log reader gains
+implicit read access to every message body and attachment. This is
+acceptable at the internal-deployment scale polaris-email targets
+(<10k msg/day, ~tens of mailboxes, a handful of admins who already have
+admin-level mailbox access). External or compliance-bound deployments
+would need a different model — either re-introduce signed URLs in front
+of R2 or move bodies behind an authenticated proxy.
+
+The `polaris-anchors` bucket (audit anchors) stays **private** and is
+NOT served from `r2.mail.plrs.im`.
+
 ## Cryptographic notes
 
 - **HMAC** SHA-256, 256-bit keys, domain-separated (`polaris-api.v1` /

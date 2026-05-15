@@ -17,12 +17,17 @@ import (
 // (errors are defined in errors.go)
 
 // Attachment is the inline attachment shape returned by UnifiedMessage.
+//
+// `URL` is the public, content-addressed URL on the R2 custom domain
+// `r2.mail.plrs.im` (B5). Absolute, no expiry. SHA-256 in the URL provides
+// unguessability — treat the URL itself as a capability token. The previous
+// `ContentURL` (signed, short-lived) is gone.
 type Attachment struct {
 	ContentType   string `json:"content_type"`
 	Filename      string `json:"filename,omitempty"`
 	SizeBytes     int64  `json:"size_bytes"`
 	ContentBase64 string `json:"content_base64,omitempty"`
-	ContentURL    string `json:"content_url,omitempty"`
+	URL           string `json:"url,omitempty"`
 }
 
 // Message is a subset of the polaris `UnifiedMessage` shape — enough for the
@@ -42,6 +47,9 @@ type Message struct {
 	AttachmentsTotalBytes int64        `json:"attachments_total_bytes,omitempty"`
 	Text                  string       `json:"text,omitempty"`
 	HTML                  string       `json:"html,omitempty"`
+	// BodyURL is the public, content-addressed URL for the raw RFC822 body
+	// on the R2 custom domain `r2.mail.plrs.im` (B5). Absolute, no expiry.
+	BodyURL               string       `json:"body_url,omitempty"`
 	Attachments           []Attachment `json:"attachments,omitempty"`
 	CreatedAt             string       `json:"created_at,omitempty"`
 	ReceivedAtAPI         string       `json:"received_at_api,omitempty"`
@@ -101,7 +109,7 @@ type WebhookSub struct {
 	DisabledAt string   `json:"disabled_at,omitempty"`
 }
 
-// CredentialLookup is the (daemon-only) credential row used by the bridge.
+// CredentialLookup is the (bridge-only) credential row used by the bridge.
 type CredentialLookup struct {
 	ID         string `json:"id"`
 	MailboxID  string `json:"mailbox_id"`
@@ -247,13 +255,13 @@ func (c *Client) ListWebhookSubs(ctx context.Context, mailboxID string) ([]Webho
 }
 
 // LookupMailboxCredential resolves a (protocol, username) pair to the stored
-// credential row. Daemon-scoped; bridges call this to verify IMAP LOGIN.
+// credential row. Bridge-scoped; bridges call this to verify IMAP LOGIN.
 func (c *Client) LookupMailboxCredential(ctx context.Context, protocol, username string) (*CredentialLookup, error) {
 	q := url.Values{}
 	q.Set("protocol", protocol)
 	q.Set("username", username)
 	var r CredentialLookup
-	if err := c.doJSON(ctx, "GET", "/v1/daemon/credentials/lookup", q.Encode(), nil, &r); err != nil {
+	if err := c.doJSON(ctx, "GET", "/v1/bridge/credentials/lookup", q.Encode(), nil, &r); err != nil {
 		return nil, err
 	}
 	return &r, nil

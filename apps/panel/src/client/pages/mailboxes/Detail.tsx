@@ -16,6 +16,13 @@ import { Input } from '../../components/ui/input.js';
 import { Label } from '../../components/ui/label.js';
 import { Switch } from '../../components/ui/switch.js';
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '../../components/ui/select.js';
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -26,6 +33,7 @@ import {
 } from '../../components/ui/dialog.js';
 import { Separator } from '../../components/ui/separator.js';
 import { Badge } from '../../components/ui/badge.js';
+import { StatusBadge } from '../../components/StatusBadge.js';
 import { Skeleton } from '../../components/ui/skeleton.js';
 import { DestructiveActionDialog } from '../../components/DestructiveActionDialog.js';
 import { useAdminMutation, useAdminQuery } from '../../hooks/useAdminApi.js';
@@ -92,18 +100,18 @@ function AddSenderDialog({ mailboxId }: { mailboxId: string }) {
         <div className="space-y-3">
           <div>
             <Label>Domain</Label>
-            <select
-              value={domainId}
-              onChange={(e) => setDomainId(e.target.value)}
-              className="mt-1 block w-full rounded-md border bg-transparent px-3 py-2 text-sm"
-            >
-              <option value="">Pick a domain</option>
-              {(domains.data?.data ?? []).map((d) => (
-                <option key={d.id} value={d.id}>
-                  {d.name}
-                </option>
-              ))}
-            </select>
+            <Select value={domainId || undefined} onValueChange={setDomainId}>
+              <SelectTrigger className="mt-1">
+                <SelectValue placeholder="Pick a domain" />
+              </SelectTrigger>
+              <SelectContent>
+                {(domains.data?.data ?? []).map((d) => (
+                  <SelectItem key={d.id} value={d.id}>
+                    {d.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
           <div>
             <Label htmlFor="lp">Local part</Label>
@@ -173,18 +181,18 @@ function AddReceiverDialog({ mailboxId }: { mailboxId: string }) {
         <div className="space-y-3">
           <div>
             <Label>Domain</Label>
-            <select
-              value={domainId}
-              onChange={(e) => setDomainId(e.target.value)}
-              className="mt-1 block w-full rounded-md border bg-transparent px-3 py-2 text-sm"
-            >
-              <option value="">Pick a domain</option>
-              {(domains.data?.data ?? []).map((d) => (
-                <option key={d.id} value={d.id}>
-                  {d.name}
-                </option>
-              ))}
-            </select>
+            <Select value={domainId || undefined} onValueChange={setDomainId}>
+              <SelectTrigger className="mt-1">
+                <SelectValue placeholder="Pick a domain" />
+              </SelectTrigger>
+              <SelectContent>
+                {(domains.data?.data ?? []).map((d) => (
+                  <SelectItem key={d.id} value={d.id}>
+                    {d.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
           <div>
             <Label htmlFor="prio">Priority</Label>
@@ -201,31 +209,35 @@ function AddReceiverDialog({ mailboxId }: { mailboxId: string }) {
           </div>
           <div>
             <Label>Action</Label>
-            <select
+            <Select
               value={action}
-              onChange={(e) => setAction(e.target.value as 'webhook' | 'forward' | 'drop')}
-              className="mt-1 block w-full rounded-md border bg-transparent px-3 py-2 text-sm"
+              onValueChange={(v) => setAction(v as 'webhook' | 'forward' | 'drop')}
             >
-              <option value="webhook">webhook</option>
-              <option value="forward">forward</option>
-              <option value="drop">drop</option>
-            </select>
+              <SelectTrigger className="mt-1">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="webhook">webhook</SelectItem>
+                <SelectItem value="forward">forward</SelectItem>
+                <SelectItem value="drop">drop</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
           {action === 'webhook' ? (
             <div>
               <Label>Webhook subscription</Label>
-              <select
-                value={webhookSubId}
-                onChange={(e) => setWebhookSubId(e.target.value)}
-                className="mt-1 block w-full rounded-md border bg-transparent px-3 py-2 text-sm"
-              >
-                <option value="">Pick one</option>
-                {(subs.data?.data ?? []).map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.url}
-                  </option>
-                ))}
-              </select>
+              <Select value={webhookSubId || undefined} onValueChange={setWebhookSubId}>
+                <SelectTrigger className="mt-1">
+                  <SelectValue placeholder="Pick one" />
+                </SelectTrigger>
+                <SelectContent>
+                  {(subs.data?.data ?? []).map((s) => (
+                    <SelectItem key={s.id} value={s.id}>
+                      {s.url}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           ) : null}
           {action === 'forward' ? (
@@ -353,11 +365,10 @@ export function MailboxDetail() {
                       {s.default_for_mailbox ? <Badge variant="success">default</Badge> : null}
                     </TableCell>
                     <TableCell>
-                      {s.disabled_at ? (
-                        <Badge variant="destructive">disabled</Badge>
-                      ) : (
-                        <Badge variant="success">active</Badge>
-                      )}
+                      <StatusBadge
+                        kind="credential"
+                        value={s.disabled_at ? 'disabled' : 'active'}
+                      />
                     </TableCell>
                     <TableCell>
                       {s.disabled_at ? null : (
@@ -464,11 +475,7 @@ export function MailboxDetail() {
                     <TableCell className="font-mono text-xs">{w.url}</TableCell>
                     <TableCell className="font-mono text-xs">{w.events}</TableCell>
                     <TableCell>
-                      {w.paused_at ? (
-                        <Badge variant="secondary">paused</Badge>
-                      ) : (
-                        <Badge variant="success">active</Badge>
-                      )}
+                      <StatusBadge kind="webhook" value={w.paused_at ? 'paused' : 'active'} />
                     </TableCell>
                   </TableRow>
                 ))

@@ -6,6 +6,13 @@ import { PageCard } from '../../layouts/PageCard.js';
 import { Button } from '../../components/ui/button.js';
 import { Input } from '../../components/ui/input.js';
 import { Label } from '../../components/ui/label.js';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '../../components/ui/select.js';
 import { useAdminQuery } from '../../hooks/useAdminApi.js';
 import { mailboxKeys } from '../../queryKeys.js';
 import { useStream } from '../../hooks/useStream.js';
@@ -85,34 +92,33 @@ export function TestSendForm() {
       <div className="grid max-w-2xl gap-3">
         <div>
           <Label>Mailbox</Label>
-          <select
-            value={mailboxId}
-            onChange={(e) => setMailboxId(e.target.value)}
-            className="mt-1 block w-full rounded-md border bg-transparent px-3 py-2 text-sm"
-          >
-            <option value="">Pick a mailbox</option>
-            {(mailboxes.data?.data ?? []).map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.name}
-              </option>
-            ))}
-          </select>
+          <Select value={mailboxId || undefined} onValueChange={setMailboxId}>
+            <SelectTrigger className="mt-1">
+              <SelectValue placeholder="Pick a mailbox" />
+            </SelectTrigger>
+            <SelectContent>
+              {(mailboxes.data?.data ?? []).map((m) => (
+                <SelectItem key={m.id} value={m.id}>
+                  {m.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
         <div>
           <Label>From (sender address)</Label>
-          <select
-            value={from}
-            onChange={(e) => setFrom(e.target.value)}
-            className="mt-1 block w-full rounded-md border bg-transparent px-3 py-2 text-sm"
-            disabled={!mailboxId}
-          >
-            <option value="">Pick a sender</option>
-            {(detail.data?.senders ?? []).map((s) => (
-              <option key={s.id} value={s.address}>
-                {s.address}
-              </option>
-            ))}
-          </select>
+          <Select value={from || undefined} onValueChange={setFrom} disabled={!mailboxId}>
+            <SelectTrigger className="mt-1">
+              <SelectValue placeholder="Pick a sender" />
+            </SelectTrigger>
+            <SelectContent>
+              {(detail.data?.senders ?? []).map((s) => (
+                <SelectItem key={s.id} value={s.address}>
+                  {s.address}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
         <div>
           <Label htmlFor="to">To (comma-separated)</Label>

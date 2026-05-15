@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://polaris-email.example.com/schemas/wizard/daemon.json",
-  "title": "DaemonRegisterInput",
+  "$id": "https://polaris-email.example.com/schemas/wizard/bridge.json",
+  "title": "BridgeRegisterInput",
   "type": "object",
   "additionalProperties": false,
   "required": ["name"],

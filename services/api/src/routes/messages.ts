@@ -2,14 +2,19 @@
 //
 // POST /v1/messages
 //   - Content-Type: application/json     -> tenant API-key HMAC, SendRequest JSON
-//   - Content-Type: message/rfc822       -> daemon HMAC, raw bytes
+//   - Content-Type: message/rfc822       -> bridge HMAC, raw bytes
 // GET  /v1/messages                       -> list + filters (messages:read)
 // GET  /v1/messages/:id                   -> single message (messages:read)
-// GET  /v1/messages/:id/attachments/:n    -> signed-URL download (HMAC + exp)
 //
 // Auth/HMAC and Content-Type dispatch live inline because the two auth flavors
 // share a path. The shared `processMessage()` pipeline performs idempotency,
 // R2 PUT, D1 INSERT, and enqueue.
+//
+// Attachment downloads are no longer minted as signed URLs (B5). Bodies +
+// attachments are published on the R2 custom domain `r2.mail.plrs.im`; the
+// `url` on each attachment + the `body_url` on the message point directly
+// there. The previous `GET /v1/messages/:id/attachments/:n` handler is
+// deleted.
 
 import { Hono, type Context } from 'hono';
 import { SendRequest } from '@polaris-email/schema';
@@ -18,31 +23,30 @@ import { ulid } from '@polaris-email/ids';
 import {
   composeFromJson,
   enforceSenderPolicy,
+  extractAttachmentParts,
   mimeToMessage,
   parseStrict,
   MimeError,
   SenderPolicyError,
-  summarizeMime,
   type UnifiedMessage,
   type MessageRowMeta,
 } from '@polaris-email/mime';
-import { mintAttachmentUrl, verifyAttachmentUrl } from '@polaris-email/cf-api';
 import { revocationCheck } from '@polaris-email/revocation';
 import type { Env } from '../env.js';
 import { buildError } from '../errors.js';
 import { audit } from '../audit.js';
 import { processMessage, ProcessMessageError } from '../process-message.js';
 import { rateLimit } from '../rate-limit.js';
+import { r2PublicUrl, attachmentR2Key } from '../lib/r2-public-url.js';
 import { autoMarkRead } from './messages-state.js';
 
 export const messages = new Hono<{ Bindings: Env }>();
 
 const DEFAULT_INLINE_BODY_BYTES = 65536;
 const DEFAULT_INLINE_ATTACHMENTS_BYTES = 262144;
-const DAEMON_DEFAULT_RATE_PER_MIN = 600;
-// TODO(daemon-rate-limit): `daemons.rate_limit_per_min` column is not in
-// 0001_init.sql; the daemon path falls back to this constant.
-const ATTACHMENT_IP_RATE_PER_MIN = 100;
+const BRIDGE_DEFAULT_RATE_PER_MIN = 600;
+// TODO(bridge-rate-limit): `bridges.rate_limit_per_min` column is not in
+// 0001_init.sql; the bridge path falls back to this constant.
 
 function inlineBodyMax(env: Env): number {
   const v = env.INLINE_BODY_BYTES_MAX
@@ -162,27 +166,27 @@ async function authenticateApiKey(
   };
 }
 
-interface AuthenticatedDaemon {
-  daemonId: string;
+interface AuthenticatedBridge {
+  bridgeId: string;
   submissionId: string;
 }
 
-async function authenticateDaemon(
+async function authenticateBridge(
   c: Ctx,
   bodyBytes: Uint8Array,
-): Promise<AuthenticatedDaemon | Response> {
+): Promise<AuthenticatedBridge | Response> {
   const env = c.env;
-  const daemonId = c.req.header('x-polaris-daemon-id');
+  const bridgeId = c.req.header('x-polaris-bridge-id');
   const submissionId = c.req.header('x-polaris-submission-id');
-  if (!daemonId) return buildError(c, 'unauthorized', 'X-Polaris-Daemon-Id required');
-  if (!/^[0-9A-HJKMNP-TV-Z]{26}$/.test(daemonId)) {
-    return buildError(c, 'unauthorized', 'invalid daemon_id format');
+  if (!bridgeId) return buildError(c, 'unauthorized', 'X-Polaris-Bridge-Id required');
+  if (!/^[0-9A-HJKMNP-TV-Z]{26}$/.test(bridgeId)) {
+    return buildError(c, 'unauthorized', 'invalid bridge_id format');
   }
   if (!submissionId || !/^[0-9A-HJKMNP-TV-Z]{26}$/.test(submissionId)) {
     return buildError(c, 'unauthorized', 'invalid submission_id format');
   }
-  if (!env.DAEMON_HMAC_KEY) {
-    return buildError(c, 'unauthorized', 'daemon auth not configured on server');
+  if (!env.BRIDGE_HMAC_KEY) {
+    return buildError(c, 'unauthorized', 'bridge auth not configured on server');
   }
   const url = new URL(c.req.url);
   const result = await verify({
@@ -192,12 +196,12 @@ async function authenticateDaemon(
     query: url.search.slice(1),
     headers: { get: (n: string) => c.req.header(n) ?? null },
     body: bodyBytes,
-    secret: env.DAEMON_HMAC_KEY,
+    secret: env.BRIDGE_HMAC_KEY,
   });
   if (!result.ok) {
-    return buildError(c, 'unauthorized', `daemon HMAC: ${result.code}`);
+    return buildError(c, 'unauthorized', `bridge HMAC: ${result.code}`);
   }
-  return { daemonId, submissionId };
+  return { bridgeId, submissionId };
 }
 
 async function loadR2Bytes(env: Env, key: string): Promise<Uint8Array | null> {
@@ -225,7 +229,7 @@ type MessageRow = {
   auth_dkim: string | null;
   auth_dmarc: string | null;
   auth_remote_ip: string | null;
-  received_at_daemon: string | null;
+  received_at_bridge: string | null;
   received_at_api: string | null;
   queued_at: string | null;
   sending_at: string | null;
@@ -251,7 +255,7 @@ function rowMeta(row: MessageRow): MessageRowMeta {
     auth_remote_ip: row.auth_remote_ip,
     body_bytes: row.body_bytes,
     attachments_total_bytes: row.attachments_total_bytes,
-    received_at_daemon: row.received_at_daemon,
+    received_at_bridge: row.received_at_bridge,
     received_at_api: row.received_at_api,
     queued_at: row.queued_at,
     sending_at: row.sending_at,
@@ -268,6 +272,7 @@ async function renderMessageBodies(
   env: Env,
   msg: UnifiedMessage,
   raw: Uint8Array,
+  bodyR2Key: string,
   options: { listMode: boolean },
 ): Promise<UnifiedMessage> {
   const inlineBody = inlineBodyMax(env);
@@ -275,25 +280,49 @@ async function renderMessageBodies(
   const bodyTotal = msg.body_bytes ?? raw.byteLength;
   const attTotal = msg.attachments_total_bytes ?? 0;
 
+  // body_url is always set: per B5 the body is publicly addressable on
+  // `r2.mail.plrs.im`, content-addressed, capability-token style.
+  const bodyUrl = r2PublicUrl(env, bodyR2Key);
+
   if (options.listMode && (bodyTotal > inlineBody || attTotal > inlineAtt)) {
-    const stripped: UnifiedMessage = { ...msg };
+    const stripped: UnifiedMessage = { ...msg, body_url: bodyUrl };
     delete stripped.text;
     delete stripped.html;
     stripped.attachments = msg.attachments.map((a) => ({ ...a }));
     return stripped;
   }
+
+  // Re-extract per-attachment bytes so we can compute the content-addressed
+  // SHA-256 and stamp a public URL (B5). The pipeline also wrote each
+  // attachment to R2 under the same `att/<sha256>/<filename>` key on
+  // ingest, so the URL is durable.
+  const parts = extractAttachmentParts(raw);
   const attachments = await Promise.all(
     msg.attachments.map(async (a, i) => {
-      if (a.size_bytes <= inlineAtt) return { ...a };
-      const url = await mintAttachmentUrl(env, msg.id, i);
-      return { ...a, content_url: url };
+      const copy: typeof a = { ...a };
+      const part = parts[i];
+      if (part) {
+        const sha = await sha256Hex(part.bytes);
+        copy.url = r2PublicUrl(env, attachmentR2Key(sha, part.filename), part.filename);
+      }
+      return copy;
     }),
   );
-  const out: UnifiedMessage = { ...msg, attachments };
+  const out: UnifiedMessage = { ...msg, body_url: bodyUrl, attachments };
   if (bodyTotal > inlineBody) {
     delete out.text;
     delete out.html;
   }
+  return out;
+}
+
+async function sha256Hex(data: Uint8Array): Promise<string> {
+  const buf = new ArrayBuffer(data.byteLength);
+  new Uint8Array(buf).set(data);
+  const digest = await crypto.subtle.digest('SHA-256', buf);
+  const bytes = new Uint8Array(digest);
+  let out = '';
+  for (const b of bytes) out += b.toString(16).padStart(2, '0');
   return out;
 }
 
@@ -304,14 +333,14 @@ messages.post('/v1/messages', async (c) => {
   const contentType =
     (c.req.header('content-type') ?? '').toLowerCase().split(';')[0]?.trim() ?? '';
   const hasKeyId = !!c.req.header('x-polaris-key-id');
-  const hasDaemonId = !!c.req.header('x-polaris-daemon-id');
+  const hasBridgeId = !!c.req.header('x-polaris-bridge-id');
 
   const ab = await c.req.arrayBuffer();
   const bodyBytes = new Uint8Array(ab);
 
   if (contentType === 'application/json') {
-    if (hasDaemonId && !hasKeyId) {
-      return buildError(c, 'bad_content_type', 'daemon auth requires Content-Type: message/rfc822');
+    if (hasBridgeId && !hasKeyId) {
+      return buildError(c, 'bad_content_type', 'bridge auth requires Content-Type: message/rfc822');
     }
     const authResult = await authenticateApiKey(c, bodyBytes);
     if (authResult instanceof Response) return authResult;
@@ -403,18 +432,18 @@ messages.post('/v1/messages', async (c) => {
   }
 
   if (contentType === 'message/rfc822') {
-    if (hasKeyId && !hasDaemonId) {
+    if (hasKeyId && !hasBridgeId) {
       return buildError(
         c,
         'bad_content_type',
         'tenant API-key auth requires Content-Type: application/json',
       );
     }
-    const authResult = await authenticateDaemon(c, bodyBytes);
+    const authResult = await authenticateBridge(c, bodyBytes);
     if (authResult instanceof Response) return authResult;
-    const { daemonId, submissionId } = authResult;
+    const { bridgeId, submissionId } = authResult;
 
-    const rl = await rateLimit(env, `daemon:${daemonId}`, DAEMON_DEFAULT_RATE_PER_MIN);
+    const rl = await rateLimit(env, `bridge:${bridgeId}`, BRIDGE_DEFAULT_RATE_PER_MIN);
     if (!rl.ok) {
       return buildError(c, 'too_many_requests', 'rate limit exceeded', {
         'retry-after': String(rl.retryAfterSec),
@@ -476,7 +505,7 @@ messages.post('/v1/messages', async (c) => {
         source: 'smtp',
         mailboxId: principalRow.mailbox_id,
         principalId: principalRow.id,
-        daemonId,
+        bridgeId,
         rawMime: bodyBytes,
         idempotencyKey,
       });
@@ -543,7 +572,7 @@ messages.get('/v1/messages/:id', async (c) => {
   const raw = await loadR2Bytes(c.env, row.r2_key);
   if (!raw) return buildError(c, 'degraded', 'message body missing from R2');
   const msg = mimeToMessage(raw, rowMeta(row));
-  const rendered = await renderMessageBodies(c.env, msg, raw, { listMode: false });
+  const rendered = await renderMessageBodies(c.env, msg, raw, row.r2_key, { listMode: false });
   if (apiKey.scopes.includes('imap_bridge:read')) {
     await autoMarkRead(c.env, row.mailbox_id, row.id);
   }
@@ -637,118 +666,13 @@ messages.get('/v1/messages', async (c) => {
     const raw = await loadR2Bytes(c.env, row.r2_key);
     if (!raw) continue;
     const msg = mimeToMessage(raw, rowMeta(row));
-    const rendered = await renderMessageBodies(c.env, msg, raw, { listMode: true });
+    const rendered = await renderMessageBodies(c.env, msg, raw, row.r2_key, { listMode: true });
     data.push(rendered);
   }
   return c.json({ data, next_offset: hasMore ? offset + limit : null });
 });
 
-// ---------- GET /v1/messages/:id/attachments/:n ----------
-
-messages.get('/v1/messages/:id/attachments/:n', async (c) => {
-  const ip = c.req.header('cf-connecting-ip') ?? c.req.header('x-forwarded-for') ?? 'unknown';
-  const rl = await rateLimit(c.env, `att:${ip}`, ATTACHMENT_IP_RATE_PER_MIN);
-  if (!rl.ok) {
-    return buildError(c, 'too_many_requests', 'rate limit exceeded', {
-      'retry-after': String(rl.retryAfterSec),
-    });
-  }
-
-  const url = new URL(c.req.url);
-  const verifyRes = await verifyAttachmentUrl(c.env, url.toString());
-  if (!verifyRes.ok) {
-    return buildError(c, 'unauthorized', `signed url: ${verifyRes.reason}`);
-  }
-  const { messageId, attachmentIndex } = verifyRes.ref;
-  const row = await c.env.DB.prepare(`SELECT r2_key FROM messages WHERE id = ?1 LIMIT 1`)
-    .bind(messageId)
-    .first<{ r2_key: string }>();
-  if (!row) return buildError(c, 'not_found', 'message not found');
-  const raw = await loadR2Bytes(c.env, row.r2_key);
-  if (!raw) return buildError(c, 'not_found', 'message body missing');
-  const summary = summarizeMime(raw);
-  const att = summary.attachments[attachmentIndex];
-  if (!att) return buildError(c, 'not_found', 'attachment index out of range');
-  const part = extractAttachmentBytes(raw, attachmentIndex);
-  if (!part) return buildError(c, 'not_found', 'attachment payload not located');
-  return new Response(part.bytes, {
-    status: 200,
-    headers: {
-      'content-type': att.content_type || 'application/octet-stream',
-      'content-disposition': `attachment; filename="${att.filename.replace(/"/g, '')}"`,
-      'cache-control': 'private, no-store',
-    },
-  });
-});
-
-function extractAttachmentBytes(raw: Uint8Array, index: number): { bytes: Uint8Array } | null {
-  const text = new TextDecoder('latin1').decode(raw);
-  const sep = text.indexOf('\r\n\r\n');
-  const split = sep >= 0 ? sep : text.indexOf('\n\n');
-  if (split < 0) return null;
-  const headerStr = text.slice(0, split);
-  const body = text.slice(split + (sep >= 0 ? 4 : 2));
-  const ctMatch = /\bcontent-type:\s*([^\r\n]+)/i.exec(headerStr);
-  if (!ctMatch) return null;
-  const ct = ctMatch[1]!;
-  const boundaryM = /boundary=("([^"]+)"|([^;\s]+))/i.exec(ct);
-  if (!boundaryM) return null;
-  const boundary = boundaryM[2] ?? boundaryM[3] ?? '';
-  const found: Uint8Array[] = [];
-  walkAttachmentParts(body, boundary, found);
-  const hit = found[index];
-  return hit ? { bytes: hit } : null;
-}
-
-function walkAttachmentParts(body: string, boundary: string, out: Uint8Array[]): void {
-  const delim = '--' + boundary;
-  let i = body.indexOf(delim);
-  while (i >= 0) {
-    const next = body.indexOf(delim, i + delim.length);
-    if (next < 0) break;
-    const chunk = body
-      .slice(i + delim.length, next)
-      .replace(/^\r?\n/, '')
-      .replace(/\r?\n$/, '');
-    const cutter = chunk.indexOf('\r\n\r\n');
-    const hsplit = cutter >= 0 ? cutter : chunk.indexOf('\n\n');
-    if (hsplit >= 0) {
-      const hStr = chunk.slice(0, hsplit);
-      const pBody = chunk.slice(hsplit + (cutter >= 0 ? 4 : 2));
-      const subCt = /\bcontent-type:\s*([^\r\n]+)/i.exec(hStr)?.[1] ?? 'text/plain';
-      const subDisp = /\bcontent-disposition:\s*([^\r\n]+)/i.exec(hStr)?.[1] ?? '';
-      const subXfer = (/\bcontent-transfer-encoding:\s*([^\r\n]+)/i.exec(hStr)?.[1] ?? '')
-        .toLowerCase()
-        .trim();
-      const inner = subCt.split(';')[0]?.toLowerCase().trim() ?? '';
-      const innerBoundary = /boundary=("([^"]+)"|([^;\s]+))/i.exec(subCt);
-      if (inner.startsWith('multipart/') && innerBoundary) {
-        walkAttachmentParts(pBody, innerBoundary[2] ?? innerBoundary[3] ?? '', out);
-      } else {
-        const isAttachment =
-          /attachment/i.test(subDisp) || /^application\/|^image\/|^video\/|^audio\//.test(inner);
-        if (isAttachment) {
-          out.push(decodeAttachment(pBody, subXfer));
-        }
-      }
-    }
-    i = next;
-  }
-}
-
-function decodeAttachment(body: string, xfer: string): Uint8Array {
-  if (xfer === 'base64') {
-    try {
-      const cleaned = body.replace(/\s+/g, '');
-      const bin = atob(cleaned);
-      const out = new Uint8Array(bin.length);
-      for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-      return out;
-    } catch {
-      // fall through to latin1 passthrough
-    }
-  }
-  const out = new Uint8Array(body.length);
-  for (let i = 0; i < body.length; i++) out[i] = body.charCodeAt(i) & 0xff;
-  return out;
-}
+// The previous `GET /v1/messages/:id/attachments/:n` handler that minted
+// signed URLs has been removed (B5). Attachment bytes are now served by the
+// R2 public custom domain `r2.mail.plrs.im`; `attachment.url` in the
+// `GET /v1/messages/:id` response points there directly.

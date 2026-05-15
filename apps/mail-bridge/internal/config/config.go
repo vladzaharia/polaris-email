@@ -1,4 +1,4 @@
-// Package config loads daemon configuration from environment variables.
+// Package config loads bridge configuration from environment variables.
 package config
 
 import (
@@ -12,8 +12,8 @@ import (
 // Config holds all runtime configuration.
 type Config struct {
 	APIURL             string
-	DaemonName         string
-	DaemonID           string
+	BridgeName         string
+	BridgeID           string
 	HMACKey            []byte
 	AccessClientID     string
 	AccessClientSecret string
@@ -37,17 +37,17 @@ func Load() (*Config, error) {
 	if apiURL == "" {
 		errs = append(errs, "POLARIS_API_URL required")
 	}
-	daemonName := get("DAEMON_NAME")
-	if daemonName == "" {
-		errs = append(errs, "DAEMON_NAME required")
+	bridgeName := get("BRIDGE_NAME")
+	if bridgeName == "" {
+		errs = append(errs, "BRIDGE_NAME required")
 	}
 
-	daemonID, err := readIDOrFile("DAEMON_ID", "DAEMON_ID_FILE")
+	bridgeID, err := readIDOrFile("BRIDGE_ID", "BRIDGE_ID_FILE")
 	if err != nil {
 		errs = append(errs, err.Error())
 	}
 
-	hmacKey, err := readKeyOrFile("DAEMON_HMAC_KEY", "DAEMON_HMAC_KEY_FILE")
+	hmacKey, err := readKeyOrFile("BRIDGE_HMAC_KEY", "BRIDGE_HMAC_KEY_FILE")
 	if err != nil {
 		errs = append(errs, err.Error())
 	}
@@ -106,8 +106,8 @@ func Load() (*Config, error) {
 
 	return &Config{
 		APIURL:             strings.TrimRight(apiURL, "/"),
-		DaemonName:         daemonName,
-		DaemonID:           daemonID,
+		BridgeName:         bridgeName,
+		BridgeID:           bridgeID,
 		HMACKey:            hmacKey,
 		AccessClientID:     accessID,
 		AccessClientSecret: accessSecret,

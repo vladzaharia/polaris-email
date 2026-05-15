@@ -3,7 +3,7 @@
 // Caller has already parsed MIME via `parseStrict()`. This module verifies the
 // MIME `From:` (and `Sender:` if present) and `Reply-To:` against the
 // credential's `allowed_senders` list. The envelope `MAIL FROM` is checked
-// separately by the API edge / submission daemon.
+// separately by the API edge / submission bridge.
 
 import type { ParsedMime } from './canonicalize.js';
 import { getHeader } from './canonicalize.js';

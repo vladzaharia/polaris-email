@@ -1,6 +1,6 @@
 // Message detail — renders the canonical Message JSON via MessageJsonView,
-// plus an attachments table whose Download buttons call the signed-URL mint
-// endpoint and navigate the user to the resulting URL.
+// plus an attachments table whose Download buttons link straight to the R2
+// public custom domain (B5). No signed-URL mint round-trip.
 import { useParams } from '@tanstack/react-router';
 import { PageCard } from '../../layouts/PageCard.js';
 import { Skeleton } from '../../components/ui/skeleton.js';
@@ -30,12 +30,25 @@ interface MessagePayload {
   from: string;
   to: string[];
   subject?: string;
+  text?: string;
+  html?: string;
+  // Public R2 URL for the raw RFC822 body (B5).
+  body_url?: string;
   headers?: Record<string, string>;
+  // Bridge-style payload shape for back-compat — kept as a fallback while
+  // older callers still emit it.
   bodies?: {
     text?: { inline?: string; url?: string; bytes?: number };
     html?: { inline?: string; url?: string; bytes?: number };
   };
-  attachments?: Array<{ filename: string; content_type: string; bytes: number }>;
+  attachments?: Array<{
+    filename: string;
+    content_type: string;
+    size_bytes?: number;
+    bytes?: number;
+    // Public R2 URL for the attachment bytes (B5).
+    url?: string;
+  }>;
 }
 
 export function MessageDetail() {
@@ -62,8 +75,11 @@ export function MessageDetail() {
     );
   }
   const m = q.data;
-  const textInline = m.bodies?.text?.inline;
-  const htmlInline = m.bodies?.html?.inline;
+  const textInline = m.text ?? m.bodies?.text?.inline;
+  const htmlInline = m.html ?? m.bodies?.html?.inline;
+  // Body URL preference: the B5 `body_url` (full RFC822 on R2) takes precedence;
+  // fall back to the legacy per-mime bridge-style URLs if they're still around.
+  const bodyHref = m.body_url ?? m.bodies?.text?.url ?? m.bodies?.html?.url;
   return (
     <PageCard
       title={m.subject ?? '(no subject)'}
@@ -104,9 +120,9 @@ export function MessageDetail() {
           <TabsContent value="text" className="mt-3">
             {textInline ? (
               <pre className="whitespace-pre-wrap text-sm">{textInline}</pre>
-            ) : m.bodies?.text?.url ? (
+            ) : bodyHref ? (
               <Button asChild size="sm" variant="outline">
-                <a href={m.bodies.text.url}>Download text body</a>
+                <a href={bodyHref}>Download raw RFC822</a>
               </Button>
             ) : (
               <p className="text-sm text-[var(--color-muted-foreground)]">No text body.</p>
@@ -120,9 +136,9 @@ export function MessageDetail() {
                 className="h-96 w-full rounded-md border"
                 sandbox=""
               />
-            ) : m.bodies?.html?.url ? (
+            ) : bodyHref ? (
               <Button asChild size="sm" variant="outline">
-                <a href={m.bodies.html.url}>Download HTML body</a>
+                <a href={bodyHref}>Download raw RFC822</a>
               </Button>
             ) : (
               <p className="text-sm text-[var(--color-muted-foreground)]">No HTML body.</p>
@@ -151,11 +167,17 @@ export function MessageDetail() {
                     <TableCell>{i}</TableCell>
                     <TableCell>{a.filename}</TableCell>
                     <TableCell className="font-mono text-xs">{a.content_type}</TableCell>
-                    <TableCell>{a.bytes}</TableCell>
+                    <TableCell>{a.size_bytes ?? a.bytes}</TableCell>
                     <TableCell>
-                      <Button asChild size="sm" variant="outline">
-                        <a href={`/api/messages/${id}/attachments/${i}`}>Download</a>
-                      </Button>
+                      {a.url ? (
+                        <Button asChild size="sm" variant="outline">
+                          <a href={a.url} target="_blank" rel="noopener noreferrer">
+                            Download
+                          </a>
+                        </Button>
+                      ) : (
+                        <span className="text-xs text-[var(--color-muted-foreground)]">No URL</span>
+                      )}
                     </TableCell>
                   </TableRow>
                 ))}

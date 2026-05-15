@@ -100,3 +100,25 @@ provider "cloudflare" {
 #   require_webauthn_step_up = false # daemons use service tokens, not WebAuthn
 #   session_duration         = "24h"
 # }
+
+# -----------------------------------------------------------------------------
+# R2 public custom domain for the `polaris-email` bucket (B5).
+#
+# Fronts the bucket on `r2.mail.plrs.im`. Inbound + outbound message bodies
+# and per-attachment R2 objects are served from this hostname; the API
+# embeds the full URL in `Message.body_url` and `attachment.url`.
+#
+# The `polaris-anchors` bucket stays PRIVATE — DO NOT wire it through this
+# module. Audit anchors must not be publicly readable.
+# -----------------------------------------------------------------------------
+#
+# module "r2_public_polaris_email" {
+#   source = "../../modules/r2-public"
+#
+#   cf_account_id = var.cloudflare_account_id_prod
+#   cf_zone_id    = "REPLACE_WITH_MAIL_PLRS_IM_ZONE_ID"
+#   bucket_name   = "polaris-email"
+#   public_host   = "r2.mail.plrs.im"
+#   domain_name   = "r2.mail.plrs.im"
+#   record_name   = "r2.mail" # relative to the `plrs.im` zone
+# }

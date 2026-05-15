@@ -36,9 +36,9 @@ hot_reload = true
 
 [polaris]
 api_url = "https://api.polaris.example.com"
-# Daemon ID and HMAC key paths (one secret per file; mounted via Docker
+# Bridge ID and HMAC key paths (one secret per file; mounted via Docker
 # secrets in the compose stacks).
-daemon_id_file = "/run/secrets/daemon_id"
+bridge_id_file = "/run/secrets/bridge_id"
 hmac_key_file = "/run/secrets/hmac_key"
 poll_interval = "5s"
 

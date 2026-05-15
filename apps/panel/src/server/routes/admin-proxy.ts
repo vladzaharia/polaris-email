@@ -45,13 +45,6 @@ adminProxyRoutes.get('/api/messages/:id', async (c) => {
   return c.json(r.body as Record<string, unknown>, r.status as 200 | 400);
 });
 
-adminProxyRoutes.get('/api/messages/:id/attachments/:n', async (c) => {
-  const id = c.req.param('id');
-  const n = c.req.param('n');
-  // TODO: replace with generated hook — surfaces a hint pointer to the signed
-  // download URL once the SDK exposes a typed signed-URL mint helper.
-  return c.json({
-    href: `/api/messages/${id}/attachments/${n}/download`,
-    upstream: `/v1/messages/${id}/attachments/${n}`,
-  });
-});
+// The previous `/api/messages/:id/attachments/:n` panel route is gone (B5).
+// Attachments now carry an `url` field that points straight at the R2 public
+// custom domain `r2.mail.plrs.im`; the panel links to that URL directly.

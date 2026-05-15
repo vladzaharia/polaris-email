@@ -16,15 +16,15 @@ import (
 	"github.com/vladzaharia/polaris-email/apps/polaris-cli/internal/client"
 )
 
-// DaemonRegisterInput is the validated input for `polaris-email daemon register`.
-type DaemonRegisterInput struct {
+// BridgeRegisterInput is the validated input for `polaris-email bridge register`.
+type BridgeRegisterInput struct {
 	Name        string `json:"name" yaml:"name"`
-	Environment string `json:"environment" yaml:"environment"` // prod|staging|dev
+	Environment string `json:"environment" yaml:"environment"`                     // prod|staging|dev
 	OutputForm  string `json:"output_form,omitempty" yaml:"output_form,omitempty"` // compose|systemd
 	WriteFile   string `json:"write_file,omitempty" yaml:"write_file,omitempty"`   // optional path for registration.json
 }
 
-func (in *DaemonRegisterInput) Validate() error {
+func (in *BridgeRegisterInput) Validate() error {
 	if strings.TrimSpace(in.Name) == "" {
 		return errors.New("name is required")
 	}
@@ -45,13 +45,13 @@ func (in *DaemonRegisterInput) Validate() error {
 	return nil
 }
 
-// LoadDaemonRegisterFile parses --from-file payload.
-func LoadDaemonRegisterFile(path string) (*DaemonRegisterInput, error) {
+// LoadBridgeRegisterFile parses --from-file payload.
+func LoadBridgeRegisterFile(path string) (*BridgeRegisterInput, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
-	in := &DaemonRegisterInput{}
+	in := &BridgeRegisterInput{}
 	if strings.HasSuffix(path, ".json") {
 		if err := json.Unmarshal(data, in); err != nil {
 			return nil, err
@@ -64,15 +64,15 @@ func LoadDaemonRegisterFile(path string) (*DaemonRegisterInput, error) {
 	return in, in.Validate()
 }
 
-// PromptDaemonRegister runs the interactive wizard.
-func PromptDaemonRegister(initial *DaemonRegisterInput) (*DaemonRegisterInput, error) {
-	in := &DaemonRegisterInput{Environment: "prod", OutputForm: "compose"}
+// PromptBridgeRegister runs the interactive wizard.
+func PromptBridgeRegister(initial *BridgeRegisterInput) (*BridgeRegisterInput, error) {
+	in := &BridgeRegisterInput{Environment: "prod", OutputForm: "compose"}
 	if initial != nil {
 		*in = *initial
 	}
 	form := huh.NewForm(
 		huh.NewGroup(
-			huh.NewInput().Title("Daemon name (e.g., daemon-iad-1)").Value(&in.Name),
+			huh.NewInput().Title("Bridge name (e.g., bridge-iad-1)").Value(&in.Name),
 			huh.NewSelect[string]().Title("Environment").
 				Options(
 					huh.NewOption("prod", "prod"),
@@ -92,15 +92,15 @@ func PromptDaemonRegister(initial *DaemonRegisterInput) (*DaemonRegisterInput, e
 	return in, in.Validate()
 }
 
-// RunDaemonRegister performs the API call and renders the install snippet.
-func RunDaemonRegister(ctx context.Context, c *client.Client, in *DaemonRegisterInput, w io.Writer) (*client.DaemonRegisterResponse, error) {
-	req := client.DaemonRegisterRequest{Name: in.Name, Environment: in.Environment}
-	var out client.DaemonRegisterResponse
-	if err := c.DoJSON(ctx, "POST", "/v1/admin/daemons", nil, req, &out); err != nil {
+// RunBridgeRegister performs the API call and renders the install snippet.
+func RunBridgeRegister(ctx context.Context, c *client.Client, in *BridgeRegisterInput, w io.Writer) (*client.BridgeRegisterResponse, error) {
+	req := client.BridgeRegisterRequest{Name: in.Name, Environment: in.Environment}
+	var out client.BridgeRegisterResponse
+	if err := c.DoJSON(ctx, "POST", "/v1/admin/bridges", nil, req, &out); err != nil {
 		return nil, err
 	}
 	if c.DryRun {
-		fmt.Fprintln(w, "(dry-run; no daemon was registered)")
+		fmt.Fprintln(w, "(dry-run; no bridge was registered)")
 		return nil, nil
 	}
 	if in.WriteFile != "" {
@@ -114,60 +114,60 @@ func RunDaemonRegister(ctx context.Context, c *client.Client, in *DaemonRegister
 
 // RenderInstallSnippet writes either a docker-compose snippet or a systemd
 // unit file with the freshly-minted secrets.
-func RenderInstallSnippet(w io.Writer, form string, r *client.DaemonRegisterResponse, apiURL string) error {
+func RenderInstallSnippet(w io.Writer, form string, r *client.BridgeRegisterResponse, apiURL string) error {
 	switch form {
 	case "compose":
 		return composeTpl.Execute(w, struct {
 			APIURL    string
-			Daemon    client.Daemon
+			Bridge    client.Bridge
 			HMACKeyID string
 			HMACSec   string
 			AccID     string
 			AccSecret string
-		}{apiURL, r.Daemon, r.HMACKeyID, r.HMACSecret, r.AccessClient, r.AccessToken})
+		}{apiURL, r.Bridge, r.HMACKeyID, r.HMACSecret, r.AccessClient, r.AccessToken})
 	case "systemd":
 		return systemdTpl.Execute(w, struct {
 			APIURL    string
-			Daemon    client.Daemon
+			Bridge    client.Bridge
 			HMACKeyID string
 			HMACSec   string
 			AccID     string
 			AccSecret string
-		}{apiURL, r.Daemon, r.HMACKeyID, r.HMACSecret, r.AccessClient, r.AccessToken})
+		}{apiURL, r.Bridge, r.HMACKeyID, r.HMACSecret, r.AccessClient, r.AccessToken})
 	}
 	return fmt.Errorf("unknown form %q", form)
 }
 
 var composeTpl = template.Must(template.New("compose").Parse(`# Add to your docker-compose.yml. Secrets shown ONCE — store them now.
 services:
-  submission:
-    image: ghcr.io/vladzaharia/polaris-email-daemon:latest
+  bridge:
+    image: ghcr.io/vladzaharia/polaris-mail-bridge:latest
     network_mode: service:ts
     environment:
       API_BASE_URL: "{{.APIURL}}"
-      DAEMON_ID: "{{.Daemon.ID}}"
-      DAEMON_NAME: "{{.Daemon.Name}}"
-      ENVIRONMENT: "{{.Daemon.Environment}}"
-      DAEMON_HMAC_KEY_ID: "{{.HMACKeyID}}"
-      DAEMON_HMAC_SECRET: "{{.HMACSec}}"
+      BRIDGE_ID: "{{.Bridge.ID}}"
+      BRIDGE_NAME: "{{.Bridge.Name}}"
+      ENVIRONMENT: "{{.Bridge.Environment}}"
+      BRIDGE_HMAC_KEY_ID: "{{.HMACKeyID}}"
+      BRIDGE_HMAC_SECRET: "{{.HMACSec}}"
       CF_ACCESS_CLIENT_ID: "{{.AccID}}"
       CF_ACCESS_CLIENT_SECRET: "{{.AccSecret}}"
     volumes:
       - ./certs:/certs:ro
-      - ./submission-data:/data
+      - ./bridge-data:/data
 `))
 
 var systemdTpl = template.Must(template.New("systemd").Parse(`# /etc/systemd/system/polaris-mail-bridge.service. Secrets shown ONCE — store them now.
 [Unit]
-Description=polaris-email mail bridge (SMTPS + IMAP + JMAP)
+Description=polaris-email mail bridge (SMTPS + IMAP)
 After=network-online.target
 
 [Service]
 Environment=API_BASE_URL={{.APIURL}}
-Environment=DAEMON_ID={{.Daemon.ID}}
-Environment=DAEMON_NAME={{.Daemon.Name}}
-Environment=DAEMON_HMAC_KEY_ID={{.HMACKeyID}}
-Environment=DAEMON_HMAC_SECRET={{.HMACSec}}
+Environment=BRIDGE_ID={{.Bridge.ID}}
+Environment=BRIDGE_NAME={{.Bridge.Name}}
+Environment=BRIDGE_HMAC_KEY_ID={{.HMACKeyID}}
+Environment=BRIDGE_HMAC_SECRET={{.HMACSec}}
 Environment=CF_ACCESS_CLIENT_ID={{.AccID}}
 Environment=CF_ACCESS_CLIENT_SECRET={{.AccSecret}}
 ExecStart=/usr/local/bin/polaris-bridge

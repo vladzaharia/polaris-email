@@ -18,7 +18,7 @@ import (
 )
 
 // dummyBcryptHash is used to keep AuthPlain timing constant on credential miss.
-// Generated once at init with the same cost we expect daemon hashes to use (12).
+// Generated once at init with the same cost we expect bridge hashes to use (12).
 var dummyBcryptHash []byte
 
 func init() {
@@ -155,7 +155,7 @@ func (s *Session) Data(r io.Reader) error {
 		RFC822:           canonical,
 		SubmissionID:     s.submissionID,
 		ClientIP:         s.clientIP,
-		ReceivedAtDaemon: s.receivedAt,
+		ReceivedAtBridge: s.receivedAt,
 	})
 	if err != nil {
 		s.writeAudit(false, 0, len(canonical), "forward: "+err.Error())

@@ -55,7 +55,7 @@ services:
     environment:
       BRIDGE_TLS_MODE: tailscale
       BRIDGE_POLARIS_API_URL: ${POLARIS_API_URL:-https://api.polaris.example.com}
-      BRIDGE_POLARIS_DAEMON_ID_FILE: /run/secrets/daemon_id
+      BRIDGE_POLARIS_BRIDGE_ID_FILE: /run/secrets/bridge_id
       BRIDGE_POLARIS_HMAC_KEY_FILE: /run/secrets/hmac_key
       BRIDGE_SMTPS_ENABLED: ${BRIDGE_SMTPS_ENABLED:-true}
       BRIDGE_IMAP_ENABLED: ${BRIDGE_IMAP_ENABLED:-true}

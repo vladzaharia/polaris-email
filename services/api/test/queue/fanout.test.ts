@@ -192,6 +192,7 @@ describe('fanout envelope + delivered transition', () => {
     const env = {
       DB: db as unknown as D1Database,
       R2: r2 as unknown as R2Bucket,
+      R2_PUBLIC_HOST: 'r2.mail.plrs.im',
     } as unknown as Env;
     await fanoutQueueConsumer(
       mkBatch({
@@ -239,6 +240,7 @@ describe('fanout envelope + delivered transition', () => {
     const env = {
       DB: db as unknown as D1Database,
       R2: r2 as unknown as R2Bucket,
+      R2_PUBLIC_HOST: 'r2.mail.plrs.im',
     } as unknown as Env;
     await fanoutQueueConsumer(
       mkBatch({

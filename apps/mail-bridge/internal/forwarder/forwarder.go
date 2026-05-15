@@ -23,7 +23,7 @@ import (
 type Config struct {
 	APIURL             string
 	HMACKey            []byte
-	DaemonID           string
+	BridgeID           string
 	AccessClientID     string
 	AccessClientSecret string
 	HTTPClient         *http.Client
@@ -43,8 +43,8 @@ func New(cfg Config) *Forwarder {
 	}
 	c := polarissdk.NewClient(cfg.APIURL)
 	c.HTTPClient = httpClient
-	c.DaemonID = cfg.DaemonID
-	c.DaemonSecret = cfg.HMACKey
+	c.BridgeID = cfg.BridgeID
+	c.BridgeSecret = cfg.HMACKey
 	c.ExtraHeaders = map[string]string{
 		"CF-Access-Client-Id":     cfg.AccessClientID,
 		"CF-Access-Client-Secret": cfg.AccessClientSecret,
@@ -59,7 +59,7 @@ type ForwardRequest struct {
 	RFC822           []byte
 	SubmissionID     string
 	ClientIP         string
-	ReceivedAtDaemon time.Time
+	ReceivedAtBridge time.Time
 }
 
 // ForwardResult is the typed response.
@@ -75,7 +75,7 @@ func (f *Forwarder) Forward(ctx context.Context, in ForwardRequest) (*ForwardRes
 	extra := map[string]string{
 		"X-Polaris-Submission-Id":   in.SubmissionID,
 		"X-Polaris-Client-IP":       in.ClientIP,
-		"X-Polaris-Received-Daemon": in.ReceivedAtDaemon.UTC().Format(time.RFC3339Nano),
+		"X-Polaris-Received-Bridge": in.ReceivedAtBridge.UTC().Format(time.RFC3339Nano),
 		"Idempotency-Key":           idempotencyKey(in),
 	}
 	resp, body, err := f.client.Do(ctx, "POST", "/v1/messages", "", in.RFC822, "message/rfc822", extra)

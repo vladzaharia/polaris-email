@@ -13,7 +13,7 @@ polaris-email status
 
 This returns red/yellow/green per domain plus aggregate health:
 
-- **Daemons**: per-daemon `last_seen_at` (alert if > 2 minutes)
+- **Bridges**: per-bridge `last_seen_at` (alert if > 2 minutes)
 - **Outbound**: per-domain send rate, p99 send latency, queue depth, DLQ depth
 - **Inbound**: per-domain receive rate, fanout backlog, fanout DLQ depth
 - **Recent error class summary**: top 5 error categories in last 1h
@@ -80,25 +80,25 @@ polaris-email webhook dlq replay <id>              # try once
 polaris-email webhook dlq drop <id> --confirm <id> # two-person rule
 ```
 
-### "Daemon is offline / can't authenticate"
+### "Bridge is offline / can't authenticate"
 
 ```bash
-polaris-email daemon list
+polaris-email bridge list
 # look for last_seen_at gap
 
-# On the daemon host:
-docker compose logs polaris-daemon --tail 100
+# On the bridge host:
+docker compose logs polaris-bridge --tail 100
 ```
 
 Common causes:
 
-- Cert renewal: lego may have failed; check lego logs. Daemon hot-reloads on
+- Cert renewal: lego may have failed; check lego logs. Bridge hot-reloads on
   `.renewed` sentinel; stale certs cause TLS handshake failures.
 - HMAC key drift: rotation was started but registration.json on the host
-  wasn't updated. Re-deploy the daemon registration:
+  wasn't updated. Re-deploy the bridge registration:
   ```bash
-  polaris-email daemon rotate <name>
-  # SCP the new registration.json onto the host; restart the daemon.
+  polaris-email bridge rotate <name>
+  # SCP the new registration.json onto the host; restart the bridge.
   ```
 - CF Access service token expired (rare; tokens are long-lived but
   revocable). Check the Access app in dashboard.

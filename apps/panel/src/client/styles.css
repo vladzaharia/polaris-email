@@ -38,6 +38,10 @@
   --color-destructive-foreground: oklch(0.99 0.005 264);
   --color-success: oklch(0.6 0.16 150); /* neutral green */
   --color-success-foreground: oklch(0.99 0.005 264);
+  --color-info: oklch(0.6 0.16 240); /* informational blue */
+  --color-info-foreground: oklch(0.99 0.005 264);
+  --color-warning: oklch(0.78 0.16 80); /* amber */
+  --color-warning-foreground: oklch(0.2 0.04 80);
   --color-detail: oklch(0.55 0.18 295); /* neutral violet */
   --color-detail-foreground: oklch(0.99 0.005 264);
   --color-border: oklch(0.9 0.01 264);
@@ -72,6 +76,10 @@
   --color-destructive-foreground: oklch(0.99 0.005 264);
   --color-success: oklch(0.7 0.16 150);
   --color-success-foreground: oklch(0.16 0.015 264);
+  --color-info: oklch(0.72 0.14 240);
+  --color-info-foreground: oklch(0.16 0.015 264);
+  --color-warning: oklch(0.82 0.16 80);
+  --color-warning-foreground: oklch(0.18 0.04 80);
   --color-detail: oklch(0.68 0.18 295);
   --color-detail-foreground: oklch(0.16 0.015 264);
   --color-border: oklch(0.3 0.015 264);

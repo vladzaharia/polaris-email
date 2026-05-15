@@ -27,11 +27,13 @@ export {
   mimeToMessage,
   composeFromJson,
   summarizeMime,
+  extractAttachmentParts,
   type UnifiedMessage,
   type MessageRowMeta,
   type MessageAttachmentMeta,
   type SendRequestLike,
   type ParsedMimeSummary,
+  type ExtractedAttachment,
 } from './json.js';
 
 export {

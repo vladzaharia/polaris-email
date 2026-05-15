@@ -10,7 +10,7 @@ import (
 	gosmtp "github.com/emersion/go-smtp"
 )
 
-// ServerOptions configures the wrapping daemon Server.
+// ServerOptions configures the wrapping bridge Server.
 type ServerOptions struct {
 	ListenAddr     string
 	Domain         string

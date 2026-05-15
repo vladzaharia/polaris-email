@@ -1,5 +1,9 @@
 // Credentials list — union of api_keys + smtp_credentials via
 // GET /v1/admin/credentials?mailbox=<id>.
+//
+// "Issue credential" mounts a Dialog that POSTs to
+// /v1/admin/mailboxes/:id/credentials (read-once: returns the plaintext
+// password exactly once). The dialog opens SecretRevealDialog on success.
 import { Link } from '@tanstack/react-router';
 import { useState } from 'react';
 import { PageCard } from '../../layouts/PageCard.js';
@@ -12,9 +16,28 @@ import {
   TableRow,
 } from '../../components/ui/table.js';
 import { Skeleton } from '../../components/ui/skeleton.js';
-import { Badge } from '../../components/ui/badge.js';
+import { Button } from '../../components/ui/button.js';
+import { Input } from '../../components/ui/input.js';
 import { Label } from '../../components/ui/label.js';
-import { useAdminQuery } from '../../hooks/useAdminApi.js';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '../../components/ui/dialog.js';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '../../components/ui/select.js';
+import { StatusBadge } from '../../components/StatusBadge.js';
+import { SecretRevealDialog } from '../../components/SecretRevealDialog.js';
+import { useAdminMutation, useAdminQuery } from '../../hooks/useAdminApi.js';
 import { credentialKeys, mailboxKeys } from '../../queryKeys.js';
 
 interface MailboxRow {
@@ -30,6 +53,131 @@ interface CredRow {
   username?: string;
 }
 
+type Protocol = 'smtps' | 'imap';
+
+function IssueCredentialDialog({ mailboxes }: { mailboxes: MailboxRow[] }) {
+  const [open, setOpen] = useState(false);
+  const [mailboxId, setMailboxId] = useState('');
+  const [protocol, setProtocol] = useState<Protocol>('smtps');
+  const [username, setUsername] = useState('');
+  const [reveal, setReveal] = useState<{ username: string; plaintext: string } | null>(null);
+
+  const issue = useAdminMutation<
+    { id: string; plaintext: string },
+    { mailboxId: string; protocol: Protocol; username: string }
+  >(
+    (vars) => ({
+      path: `/api/admin/mailboxes/${vars.mailboxId}/credentials`,
+      method: 'POST',
+      body: { protocol: vars.protocol, username: vars.username },
+    }),
+    { invalidateKeys: [credentialKeys.all], silent: true },
+  );
+
+  const reset = () => {
+    setMailboxId('');
+    setProtocol('smtps');
+    setUsername('');
+    issue.reset();
+  };
+
+  const canSubmit = !!mailboxId && username.trim().length > 0 && !issue.isPending;
+
+  return (
+    <>
+      <Dialog
+        open={open}
+        onOpenChange={(o) => {
+          setOpen(o);
+          if (!o) reset();
+        }}
+      >
+        <DialogTrigger asChild>
+          <Button>Issue credential</Button>
+        </DialogTrigger>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Issue mailbox credential</DialogTitle>
+            <DialogDescription>
+              Mints a password for SMTPS or IMAP login bound to a mailbox. The plaintext is shown
+              once; the database only stores its bcrypt hash.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <Label>Mailbox</Label>
+              <Select value={mailboxId || undefined} onValueChange={setMailboxId}>
+                <SelectTrigger className="mt-1">
+                  <SelectValue placeholder="Pick a mailbox" />
+                </SelectTrigger>
+                <SelectContent>
+                  {mailboxes.map((m) => (
+                    <SelectItem key={m.id} value={m.id}>
+                      {m.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Protocol</Label>
+              <Select value={protocol} onValueChange={(v) => setProtocol(v as Protocol)}>
+                <SelectTrigger className="mt-1">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="smtps">SMTPS (submission)</SelectItem>
+                  <SelectItem value="imap">IMAP (mailbox read)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label htmlFor="cred-user">Username</Label>
+              <Input
+                id="cred-user"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                placeholder="e.g. noreply@acme.example"
+              />
+            </div>
+            {issue.error ? (
+              <p className="text-sm text-[var(--color-destructive)]">{issue.error.message}</p>
+            ) : null}
+          </div>
+          <DialogFooter>
+            <Button
+              onClick={async () => {
+                const r = await issue.mutateAsync({
+                  mailboxId,
+                  protocol,
+                  username: username.trim(),
+                });
+                if (r?.plaintext) {
+                  setReveal({ username: username.trim(), plaintext: r.plaintext });
+                }
+                setOpen(false);
+                reset();
+              }}
+              disabled={!canSubmit}
+            >
+              {issue.isPending ? 'Issuing…' : 'Issue'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <SecretRevealDialog
+        open={reveal != null}
+        onOpenChange={(o) => !o && setReveal(null)}
+        title={`Credential issued for ${reveal?.username ?? ''}`}
+        secretLabel="Password"
+        secret={reveal?.plaintext ?? null}
+        note="Use this with the username for SMTPS LOGIN or IMAP AUTHENTICATE. Polaris stores only the bcrypt hash — there is no way to retrieve this value again."
+      />
+    </>
+  );
+}
+
 export function CredentialsList() {
   const mailboxes = useAdminQuery<{ data: MailboxRow[] }>(
     mailboxKeys.list(),
@@ -41,26 +189,30 @@ export function CredentialsList() {
     `/api/admin/credentials?mailbox=${mailboxId}`,
     { enabled: !!mailboxId },
   );
+  const mailboxList = mailboxes.data?.data ?? [];
   return (
     <PageCard
       title="Credentials"
       description="API keys + SMTP credentials, scoped per mailbox."
       decorative
     >
-      <div className="mb-4 max-w-sm">
-        <Label>Mailbox</Label>
-        <select
-          value={mailboxId}
-          onChange={(e) => setMailboxId(e.target.value)}
-          className="mt-1 block w-full rounded-md border bg-transparent px-3 py-2 text-sm"
-        >
-          <option value="">Pick a mailbox</option>
-          {(mailboxes.data?.data ?? []).map((m) => (
-            <option key={m.id} value={m.id}>
-              {m.name}
-            </option>
-          ))}
-        </select>
+      <div className="mb-4 flex items-end justify-between gap-4">
+        <div className="max-w-sm flex-1">
+          <Label>Mailbox</Label>
+          <Select value={mailboxId || undefined} onValueChange={setMailboxId}>
+            <SelectTrigger className="mt-1">
+              <SelectValue placeholder="Pick a mailbox" />
+            </SelectTrigger>
+            <SelectContent>
+              {mailboxList.map((m) => (
+                <SelectItem key={m.id} value={m.id}>
+                  {m.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <IssueCredentialDialog mailboxes={mailboxList} />
       </div>
       {!mailboxId ? (
         <p className="text-sm text-[var(--color-muted-foreground)]">
@@ -94,11 +246,7 @@ export function CredentialsList() {
                 <TableCell>{c.kind}</TableCell>
                 <TableCell className="font-mono text-xs">{c.username ?? '—'}</TableCell>
                 <TableCell>
-                  {c.status === 'active' || c.status === 'primary' ? (
-                    <Badge variant="success">{c.status}</Badge>
-                  ) : (
-                    <Badge variant="secondary">{c.status}</Badge>
-                  )}
+                  <StatusBadge kind="credential" value={c.status} />
                 </TableCell>
                 <TableCell className="text-xs">{c.created_at}</TableCell>
               </TableRow>

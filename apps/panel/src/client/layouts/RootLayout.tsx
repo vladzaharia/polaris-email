@@ -17,6 +17,7 @@ import type { ErrorInfo, ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Toaster } from '../components/ui/sonner.js';
 import { TooltipProvider } from '../components/ui/tooltip.js';
+import { ApiError } from '../lib/api.js';
 
 type Theme = 'light' | 'dark';
 
@@ -60,8 +61,30 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { err: Error | nu
   }
 }
 
+// Retry policy:
+//  - 4xx errors are deterministic — re-firing the same request will return
+//    the same status, so don't waste a round trip.
+//  - 429 (rate-limited) and 5xx errors might recover; allow up to 3 retries
+//    so an in-flight backend restart doesn't surface to the operator.
+//  - Network errors (no `instanceof ApiError`) follow the same retry budget.
 const queryClient = new QueryClient({
-  defaultOptions: { queries: { refetchOnWindowFocus: false, staleTime: 30_000 } },
+  defaultOptions: {
+    queries: {
+      refetchOnWindowFocus: false,
+      staleTime: 30_000,
+      retry: (failureCount, error) => {
+        if (
+          error instanceof ApiError &&
+          error.status >= 400 &&
+          error.status < 500 &&
+          error.status !== 429
+        ) {
+          return false;
+        }
+        return failureCount < 3;
+      },
+    },
+  },
 });
 
 export function RootLayout({ children }: { children: ReactNode }) {

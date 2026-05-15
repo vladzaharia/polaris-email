@@ -291,7 +291,7 @@ export const SmtpCredential = z.object({
   id: Ulid,
   principal_id: Ulid,
   sender_id: Ulid,
-  daemon_id: Ulid.nullable().optional(),
+  bridge_id: Ulid.nullable().optional(),
   username: Address,
   bcrypt_hash: z.string(),
   created_at: z.string(),
@@ -306,7 +306,7 @@ export const SmtpCredentialMetadata = z.object({
   id: Ulid,
   principal_id: Ulid,
   sender_id: Ulid.nullable().optional(),
-  daemon_id: Ulid.nullable().optional(),
+  bridge_id: Ulid.nullable().optional(),
   username: Address,
   created_at: z.string(),
   last_used_at: z.string().nullable().optional(),
@@ -365,10 +365,10 @@ export const WebhookSubCreatedResponse = z.object({
 });
 export type WebhookSubCreatedResponse = z.infer<typeof WebhookSubCreatedResponse>;
 
-// Daemon (a.k.a. "bridge" — renamed in B4) — internal row shape. The
+// Bridge (formerly "daemon", renamed in B4) — internal row shape. The
 // argon2id hash of the HMAC key lives in `hmac_key_secret_name` (legacy
-// column name retained until B4 renames it to `hmac_key_hash`).
-export const Daemon = z.object({
+// column name retained; the table itself is `bridges` after 0006).
+export const Bridge = z.object({
   id: Ulid,
   name: z.string().min(1).max(120),
   hmac_key_secret_name: z.string().nullable().optional(),
@@ -377,11 +377,11 @@ export const Daemon = z.object({
   created_at: z.string(),
   disabled_at: z.string().nullable().optional(),
 });
-export type Daemon = z.infer<typeof Daemon>;
+export type Bridge = z.infer<typeof Bridge>;
 
-// Public GET response shape for /v1/admin/daemons. Omits the stored hash.
+// Public GET response shape for /v1/admin/bridges. Omits the stored hash.
 // Per A11/B6 the hash itself is not user-actionable, so we omit it.
-export const DaemonMetadata = z.object({
+export const BridgeMetadata = z.object({
   id: Ulid,
   name: z.string().min(1).max(120),
   access_token_id: z.string().nullable().optional(),
@@ -389,22 +389,22 @@ export const DaemonMetadata = z.object({
   created_at: z.string(),
   disabled_at: z.string().nullable().optional(),
 });
-export type DaemonMetadata = z.infer<typeof DaemonMetadata>;
+export type BridgeMetadata = z.infer<typeof BridgeMetadata>;
 
-// One-shot responses for POST /v1/admin/daemons (register) and
-// POST /v1/admin/daemons/:id/rotate. The HMAC key plaintext is shown ONCE.
-export const DaemonCreatedResponse = z.object({
+// One-shot responses for POST /v1/admin/bridges (register) and
+// POST /v1/admin/bridges/:id/rotate. The HMAC key plaintext is shown ONCE.
+export const BridgeCreatedResponse = z.object({
   id: Ulid,
   name: z.string().min(1).max(120),
   hmac_key: z.string(),
 });
-export type DaemonCreatedResponse = z.infer<typeof DaemonCreatedResponse>;
+export type BridgeCreatedResponse = z.infer<typeof BridgeCreatedResponse>;
 
-export const DaemonRotatedResponse = z.object({
+export const BridgeRotatedResponse = z.object({
   id: Ulid,
   hmac_key: z.string(),
 });
-export type DaemonRotatedResponse = z.infer<typeof DaemonRotatedResponse>;
+export type BridgeRotatedResponse = z.infer<typeof BridgeRotatedResponse>;
 
 // ---------- message plane ----------
 
@@ -427,10 +427,15 @@ export const MessageAttachment = z.object({
   filename: z.string(),
   content_type: z.string(),
   size_bytes: z.number().int().nonnegative(),
-  // Exactly one of content_base64 or content_url is populated per
-  // inline-small/url-large strategy decided at read time.
+  // Per B5: `url` is the public, content-addressed URL on the R2 custom
+  // domain `r2.mail.plrs.im`. It is absolute, has no expiry, and serves the
+  // raw attachment bytes. The signed-URL endpoint that previously minted
+  // short-lived attachment URLs is removed; unguessability comes from the
+  // SHA-256 in the key.
+  url: z.string().url().optional(),
+  // Inline-small fallback: when the attachment is small enough we still ship
+  // bytes in the response body for one-shot consumers.
   content_base64: z.string().optional(),
-  content_url: z.string().url().optional(),
 });
 export type MessageAttachment = z.infer<typeof MessageAttachment>;
 
@@ -452,12 +457,20 @@ export const Message = z.object({
   direction: MessageDirection,
   status: MessageStatus,
   from: z.string(),
+  // Bare email address extracted from the From: header (also the value indexed
+  // by `from_addr_normalized` in `messages`). Populated whenever the runtime
+  // can resolve it; absent for responses that strip envelope metadata.
+  from_addr: z.string().optional(),
   to: z.array(z.string()),
   cc: z.array(z.string()).optional(),
   bcc: z.array(z.string()).optional(),
   subject: z.string().optional(),
   text: z.string().optional(),
   html: z.string().optional(),
+  // Public, content-addressed URL for the raw RFC822 body on the R2 custom
+  // domain `r2.mail.plrs.im` (B5). Absolute, no expiry. Always populated for
+  // stored messages; consumers fetch the URL directly without HMAC.
+  body_url: z.string().url().optional(),
   headers: z.record(z.string(), z.string()).optional(),
   attachments: z.array(MessageAttachment),
   header_message_id: z.string().optional(),
@@ -465,7 +478,7 @@ export const Message = z.object({
   auth: MessageAuth.optional(),
   body_bytes: z.number().int().nonnegative().optional(),
   attachments_total_bytes: z.number().int().nonnegative().optional(),
-  received_at_daemon: z.string().optional(),
+  received_at_bridge: z.string().optional(),
   received_at_api: z.string().optional(),
   queued_at: z.string().optional(),
   sending_at: z.string().optional(),
@@ -475,6 +488,14 @@ export const Message = z.object({
   bounce_metadata: z.unknown().optional(),
   last_error: z.string().optional(),
   created_at: z.string(),
+  // IMAP / bridge per-mailbox state. Populated when the response is rendered
+  // for a mailbox-scoped caller (POST /v1/messages/get, PATCH /v1/messages/:id,
+  // the mail-bridge mirror bootstrap). See `MailboxMessageState` for the
+  // canonical row shape backing these fields; `MessageFlag` (defined below)
+  // is the per-element validator if you want to validate flags strictly.
+  flags: z.array(z.string()).optional(),
+  read_at: z.string().nullable().optional(),
+  change_id: z.number().int().nonnegative().optional(),
 });
 export type Message = z.infer<typeof Message>;
 
@@ -592,10 +613,10 @@ export const AuditAction = z.enum([
   'mailbox_credential.rotate',
   'mailbox_credential.disable',
   'dry_run_rotate',
-  // daemon lifecycle
-  'daemon.register',
-  'daemon.rotate',
-  'daemon.deregister',
+  // bridge lifecycle (renamed from daemon.* in B4)
+  'bridge.register',
+  'bridge.rotate',
+  'bridge.deregister',
   // domain + DKIM
   'domain.create',
   'domain.update',
@@ -757,7 +778,7 @@ export const MailboxCredential = z.object({
   protocol: MailBridgeProtocol,
   auth_type: MailBridgeAuthType,
   username: z.string().min(1).max(254),
-  // bcrypt hash is opaque to consumers; surfaced for daemon credential
+  // bcrypt hash is opaque to consumers; surfaced for bridge credential
   // lookup (which authenticates over admin HMAC). Plaintext-free.
   bcrypt_hash: z.string(),
   created_at: z.string(),

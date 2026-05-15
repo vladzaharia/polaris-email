@@ -1,36 +1,21 @@
-// TanStack Router setup — code-based routing (file-based generation is a
-// build-time step that conflicts with the panel's TSC-only client build). We
-// build the route tree explicitly so types stay clean and the tree is the
-// single source of navigation truth.
+// TanStack Router setup — code-based routing.
+//
+// All page modules are wrapped in `lazyRouteComponent` so the initial
+// JS bundle ships just the shell + login; everything else loads on
+// navigation. `errorComponent: RouteError` gives each route its own
+// in-page error fallback (the outer `ErrorBoundary` in `RootLayout` is
+// still the last-resort safety net).
 import {
   Outlet,
   Router,
   RouterProvider,
   createRootRoute,
   createRoute,
+  lazyRouteComponent,
 } from '@tanstack/react-router';
 import { RootLayout } from './layouts/RootLayout.js';
 import { SidebarLayout } from './layouts/SidebarLayout.js';
-import { Dashboard } from './pages/Dashboard.js';
-import { Login } from './pages/Login.js';
-import { MailboxesList } from './pages/mailboxes/List.js';
-import { MailboxDetail } from './pages/mailboxes/Detail.js';
-import { DomainsList } from './pages/domains/List.js';
-import { DomainDetail } from './pages/domains/Detail.js';
-import { CredentialsList } from './pages/credentials/List.js';
-import { CredentialDetail } from './pages/credentials/Detail.js';
-import { MessagesList } from './pages/messages/List.js';
-import { MessageDetail } from './pages/messages/Detail.js';
-import { WebhookSubsList } from './pages/webhook-subs/List.js';
-import { WebhookSubDetail } from './pages/webhook-subs/Detail.js';
-import { RoutingList } from './pages/routing/List.js';
-import { RoutingDetail } from './pages/routing/Detail.js';
-import { DlqBrowser } from './pages/dlq/Browser.js';
-import { DaemonsList } from './pages/daemons/List.js';
-import { DaemonDetail } from './pages/daemons/Detail.js';
-import { TestSendForm } from './pages/test-send/Form.js';
-import { Account } from './pages/settings/Account.js';
-import { Diagnostics } from './pages/diagnostics/Diagnostics.js';
+import { RouteError } from './components/RouteError.js';
 
 const rootRoute = createRootRoute({
   component: () => (
@@ -40,110 +25,131 @@ const rootRoute = createRootRoute({
       </SidebarLayout>
     </RootLayout>
   ),
+  errorComponent: RouteError,
 });
 
 // Login lives outside the sidebar layout, so it has its own thin root.
 const loginRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/login',
-  component: Login,
+  component: lazyRouteComponent(() => import('./pages/Login.js'), 'Login'),
+  errorComponent: RouteError,
 });
 
 const dashboardRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/',
-  component: Dashboard,
+  component: lazyRouteComponent(() => import('./pages/Dashboard.js'), 'Dashboard'),
+  errorComponent: RouteError,
 });
 
 const mailboxesList = createRoute({
   getParentRoute: () => rootRoute,
   path: '/mailboxes',
-  component: MailboxesList,
+  component: lazyRouteComponent(() => import('./pages/mailboxes/List.js'), 'MailboxesList'),
+  errorComponent: RouteError,
 });
 const mailboxDetail = createRoute({
   getParentRoute: () => rootRoute,
   path: '/mailboxes/$id',
-  component: MailboxDetail,
+  component: lazyRouteComponent(() => import('./pages/mailboxes/Detail.js'), 'MailboxDetail'),
+  errorComponent: RouteError,
 });
 const domainsList = createRoute({
   getParentRoute: () => rootRoute,
   path: '/domains',
-  component: DomainsList,
+  component: lazyRouteComponent(() => import('./pages/domains/List.js'), 'DomainsList'),
+  errorComponent: RouteError,
 });
 const domainDetail = createRoute({
   getParentRoute: () => rootRoute,
   path: '/domains/$id',
-  component: DomainDetail,
+  component: lazyRouteComponent(() => import('./pages/domains/Detail.js'), 'DomainDetail'),
+  errorComponent: RouteError,
 });
 const credentialsList = createRoute({
   getParentRoute: () => rootRoute,
   path: '/credentials',
-  component: CredentialsList,
+  component: lazyRouteComponent(() => import('./pages/credentials/List.js'), 'CredentialsList'),
+  errorComponent: RouteError,
 });
 const credentialDetail = createRoute({
   getParentRoute: () => rootRoute,
   path: '/credentials/$id',
-  component: CredentialDetail,
+  component: lazyRouteComponent(() => import('./pages/credentials/Detail.js'), 'CredentialDetail'),
+  errorComponent: RouteError,
 });
 const messagesList = createRoute({
   getParentRoute: () => rootRoute,
   path: '/messages',
-  component: MessagesList,
+  component: lazyRouteComponent(() => import('./pages/messages/List.js'), 'MessagesList'),
+  errorComponent: RouteError,
 });
 const messageDetail = createRoute({
   getParentRoute: () => rootRoute,
   path: '/messages/$id',
-  component: MessageDetail,
+  component: lazyRouteComponent(() => import('./pages/messages/Detail.js'), 'MessageDetail'),
+  errorComponent: RouteError,
 });
 const webhookSubsList = createRoute({
   getParentRoute: () => rootRoute,
   path: '/webhook-subs',
-  component: WebhookSubsList,
+  component: lazyRouteComponent(() => import('./pages/webhook-subs/List.js'), 'WebhookSubsList'),
+  errorComponent: RouteError,
 });
 const webhookSubDetail = createRoute({
   getParentRoute: () => rootRoute,
   path: '/webhook-subs/$id',
-  component: WebhookSubDetail,
+  component: lazyRouteComponent(() => import('./pages/webhook-subs/Detail.js'), 'WebhookSubDetail'),
+  errorComponent: RouteError,
 });
 const routingList = createRoute({
   getParentRoute: () => rootRoute,
   path: '/routing',
-  component: RoutingList,
+  component: lazyRouteComponent(() => import('./pages/routing/List.js'), 'RoutingList'),
+  errorComponent: RouteError,
 });
 const routingDetail = createRoute({
   getParentRoute: () => rootRoute,
   path: '/routing/$id',
-  component: RoutingDetail,
+  component: lazyRouteComponent(() => import('./pages/routing/Detail.js'), 'RoutingDetail'),
+  errorComponent: RouteError,
 });
 const dlqBrowser = createRoute({
   getParentRoute: () => rootRoute,
   path: '/dlq',
-  component: DlqBrowser,
+  component: lazyRouteComponent(() => import('./pages/dlq/Browser.js'), 'DlqBrowser'),
+  errorComponent: RouteError,
 });
-const daemonsList = createRoute({
+const bridgesList = createRoute({
   getParentRoute: () => rootRoute,
-  path: '/daemons',
-  component: DaemonsList,
+  path: '/bridges',
+  component: lazyRouteComponent(() => import('./pages/bridges/List.js'), 'BridgesList'),
+  errorComponent: RouteError,
 });
-const daemonDetail = createRoute({
+const bridgeDetail = createRoute({
   getParentRoute: () => rootRoute,
-  path: '/daemons/$id',
-  component: DaemonDetail,
+  path: '/bridges/$id',
+  component: lazyRouteComponent(() => import('./pages/bridges/Detail.js'), 'BridgeDetail'),
+  errorComponent: RouteError,
 });
 const testSend = createRoute({
   getParentRoute: () => rootRoute,
   path: '/test-send',
-  component: TestSendForm,
+  component: lazyRouteComponent(() => import('./pages/test-send/Form.js'), 'TestSendForm'),
+  errorComponent: RouteError,
 });
 const account = createRoute({
   getParentRoute: () => rootRoute,
   path: '/settings/account',
-  component: Account,
+  component: lazyRouteComponent(() => import('./pages/settings/Account.js'), 'Account'),
+  errorComponent: RouteError,
 });
 const diagnostics = createRoute({
   getParentRoute: () => rootRoute,
   path: '/diagnostics',
-  component: Diagnostics,
+  component: lazyRouteComponent(() => import('./pages/diagnostics/Diagnostics.js'), 'Diagnostics'),
+  errorComponent: RouteError,
 });
 
 const routeTree = rootRoute.addChildren([
@@ -162,14 +168,17 @@ const routeTree = rootRoute.addChildren([
   routingList,
   routingDetail,
   dlqBrowser,
-  daemonsList,
-  daemonDetail,
+  bridgesList,
+  bridgeDetail,
   testSend,
   account,
   diagnostics,
 ]);
 
-const router = new Router({ routeTree });
+const router = new Router({
+  routeTree,
+  defaultErrorComponent: RouteError,
+});
 
 declare module '@tanstack/react-router' {
   interface Register {

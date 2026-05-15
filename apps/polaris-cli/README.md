@@ -138,15 +138,15 @@ polaris-email webhook dlq drop <id> \
   --confirm <id> --operator-token-a <op1-token> --operator-token-b <op2-token>
 ```
 
-### E. Register a submission daemon
+### E. Register a mail bridge
 
 ```sh
-polaris-email daemon register daemon-iad-1 --form compose \
+polaris-email bridge register bridge-iad-1 --form compose \
   --write ./registration.json
 ```
 
-This mints the daemon's HMAC key + Cloudflare Access service token (returned
-once) and prints a docker-compose snippet ready to drop into the daemon host.
+This mints the bridge's HMAC key + Cloudflare Access service token (returned
+once) and prints a docker-compose snippet ready to drop into the bridge host.
 
 ## Multi-profile usage
 
@@ -163,7 +163,7 @@ Schemas for `--from-file` payloads live under
 
 - `domain.json` — `polaris-email domain onboard --from-file ...`
 - `cred.json` — `polaris-email cred issue --from-file ...`
-- `daemon.json` — `polaris-email daemon register --from-file ...`
+- `bridge.json` — `polaris-email bridge register --from-file ...`
 
 YAML and JSON inputs are both accepted. Validate with any draft-2020-12 JSON
 Schema validator before piping into the CLI in CI.

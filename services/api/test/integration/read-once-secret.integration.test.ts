@@ -4,7 +4,7 @@
 // creation/rotation. Covers three secret-bearing resource families:
 //   1. API keys                  (admin.ts)            secret name: key_secret
 //   2. SMTP submission credentials (senders.ts)        secret name: secret
-//   3. Bridge HMAC keys           (admin/daemons.ts)   secret name: hmac_key
+//   3. Bridge HMAC keys           (admin/bridges.ts)   secret name: hmac_key
 //
 // For each family:
 //   - POST creation/issuance MUST return the plaintext exactly once.
@@ -199,14 +199,14 @@ describe('A12: read-once secrets — submission credentials', () => {
   });
 });
 
-describe('A12: read-once secrets — bridges (daemons)', () => {
+describe('A12: read-once secrets — bridges', () => {
   it('POST returns hmac_key; GET single + list omit it', async () => {
     const { env, admin } = await bootstrapEnv();
 
     // Register a bridge — returns plaintext hmac_key exactly once.
     const createRes = await app.fetch(
       await signedRequest(
-        'https://x/v1/admin/daemons',
+        'https://x/v1/admin/bridges',
         JSON.stringify({ name: 'ro-bridge' }),
         'POST',
         admin.admin_key_secret,
@@ -222,7 +222,7 @@ describe('A12: read-once secrets — bridges (daemons)', () => {
     // GET single — no hmac_key, no secret.
     const getRes = await app.fetch(
       await signedRequest(
-        `https://x/v1/admin/daemons/${created.id}`,
+        `https://x/v1/admin/bridges/${created.id}`,
         '',
         'GET',
         admin.admin_key_secret,
@@ -240,7 +240,7 @@ describe('A12: read-once secrets — bridges (daemons)', () => {
     // GET list — same property holds across all rows.
     const listRes = await app.fetch(
       await signedRequest(
-        `https://x/v1/admin/daemons`,
+        `https://x/v1/admin/bridges`,
         '',
         'GET',
         admin.admin_key_secret,
@@ -257,7 +257,7 @@ describe('A12: read-once secrets — bridges (daemons)', () => {
     // continue to omit it.
     const rotRes = await app.fetch(
       await signedRequest(
-        `https://x/v1/admin/daemons/${created.id}/rotate`,
+        `https://x/v1/admin/bridges/${created.id}/rotate`,
         '{}',
         'POST',
         admin.admin_key_secret,
@@ -273,7 +273,7 @@ describe('A12: read-once secrets — bridges (daemons)', () => {
 
     const getAfterRotateRes = await app.fetch(
       await signedRequest(
-        `https://x/v1/admin/daemons/${created.id}`,
+        `https://x/v1/admin/bridges/${created.id}`,
         '',
         'GET',
         admin.admin_key_secret,

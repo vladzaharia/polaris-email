@@ -56,6 +56,9 @@
   },
   "vars": {
     "API_BASE_URL": "https://polaris-email-api.workers.dev",
+    // Public R2 custom domain for message bodies + attachments (B5). Keys
+    // are content-addressed (SHA-256) so URLs are unguessable; no signing.
+    "R2_PUBLIC_HOST": "r2.mail.plrs.im",
     // Scheduled-handler config — absorbed from services/cron.
     "ANCHOR_R2_PREFIX": "anchors/",
     "ALERT_WEBHOOK": "https://alerts.example.com/polaris-email",

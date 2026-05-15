@@ -40,7 +40,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("config: %v", err)
 	}
-	log.Printf("polaris-bridge starting: name=%s id=%s", cfg.DaemonName, cfg.DaemonID)
+	log.Printf("polaris-bridge starting: name=%s id=%s", cfg.BridgeName, cfg.BridgeID)
 
 	// Shared subsystems.
 	store, err := credstore.Open(cfg.SQLitePath)
@@ -60,7 +60,7 @@ func main() {
 	poller := credstore.NewPoller(credstore.PollerConfig{
 		APIURL:             cfg.APIURL,
 		HMACKey:            cfg.HMACKey,
-		DaemonID:           cfg.DaemonID,
+		BridgeID:           cfg.BridgeID,
 		AccessClientID:     cfg.AccessClientID,
 		AccessClientSecret: cfg.AccessClientSecret,
 		Interval:           cfg.PollInterval,
@@ -69,7 +69,7 @@ func main() {
 	fwd := forwarder.New(forwarder.Config{
 		APIURL:             cfg.APIURL,
 		HMACKey:            cfg.HMACKey,
-		DaemonID:           cfg.DaemonID,
+		BridgeID:           cfg.BridgeID,
 		AccessClientID:     cfg.AccessClientID,
 		AccessClientSecret: cfg.AccessClientSecret,
 		HTTPClient:         httpClient,
@@ -77,8 +77,8 @@ func main() {
 
 	// Polaris SDK client used by the IMAP listener + push.
 	sdkClient := polarissdk.NewClient(cfg.APIURL)
-	sdkClient.DaemonID = cfg.DaemonID
-	sdkClient.DaemonSecret = cfg.HMACKey
+	sdkClient.BridgeID = cfg.BridgeID
+	sdkClient.BridgeSecret = cfg.HMACKey
 
 	// Bridge-local SQLite mirror.
 	mirrorDB, err := openMirror(cfg)
@@ -160,7 +160,7 @@ func main() {
 		}}
 		smtpSrv := dsmtp.New(dsmtp.ServerOptions{
 			ListenAddr:     getenvDefault("BRIDGE_SMTPS_LISTEN_ADDR", cfg.ListenAddr),
-			Domain:         cfg.DaemonName,
+			Domain:         cfg.BridgeName,
 			TLSCert:        cfg.TLSCert,
 			TLSKey:         cfg.TLSKey,
 			MaxMessageSize: cfg.MaxMessageSize,

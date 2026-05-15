@@ -15,8 +15,8 @@ import { revoke } from '@polaris-email/revocation';
 import { auditRoutes } from './admin/audit.js';
 import { credentials } from './admin/credentials.js';
 import { credentialsMailbox } from './admin/credentials-mailbox.js';
-import { daemonCredentialLookup } from './daemon/credential-lookup.js';
-import { daemons } from './admin/daemons.js';
+import { bridgeCredentialLookup } from './bridge/credential-lookup.js';
+import { bridges } from './admin/bridges.js';
 import { domains } from './admin/domains.js';
 import { mailboxes as mailboxesRoutes } from './admin/mailboxes.js';
 import { senders as sendersRoutes } from './admin/senders.js';
@@ -34,18 +34,18 @@ admin.use('/v1/admin/*', async (c, next) => {
   if (c.req.path === '/v1/admin/bootstrap') return next();
   return adminHmac(c, next);
 });
-// /v1/daemon/* uses the same api-key HMAC.
-admin.use('/v1/daemon/*', adminHmac);
+// /v1/bridge/* uses the same api-key HMAC.
+admin.use('/v1/bridge/*', adminHmac);
 
 // Sub-routers. All rely on the admin middleware above.
 admin.route('/', mailboxesRoutes);
 admin.route('/', domains);
 admin.route('/', sendersRoutes);
 admin.route('/', zones);
-admin.route('/', daemons);
+admin.route('/', bridges);
 admin.route('/', credentials);
 admin.route('/', credentialsMailbox);
-admin.route('/', daemonCredentialLookup);
+admin.route('/', bridgeCredentialLookup);
 admin.route('/', webhookDlq);
 admin.route('/', webhookSubs);
 admin.route('/', auditRoutes);
@@ -391,15 +391,15 @@ admin.post('/v1/admin/webhook-subs', requireScope('admin:rotate'), async (c) => 
   return c.json({ id, secret }, 201);
 });
 
-// ---------- daemon credential mirror ----------
+// ---------- bridge credential mirror ----------
 
-admin.get('/v1/daemon/credentials', requireScope('admin:read'), async (c) => {
-  // The submission daemon polls this endpoint to mirror SMTP credentials
+admin.get('/v1/bridge/credentials', requireScope('admin:read'), async (c) => {
+  // The submission bridge polls this endpoint to mirror SMTP credentials
   // locally. Returns a delta-style payload:
   //   { updates: Credential[], deletions: string[], mirror_version: number }
   // Where Credential is { id, username, bcrypt_hash, allowed_senders, mirror_version, ... }.
   // The `since` query param is accepted for forward-compat but currently we always
-  // return the full active set — the daemon's UpsertBatch + DeleteByID handle
+  // return the full active set — the bridge's UpsertBatch + DeleteByID handle
   // reconciliation idempotently.
   //
   // Submission credentials are 1:1 with mailbox_senders via

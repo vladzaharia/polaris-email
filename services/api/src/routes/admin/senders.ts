@@ -4,7 +4,7 @@
 // CLI/panel still call, plus all SMTP-credential issuance.
 //
 // Submission credentials bind 1:1 to a `mailbox_senders` row via
-// `submission_credentials.sender_id` per the canonical schema; the daemon's
+// `submission_credentials.sender_id` per the canonical schema; the bridge's
 // SMTP MAIL FROM allow-list is therefore exactly one address.
 import { Hono } from 'hono';
 import { CreateMailboxSenderRequest, CreateSmtpCredentialRequest } from '@polaris-email/schema';
@@ -173,7 +173,7 @@ senders.post('/v1/admin/senders/:id/smtp-credentials', requireScope('admin:rotat
   const username = senderRow.address;
   const secret = generateSecret();
   // Hash the secret before persistence — D1 only ever sees the hash. The
-  // submission daemon polls /v1/daemon/credentials and mirrors the hash
+  // submission bridge polls /v1/bridge/credentials and mirrors the hash
   // locally; the plaintext is returned to the caller exactly once below.
   const hashed = await hashSecret(secret, c.env.ARGON2_PEPPER);
 

@@ -29,7 +29,11 @@ export interface MessageAttachment {
   content_type: string;
   size_bytes: number;
   content_base64?: string;
-  content_url?: string;
+  /**
+   * Public, content-addressed URL on the R2 custom domain
+   * `r2.mail.plrs.im` (B5). Absolute, no expiry. Fetch directly without HMAC.
+   */
+  url?: string;
 }
 
 export interface MessageAuth {
@@ -45,12 +49,23 @@ export interface Message {
   direction: MessageDirection;
   status: MessageStatus;
   from: string;
+  /**
+   * Bare email address extracted from the From: header (mirrors the
+   * `from_addr` column on `messages`). Populated whenever the runtime can
+   * resolve it; absent for responses that strip envelope metadata.
+   */
+  from_addr?: string;
   to: string[];
   cc?: string[];
   bcc?: string[];
   subject?: string;
   text?: string;
   html?: string;
+  /**
+   * Public, content-addressed URL for the raw RFC822 body on the R2 custom
+   * domain `r2.mail.plrs.im` (B5). Absolute, no expiry.
+   */
+  body_url?: string;
   headers?: Record<string, string>;
   attachments: MessageAttachment[];
   header_message_id?: string;
@@ -58,7 +73,7 @@ export interface Message {
   auth?: MessageAuth;
   body_bytes?: number;
   attachments_total_bytes?: number;
-  received_at_daemon?: string;
+  received_at_bridge?: string;
   received_at_api?: string;
   queued_at?: string;
   sending_at?: string;
@@ -68,6 +83,14 @@ export interface Message {
   bounce_metadata?: unknown;
   last_error?: string;
   created_at: string;
+  /**
+   * IMAP / bridge per-mailbox state. Populated when the response is rendered
+   * for a mailbox-scoped caller (POST /v1/messages/get, PATCH
+   * /v1/messages/:id, the mail-bridge mirror bootstrap).
+   */
+  flags?: string[];
+  read_at?: string | null;
+  change_id?: number;
 }
 
 export interface SendRequestAttachment {

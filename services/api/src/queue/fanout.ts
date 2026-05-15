@@ -20,8 +20,9 @@
 // routes batches to `fanoutQueueConsumer` from its top-level `queue` export.
 import { sign, generateNonce } from '@polaris-email/hmac';
 import { ulid } from '@polaris-email/ids';
-import { mimeToMessage, type MessageRowMeta } from '@polaris-email/mime';
+import { extractAttachmentParts, mimeToMessage, type MessageRowMeta } from '@polaris-email/mime';
 import type { Env } from '../env.js';
+import { r2PublicUrl, attachmentR2Key } from '../lib/r2-public-url.js';
 import { safeFetch } from './ssrf.js';
 
 export interface FanoutEvent {
@@ -77,7 +78,7 @@ async function loadMessageRow(env: Env, id: string): Promise<MessageRowFull | nu
     `SELECT id, mailbox_id, direction, status, r2_key, thread_id, header_message_id,
             auth_spf, auth_dkim, auth_dmarc, auth_remote_ip,
             body_bytes, attachments_total_bytes,
-            received_at_daemon, received_at_api, queued_at, sending_at, sent_at,
+            received_at_bridge, received_at_api, queued_at, sending_at, sent_at,
             delivered_at, failed_at, bounce_metadata, last_error, created_at
        FROM messages WHERE id = ? LIMIT 1`,
   )
@@ -101,6 +102,21 @@ async function buildEnvelope(
   const raw = await loadRawMime(env, row.r2_key);
   if (!raw) return null;
   const message = mimeToMessage(raw, row);
+  // B5: every webhook envelope ships `body_url` + per-attachment `url`
+  // pointing at the public R2 custom domain. Subscribers fetch bytes
+  // directly without HMAC.
+  message.body_url = r2PublicUrl(env, row.r2_key);
+  const parts = extractAttachmentParts(raw);
+  for (let i = 0; i < (message.attachments?.length ?? 0); i++) {
+    const part = parts[i];
+    if (!part) continue;
+    const attSha = await sha256HexBytes(part.bytes);
+    message.attachments[i]!.url = r2PublicUrl(
+      env,
+      attachmentR2Key(attSha, part.filename),
+      part.filename,
+    );
+  }
   const envelope = {
     event_id: ev.event_id,
     event: ev.event,
@@ -108,6 +124,16 @@ async function buildEnvelope(
     message,
   };
   return { body: JSON.stringify(envelope), messageStatus: row.status };
+}
+
+async function sha256HexBytes(data: Uint8Array): Promise<string> {
+  const buf = new ArrayBuffer(data.byteLength);
+  new Uint8Array(buf).set(data);
+  const digest = await crypto.subtle.digest('SHA-256', buf);
+  const bytes = new Uint8Array(digest);
+  let out = '';
+  for (const b of bytes) out += b.toString(16).padStart(2, '0');
+  return out;
 }
 
 async function deliver(env: Env, ev: FanoutEvent): Promise<void> {

@@ -54,7 +54,7 @@ func NewRoot() *cobra.Command {
 	root.AddCommand(
 		newDomainCmd(),
 		newZoneCmd(),
-		newDaemonCmd(),
+		newBridgeCmd(),
 		newRouteCmd(),
 		newCredCmd(),
 		newWebhookCmd(),

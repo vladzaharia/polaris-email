@@ -26,19 +26,15 @@ operator-facing prose.
   "references": ["<...>"],
   "received_at": 1700000000000,
   "headers": { "X-Foo": "bar" },
-  "body": {
-    "text": "inline plaintext (only when small)",
-    "html": "<p>inline html (only when small)</p>",
-    "text_url": "https://.../signed",
-    "html_url": "https://.../signed"
-  },
+  "text": "inline plaintext (only when small)",
+  "html": "<p>inline html (only when small)</p>",
+  "body_url": "https://r2.mail.plrs.im/mime/aa/bb/<sha256>",
   "attachments": [
     {
-      "n": 0,
       "filename": "report.pdf",
       "content_type": "application/pdf",
-      "size": 184320,
-      "url": "https://.../signed"
+      "size_bytes": 184320,
+      "url": "https://r2.mail.plrs.im/att/<sha256>/report.pdf"
     }
   ],
   "created_at": 1700000000000,
@@ -51,44 +47,59 @@ operator-facing prose.
 submission (`POST /v1/messages` with `application/json` or `message/rfc822`).
 The pipeline is the same for both; only `direction` differs.
 
-## Inline-small / signed-URL-large bodies
+## R2 access (B5) — public custom domain, content-addressed keys
 
-Bodies and attachments below `MESSAGE_BODY_INLINE_MAX` (default **64 KiB**)
-are returned inline in `body.text` / `body.html`. Anything above that
-threshold is uploaded to R2 under a content-addressed key and surfaced as a
-signed URL (`body.text_url`, `body.html_url`, `attachments[].url`). The URLs
-are short-lived (default **10 min**, set via `SIGNED_URL_TTL_SECONDS`).
+The polaris-email R2 bucket is fronted by the public custom domain
+`r2.mail.plrs.im`. Object keys are content-addressed:
 
-R2 keys are SHA-256 of the bytes, so identical attachments forwarded to
-multiple mailboxes share one object. `r2_refs` tracks the reference count;
-the retention janitor deletes the underlying object only after the last
-referencing message expunges.
+- **Body** key — `mime/<aa>/<bb>/<sha256>` where `sha256` is the SHA-256 of
+  the canonical RFC822 bytes (`<aa>`, `<bb>` are the first two byte-pair
+  prefixes for filesystem-friendly bucketing). Body URL:
+  `https://r2.mail.plrs.im/mime/<aa>/<bb>/<sha256>`.
+- **Attachment** key — `att/<sha256>/<filename>` where `sha256` is the
+  SHA-256 of the decoded attachment bytes. Attachment URL:
+  `https://r2.mail.plrs.im/att/<sha256>/<filename>`.
+
+Unguessability comes from the SHA-256 in the key — there is no signature,
+no expiry, no HMAC header. **Treat the URL itself as a capability token**:
+anyone with the URL can fetch the bytes forever. Audit-log readers
+implicitly gain content read access; see `SECURITY.md` for the policy.
+
+Identical attachments forwarded to multiple mailboxes share one R2 object.
+
+Bodies and attachments below `INLINE_BODY_BYTES_MAX` / `INLINE_ATTACHMENTS_BYTES_MAX`
+(default **64 KiB** and **256 KiB** respectively) are also embedded inline
+on the response. Larger bodies / attachments are URL-only — the consumer
+follows the `body_url` / `attachment.url` link to fetch the raw bytes from
+`r2.mail.plrs.im` directly.
 
 Tune via `wrangler secret`:
 
-| Variable                  | Default  | Effect                                    |
-| ------------------------- | -------- | ----------------------------------------- |
-| `MESSAGE_BODY_INLINE_MAX` | 65536    | Bytes above this go to R2 + signed URL    |
-| `SIGNED_URL_TTL_SECONDS`  | 600      | Lifetime of attachment + body signed URLs |
-| `MESSAGE_MAX_TOTAL_BYTES` | 26214400 | Hard reject threshold for whole message   |
+| Variable                       | Default           | Effect                                              |
+| ------------------------------ | ----------------- | --------------------------------------------------- |
+| `INLINE_BODY_BYTES_MAX`        | 65536             | Bodies above this are URL-only (no `text` / `html`) |
+| `INLINE_ATTACHMENTS_BYTES_MAX` | 262144            | Attachments above this are URL-only (no inline b64) |
+| `R2_PUBLIC_HOST`               | `r2.mail.plrs.im` | The R2 custom domain hostname for URL building      |
+
+The `polaris-anchors` bucket stays **private** — audit anchors are not
+served on a public custom domain.
 
 ## Retrieval endpoints
 
 All retrieval endpoints require `messages:read` (or `admin:read` for
-cross-mailbox queries) and are HMAC-signed as `polaris-api.v1`.
+cross-mailbox queries) and are HMAC-signed as `polaris-api`.
 
-| Endpoint                                         | Purpose                                                     |
-| ------------------------------------------------ | ----------------------------------------------------------- |
-| `GET /v1/messages`                               | Filtered list (mailbox_id, direction, status, q, since, …). |
-| `GET /v1/messages/:id`                           | Single message with bodies + signed attachment URLs.        |
-| `POST /v1/messages/get`                          | Bulk fetch by id (up to 256 ids per call).                  |
-| `GET /v1/mailboxes/:id/changes?since=<state>`    | Delta cursor for sync (returns ids changed since state).    |
-| `GET /v1/mailboxes/:id/messages?fields=metadata` | Metadata-only listing — no bodies, no signed URLs.          |
-| `GET /v1/messages/:id/attachments/:n`            | Direct attachment fetch; the URL is itself signed.          |
+| Endpoint                                         | Purpose                                                         |
+| ------------------------------------------------ | --------------------------------------------------------------- |
+| `GET /v1/messages`                               | Filtered list (mailbox_id, direction, status, q, since, …).     |
+| `GET /v1/messages/:id`                           | Single message with bodies + per-attachment public URLs.        |
+| `POST /v1/messages/get`                          | Bulk fetch by id (up to 256 ids per call).                      |
+| `GET /v1/mailboxes/:id/changes?since=<state>`    | Delta cursor for sync (returns ids changed since state).        |
+| `GET /v1/mailboxes/:id/messages?fields=metadata` | Metadata-only listing — no inline bodies, URLs still populated. |
 
-The attachment endpoint is the one exception that does **not** require HMAC
-headers — the URL embeds its own signature so it can be handed to browsers,
-mail clients, or curl directly.
+The previous `GET /v1/messages/:id/attachments/:n` signed-URL endpoint was
+**deleted** in B5. Consumers fetch attachments straight from the public R2
+custom domain using the `url` returned on each attachment.
 
 ## State mutation
 

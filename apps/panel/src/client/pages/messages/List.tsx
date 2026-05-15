@@ -14,7 +14,14 @@ import { Input } from '../../components/ui/input.js';
 import { Label } from '../../components/ui/label.js';
 import { Button } from '../../components/ui/button.js';
 import { Skeleton } from '../../components/ui/skeleton.js';
-import { Badge } from '../../components/ui/badge.js';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '../../components/ui/select.js';
+import { StatusBadge } from '../../components/StatusBadge.js';
 import { useAdminQuery } from '../../hooks/useAdminApi.js';
 import { messageKeys } from '../../queryKeys.js';
 
@@ -59,32 +66,37 @@ export function MessagesList() {
       <div className="mb-4 grid grid-cols-1 gap-2 md:grid-cols-4">
         <div>
           <Label>Direction</Label>
-          <select
-            value={direction}
-            onChange={(e) => setDirection(e.target.value)}
-            className="mt-1 block w-full rounded-md border bg-transparent px-3 py-2 text-sm"
+          <Select
+            value={direction || 'any'}
+            onValueChange={(v) => setDirection(v === 'any' ? '' : v)}
           >
-            <option value="">Any</option>
-            <option value="in">in</option>
-            <option value="out">out</option>
-          </select>
+            <SelectTrigger className="mt-1">
+              <SelectValue placeholder="Any" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="any">Any</SelectItem>
+              <SelectItem value="in">in</SelectItem>
+              <SelectItem value="out">out</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
         <div>
           <Label>Status</Label>
-          <select
-            value={status}
-            onChange={(e) => setStatus(e.target.value)}
-            className="mt-1 block w-full rounded-md border bg-transparent px-3 py-2 text-sm"
-          >
-            <option value="">Any</option>
-            {['queued', 'sending', 'sent', 'delivered', 'failed', 'bounced', 'received'].map(
-              (s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
-              ),
-            )}
-          </select>
+          <Select value={status || 'any'} onValueChange={(v) => setStatus(v === 'any' ? '' : v)}>
+            <SelectTrigger className="mt-1">
+              <SelectValue placeholder="Any" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="any">Any</SelectItem>
+              {['queued', 'sending', 'sent', 'delivered', 'failed', 'bounced', 'received'].map(
+                (s) => (
+                  <SelectItem key={s} value={s}>
+                    {s}
+                  </SelectItem>
+                ),
+              )}
+            </SelectContent>
+          </Select>
         </div>
         <div>
           <Label htmlFor="from">From</Label>
@@ -145,7 +157,7 @@ export function MessagesList() {
                   <TableCell className="font-mono text-xs">{m.to?.join(', ')}</TableCell>
                   <TableCell>{m.subject ?? '(no subject)'}</TableCell>
                   <TableCell>
-                    <Badge variant="secondary">{m.status}</Badge>
+                    <StatusBadge kind="message" value={m.status} />
                   </TableCell>
                 </TableRow>
               ))}

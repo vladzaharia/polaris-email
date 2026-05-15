@@ -74,7 +74,7 @@ func PromptCredIssue(initial *CredIssueInput) (*CredIssueInput, error) {
 			huh.NewInput().Title("Tenant name").Value(&in.TenantName),
 			huh.NewSelect[string]().Title("Credential type").
 				Options(
-					huh.NewOption("SMTP (bcrypt, for submission daemon)", "smtp"),
+					huh.NewOption("SMTP (bcrypt, for submission bridge)", "smtp"),
 					huh.NewOption("API key (HMAC, for /v1/send)", "api"),
 				).Value(&in.Type),
 			huh.NewInput().Title("Senders (comma-separated local@domain)").Value(&sendersStr),

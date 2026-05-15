@@ -20,7 +20,7 @@ The signing scheme is **identical** for outbound API calls and inbound webhooks 
 `POST /v1/messages` accepts two content types:
 
 - `application/json` — the `SendRequest` shape used in the snippets below.
-- `message/rfc822` — raw RFC 5322 bytes; canonicalised by the API on receipt. Useful when forwarding an already-composed MIME message from a downstream tool or daemon.
+- `message/rfc822` — raw RFC 5322 bytes; canonicalised by the API on receipt. Useful when forwarding an already-composed MIME message from a downstream tool or bridge.
 
 ### TypeScript (Node 20+)
 

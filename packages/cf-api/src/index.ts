@@ -63,9 +63,6 @@ export {
   type BulkOnboardProgress,
 } from './bulk-onboard.js';
 
-export {
-  mintAttachmentUrl,
-  verifyAttachmentUrl,
-  type SignedUrlEnv,
-  type VerifiedAttachmentRef,
-} from './signed-urls.js';
+// `signed-urls.ts` was deleted in B5 — message bodies + attachments are now
+// served from the R2 public custom domain `r2.mail.plrs.im` directly. The
+// URL builder lives in `services/api/src/lib/r2-public-url.ts`.

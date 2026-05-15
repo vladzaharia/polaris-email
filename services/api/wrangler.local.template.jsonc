@@ -16,6 +16,10 @@
   ],
   "vars": {
     "API_BASE_URL": "https://${POLARIS_API_HOSTNAME}",
+    // R2 public custom domain (B5). The R2 bucket `polaris-email` is fronted
+    // by this hostname; both inbound and outbound message bodies/attachments
+    // are served from it. See infra/terraform for the DNS + bucket config.
+    "R2_PUBLIC_HOST": "${R2_PUBLIC_HOST}",
     "ALERT_WEBHOOK": "${ALERT_WEBHOOK}",
   },
 }

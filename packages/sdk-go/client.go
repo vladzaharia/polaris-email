@@ -1,5 +1,5 @@
 // Hand-written HMAC client. The generated low-level operations (when codegen
-// runs) live in `generated.go`; the daemon and CLI use this client as the
+// runs) live in `generated.go`; the bridge and CLI use this client as the
 // auth-aware transport.
 package polarissdk
 
@@ -19,13 +19,13 @@ type Client struct {
 	HTTPClient *http.Client
 	UserAgent  string
 
-	// Auth: pick one — KeyID + KeySecret for tenant HMAC, or DaemonID + DaemonSecret
-	// for the submission-daemon path. SDK callers can also provide
+	// Auth: pick one — KeyID + KeySecret for tenant HMAC, or BridgeID + BridgeSecret
+	// for the submission-bridge path. SDK callers can also provide
 	// `ExtraHeaders` (e.g. `CF-Access-Client-Id`) baked into every request.
 	KeyID        string
 	KeySecret    []byte
-	DaemonID     string
-	DaemonSecret []byte
+	BridgeID     string
+	BridgeSecret []byte
 	ExtraHeaders map[string]string
 }
 
@@ -76,9 +76,9 @@ func (c *Client) Do(
 	case c.KeyID != "" && len(c.KeySecret) > 0:
 		req.Header.Set("X-Polaris-Key-Id", c.KeyID)
 		secret = c.KeySecret
-	case c.DaemonID != "" && len(c.DaemonSecret) > 0:
-		req.Header.Set("X-Polaris-Daemon-Id", c.DaemonID)
-		secret = c.DaemonSecret
+	case c.BridgeID != "" && len(c.BridgeSecret) > 0:
+		req.Header.Set("X-Polaris-Bridge-Id", c.BridgeID)
+		secret = c.BridgeSecret
 	default:
 		return nil, nil, fmt.Errorf("polaris-sdk-go: no credentials configured")
 	}

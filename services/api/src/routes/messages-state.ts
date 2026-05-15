@@ -9,24 +9,28 @@
 //   * GET    /v1/mailboxes/:id/messages?fields=metadata  — bridge initial sync
 //
 // Auth: either tenant api_key HMAC (with `messages:read` / `imap_bridge:read`)
-// or daemon HMAC (`polaris-daemon.v1`, daemon scoped to `imap_bridge:read`).
+// or bridge HMAC (`polaris-api`, bridge scoped to `imap_bridge:read`).
 // Per L3.0, none of these mutators fire webhooks — only `change_id` is bumped
 // so the IMAP CONDSTORE / IDLE transport notices.
 
 import { Hono, type Context } from 'hono';
 import { MessageFlag, type Message } from '@polaris-email/schema';
 import { verify } from '@polaris-email/hmac';
-import { mimeToMessage, type UnifiedMessage, type MessageRowMeta } from '@polaris-email/mime';
-import { mintAttachmentUrl } from '@polaris-email/cf-api';
+import {
+  extractAttachmentParts,
+  mimeToMessage,
+  type UnifiedMessage,
+  type MessageRowMeta,
+} from '@polaris-email/mime';
 import type { Env } from '../env.js';
 import { buildError } from '../errors.js';
 import { audit } from '../audit.js';
 import { allocChangeId, ensureMailboxState, purgeMessageRow } from '../lib/state.js';
+import { r2PublicUrl, attachmentR2Key } from '../lib/r2-public-url.js';
 
 export const messagesState = new Hono<{ Bindings: Env }>();
 
 const DEFAULT_INLINE_BODY_BYTES = 65536;
-const DEFAULT_INLINE_ATTACHMENTS_BYTES = 262144;
 const DEFAULT_BRIDGE_EXPUNGE_GRACE_DAYS = 7;
 void DEFAULT_BRIDGE_EXPUNGE_GRACE_DAYS;
 
@@ -36,15 +40,9 @@ function inlineBodyMax(env: Env): number {
     : DEFAULT_INLINE_BODY_BYTES;
   return Number.isFinite(v) && v > 0 ? v : DEFAULT_INLINE_BODY_BYTES;
 }
-function inlineAttachmentsMax(env: Env): number {
-  const v = env.INLINE_ATTACHMENTS_BYTES_MAX
-    ? Number(env.INLINE_ATTACHMENTS_BYTES_MAX)
-    : DEFAULT_INLINE_ATTACHMENTS_BYTES;
-  return Number.isFinite(v) && v > 0 ? v : DEFAULT_INLINE_ATTACHMENTS_BYTES;
-}
 
 interface AuthenticatedCaller {
-  kind: 'api_key' | 'daemon';
+  kind: 'api_key' | 'bridge';
   key_id: string;
   mailbox_id: string | null;
   principal_id: string | null;
@@ -60,14 +58,14 @@ async function authenticateCaller(
 ): Promise<AuthenticatedCaller | Response> {
   const env = c.env;
   const keyId = c.req.header('x-polaris-key-id');
-  const daemonId = c.req.header('x-polaris-daemon-id');
+  const bridgeId = c.req.header('x-polaris-bridge-id');
 
-  if (daemonId && !keyId) {
-    if (!/^[0-9A-HJKMNP-TV-Z]{26}$/.test(daemonId)) {
-      return buildError(c, 'unauthorized', 'invalid daemon_id format');
+  if (bridgeId && !keyId) {
+    if (!/^[0-9A-HJKMNP-TV-Z]{26}$/.test(bridgeId)) {
+      return buildError(c, 'unauthorized', 'invalid bridge_id format');
     }
-    if (!env.DAEMON_HMAC_KEY) {
-      return buildError(c, 'unauthorized', 'daemon auth not configured');
+    if (!env.BRIDGE_HMAC_KEY) {
+      return buildError(c, 'unauthorized', 'bridge auth not configured');
     }
     const url = new URL(c.req.url);
     const result = await verify({
@@ -77,12 +75,12 @@ async function authenticateCaller(
       query: url.search.slice(1),
       headers: { get: (n: string) => c.req.header(n) ?? null },
       body: bodyBytes,
-      secret: env.DAEMON_HMAC_KEY,
+      secret: env.BRIDGE_HMAC_KEY,
     });
-    if (!result.ok) return buildError(c, 'unauthorized', `daemon HMAC: ${result.code}`);
+    if (!result.ok) return buildError(c, 'unauthorized', `bridge HMAC: ${result.code}`);
     return {
-      kind: 'daemon',
-      key_id: daemonId,
+      kind: 'bridge',
+      key_id: bridgeId,
       mailbox_id: null,
       principal_id: null,
       scopes: ['imap_bridge:read', 'messages:read'],
@@ -91,7 +89,7 @@ async function authenticateCaller(
   }
 
   if (!keyId)
-    return buildError(c, 'unauthorized', 'X-Polaris-Key-Id or X-Polaris-Daemon-Id required');
+    return buildError(c, 'unauthorized', 'X-Polaris-Key-Id or X-Polaris-Bridge-Id required');
   if (!/^[0-9A-HJKMNP-TV-Z]{26}$/.test(keyId)) {
     return buildError(c, 'unauthorized', 'X-Polaris-Key-Id format');
   }
@@ -194,7 +192,7 @@ type MessageRow = {
   auth_dkim: string | null;
   auth_dmarc: string | null;
   auth_remote_ip: string | null;
-  received_at_daemon: string | null;
+  received_at_bridge: string | null;
   received_at_api: string | null;
   queued_at: string | null;
   sending_at: string | null;
@@ -220,7 +218,7 @@ function rowMeta(row: MessageRow): MessageRowMeta {
     auth_remote_ip: row.auth_remote_ip,
     body_bytes: row.body_bytes,
     attachments_total_bytes: row.attachments_total_bytes,
-    received_at_daemon: row.received_at_daemon,
+    received_at_bridge: row.received_at_bridge,
     received_at_api: row.received_at_api,
     queued_at: row.queued_at,
     sending_at: row.sending_at,
@@ -240,6 +238,16 @@ async function loadR2Bytes(env: Env, key: string): Promise<Uint8Array | null> {
   return new Uint8Array(buf);
 }
 
+async function sha256Hex(data: Uint8Array): Promise<string> {
+  const buf = new ArrayBuffer(data.byteLength);
+  new Uint8Array(buf).set(data);
+  const digest = await crypto.subtle.digest('SHA-256', buf);
+  const bytes = new Uint8Array(digest);
+  let out = '';
+  for (const b of bytes) out += b.toString(16).padStart(2, '0');
+  return out;
+}
+
 async function renderMessage(
   env: Env,
   raw: Uint8Array,
@@ -247,8 +255,9 @@ async function renderMessage(
   opts: { stripBodies: boolean },
 ): Promise<UnifiedMessage> {
   const msg = mimeToMessage(raw, rowMeta(row));
+  const bodyUrl = r2PublicUrl(env, row.r2_key);
   if (opts.stripBodies) {
-    const stripped: UnifiedMessage = { ...msg };
+    const stripped: UnifiedMessage = { ...msg, body_url: bodyUrl };
     delete stripped.text;
     delete stripped.html;
     stripped.attachments = (msg.attachments ?? []).map((a) => {
@@ -256,18 +265,24 @@ async function renderMessage(
       delete (copy as { content_base64?: string }).content_base64;
       return copy;
     });
+    // metadata-mode keeps `url` if it was set upstream; the bridge sync
+    // path doesn't populate inline bytes anyway.
     return stripped;
   }
   const inlineBody = inlineBodyMax(env);
-  const inlineAtt = inlineAttachmentsMax(env);
+  const parts = extractAttachmentParts(raw);
   const attachments = await Promise.all(
     (msg.attachments ?? []).map(async (a, i) => {
-      if (a.size_bytes <= inlineAtt) return { ...a };
-      const url = await mintAttachmentUrl(env, msg.id, i);
-      return { ...a, content_url: url };
+      const copy: typeof a = { ...a };
+      const part = parts[i];
+      if (part) {
+        const sha = await sha256Hex(part.bytes);
+        copy.url = r2PublicUrl(env, attachmentR2Key(sha, part.filename), part.filename);
+      }
+      return copy;
     }),
   );
-  const out: UnifiedMessage = { ...msg, attachments };
+  const out: UnifiedMessage = { ...msg, body_url: bodyUrl, attachments };
   const bodyTotal = msg.body_bytes ?? raw.byteLength;
   if (bodyTotal > inlineBody) {
     delete out.text;

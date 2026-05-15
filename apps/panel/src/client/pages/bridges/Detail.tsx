@@ -1,4 +1,4 @@
-// Daemon detail — rotate (one-shot secret reveal) + deregister.
+// Bridge detail — rotate (one-shot secret reveal) + deregister.
 //
 // Both actions go through the shared destructive/secret dialogs so the UX
 // matches the rest of the panel. The schema stores only the HMAC key hash;
@@ -8,13 +8,13 @@ import { useParams } from '@tanstack/react-router';
 import { PageCard } from '../../layouts/PageCard.js';
 import { Button } from '../../components/ui/button.js';
 import { Skeleton } from '../../components/ui/skeleton.js';
-import { Badge } from '../../components/ui/badge.js';
+import { StatusBadge } from '../../components/StatusBadge.js';
 import { DestructiveActionDialog } from '../../components/DestructiveActionDialog.js';
 import { SecretRevealDialog } from '../../components/SecretRevealDialog.js';
 import { useAdminMutation, useAdminQuery } from '../../hooks/useAdminApi.js';
 import { bridgeKeys } from '../../queryKeys.js';
 
-interface DaemonRow {
+interface BridgeRow {
   id: string;
   name: string;
   last_seen_at: string | null;
@@ -22,39 +22,39 @@ interface DaemonRow {
   disabled_at: string | null;
 }
 
-export function DaemonDetail() {
-  const { id } = useParams({ from: '/daemons/$id' });
-  const q = useAdminQuery<DaemonRow>(bridgeKeys.detail(id), `/api/admin/daemons/${id}`);
+export function BridgeDetail() {
+  const { id } = useParams({ from: '/bridges/$id' });
+  const q = useAdminQuery<BridgeRow>(bridgeKeys.detail(id), `/api/admin/bridges/${id}`);
   const [rotated, setRotated] = useState<string | null>(null);
   const [confirmDereg, setConfirmDereg] = useState(false);
   const [confirmRotate, setConfirmRotate] = useState(false);
   // Rotate is silent — the new HMAC key is surfaced via SecretRevealDialog.
   const rotate = useAdminMutation<{ hmac_key: string }, undefined>(
     () => ({
-      path: `/api/admin/daemons/${id}/rotate`,
+      path: `/api/admin/bridges/${id}/rotate`,
       method: 'POST',
     }),
     { invalidateKeys: [bridgeKeys.detail(id)], silent: true },
   );
   const dereg = useAdminMutation<unknown, undefined>(
     () => ({
-      path: `/api/admin/daemons/${id}`,
+      path: `/api/admin/bridges/${id}`,
       method: 'DELETE',
     }),
     { invalidateKeys: [bridgeKeys.all], successMessage: 'Bridge deregistered.' },
   );
 
-  const breadcrumbs = [{ label: 'Daemons', to: '/daemons' }, { label: q.data?.name ?? id }];
+  const breadcrumbs = [{ label: 'Bridges', to: '/bridges' }, { label: q.data?.name ?? id }];
   if (q.isLoading) {
     return (
-      <PageCard title="Daemon" breadcrumbs={breadcrumbs}>
+      <PageCard title="Bridge" breadcrumbs={breadcrumbs}>
         <Skeleton className="h-32 w-full" />
       </PageCard>
     );
   }
   if (q.error || !q.data) {
     return (
-      <PageCard title="Daemon" breadcrumbs={breadcrumbs}>
+      <PageCard title="Bridge" breadcrumbs={breadcrumbs}>
         <p className="text-sm text-[var(--color-destructive)]">
           {q.error?.message ?? 'Not found.'}
         </p>
@@ -71,11 +71,8 @@ export function DaemonDetail() {
       decorative
     >
       <div className="flex flex-wrap items-center gap-2">
-        {d.disabled_at ? (
-          <Badge variant="destructive">disabled</Badge>
-        ) : (
-          <Badge variant="success">active</Badge>
-        )}
+        <StatusBadge kind="bridge" value={d.disabled_at ? 'deregistered' : 'registered'} />
+        {d.last_seen_at ? null : <StatusBadge kind="bridge" value="offline" />}
         <Button size="sm" onClick={() => setConfirmRotate(true)} disabled={rotate.isPending}>
           {rotate.isPending ? 'Rotating…' : 'Rotate HMAC key'}
         </Button>

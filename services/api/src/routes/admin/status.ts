@@ -22,7 +22,7 @@ status.get('/v1/admin/status', requireScope('admin:read'), async (c) => {
     c.env,
     `SELECT COUNT(*) AS c FROM mail_domains WHERE disabled_at IS NULL`,
   );
-  const daemons = await count(c.env, `SELECT COUNT(*) AS c FROM daemons WHERE disabled_at IS NULL`);
+  const bridges = await count(c.env, `SELECT COUNT(*) AS c FROM bridges WHERE disabled_at IS NULL`);
   const apiKeys = await count(
     c.env,
     `SELECT COUNT(*) AS c FROM api_keys WHERE status <> 'revoked'`,
@@ -39,7 +39,7 @@ status.get('/v1/admin/status', requireScope('admin:read'), async (c) => {
   return c.json({
     mailboxes,
     domains,
-    daemons,
+    bridges,
     api_keys: apiKeys,
     messages_last_24h: messagesLast24h,
     webhook_dlq_depth: dlqDepth,

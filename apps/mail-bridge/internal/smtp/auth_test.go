@@ -23,7 +23,7 @@ func newTestSession(t *testing.T, store *credstore.Store, fwd *forwarder.Forward
 	if fwd == nil {
 		// Use a stub forwarder pointing at an unreachable URL; tests that need
 		// it stub via separate path.
-		fwd = forwarder.New(forwarder.Config{APIURL: "http://127.0.0.1:1", DaemonID: "01H000000000000000000TEST0", HMACKey: []byte("test")})
+		fwd = forwarder.New(forwarder.Config{APIURL: "http://127.0.0.1:1", BridgeID: "01H000000000000000000TEST0", HMACKey: []byte("test")})
 	}
 	dir := t.TempDir()
 	auditLog, err := audit.New(filepath.Join(dir, "audit.log"))
@@ -142,7 +142,7 @@ func TestData_UpstreamErrorMapping(t *testing.T) {
 				w.WriteHeader(c.upstream)
 			}))
 			defer srv.Close()
-			fwd := forwarder.New(forwarder.Config{APIURL: srv.URL, DaemonID: "01H000000000000000000TEST0", HMACKey: []byte("test")})
+			fwd := forwarder.New(forwarder.Config{APIURL: srv.URL, BridgeID: "01H000000000000000000TEST0", HMACKey: []byte("test")})
 			sess := newTestSession(t, store, fwd)
 			if err := sess.authPlain("u", "p"); err != nil {
 				t.Fatal(err)

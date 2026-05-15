@@ -17,6 +17,13 @@ import {
 } from '../../components/ui/table.js';
 import { Skeleton } from '../../components/ui/skeleton.js';
 import { Label } from '../../components/ui/label.js';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '../../components/ui/select.js';
 import { useAdminQuery } from '../../hooks/useAdminApi.js';
 import { mailboxKeys } from '../../queryKeys.js';
 
@@ -50,18 +57,18 @@ export function RoutingList() {
     <PageCard title="Routing rules" description="Per-mailbox receiver chains." decorative>
       <div className="mb-4 max-w-sm">
         <Label>Mailbox</Label>
-        <select
-          value={mailboxId}
-          onChange={(e) => setMailboxId(e.target.value)}
-          className="mt-1 block w-full rounded-md border bg-transparent px-3 py-2 text-sm"
-        >
-          <option value="">Pick a mailbox</option>
-          {(mailboxes.data?.data ?? []).map((m) => (
-            <option key={m.id} value={m.id}>
-              {m.name}
-            </option>
-          ))}
-        </select>
+        <Select value={mailboxId || undefined} onValueChange={setMailboxId}>
+          <SelectTrigger className="mt-1">
+            <SelectValue placeholder="Pick a mailbox" />
+          </SelectTrigger>
+          <SelectContent>
+            {(mailboxes.data?.data ?? []).map((m) => (
+              <SelectItem key={m.id} value={m.id}>
+                {m.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
       {!mailboxId ? (
         <p className="text-sm text-[var(--color-muted-foreground)]">

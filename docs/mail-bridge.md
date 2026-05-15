@@ -2,7 +2,7 @@
 
 A single Go binary (`apps/mail-bridge/`) that consolidates the two on-prem
 mail protocols polaris supports: SMTPS submission and IMAP4rev2 retrieval.
-Replaces the old `apps/submission-daemon`; the SMTPS code path is the same,
+Replaces the old `apps/submission-bridge`; the SMTPS code path is the same,
 joined by an IMAP listener and a bridge-local SQLite mirror.
 
 ## Architecture

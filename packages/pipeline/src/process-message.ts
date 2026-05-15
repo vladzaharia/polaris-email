@@ -17,7 +17,7 @@
 //   6. Audit `message.submitted` (outbound) / `message.received` (inbound).
 
 import { ulid } from '@polaris-email/ids';
-import { summarizeMime } from '@polaris-email/mime';
+import { extractAttachmentParts, summarizeMime } from '@polaris-email/mime';
 
 export interface OutboundQueueMessage {
   messageId: string;
@@ -46,7 +46,7 @@ export interface ProcessMessageArgs {
   direction: 'in' | 'out';
   mailboxId: string;
   principalId?: string | null;
-  daemonId?: string | null;
+  bridgeId?: string | null;
   rawMime: Uint8Array;
   source: 'rest' | 'smtp' | 'cf_email_routing';
   idempotencyKey?: string;
@@ -344,6 +344,37 @@ export async function processMessage(
     });
   }
 
+  // B5: write each attachment as a discrete R2 object keyed by SHA-256 of
+  // the decoded bytes. The public R2 custom domain `r2.mail.plrs.im` serves
+  // these directly so that the `url` on each attachment in API/webhook
+  // responses is fetchable without HMAC or signed URLs. SHA-256 in the key
+  // is the unguessability anchor.
+  try {
+    const attachmentParts = extractAttachmentParts(args.rawMime);
+    for (const part of attachmentParts) {
+      const attSha = await sha256Hex(part.bytes);
+      const safeName = part.filename.replace(/[/\\]/g, '_').slice(0, 255) || 'attachment';
+      const attKey = `att/${attSha}/${safeName}`;
+      const attHead = await env.R2.head(attKey).catch(() => null);
+      if (!attHead) {
+        await env.R2.put(attKey, part.bytes, {
+          httpMetadata: { contentType: part.content_type || 'application/octet-stream' },
+          customMetadata: { sha256: attSha, contentLength: String(part.bytes.length) },
+        });
+      }
+    }
+  } catch (e) {
+    // Attachment R2 writes are best-effort — the body is the source of
+    // truth and read-time URL derivation re-hashes from the body, so a
+    // transient failure here just means a 404 on the public URL until the
+    // next ingest. Log and proceed.
+    // eslint-disable-next-line no-console
+    console.warn(
+      'pipeline: attachment R2 write failed',
+      e instanceof Error ? e.message : 'unknown',
+    );
+  }
+
   const messageId = ulid();
   const fromAddr = summary.from || (args.direction === 'in' ? (args.recipientAddress ?? '') : '');
   const subject = summary.subject ?? '';
@@ -360,11 +391,11 @@ export async function processMessage(
 
   await env.DB.prepare(
     `INSERT INTO messages
-       (id, mailbox_id, principal_id, daemon_id, direction, status,
+       (id, mailbox_id, principal_id, bridge_id, direction, status,
         from_addr, to_addrs, subject, r2_key, content_sha256,
         body_bytes, attachments_total_bytes,
         idempotency_key, header_message_id, message_id_header, thread_id,
-        received_at_daemon, received_at_api,
+        received_at_bridge, received_at_api,
         auth_spf, auth_dkim, auth_dmarc, auth_remote_ip,
         created_at)
      VALUES (?1, ?2, ?3, ?4, ?5, 'received',
@@ -379,7 +410,7 @@ export async function processMessage(
       messageId,
       args.mailboxId,
       args.principalId ?? null,
-      args.daemonId ?? null,
+      args.bridgeId ?? null,
       args.direction,
       fromAddr,
       args.envelopeTo ? JSON.stringify(args.envelopeTo) : JSON.stringify(summary.to),
@@ -456,12 +487,12 @@ export async function processMessage(
       .run();
 
     await audit(env, {
-      actor: args.principalId ?? args.daemonId ?? 'system',
+      actor: args.principalId ?? args.bridgeId ?? 'system',
       action: 'message.submitted',
       target: messageId,
       meta: {
         source: args.source,
-        daemon_id: args.daemonId,
+        bridge_id: args.bridgeId,
         content_sha256: contentSha,
         from: fromAddr,
         to_count: args.envelopeTo?.length ?? summary.to.length,
@@ -509,7 +540,7 @@ export async function processMessage(
   }
 
   await audit(env, {
-    actor: args.principalId ?? args.daemonId ?? 'system',
+    actor: args.principalId ?? args.bridgeId ?? 'system',
     action: 'message.received',
     target: messageId,
     meta: {

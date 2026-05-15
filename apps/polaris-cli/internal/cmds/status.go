@@ -14,7 +14,7 @@ func newStatusCmd() *cobra.Command {
 	var domain string
 	c := &cobra.Command{
 		Use:   "status",
-		Short: "Daemon health + domain status + recent error rate",
+		Short: "Bridge health + domain status + recent error rate",
 		RunE: func(_ *cobra.Command, _ []string) error {
 			cl, err := MakeClient()
 			if err != nil {
@@ -29,8 +29,8 @@ func newStatusCmd() *cobra.Command {
 				return err
 			}
 			if Format() == output.FormatTable {
-				dt := &output.Table{Headers: []string{"DAEMON", "HEALTHY", "LAST_SEEN", "BUILD"}}
-				for _, d := range out.Daemons {
+				dt := &output.Table{Headers: []string{"BRIDGE", "HEALTHY", "LAST_SEEN", "BUILD"}}
+				for _, d := range out.Bridges {
 					dt.Rows = append(dt.Rows, []string{d.Name, boolStr(d.Healthy), d.LastSeen.Format("2006-01-02 15:04:05"), d.BuildInfo})
 				}
 				if err := dt.Render(Out); err != nil {

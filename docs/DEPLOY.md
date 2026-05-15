@@ -1,7 +1,7 @@
 # polaris-email — deploy runbook
 
 This is the cold-start + infrastructure runbook. For day-to-day operator workflows
-(issue api keys, onboard domains, register daemons, replay webhook DLQ entries, …)
+(issue api keys, onboard domains, register bridges, replay webhook DLQ entries, …)
 see [`docs/OPERATOR.md`](OPERATOR.md) and the `polaris-email` CLI in
 `apps/polaris-cli/README.md`.
 

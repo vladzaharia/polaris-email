@@ -60,8 +60,8 @@ type TenantCreateRequest struct {
 	Environment string `json:"environment,omitempty"`
 }
 
-// Daemon represents a registered submission daemon.
-type Daemon struct {
+// Bridge represents a registered mail bridge.
+type Bridge struct {
 	ID          string     `json:"id"`
 	Name        string     `json:"name"`
 	Environment string     `json:"environment"`
@@ -70,16 +70,16 @@ type Daemon struct {
 	CreatedAt   time.Time  `json:"created_at"`
 }
 
-// DaemonRegisterRequest is the body for POST /v1/admin/daemons.
-type DaemonRegisterRequest struct {
+// BridgeRegisterRequest is the body for POST /v1/admin/bridges.
+type BridgeRegisterRequest struct {
 	Name        string `json:"name"`
 	Environment string `json:"environment"`
 }
 
-// DaemonRegisterResponse contains the freshly-minted credentials. The
+// BridgeRegisterResponse contains the freshly-minted credentials. The
 // HMACSecret and AccessToken are returned exactly once.
-type DaemonRegisterResponse struct {
-	Daemon       Daemon `json:"daemon"`
+type BridgeRegisterResponse struct {
+	Bridge       Bridge `json:"bridge"`
 	HMACKeyID    string `json:"hmac_key_id"`
 	HMACSecret   string `json:"hmac_secret"`
 	AccessClient string `json:"access_client_id"`
@@ -174,13 +174,13 @@ type LogEntry struct {
 
 // StatusReport is the response from GET /v1/admin/status.
 type StatusReport struct {
-	Daemons      []DaemonHealth `json:"daemons"`
+	Bridges      []BridgeHealth `json:"bridges"`
 	Domains      []DomainHealth `json:"domains"`
 	ErrorRate1h  float64        `json:"error_rate_1h"`
 	ErrorRate24h float64        `json:"error_rate_24h"`
 }
 
-type DaemonHealth struct {
+type BridgeHealth struct {
 	Name      string    `json:"name"`
 	Healthy   bool      `json:"healthy"`
 	LastSeen  time.Time `json:"last_seen"`

@@ -158,7 +158,7 @@ func TestCreateWebhookSub(t *testing.T) {
 
 func TestLookupMailboxCredential(t *testing.T) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/v1/daemon/credentials/lookup", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/v1/bridge/credentials/lookup", func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(CredentialLookup{
 			ID: "c1", MailboxID: "mb1", Protocol: "imap", AuthType: "password",
 			Username: "alice", BcryptHash: "$2a$10$x",

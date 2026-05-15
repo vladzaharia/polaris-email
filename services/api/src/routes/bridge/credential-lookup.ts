@@ -1,8 +1,8 @@
-// Daemon-scoped credential lookup (Phase L slice L.4 + B6).
+// Bridge-scoped credential lookup (Phase L slice L.4 + B6).
 //
-// The mail-bridge calls GET /v1/daemon/credentials/lookup?protocol=&username=
+// The mail-bridge calls GET /v1/bridge/credentials/lookup?protocol=&username=
 // during IMAP LOGIN or SMTPS AUTH PLAIN to fetch the bcrypt hash for the
-// matching `mailbox_credentials` row. Daemon-auth only — never exposed to
+// matching `mailbox_credentials` row. Bridge-auth only — never exposed to
 // tenant API keys (returning bcrypt hashes to tenants would defeat the
 // issue-once secret model).
 //
@@ -12,7 +12,7 @@ import type { Env } from '../../env.js';
 import { buildError } from '../../errors.js';
 import { requireScope } from '../../auth.js';
 
-export const daemonCredentialLookup = new Hono<{ Bindings: Env }>();
+export const bridgeCredentialLookup = new Hono<{ Bindings: Env }>();
 
 interface CredRow {
   id: string;
@@ -24,8 +24,8 @@ interface CredRow {
   disabled_at: string | null;
 }
 
-daemonCredentialLookup.get(
-  '/v1/daemon/credentials/lookup',
+bridgeCredentialLookup.get(
+  '/v1/bridge/credentials/lookup',
   requireScope('imap_bridge:read'),
   async (c) => {
     const protocol = c.req.query('protocol');

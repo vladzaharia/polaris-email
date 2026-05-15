@@ -16,7 +16,16 @@ export interface MessageAttachmentMeta {
   content_type: string;
   size_bytes: number;
   content_base64?: string;
-  content_url?: string;
+  /**
+   * Public, content-addressed URL on the R2 custom domain
+   * `r2.mail.plrs.im` (B5). Replaces the signed-URL pattern.
+   */
+  url?: string;
+  /**
+   * SHA-256 hex of the decoded attachment bytes. Used by the API layer to
+   * build the public R2 URL; not surfaced to clients directly.
+   */
+  sha256?: string;
 }
 
 export interface UnifiedMessage {
@@ -31,6 +40,11 @@ export interface UnifiedMessage {
   subject?: string;
   text?: string;
   html?: string;
+  /**
+   * Public, content-addressed URL for the raw RFC822 body on the R2 custom
+   * domain `r2.mail.plrs.im` (B5). Absolute, no expiry.
+   */
+  body_url?: string;
   headers?: Record<string, string>;
   attachments: MessageAttachmentMeta[];
   header_message_id?: string;
@@ -38,7 +52,7 @@ export interface UnifiedMessage {
   auth?: { spf?: string; dkim?: string; dmarc?: string; remote_ip?: string };
   body_bytes?: number;
   attachments_total_bytes?: number;
-  received_at_daemon?: string;
+  received_at_bridge?: string;
   received_at_api?: string;
   queued_at?: string;
   sending_at?: string;
@@ -63,7 +77,7 @@ export interface MessageRowMeta {
   auth_remote_ip?: string | null;
   body_bytes?: number | null;
   attachments_total_bytes?: number | null;
-  received_at_daemon?: string | null;
+  received_at_bridge?: string | null;
   received_at_api?: string | null;
   queued_at?: string | null;
   sending_at?: string | null;
@@ -241,6 +255,99 @@ function walkPartsWithHeaders(
   }
 }
 
+/**
+ * Decoded attachment part returned by `extractAttachmentParts()`. Used by
+ * `processMessage()` to write per-attachment R2 objects keyed by SHA-256 of
+ * the decoded bytes (B5). The order matches `summarizeMime().attachments`
+ * so the i-th element of one lines up with the i-th element of the other.
+ */
+export interface ExtractedAttachment {
+  filename: string;
+  content_type: string;
+  size_bytes: number;
+  bytes: Uint8Array;
+}
+
+function walkExtractAttachments(
+  body: string,
+  topContentType: string,
+  topXfer: string,
+  out: ExtractedAttachment[],
+): void {
+  const ct = parseContentType(topContentType);
+  if (!(ct.type.startsWith('multipart/') && ct.boundary)) {
+    if (ct.type === 'text/html' || ct.type.startsWith('text/')) return;
+    const decoded = decodePart(body, topXfer);
+    out.push({
+      filename: 'attachment',
+      content_type: ct.type,
+      size_bytes: decoded.byteLength,
+      bytes: decoded,
+    });
+    return;
+  }
+  const boundary = ct.boundary;
+  const delim = '--' + boundary;
+  const end = delim + '--';
+  const parts: string[] = [];
+  let i = body.indexOf(delim);
+  if (i < 0) return;
+  while (i >= 0) {
+    const next = body.indexOf(delim, i + delim.length);
+    if (next < 0) break;
+    const chunk = body
+      .slice(i + delim.length, next)
+      .replace(/^\r?\n/, '')
+      .replace(/\r?\n$/, '');
+    parts.push(chunk);
+    if (body.indexOf(end, next) === next) break;
+    i = next;
+  }
+  for (const p of parts) {
+    const { headerStr, body: pbody } = splitHeadersBodyText(p);
+    const subHeaders = parseSubHeaders(headerStr);
+    const subCt = getSubHeader(subHeaders, 'content-type') ?? 'text/plain';
+    const subDisp = getSubHeader(subHeaders, 'content-disposition') ?? '';
+    const subXfer = (getSubHeader(subHeaders, 'content-transfer-encoding') ?? '').toLowerCase();
+    const inner = parseContentType(subCt);
+    if (inner.type.startsWith('multipart/') && inner.boundary) {
+      walkExtractAttachments(pbody, subCt, subXfer, out);
+      continue;
+    }
+    const filenameMatch =
+      subDisp.match(/filename\*?=["']?([^;"']+)/i) ?? subCt.match(/name=["']?([^;"']+)/i);
+    if (filenameMatch || /^application\/|image\/|video\/|audio\//.test(inner.type)) {
+      const decoded = decodePart(pbody, subXfer);
+      out.push({
+        filename: (filenameMatch?.[1] ?? 'attachment').slice(0, 255),
+        content_type: inner.type,
+        size_bytes: decoded.byteLength,
+        bytes: decoded,
+      });
+    }
+  }
+}
+
+/**
+ * Walk canonical RFC822 bytes and return every attachment part as a tuple of
+ * (filename, content_type, decoded bytes). The order matches
+ * `summarizeMime().attachments` exactly, so callers can zip the two
+ * arrays by index. Body parts (`text/*`) are skipped.
+ *
+ * Used by `processMessage()` to write per-attachment R2 objects (B5).
+ */
+export function extractAttachmentParts(raw: Uint8Array): ExtractedAttachment[] {
+  const parsed: ParsedMime = parseStrict(raw);
+  const headerMap: Record<string, string> = {};
+  for (const h of parsed.headers) headerMap[h.nameLc] = h.value;
+  const contentType = headerMap['content-type'] ?? 'text/plain; charset=us-ascii';
+  const topXfer = (headerMap['content-transfer-encoding'] ?? '').toLowerCase();
+  const bodyText = new TextDecoder('latin1').decode(parsed.body);
+  const out: ExtractedAttachment[] = [];
+  walkExtractAttachments(bodyText, contentType, topXfer, out);
+  return out;
+}
+
 export interface ParsedMimeSummary {
   from: string;
   to: string[];
@@ -335,7 +442,7 @@ export function mimeToMessage(raw: Uint8Array, row: MessageRowMeta): UnifiedMess
   if (row.body_bytes != null) msg.body_bytes = row.body_bytes;
   if (row.attachments_total_bytes != null)
     msg.attachments_total_bytes = row.attachments_total_bytes;
-  if (row.received_at_daemon) msg.received_at_daemon = row.received_at_daemon;
+  if (row.received_at_bridge) msg.received_at_bridge = row.received_at_bridge;
   if (row.received_at_api) msg.received_at_api = row.received_at_api;
   if (row.queued_at) msg.queued_at = row.queued_at;
   if (row.sending_at) msg.sending_at = row.sending_at;

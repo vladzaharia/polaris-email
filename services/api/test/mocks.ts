@@ -45,7 +45,7 @@ export class MockD1 {
     this.tables.set('api_key_sender_scopes', []);
     this.tables.set('submission_credentials', []);
     this.tables.set('dkim_keys', []);
-    this.tables.set('daemons', []);
+    this.tables.set('bridges', []);
     this.tables.set('webhook_subs', []);
     this.tables.set('messages', []);
     this.tables.set('message_attempts', []);
@@ -573,6 +573,7 @@ export function mkEnv(overrides: Partial<Env> = {}): Env {
     KV_REVOCATIONS: new MockKV() as unknown as KVNamespace,
     OUTBOUND_QUEUE: new MockQueue<OutboundQueueMessage>() as unknown as Queue<OutboundQueueMessage>,
     API_BASE_URL: 'https://polaris-email-api.workers.dev',
+    R2_PUBLIC_HOST: 'r2.mail.plrs.im',
     POLARIS_SECRET_A: 'test-control-plane-secret',
     ARGON2_PEPPER: 'test-pepper',
     ...overrides,

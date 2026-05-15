@@ -1,6 +1,6 @@
 // Step-up middleware.
 //
-// Sensitive endpoints (admin api_key rotate/revoke, daemon rotate, tenant
+// Sensitive endpoints (admin api_key rotate/revoke, bridge rotate, tenant
 // quarantine) require a fresh step-up token. We read from the `step_ups`
 // D1 table and check that an unexpired row exists for the current user.
 //

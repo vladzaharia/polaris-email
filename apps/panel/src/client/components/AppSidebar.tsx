@@ -41,7 +41,7 @@ const CONFIGURATION: NavItem[] = [
 ];
 
 const DIAGNOSTICS: NavItem[] = [
-  { to: '/daemons', label: 'Daemons', icon: ServerCog },
+  { to: '/bridges', label: 'Bridges', icon: ServerCog },
   { to: '/settings/account', label: 'Account', icon: AtSign },
   { to: '/diagnostics', label: 'Diagnostics', icon: Stethoscope },
 ];

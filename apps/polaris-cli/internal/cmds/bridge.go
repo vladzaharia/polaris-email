@@ -12,23 +12,23 @@ import (
 	"github.com/vladzaharia/polaris-email/apps/polaris-cli/internal/wizards"
 )
 
-func newDaemonCmd() *cobra.Command {
-	c := &cobra.Command{Use: "daemon", Short: "Manage submission daemons"}
-	c.AddCommand(daemonListCmd(), daemonRegisterCmd(), daemonShowCmd(), daemonRotateCmd(), daemonDeregisterCmd())
+func newBridgeCmd() *cobra.Command {
+	c := &cobra.Command{Use: "bridge", Short: "Manage mail bridges"}
+	c.AddCommand(bridgeListCmd(), bridgeRegisterCmd(), bridgeShowCmd(), bridgeRotateCmd(), bridgeDeregisterCmd())
 	return c
 }
 
-func daemonListCmd() *cobra.Command {
+func bridgeListCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "list",
-		Short: "List registered daemons + last_seen",
+		Short: "List registered bridges + last_seen",
 		RunE: func(_ *cobra.Command, _ []string) error {
 			cl, err := MakeClient()
 			if err != nil {
 				return err
 			}
-			var out []client.Daemon
-			if err := cl.DoJSON(CtxBackground(), "GET", "/v1/admin/daemons", nil, nil, &out); err != nil {
+			var out []client.Bridge
+			if err := cl.DoJSON(CtxBackground(), "GET", "/v1/admin/bridges", nil, nil, &out); err != nil {
 				return err
 			}
 			t := &output.Table{Headers: []string{"NAME", "ENV", "LAST_SEEN", "DISABLED"}}
@@ -48,25 +48,25 @@ func daemonListCmd() *cobra.Command {
 	}
 }
 
-func daemonRegisterCmd() *cobra.Command {
+func bridgeRegisterCmd() *cobra.Command {
 	var fromFile, env, form, writeFile string
 	c := &cobra.Command{
 		Use:   "register [name]",
-		Short: "Mint HMAC key + Cloudflare Access token for a new daemon, output install snippet",
+		Short: "Mint HMAC key + Cloudflare Access token for a new bridge, output install snippet",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			cl, err := MakeClient()
 			if err != nil {
 				return err
 			}
-			var in *wizards.DaemonRegisterInput
+			var in *wizards.BridgeRegisterInput
 			if fromFile != "" {
-				in, err = wizards.LoadDaemonRegisterFile(fromFile)
+				in, err = wizards.LoadBridgeRegisterFile(fromFile)
 				if err != nil {
 					return err
 				}
 			} else {
-				seed := &wizards.DaemonRegisterInput{Environment: env, OutputForm: form, WriteFile: writeFile}
+				seed := &wizards.BridgeRegisterInput{Environment: env, OutputForm: form, WriteFile: writeFile}
 				if len(args) == 1 {
 					seed.Name = args[0]
 				}
@@ -76,13 +76,13 @@ func daemonRegisterCmd() *cobra.Command {
 					}
 					in = seed
 				} else {
-					in, err = wizards.PromptDaemonRegister(seed)
+					in, err = wizards.PromptBridgeRegister(seed)
 					if err != nil {
 						return err
 					}
 				}
 			}
-			r, err := wizards.RunDaemonRegister(CtxBackground(), cl, in, Out)
+			r, err := wizards.RunBridgeRegister(CtxBackground(), cl, in, Out)
 			if err != nil {
 				return err
 			}
@@ -99,10 +99,10 @@ func daemonRegisterCmd() *cobra.Command {
 	return c
 }
 
-func daemonShowCmd() *cobra.Command {
+func bridgeShowCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "show <name>",
-		Short: "Show one daemon",
+		Short: "Show one bridge",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			cl, err := MakeClient()
@@ -110,8 +110,8 @@ func daemonShowCmd() *cobra.Command {
 				return err
 			}
 			q := url.Values{"name": []string{args[0]}}
-			var out client.Daemon
-			if err := cl.DoJSON(CtxBackground(), "GET", "/v1/admin/daemons/lookup", q, nil, &out); err != nil {
+			var out client.Bridge
+			if err := cl.DoJSON(CtxBackground(), "GET", "/v1/admin/bridges/lookup", q, nil, &out); err != nil {
 				return err
 			}
 			return Emit(out)
@@ -119,18 +119,18 @@ func daemonShowCmd() *cobra.Command {
 	}
 }
 
-func daemonRotateCmd() *cobra.Command {
+func bridgeRotateCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "rotate <name>",
-		Short: "Rotate this daemon's HMAC key + Access token",
+		Short: "Rotate this bridge's HMAC key + Access token",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			cl, err := MakeClient()
 			if err != nil {
 				return err
 			}
-			path := fmt.Sprintf("/v1/admin/daemons/%s/rotate", url.PathEscape(args[0]))
-			var out client.DaemonRegisterResponse
+			path := fmt.Sprintf("/v1/admin/bridges/%s/rotate", url.PathEscape(args[0]))
+			var out client.BridgeRegisterResponse
 			if err := cl.DoJSON(CtxBackground(), "POST", path, nil, nil, &out); err != nil {
 				return err
 			}
@@ -140,17 +140,17 @@ func daemonRotateCmd() *cobra.Command {
 	}
 }
 
-func daemonDeregisterCmd() *cobra.Command {
+func bridgeDeregisterCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "deregister <name>",
-		Short: "Deregister a daemon and revoke its credentials",
+		Short: "Deregister a bridge and revoke its credentials",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			cl, err := MakeClient()
 			if err != nil {
 				return err
 			}
-			path := fmt.Sprintf("/v1/admin/daemons/%s", url.PathEscape(args[0]))
+			path := fmt.Sprintf("/v1/admin/bridges/%s", url.PathEscape(args[0]))
 			if err := cl.DoJSON(CtxBackground(), "DELETE", path, nil, nil, nil); err != nil {
 				return err
 			}

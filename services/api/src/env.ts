@@ -14,7 +14,14 @@ export interface Env {
 
   API_BASE_URL: string;
 
-  /** Max raw body bytes returned inline on GET responses. Larger ⇒ signed-url path. */
+  /**
+   * Public host that serves the `polaris-email` R2 bucket. Bodies +
+   * attachments are surfaced at `https://${R2_PUBLIC_HOST}/<key>` (B5).
+   * Defaults to `r2.mail.plrs.im` in deployed configs.
+   */
+  R2_PUBLIC_HOST: string;
+
+  /** Max raw body bytes returned inline on GET responses. Larger ⇒ body_url only. */
   INLINE_BODY_BYTES_MAX?: string;
   INLINE_ATTACHMENTS_BYTES_MAX?: string;
 
@@ -36,8 +43,8 @@ export interface Env {
   ARGON2_PEPPER?: string;
   /** HMAC master pepper for HKDF-derived per-tenant peppers (I13). */
   PEPPER_MASTER?: string;
-  /** HMAC key shared with the submission daemon for /v1/daemon/* + /v1/messages (RFC822). */
-  DAEMON_HMAC_KEY?: string;
+  /** HMAC key shared with the submission bridge for /v1/bridge/* + /v1/messages (RFC822). */
+  BRIDGE_HMAC_KEY?: string;
 }
 
 export interface OutboundQueueMessage {

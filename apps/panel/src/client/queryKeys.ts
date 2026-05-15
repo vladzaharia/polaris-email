@@ -39,8 +39,7 @@ export const webhookKeys = {
   detail: (id: string) => [...webhookKeys.all, 'detail', id] as const,
 };
 
-// Bridges (still called "daemons" in some routes/paths). Use this factory for
-// both — the panel can rename incrementally.
+// Bridges.
 export const bridgeKeys = {
   all: ['bridges'] as const,
   list: () => [...bridgeKeys.all, 'list'] as const,

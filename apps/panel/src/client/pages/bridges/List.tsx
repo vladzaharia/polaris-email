@@ -1,4 +1,4 @@
-// Daemons list + register form.
+// Bridges list + register form.
 //
 // Registration mints a fresh HMAC key — the schema stores only the hash, so
 // the response is the single chance to capture the plaintext key.
@@ -17,12 +17,12 @@ import { Button } from '../../components/ui/button.js';
 import { Input } from '../../components/ui/input.js';
 import { Label } from '../../components/ui/label.js';
 import { Skeleton } from '../../components/ui/skeleton.js';
-import { Badge } from '../../components/ui/badge.js';
+import { StatusBadge } from '../../components/StatusBadge.js';
 import { SecretRevealDialog } from '../../components/SecretRevealDialog.js';
 import { useAdminMutation, useAdminQuery } from '../../hooks/useAdminApi.js';
 import { bridgeKeys } from '../../queryKeys.js';
 
-interface DaemonRow {
+interface BridgeRow {
   id: string;
   name: string;
   last_seen_at: string | null;
@@ -30,25 +30,25 @@ interface DaemonRow {
   disabled_at: string | null;
 }
 
-export function DaemonsList() {
-  const q = useAdminQuery<{ data: DaemonRow[] }>(bridgeKeys.list(), '/api/admin/daemons');
+export function BridgesList() {
+  const q = useAdminQuery<{ data: BridgeRow[] }>(bridgeKeys.list(), '/api/admin/bridges');
   const [name, setName] = useState('');
   const [registered, setRegistered] = useState<{ name: string; hmac_key: string } | null>(null);
   // Registration is silent — the new HMAC key is shown via SecretRevealDialog.
   const register = useAdminMutation<{ id: string; hmac_key: string }, { name: string }>(
-    (vars) => ({ path: '/api/admin/daemons', method: 'POST', body: vars }),
+    (vars) => ({ path: '/api/admin/bridges', method: 'POST', body: vars }),
     { invalidateKeys: [bridgeKeys.all], silent: true },
   );
   return (
-    <PageCard title="Daemons" description="On-prem submission/IMAP bridges." decorative>
+    <PageCard title="Bridges" description="On-prem submission/IMAP bridges." decorative>
       <div className="mb-6 flex items-end gap-2">
         <div className="flex-1 max-w-xs">
-          <Label htmlFor="dn">Register a daemon</Label>
+          <Label htmlFor="bn">Register a bridge</Label>
           <Input
-            id="dn"
+            id="bn"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="daemon-name"
+            placeholder="bridge-name"
           />
         </div>
         <Button
@@ -67,7 +67,7 @@ export function DaemonsList() {
       ) : q.error ? (
         <p className="text-sm text-[var(--color-destructive)]">{q.error.message}</p>
       ) : (q.data?.data ?? []).length === 0 ? (
-        <p className="text-sm text-[var(--color-muted-foreground)]">No daemons registered.</p>
+        <p className="text-sm text-[var(--color-muted-foreground)]">No bridges registered.</p>
       ) : (
         <Table>
           <TableHeader>
@@ -81,17 +81,16 @@ export function DaemonsList() {
             {(q.data?.data ?? []).map((d) => (
               <TableRow key={d.id}>
                 <TableCell>
-                  <Link to="/daemons/$id" params={{ id: d.id }} className="underline">
+                  <Link to="/bridges/$id" params={{ id: d.id }} className="underline">
                     {d.name}
                   </Link>
                 </TableCell>
                 <TableCell className="text-xs">{d.last_seen_at ?? '—'}</TableCell>
                 <TableCell>
-                  {d.disabled_at ? (
-                    <Badge variant="destructive">disabled</Badge>
-                  ) : (
-                    <Badge variant="success">active</Badge>
-                  )}
+                  <StatusBadge
+                    kind="bridge"
+                    value={d.disabled_at ? 'deregistered' : 'registered'}
+                  />
                 </TableCell>
               </TableRow>
             ))}

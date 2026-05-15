@@ -6,7 +6,7 @@
 // Re-serializes to canonical CRLF with normalized header casing.
 //
 // Caller is expected to feed this the bytes received over SMTP DATA; the
-// daemon (or `/v1/send/raw`) MUST canonicalize before forwarding to provider.
+// bridge (or `/v1/send/raw`) MUST canonicalize before forwarding to provider.
 
 const MAX_HEADER_LINE = 998; // RFC 5322 §2.1.1
 const MAX_HEADERS = 256;

@@ -155,23 +155,23 @@ polaris-email audit anchors                    # list R2 anchors
 # Monthly bill: Cloudflare dashboard → Billing → Usage (no CLI command).
 ```
 
-## Multi-host daemons
+## Multi-host bridges
 
-Submission daemons (Go binary `polaris-daemon`) accept legacy SMTP submission
-and forward to the API. Each daemon has its own identity:
+Mail bridges (Go binary `polaris-bridge`) accept SMTPS submission + serve IMAP
+and forward to the API. Each bridge has its own identity:
 
 ```bash
-polaris-email daemon register edge-eu1
+polaris-email bridge register edge-eu1
 # Returns docker-compose snippet + registration.json to deposit on the host.
 
-polaris-email daemon list
-polaris-email daemon rotate edge-eu1           # rotate HMAC + Access token
-polaris-email daemon deregister edge-eu1
+polaris-email bridge list
+polaris-email bridge rotate edge-eu1           # rotate HMAC + Access token
+polaris-email bridge deregister edge-eu1
 ```
 
-The daemon refuses to start without a valid `registration.json`. Each daemon
+The bridge refuses to start without a valid `registration.json`. Each bridge
 has its own HMAC key in Workers Secrets and its own Cloudflare Access service
-token (I18). Audit log records `daemon_id` per submission.
+token (I18). Audit log records `bridge_id` per submission.
 
 ## DKIM rotation
 
