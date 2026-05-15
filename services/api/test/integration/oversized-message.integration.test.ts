@@ -111,9 +111,10 @@ describe('A.6: oversized messages rejected pre-enqueue', () => {
       env,
       ctx,
     );
-    // 202 accepted (normal path) or any non-413 outcome — what we
-    // specifically reject here is `message_too_large` firing on a small body.
-    expect(res.status).not.toBe(413);
+    // 202 expected: the normal JSON-path send must succeed end-to-end so a
+    // weaker `not.toBe(413)` check (which masked a `forbidden_header` 400 in
+    // an earlier Phase A iteration) catches the next regression early.
+    expect(res.status).toBe(202);
   });
 
   it('rfc822 path: body > 25 MiB returns 413 message_too_large', async () => {
