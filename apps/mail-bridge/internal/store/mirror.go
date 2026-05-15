@@ -185,7 +185,7 @@ func (m *Mirror) UpsertState(ctx context.Context, s MailboxState) error {
 	return err
 }
 
-// Changes is the parsed JMAP-style delta returned from the SDK.
+// Changes is the parsed mailbox delta returned from the SDK.
 type Changes struct {
 	Updated []string
 	Deleted []string
@@ -231,7 +231,7 @@ func (m *Mirror) ApplyChanges(ctx context.Context, mailboxID string, ch Changes)
 	return tx.Commit()
 }
 
-// LastState returns the last-known JMAP state token for a mailbox (0 if none).
+// LastState returns the last-known mailbox state token for a mailbox (0 if none).
 func (m *Mirror) LastState(ctx context.Context, mailboxID string) (int64, error) {
 	var s int64
 	err := m.DB.QueryRowContext(ctx,

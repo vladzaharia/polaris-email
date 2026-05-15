@@ -1,13 +1,18 @@
-// Webhook sub detail — edit URL/events, pause, fire a synthetic test event.
+// Webhook sub detail — edit URL/events, pause, fire a synthetic test event,
+// or delete the subscription. Delete goes through the shared destructive
+// dialog because the subscription's history (event log, signing secret
+// hashes) goes with it.
 import { useEffect, useState } from 'react';
-import { useParams } from '@tanstack/react-router';
+import { useNavigate, useParams } from '@tanstack/react-router';
 import { PageCard } from '../../layouts/PageCard.js';
 import { Button } from '../../components/ui/button.js';
 import { Input } from '../../components/ui/input.js';
 import { Label } from '../../components/ui/label.js';
 import { Switch } from '../../components/ui/switch.js';
 import { Skeleton } from '../../components/ui/skeleton.js';
+import { DestructiveActionDialog } from '../../components/DestructiveActionDialog.js';
 import { useAdminMutation, useAdminQuery } from '../../hooks/useAdminApi.js';
+import { webhookKeys } from '../../queryKeys.js';
 
 interface SubRow {
   id: string;
@@ -19,10 +24,12 @@ interface SubRow {
 
 export function WebhookSubDetail() {
   const { id } = useParams({ from: '/webhook-subs/$id' });
-  const q = useAdminQuery<SubRow>(['webhook-sub', id], `/api/admin/webhook-subs/${id}`);
+  const navigate = useNavigate();
+  const q = useAdminQuery<SubRow>(webhookKeys.detail(id), `/api/admin/webhook-subs/${id}`);
   const [url, setUrl] = useState('');
   const [events, setEvents] = useState('');
   const [paused, setPaused] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   useEffect(() => {
     if (q.data) {
@@ -34,23 +41,34 @@ export function WebhookSubDetail() {
 
   const patch = useAdminMutation<unknown, Record<string, unknown>>(
     (vars) => ({ path: `/api/admin/webhook-subs/${id}`, method: 'PATCH', body: vars }),
-    { invalidateKeys: [['webhook-sub', id]] },
+    { invalidateKeys: [webhookKeys.detail(id)] },
   );
-  const test = useAdminMutation<unknown, undefined>(() => ({
-    path: `/api/admin/webhook-subs/${id}/test`,
-    method: 'POST',
-  }));
+  const test = useAdminMutation<unknown, undefined>(
+    () => ({
+      path: `/api/admin/webhook-subs/${id}/test`,
+      method: 'POST',
+    }),
+    { successMessage: 'Test event sent.' },
+  );
+  const remove = useAdminMutation<unknown, undefined>(
+    () => ({ path: `/api/admin/webhook-subs/${id}`, method: 'DELETE' }),
+    { invalidateKeys: [webhookKeys.all], successMessage: 'Subscription deleted.' },
+  );
 
+  const breadcrumbs = [
+    { label: 'Webhook subs', to: '/webhook-subs' },
+    { label: q.data?.url ?? id },
+  ];
   if (q.isLoading) {
     return (
-      <PageCard title="Webhook subscription">
+      <PageCard title="Webhook subscription" breadcrumbs={breadcrumbs}>
         <Skeleton className="h-32 w-full" />
       </PageCard>
     );
   }
   if (q.error || !q.data) {
     return (
-      <PageCard title="Webhook subscription">
+      <PageCard title="Webhook subscription" breadcrumbs={breadcrumbs}>
         <p className="text-sm text-[var(--color-destructive)]">
           {q.error?.message ?? 'Not found.'}
         </p>
@@ -66,7 +84,7 @@ export function WebhookSubDetail() {
   }
 
   return (
-    <PageCard title="Webhook subscription" description={id} decorative>
+    <PageCard title="Webhook subscription" breadcrumbs={breadcrumbs} description={id} decorative>
       <div className="max-w-xl space-y-4">
         <div>
           <Label htmlFor="url">Target URL</Label>
@@ -83,7 +101,7 @@ export function WebhookSubDetail() {
           <Switch checked={paused} onCheckedChange={setPaused} id="paused" />
           <Label htmlFor="paused">Paused</Label>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button
             onClick={() =>
               patch.mutate({
@@ -103,8 +121,36 @@ export function WebhookSubDetail() {
           >
             {test.isPending ? 'Testing…' : 'Send test event'}
           </Button>
+          <Button
+            variant="destructive"
+            onClick={() => setConfirmDelete(true)}
+            disabled={remove.isPending}
+          >
+            Delete subscription
+          </Button>
         </div>
       </div>
+
+      <DestructiveActionDialog
+        open={confirmDelete}
+        onOpenChange={setConfirmDelete}
+        action="Delete webhook subscription"
+        name={q.data.url}
+        blastRadius={[
+          'No further events will be delivered to this URL',
+          'Receivers that route to this subscription will fail until rebound',
+          'DLQ entries already queued for this subscription will be dropped',
+        ]}
+        reversible={false}
+        typedConfirmation={id}
+        confirmLabel="Delete subscription"
+        onConfirm={async () => {
+          await remove.mutateAsync(undefined);
+          setConfirmDelete(false);
+          void navigate({ to: '/webhook-subs' });
+        }}
+        isPending={remove.isPending}
+      />
     </PageCard>
   );
 }

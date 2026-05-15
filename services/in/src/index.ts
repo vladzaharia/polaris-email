@@ -7,7 +7,19 @@
 // resolution, forward primitive, fanout queue dispatch).
 import { ulid } from '@polaris-email/ids';
 import { processMessage, type PipelineEnv } from '@polaris-email/pipeline';
-import { ParseError } from './parse.js';
+
+// Inbound-edge sentinel for the 25MiB stream cap. Strict MIME validation
+// happens later inside `processMessage` (via `@polaris-email/mime`'s
+// `parseStrict`/`summarizeMime`); this class only signals an edge-level
+// size rejection that translates to SMTP 552.
+class IngestError extends Error {
+  constructor(
+    public code: string,
+    message: string,
+  ) {
+    super(message);
+  }
+}
 
 interface Env {
   DB: D1Database;
@@ -37,7 +49,7 @@ async function readAll(stream: ReadableStream<Uint8Array>): Promise<Uint8Array> 
     chunks.push(value);
     total += value.byteLength;
     if (total > 25 * 1024 * 1024) {
-      throw new ParseError('too_large', 'over 25MiB');
+      throw new IngestError('too_large', 'over 25MiB');
     }
   }
   const out = new Uint8Array(total);
@@ -91,7 +103,7 @@ export default {
       raw = await readAll(message.raw);
     } catch (e) {
       message.setReject(
-        e instanceof ParseError && e.code === 'too_large'
+        e instanceof IngestError && e.code === 'too_large'
           ? '552 5.3.4 too large'
           : '451 4.7.1 ingest error',
       );

@@ -21,16 +21,15 @@ bootstrap.post('/v1/admin/bootstrap', async (c) => {
   const bodyText = await c.req.text();
   const path = new URL(c.req.url).pathname;
   const query = new URL(c.req.url).search;
-  // Bootstrap auth uses the polaris-api.v1 direction, signed with POLARIS_SECRET_A.
+  // Bootstrap auth uses the polaris-api direction, signed with POLARIS_SECRET_A.
   const r = await verify({
-    direction: 'polaris-api.v1',
+    direction: 'polaris-api',
     method: 'POST',
     path,
     query,
     headers: { get: (n: string) => c.req.header(n) ?? null },
     body: bodyText,
     secret: c.env.POLARIS_SECRET_A,
-    allowedAlgorithms: c.env.VERIFY_ALGORITHMS.split(','),
   });
   if (!r.ok) return buildError(c, 'bad_signature', `bootstrap auth: ${r.code}`);
 

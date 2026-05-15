@@ -7,8 +7,13 @@
 package forwarder
 
 import (
+	"bufio"
+	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"net/http"
+	"strings"
 	"time"
 
 	polarissdk "github.com/polaris-email/polaris-sdk-go"
@@ -71,6 +76,7 @@ func (f *Forwarder) Forward(ctx context.Context, in ForwardRequest) (*ForwardRes
 		"X-Polaris-Submission-Id":   in.SubmissionID,
 		"X-Polaris-Client-IP":       in.ClientIP,
 		"X-Polaris-Received-Daemon": in.ReceivedAtDaemon.UTC().Format(time.RFC3339Nano),
+		"Idempotency-Key":           idempotencyKey(in),
 	}
 	resp, body, err := f.client.Do(ctx, "POST", "/v1/messages", "", in.RFC822, "message/rfc822", extra)
 	if err != nil {
@@ -88,4 +94,85 @@ func (f *Forwarder) Forward(ctx context.Context, in ForwardRequest) (*ForwardRes
 		res.Category = "permanent"
 	}
 	return res, nil
+}
+
+// idempotencyKey derives a stable idempotency key for a ForwardRequest.
+//
+//   - If the RFC822 carries a `Message-ID:` header, that value is used verbatim
+//     (clients retrying a submission preserve their Message-ID, so the API
+//     will dedupe even across reconnects).
+//   - Otherwise we derive a hash of submission-identity bits that stay stable
+//     across retries of the same logical submission:
+//     sha256_hex("polaris-smtp/" + envelope_from + "/" + envelope_to[0] +
+//     "/" + date_header + "/" + sha256(rfc822_body)[:16])
+//
+// Note: SubmissionID is intentionally NOT part of the key — it changes on every
+// inbound SMTP session, so including it would defeat retry-dedupe.
+func idempotencyKey(req ForwardRequest) string {
+	if mid := extractMessageID(req.RFC822); mid != "" {
+		return mid
+	}
+	date := extractHeader(req.RFC822, "Date")
+	to := ""
+	if len(req.EnvelopeTo) > 0 {
+		to = req.EnvelopeTo[0]
+	}
+	bodyHash := sha256.Sum256(req.RFC822)
+	bodyHashShort := hex.EncodeToString(bodyHash[:])[:16]
+	canonical := "polaris-smtp/" + req.EnvelopeFrom + "/" + to + "/" + date + "/" + bodyHashShort
+	sum := sha256.Sum256([]byte(canonical))
+	return hex.EncodeToString(sum[:])
+}
+
+// extractMessageID returns the value of the first `Message-ID:` header found
+// in the RFC822 bytes, with surrounding whitespace trimmed. Returns "" if not
+// present. Stops scanning at the header/body separator (blank line).
+//
+// We accept simple line-folded continuations (a header line that starts with
+// SP/HTAB extends the previous header). This is good enough for the SMTPS
+// forwarder; we do not implement full RFC 5322 grammar — extreme edge cases
+// (e.g. a Message-ID split across many folded lines with embedded comments)
+// fall through to the hash-derived key, which is fine.
+func extractMessageID(raw []byte) string {
+	return extractHeader(raw, "Message-ID")
+}
+
+// extractHeader returns the (unfolded, trimmed) value of the first occurrence
+// of `name` in the RFC822 headers of raw. Header name match is case-insensitive
+// per RFC 5322 §1.2.2. Returns "" if absent.
+func extractHeader(raw []byte, name string) string {
+	scanner := bufio.NewScanner(bytes.NewReader(raw))
+	// Default Scanner buffer is 64 KiB; raise it so very long header lines
+	// don't truncate.
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	wanted := strings.ToLower(name) + ":"
+	var (
+		inMatch bool
+		value   strings.Builder
+	)
+	for scanner.Scan() {
+		line := scanner.Text()
+		// Blank line marks end of headers.
+		if line == "" {
+			break
+		}
+		// Continuation of the current header (folded line).
+		if inMatch && (strings.HasPrefix(line, " ") || strings.HasPrefix(line, "\t")) {
+			value.WriteString(" ")
+			value.WriteString(strings.TrimSpace(line))
+			continue
+		}
+		if inMatch {
+			// We were tracking the matched header and a non-continuation line
+			// arrived — we have its full value.
+			break
+		}
+		// New header line — check name.
+		lower := strings.ToLower(line)
+		if strings.HasPrefix(lower, wanted) {
+			inMatch = true
+			value.WriteString(strings.TrimSpace(line[len(wanted):]))
+		}
+	}
+	return strings.TrimSpace(value.String())
 }

@@ -11,7 +11,7 @@ cutover. Companion documents:
 
 | Service           | Role                                                                                                        |
 | ----------------- | ----------------------------------------------------------------------------------------------------------- |
-| `services/api`    | REST surface, admin API, audit chain, idempotency, HMAC auth, hosts `REVOCATION_DO`.                        |
+| `services/api`    | REST surface, admin API, audit chain, idempotency, HMAC auth.                                               |
 | `services/in`     | Email Routing handler. Parses inbound MIME, runs the unified pipeline, persists.                            |
 | `services/out`    | Outbound queue consumer. Drives the configured provider (Cloudflare `send_email` binding per domain).       |
 | `services/fanout` | Webhook delivery. Signs the v2 envelope, retries with backoff, parks failures in DLQ.                       |
@@ -25,11 +25,11 @@ implication.
 
 ## Apps
 
-| App                | Description                                                                                                                                                                             |
-| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `apps/panel`       | Admin UI. Hono + React on a Cloudflare Worker; better-auth + OIDC; sessions in D1.                                                                                                      |
-| `apps/polaris-cli` | Go CLI (`polaris-email`, alias `pml`) — operator workflows + bootstrap.                                                                                                                 |
-| `apps/mail-bridge` | On-prem Go binary: SMTPS (465) + IMAP4rev2 (993) + JMAP (443) in one process. Renamed from `apps/submission-daemon`; SMTPS path is the old daemon's code joined by IMAP/JMAP listeners. |
+| App                | Description                                                                                                                                                              |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `apps/panel`       | Admin UI. Hono + React on a Cloudflare Worker; better-auth + OIDC; sessions in D1.                                                                                       |
+| `apps/polaris-cli` | Go CLI (`polaris-email`, alias `pml`) — operator workflows + bootstrap.                                                                                                  |
+| `apps/mail-bridge` | On-prem Go binary: SMTPS (465) + IMAP4rev2 (993) in one process. Renamed from `apps/submission-daemon`; SMTPS path is the old daemon's code joined by the IMAP listener. |
 
 The mail bridge has **two equally-supported deployment modes** (tailnet
 sidecar or local host-network); see [`docs/mail-bridge.md`](mail-bridge.md).
@@ -106,8 +106,8 @@ was hard. See [`docs/hmac-reference.md`](hmac-reference.md).
 - **KV** — nonces (HMAC replay), idempotency keys (24h), rate limits,
   key-cache for `key_id → secret` resolution.
 - **Queues** — outbound, inbound, fanout + DLQs for each.
-- **Durable Object (`REVOCATION_DO`)** — synchronous credential revocation
-  with ≤5s propagation; queried on every authenticated request.
+- **KV (`KV_REVOCATIONS`)** — credential revocation; queried on every authenticated
+  request via `@polaris-email/revocation`. ≤60s propagation (KV write + 60s per-Worker cache).
 
 ## Audit chain
 
@@ -121,12 +121,11 @@ to R2 (Object Lock). Anchor signing key lives separately from
 ## Authentication
 
 - **API consumers**: HMAC-signed requests (`polaris-api.v1`), key_id +
-  secret per principal. Revocation via `REVOCATION_DO` is synchronous.
+  secret per principal. Revocation via `KV_REVOCATIONS` (≤60s propagation).
 - **Panel**: better-auth with OIDC (default IdP is Cloudflare Access).
   Sessions stored in D1. Step-up auth for destructive ops.
 - **Mail bridge**: per-bridge HMAC key seeded at registration, mailbox
-  credentials (bcrypt hashes) mirrored locally for SMTPS / IMAP / JMAP
-  auth.
+  credentials (bcrypt hashes) mirrored locally for SMTPS / IMAP auth.
 
 ## Cloudflare account topology
 

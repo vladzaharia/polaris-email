@@ -175,26 +175,3 @@ func TestLookupMailboxCredential(t *testing.T) {
 	}
 }
 
-func TestCreateAndDeletePushSubscription(t *testing.T) {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/v1/mailboxes/mb1/push-subscriptions", func(w http.ResponseWriter, r *http.Request) {
-		_ = json.NewEncoder(w).Encode(PushSubscription{ID: "p1", MailboxID: "mb1", DeviceID: "d", PushType: "websocket", CreatedAt: "now"})
-	})
-	mux.HandleFunc("/v1/mailboxes/mb1/push-subscriptions/p1", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodDelete {
-			w.WriteHeader(204)
-		}
-	})
-	c, srv := newTestClient(t, mux)
-	defer srv.Close()
-	p, err := c.CreatePushSubscription(context.Background(), "mb1", CreatePushSubscriptionRequest{DeviceID: "d", PushType: "websocket"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if p.ID != "p1" {
-		t.Fatalf("got %+v", p)
-	}
-	if err := c.DeletePushSubscription(context.Background(), "mb1", "p1"); err != nil {
-		t.Fatal(err)
-	}
-}

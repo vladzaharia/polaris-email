@@ -27,6 +27,7 @@ import {
   type MessageRowMeta,
 } from '@polaris-email/mime';
 import { mintAttachmentUrl, verifyAttachmentUrl } from '@polaris-email/cf-api';
+import { revocationCheck } from '@polaris-email/revocation';
 import type { Env } from '../env.js';
 import { buildError } from '../errors.js';
 import { audit } from '../audit.js';
@@ -124,19 +125,16 @@ async function authenticateApiKey(
 
   const url = new URL(c.req.url);
   const result = await verify({
-    direction: 'polaris-api.v1',
+    direction: 'polaris-api',
     method: c.req.method,
     path: url.pathname,
     query: url.search.slice(1),
     headers: { get: (n: string) => c.req.header(n) ?? null },
     body: bodyBytes,
     secret: plaintext,
-    allowedAlgorithms: env.VERIFY_ALGORITHMS.split(','),
   });
   if (!result.ok) {
     if (result.code === 'clock_skew') return buildError(c, 'clock_skew', result.message);
-    if (result.code === 'algorithm_rejected')
-      return buildError(c, 'bad_signature', `algorithm not allowed: ${result.message}`);
     if (result.code === 'missing_header' || result.code === 'header_invalid')
       return buildError(c, 'bad_request', result.message);
     return buildError(c, 'bad_signature', 'hmac mismatch');
@@ -188,7 +186,7 @@ async function authenticateDaemon(
   }
   const url = new URL(c.req.url);
   const result = await verify({
-    direction: 'polaris-api.v1',
+    direction: 'polaris-api',
     method: c.req.method,
     path: url.pathname,
     query: url.search.slice(1),
@@ -200,15 +198,6 @@ async function authenticateDaemon(
     return buildError(c, 'unauthorized', `daemon HMAC: ${result.code}`);
   }
   return { daemonId, submissionId };
-}
-
-async function revocationCheck(env: Env, name: string): Promise<boolean> {
-  const id = env.REVOCATION_DO.idFromName(name);
-  const stub = env.REVOCATION_DO.get(id);
-  const res = await stub.fetch('https://revocation-do/check');
-  if (!res.ok) return false;
-  const body = (await res.json().catch(() => null)) as { revoked?: boolean } | null;
-  return body?.revoked === true;
 }
 
 async function loadR2Bytes(env: Env, key: string): Promise<Uint8Array | null> {

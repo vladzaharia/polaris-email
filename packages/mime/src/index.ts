@@ -33,3 +33,11 @@ export {
   type SendRequestLike,
   type ParsedMimeSummary,
 } from './json.js';
+
+export {
+  parseAddressList,
+  parseFirstAddress,
+  decodeMimeWord,
+  parseAuthResults,
+  type AuthResults,
+} from './headers.js';

@@ -4,7 +4,7 @@ From "I have a service that wants to send mail" to "the email arrived".
 
 ## 0. Prerequisites
 
-- The operator has registered your service (`POST /v1/admin/services`) and issued you an API key (`POST /v1/admin/api-keys`) scoped to the `from` address(es) your service uses.
+- The operator has registered your mailbox (`POST /v1/admin/mailboxes`) and issued you an API key (`POST /v1/admin/api-keys`) scoped to the `from` address(es) your service uses.
 - You have two strings in your env:
 
 ```
@@ -208,7 +208,6 @@ Send the same `Idempotency-Key` header twice and you'll get the original `messag
 If your service needs to react to inbound mail, register a webhook subscription pointing at your service's URL. See the [decision tree](../webhook-decision-tree.md) for choosing between external HTTPS, Tailnet-direct, and bridge-proxied. Then verify the signature using one of the first-party SDK verifiers:
 
 - **Node**: `@polaris/sdk/webhook` (from `@polaris/sdk`).
-- **Python**: `polaris_sdk.webhook` (from `polaris-sdk`).
 - **Go**: `polarissdkgo.VerifyWebhook` (from `polaris-sdk-go`).
 
 The webhook body is the **v2 envelope**: `{event_id, event, occurred_at, message}`. The full `Message` is inlined; no follow-up GET is required. The signature header is `X-Polaris-Sig: v2=…`. See [docs/messages.md](../messages.md) and [docs/sdk.md](../sdk.md).

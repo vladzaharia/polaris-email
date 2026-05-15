@@ -13,7 +13,7 @@ function headers(map: Record<string, string>) {
 describe('vectors round-trip against hmac package', () => {
   for (const v of vectors.vectors as Array<{
     name: string;
-    direction: 'polaris-api.v1' | 'polaris-webhook.v1';
+    direction: 'polaris-api' | 'polaris-webhook';
     method: string;
     path: string;
     query: string;

@@ -2,6 +2,7 @@
 // CLI's `polaris-email cred list|rotate|revoke` can operate on either kind
 // without the operator caring.
 import { Hono } from 'hono';
+import { revoke } from '@polaris-email/revocation';
 import { audit } from '../../audit.js';
 import { requireScope } from '../../auth.js';
 import type { Env } from '../../env.js';
@@ -115,12 +116,10 @@ credentials.post('/v1/admin/credentials/:id/revoke', requireScope('admin:rotate'
       .bind(nowIso, id)
       .run();
   }
-  // Stamp the DO so the next POST /v1/messages (RFC822) rejects.
-  const doId = c.env.REVOCATION_DO.idFromName(resolved.principal_id);
-  await c.env.REVOCATION_DO.get(doId).fetch('https://revocation-do/revoke', {
-    method: 'POST',
-    body: JSON.stringify({ reason: 'credentials_facade_revoke' }),
-  });
+  // Stamp KV_REVOCATIONS so the next POST /v1/messages (RFC822) and
+  // generic HMAC auth both reject immediately, regardless of the kind
+  // (api key vs submission cred) — both authenticate via principal_id.
+  await revoke(c.env, resolved.principal_id);
   await audit(c.env, {
     actor: `key:${key.key_id}`,
     action: resolved.kind === 'api_key' ? 'api_key.revoke' : 'smtp_credential.disable',

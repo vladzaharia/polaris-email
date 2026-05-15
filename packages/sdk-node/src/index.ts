@@ -2,9 +2,13 @@
 //
 // Re-exports the generated type surface plus a hand-written `Polaris` client
 // with HMAC + service-binding auth pluggable via `authBuilder`. Sub-paths:
-//   - `@polaris/sdk/webhook` — verifyWebhook (v2)
+//   - `@polaris/sdk/webhook` — verifyWebhook (un-versioned HMAC)
 //   - `@polaris/sdk/react`   — TanStack Query hooks (generated)
 //   - `@polaris/sdk/node`    — Node-only helpers (streams, file uploads)
+//
+// Error model (G1): non-2xx responses throw `PolarisError` with `.code`,
+// `.status`, `.retryable`, and `.requestId`. Callers honor
+// `CONSUMER-CONTRACT.md` retry rules by checking `err.retryable`.
 export * from './generated/index.js';
 import type {
   Mailbox,
@@ -13,6 +17,7 @@ import type {
   SendRequest,
   SendResponse,
 } from './generated/index.js';
+import { parsePolarisError } from './errors.js';
 
 export interface PolarisRequest {
   method: string;
@@ -114,6 +119,13 @@ export class Polaris {
     } catch {
       // not JSON; leave as text
     }
+    if (!res.ok) {
+      // Non-2xx: surface a typed PolarisError. parsePolarisError handles
+      // both well-formed `{ error: { ... } }` envelopes and unparseable
+      // bodies (e.g. a CF 502 HTML page), so callers always see the same
+      // shape.
+      throw parsePolarisError(res.status, parsed ?? text, res.headers);
+    }
     return { status: res.status, body: parsed as T, headers: res.headers };
   }
 
@@ -154,3 +166,4 @@ export class Polaris {
 
 export { verifyWebhook } from './webhook.js';
 export type { VerifyResult, VerifyWebhookInput } from './webhook.js';
+export { PolarisError, isPolarisError, isRetryable, parsePolarisError } from './errors.js';

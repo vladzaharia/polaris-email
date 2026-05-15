@@ -36,7 +36,7 @@ describe('canonicalQuery', () => {
 describe('buildCanonical', () => {
   it('produces a stable string', async () => {
     const c = await buildCanonical({
-      direction: 'polaris-api.v1',
+      direction: 'polaris-api',
       method: 'post',
       path: '/v1/send/raw',
       query: 'mode=test',
@@ -45,7 +45,7 @@ describe('buildCanonical', () => {
       body: '{"hello":"world"}',
     });
     const lines = c.split('\n');
-    expect(lines[0]).toBe('polaris-api.v1');
+    expect(lines[0]).toBe('polaris-api');
     expect(lines[1]).toBe('POST');
     expect(lines[2]).toBe('/v1/send/raw');
     expect(lines[3]).toBe('mode=test');
@@ -57,7 +57,7 @@ describe('buildCanonical', () => {
   it('rejects CRLF in ts/nonce', async () => {
     await expect(
       buildCanonical({
-        direction: 'polaris-api.v1',
+        direction: 'polaris-api',
         method: 'POST',
         path: '/x',
         ts: '1700000000\n000',
@@ -70,7 +70,7 @@ describe('buildCanonical', () => {
   it('rejects path without leading slash', async () => {
     await expect(
       buildCanonical({
-        direction: 'polaris-api.v1',
+        direction: 'polaris-api',
         method: 'POST',
         path: 'v1/x',
         ts: TS,
@@ -83,7 +83,7 @@ describe('buildCanonical', () => {
 
 describe('sign + verify', () => {
   const base = {
-    direction: 'polaris-api.v1' as const,
+    direction: 'polaris-api' as const,
     method: 'POST',
     path: '/v1/send/raw',
     query: 'a=1&b=2',
@@ -91,6 +91,11 @@ describe('sign + verify', () => {
     nonce: NONCE,
     body: '{"x":1}',
   };
+
+  it('sign returns bare lowercase hex (no algorithm prefix)', async () => {
+    const sig = await sign(base, SECRET);
+    expect(sig).toMatch(/^[0-9a-f]{64}$/);
+  });
 
   it('round-trips', async () => {
     const sig = await sign(base, SECRET);
@@ -113,7 +118,7 @@ describe('sign + verify', () => {
       now: () => Number(TS),
     });
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.code).toBe('bad_signature');
+    if (!r.ok) expect(r.code).toBe('invalid_signature');
   });
 
   it('rejects different path', async () => {
@@ -126,20 +131,20 @@ describe('sign + verify', () => {
       now: () => Number(TS),
     });
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.code).toBe('bad_signature');
+    if (!r.ok) expect(r.code).toBe('invalid_signature');
   });
 
   it('rejects different direction', async () => {
     const sig = await sign(base, SECRET);
     const r = await verify({
       ...base,
-      direction: 'polaris-webhook.v1',
+      direction: 'polaris-webhook',
       headers: headers({ 'x-polaris-ts': TS, 'x-polaris-nonce': NONCE, 'x-polaris-sig': sig }),
       secret: SECRET,
       now: () => Number(TS),
     });
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.code).toBe('bad_signature');
+    if (!r.ok) expect(r.code).toBe('invalid_signature');
   });
 
   it('rejects tampered body', async () => {
@@ -152,7 +157,7 @@ describe('sign + verify', () => {
       now: () => Number(TS),
     });
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.code).toBe('bad_signature');
+    if (!r.ok) expect(r.code).toBe('invalid_signature');
   });
 
   it('rejects out-of-skew ts', async () => {
@@ -167,8 +172,8 @@ describe('sign + verify', () => {
     if (!r.ok) expect(r.code).toBe('clock_skew');
   });
 
-  it('rejects algorithm not in allowlist', async () => {
-    const sig = (await sign(base, SECRET)).replace(/^v1=/, 'v2=');
+  it('rejects a versioned `v1=…` signature outright (no dual-accept)', async () => {
+    const sig = 'v1=' + (await sign(base, SECRET));
     const r = await verify({
       ...base,
       headers: headers({ 'x-polaris-ts': TS, 'x-polaris-nonce': NONCE, 'x-polaris-sig': sig }),
@@ -176,11 +181,23 @@ describe('sign + verify', () => {
       now: () => Number(TS),
     });
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.code).toBe('algorithm_rejected');
+    if (!r.ok) expect(r.code).toBe('invalid_signature');
   });
 
-  it('rejects whitespace prefix on algorithm', async () => {
-    const sig = (await sign(base, SECRET)).replace(/^v1=/, 'v1\t=');
+  it('rejects a versioned `v2=…` signature outright (no dual-accept)', async () => {
+    const sig = 'v2=' + (await sign(base, SECRET));
+    const r = await verify({
+      ...base,
+      headers: headers({ 'x-polaris-ts': TS, 'x-polaris-nonce': NONCE, 'x-polaris-sig': sig }),
+      secret: SECRET,
+      now: () => Number(TS),
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.code).toBe('invalid_signature');
+  });
+
+  it('rejects whitespace inside signature', async () => {
+    const sig = (await sign(base, SECRET)).replace(/^/, ' ');
     const r = await verify({
       ...base,
       headers: headers({ 'x-polaris-ts': TS, 'x-polaris-nonce': NONCE, 'x-polaris-sig': sig }),

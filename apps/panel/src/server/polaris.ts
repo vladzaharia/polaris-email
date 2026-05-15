@@ -34,7 +34,7 @@ export function makePolaris(env: Env): PolarisClient {
             const nonce = generateNonce();
             const sig = await sign(
               {
-                direction: 'polaris-api.v1',
+                direction: 'polaris-api',
                 method: req.method,
                 path: req.path,
                 query: req.query ?? '',

@@ -25,7 +25,7 @@ export interface OutboundQueueMessage {
   r2KeyOrInline: string;
   fromDomain: string;
   fromAddress: string;
-  tenantId: string;
+  mailboxId: string;
   domainId: string | null;
   mode: 'live' | 'test';
   retries: number;
@@ -126,8 +126,13 @@ async function tryClaim(
   env: PipelineEnv,
   key: string,
   mailboxId: string,
-  principalId: string | null,
+  principalId: string,
 ): Promise<IdemClaim> {
+  // Composite PK (principal_id, key) — see migration 0004. principal_id is
+  // mandatory for the outbound path that calls this helper.
+  if (!principalId) {
+    throw new Error('principal id required for idempotency claim');
+  }
   const insert = await env.DB.prepare(
     `INSERT OR IGNORE INTO idempotency_keys (key, mailbox_id, principal_id, message_id, created_at)
      VALUES (?1, ?2, ?3, NULL, ?4)
@@ -136,8 +141,10 @@ async function tryClaim(
     .bind(key, mailboxId, principalId, new Date().toISOString())
     .first<{ key: string }>();
   if (insert?.key === key) return { first: true };
-  const row = await env.DB.prepare(`SELECT message_id FROM idempotency_keys WHERE key = ?1`)
-    .bind(key)
+  const row = await env.DB.prepare(
+    `SELECT message_id FROM idempotency_keys WHERE principal_id = ?1 AND key = ?2`,
+  )
+    .bind(principalId, key)
     .first<{ message_id: string | null }>();
   return { first: false, messageId: row?.message_id ?? undefined };
 }
@@ -206,11 +213,17 @@ async function allocateInboundState(
     .run();
 }
 
-async function recordClaim(env: PipelineEnv, key: string, messageId: string): Promise<void> {
+async function recordClaim(
+  env: PipelineEnv,
+  principalId: string,
+  key: string,
+  messageId: string,
+): Promise<void> {
   await env.DB.prepare(
-    `UPDATE idempotency_keys SET message_id = ?2 WHERE key = ?1 AND message_id IS NULL`,
+    `UPDATE idempotency_keys SET message_id = ?3
+       WHERE principal_id = ?1 AND key = ?2 AND message_id IS NULL`,
   )
-    .bind(key, messageId)
+    .bind(principalId, key, messageId)
     .run();
 }
 
@@ -300,12 +313,15 @@ export async function processMessage(
   }
 
   if (args.direction === 'out' && args.idempotencyKey) {
-    const claim = await tryClaim(
-      env,
-      args.idempotencyKey,
-      args.mailboxId,
-      args.principalId ?? null,
-    );
+    if (!args.principalId) {
+      // Composite (principal_id, key) PK requires a non-null principal.
+      throw new ProcessMessageError(
+        'principal id required for outbound idempotency claim',
+        400,
+        'bad_request',
+      );
+    }
+    const claim = await tryClaim(env, args.idempotencyKey, args.mailboxId, args.principalId);
     if (!claim.first) {
       if (claim.messageId) {
         return { messageId: claim.messageId, status: 'queued', fresh: false };
@@ -385,12 +401,12 @@ export async function processMessage(
     )
     .run();
 
-  if (args.direction === 'out' && args.idempotencyKey) {
-    await recordClaim(env, args.idempotencyKey, messageId);
+  if (args.direction === 'out' && args.idempotencyKey && args.principalId) {
+    await recordClaim(env, args.principalId, args.idempotencyKey, messageId);
   }
 
   // Inbound: allocate a mailbox_messages_state row so the message is visible
-  // on the IMAP / JMAP wire the moment it lands. Outbound stays invisible per
+  // on the IMAP wire the moment it lands. Outbound stays invisible per
   // Phase L scope (sent-folder semantics are deferred). Failures are logged
   // but don't fail the ingest — state allocation is recoverable from the
   // janitor + bridge backfill paths.
@@ -428,7 +444,7 @@ export async function processMessage(
       r2KeyOrInline: r2Key,
       fromDomain,
       fromAddress: fromAddr,
-      tenantId: args.mailboxId,
+      mailboxId: args.mailboxId,
       domainId: domainRow?.id ?? null,
       mode: 'live',
       retries: 0,

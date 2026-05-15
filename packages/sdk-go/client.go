@@ -6,12 +6,9 @@ package polarissdk
 import (
 	"bytes"
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"fmt"
 	"io"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 )
@@ -54,8 +51,8 @@ func (c *Client) Do(
 	if !strings.HasPrefix(path, "/") {
 		return nil, nil, fmt.Errorf("polaris-sdk-go: path must start with /")
 	}
-	ts := strconv.FormatInt(time.Now().UnixMilli(), 10)
-	nonce, err := generateNonce()
+	ts := NowMillis()
+	nonce, err := GenerateNonce()
 	if err != nil {
 		return nil, nil, err
 	}
@@ -86,16 +83,18 @@ func (c *Client) Do(
 		return nil, nil, fmt.Errorf("polaris-sdk-go: no credentials configured")
 	}
 
-	canonical := strings.Join([]string{
-		string(DirectionAPI),
-		strings.ToUpper(method),
-		path,
-		canonicalQuery(query),
-		ts,
-		nonce,
-		sha256Hex(body),
-	}, "\n")
-	sig := "v1=" + hmacHex(secret, []byte(canonical))
+	sig, err := Sign(CanonicalInput{
+		Direction: DirectionAPI,
+		Method:    method,
+		Path:      path,
+		Query:     strings.TrimPrefix(query, "?"),
+		TS:        ts,
+		Nonce:     nonce,
+		Body:      body,
+	}, secret)
+	if err != nil {
+		return nil, nil, err
+	}
 
 	req.Header.Set("X-Polaris-Ts", ts)
 	req.Header.Set("X-Polaris-Nonce", nonce)
@@ -126,32 +125,4 @@ func (c *Client) Do(
 		return resp, nil, err
 	}
 	return resp, rb, nil
-}
-
-func generateNonce() (string, error) {
-	b := make([]byte, 16)
-	if _, err := rand.Read(b); err != nil {
-		return "", err
-	}
-	// Crockford base32 — matches packages/hmac/src/index.ts.
-	const alpha = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
-	var bits, acc uint32
-	var sb strings.Builder
-	for _, by := range b {
-		acc = (acc << 8) | uint32(by)
-		bits += 8
-		for bits >= 5 {
-			bits -= 5
-			sb.WriteByte(alpha[(acc>>bits)&31])
-		}
-	}
-	if bits > 0 {
-		sb.WriteByte(alpha[(acc<<(5-bits))&31])
-	}
-	return sb.String(), nil
-}
-
-func sha256Hex(b []byte) string {
-	h := sha256SumOrEmpty(b)
-	return hex.EncodeToString(h[:])
 }

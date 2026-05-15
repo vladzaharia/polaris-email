@@ -54,13 +54,13 @@ func NewRoot() *cobra.Command {
 	root.AddCommand(
 		newDomainCmd(),
 		newZoneCmd(),
-		newTenantCmd(),
 		newDaemonCmd(),
 		newRouteCmd(),
 		newCredCmd(),
 		newWebhookCmd(),
 		newStatusCmd(),
 		newAuditCmd(),
+		newAuthCmd(),
 		newBootstrapCmd(),
 		newVersionCmd(),
 	)

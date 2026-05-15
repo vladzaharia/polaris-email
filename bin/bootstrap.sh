@@ -216,14 +216,18 @@ else
   if [[ -z "$POL_A" ]]; then
     warn "POLARIS_SECRET_A unknown in this session — cannot mint admin key. Re-run with a fresh secret or restore from password manager."
   else
-    triplet="$(polaris_sign "$POL_A" POST /admin/bootstrap '{}')"
-    ts="$(awk '{print $1}' <<<"$triplet")"
-    nonce="$(awk '{print $2}' <<<"$triplet")"
-    sig="$(awk '{print $3}' <<<"$triplet")"
+    body_file="$(mktemp -t polaris-bootstrap-body)"
+    printf '{}' > "$body_file"
+    headers="$(POLARIS_SECRET="$POL_A" polaris-email auth sign \
+      --method POST --path /admin/bootstrap --body "$body_file")"
+    rm -f "$body_file"
+    ts="$(awk -F': ' '/^X-Polaris-Ts:/ {print $2}' <<<"$headers")"
+    nonce="$(awk -F': ' '/^X-Polaris-Nonce:/ {print $2}' <<<"$headers")"
+    sig="$(awk -F': ' '/^X-Polaris-Sig:/ {print $2}' <<<"$headers")"
     API_URL="https://${POLARIS_API_HOSTNAME}"
     resp="$(curl -sS -X POST "$API_URL/admin/bootstrap" \
       -H 'content-type: application/json' \
-      -H "x-polaris-ts: $ts" -H "x-polaris-nonce: $nonce" -H "x-polaris-sig: v1=$sig" \
+      -H "x-polaris-ts: $ts" -H "x-polaris-nonce: $nonce" -H "x-polaris-sig: $sig" \
       -d '{}' || echo '{"error":"bootstrap_failed"}')"
     admin_id="$(printf '%s' "$resp" | jq -r '.admin_key_id // empty')"
     admin_secret="$(printf '%s' "$resp" | jq -r '.admin_key_secret // empty')"

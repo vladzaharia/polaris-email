@@ -16,6 +16,7 @@ import { Button } from '../../components/ui/button.js';
 import { Skeleton } from '../../components/ui/skeleton.js';
 import { Badge } from '../../components/ui/badge.js';
 import { useAdminQuery } from '../../hooks/useAdminApi.js';
+import { messageKeys } from '../../queryKeys.js';
 
 interface MessageRow {
   id: string;
@@ -49,7 +50,7 @@ export function MessagesList() {
   params.set('offset', String(offset));
 
   const query = useAdminQuery<{ data: MessageRow[]; next_offset: number | null }>(
-    ['messages', params.toString()],
+    [...messageKeys.list(), params.toString()] as const,
     `/api/messages?${params.toString()}`,
   );
 

@@ -49,7 +49,7 @@ func TestVerifyAgainstSharedVectors(t *testing.T) {
 		v := v
 		t.Run(v.Name, func(t *testing.T) {
 			tsMs, _ := strconv.ParseInt(v.TS, 10, 64)
-			res := VerifyWebhookFull(VerifyInput{
+			res := VerifyWebhook(VerifyInput{
 				Direction: Direction(v.Direction),
 				Method:    v.Method,
 				Path:      v.Path,
@@ -73,7 +73,7 @@ func TestVerifyAgainstSharedVectors(t *testing.T) {
 	}
 }
 
-func TestV2TagAccepted(t *testing.T) {
+func TestRejectsVersionedSignaturePrefix(t *testing.T) {
 	vs := loadVectors(t)
 	var v vector
 	for _, x := range vs {
@@ -82,9 +82,10 @@ func TestV2TagAccepted(t *testing.T) {
 			break
 		}
 	}
-	v2 := "v2=" + v.ExpectedSig[3:]
+	// Prefix the otherwise-valid signature with `v1=` — must be rejected.
+	prefixed := "v1=" + v.ExpectedSig
 	tsMs, _ := strconv.ParseInt(v.TS, 10, 64)
-	res := VerifyWebhookFull(VerifyInput{
+	res := VerifyWebhook(VerifyInput{
 		Direction: Direction(v.Direction),
 		Method:    v.Method,
 		Path:      v.Path,
@@ -92,13 +93,16 @@ func TestV2TagAccepted(t *testing.T) {
 		Headers: map[string]string{
 			"x-polaris-ts":    v.TS,
 			"x-polaris-nonce": v.Nonce,
-			"x-polaris-sig":   v2,
+			"x-polaris-sig":   prefixed,
 		},
 		Body:   []byte(v.Body),
 		Secret: []byte(v.Secret),
 		Now:    time.UnixMilli(tsMs),
 	})
-	if !res.OK {
-		t.Fatalf("expected ok with v2 tag: %+v", res)
+	if res.OK {
+		t.Fatalf("expected fail for prefixed sig, got: %+v", res)
+	}
+	if res.Code != CodeInvalidSignature {
+		t.Fatalf("expected code=invalid_signature, got %s", res.Code)
 	}
 }

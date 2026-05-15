@@ -9,7 +9,12 @@ import { PageCard } from '../../layouts/PageCard.js';
 export function RoutingDetail() {
   const { id } = useParams({ from: '/routing/$id' });
   return (
-    <PageCard title="Routing rule" description={id} decorative>
+    <PageCard
+      title="Routing rule"
+      breadcrumbs={[{ label: 'Routing', to: '/routing' }, { label: id }]}
+      description={id}
+      decorative
+    >
       <p className="text-sm">
         Receiver rules are managed inline from the mailbox detail page. The receiver id is{' '}
         <code className="font-mono">{id}</code>.

@@ -1,14 +1,24 @@
 // polaris-email-api Worker entrypoint.
+//
+// Three Cloudflare entry points share this Worker, all bound from
+// `services/api/wrangler.jsonc`:
+//
+//   * `fetch`     — Hono router (HTTP requests).
+//   * `scheduled` — cron dispatcher absorbed from the standalone `cron`
+//                   Worker in phase B1. Routes on `event.cron`.
+//   * `queue`     — FANOUT_QUEUE consumer absorbed from the standalone
+//                   `fanout` Worker in phase B1. Bounded concurrency keeps
+//                   webhook POST latency out of the HTTP request path.
 import { Hono } from 'hono';
 import { admin } from './routes/admin.js';
 import { bootstrap } from './routes/bootstrap.js';
 import type { Env } from './env.js';
 import { messages } from './routes/messages.js';
 import { messagesState } from './routes/messages-state.js';
-import { pushSubscriptions } from './routes/push-subscriptions.js';
 import { requestId } from '@polaris-email/ids';
 import { buildError } from './errors.js';
-export { RevocationDO } from '@polaris-email/revocation-do';
+import { scheduled } from './scheduled/index.js';
+import { fanoutQueueConsumer, type FanoutEvent } from './queue/fanout.js';
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -23,7 +33,6 @@ app.get('/healthz', (c) => c.json({ ok: true }));
 
 app.route('/', messages);
 app.route('/', messagesState);
-app.route('/', pushSubscriptions);
 app.route('/', admin);
 app.route('/', bootstrap);
 
@@ -36,4 +45,23 @@ app.onError((err, c) => {
   return buildError(c, 'degraded', 'unhandled error');
 });
 
-export default app;
+// Export the Hono `app` so existing tests that call `app.fetch(...)` directly
+// continue to work without an indirection through the default export.
+export { app };
+
+const FANOUT_QUEUE_NAME = 'polaris-email-fanout';
+
+export default {
+  fetch: app.fetch.bind(app),
+  async scheduled(event: ScheduledEvent, env: Env, _ctx: ExecutionContext): Promise<void> {
+    await scheduled(event, env);
+  },
+  async queue(batch: MessageBatch<unknown>, env: Env, _ctx: ExecutionContext): Promise<void> {
+    if (batch.queue === FANOUT_QUEUE_NAME) {
+      await fanoutQueueConsumer(batch as MessageBatch<FanoutEvent>, env);
+      return;
+    }
+    // eslint-disable-next-line no-console
+    console.warn(`queue: unknown binding ${batch.queue}`);
+  },
+};

@@ -15,12 +15,7 @@ interface Vector {
   expected_sig: string;
   must_verify: boolean;
   /** non-empty when must_verify=false; expected verifier error code */
-  expected_error?:
-    | 'bad_signature'
-    | 'algorithm_rejected'
-    | 'header_invalid'
-    | 'clock_skew'
-    | 'missing_header';
+  expected_error?: 'invalid_signature' | 'header_invalid' | 'clock_skew' | 'missing_header';
 }
 
 const SECRET = 'XBNRJYZ8WS5KQDVPM7T4F2H6CG3A1E9N';
@@ -28,7 +23,7 @@ const SECRET = 'XBNRJYZ8WS5KQDVPM7T4F2H6CG3A1E9N';
 const cases: Array<Omit<Vector, 'expected_sig'> & { tamper?: (sig: string) => string }> = [
   {
     name: 'api/POST/messages/happy',
-    direction: 'polaris-api.v1',
+    direction: 'polaris-api',
     method: 'POST',
     path: '/v1/send/raw',
     query: 'mode=test',
@@ -40,7 +35,7 @@ const cases: Array<Omit<Vector, 'expected_sig'> & { tamper?: (sig: string) => st
   },
   {
     name: 'api/POST/messages/empty-query',
-    direction: 'polaris-api.v1',
+    direction: 'polaris-api',
     method: 'POST',
     path: '/v1/send/raw',
     query: '',
@@ -52,7 +47,7 @@ const cases: Array<Omit<Vector, 'expected_sig'> & { tamper?: (sig: string) => st
   },
   {
     name: 'api/POST/messages/multi-value-query',
-    direction: 'polaris-api.v1',
+    direction: 'polaris-api',
     method: 'POST',
     path: '/v1/send/raw',
     query: 'b=2&a=1&a=2',
@@ -64,7 +59,7 @@ const cases: Array<Omit<Vector, 'expected_sig'> & { tamper?: (sig: string) => st
   },
   {
     name: 'api/GET/admin/list/happy',
-    direction: 'polaris-api.v1',
+    direction: 'polaris-api',
     method: 'GET',
     path: '/v1/admin/api-keys',
     query: 'service=expresscharge',
@@ -76,7 +71,7 @@ const cases: Array<Omit<Vector, 'expected_sig'> & { tamper?: (sig: string) => st
   },
   {
     name: 'webhook/POST/external/happy',
-    direction: 'polaris-webhook.v1',
+    direction: 'polaris-webhook',
     method: 'POST',
     path: '/email-hook',
     query: '',
@@ -89,7 +84,7 @@ const cases: Array<Omit<Vector, 'expected_sig'> & { tamper?: (sig: string) => st
   // Empty body: signatures must still be deterministic over an empty string.
   {
     name: 'webhook/POST/empty-body',
-    direction: 'polaris-webhook.v1',
+    direction: 'polaris-webhook',
     method: 'POST',
     path: '/hook',
     query: '',
@@ -103,7 +98,7 @@ const cases: Array<Omit<Vector, 'expected_sig'> & { tamper?: (sig: string) => st
   // byte-length, or that decode the body before hashing.
   {
     name: 'webhook/POST/utf8-body',
-    direction: 'polaris-webhook.v1',
+    direction: 'polaris-webhook',
     method: 'POST',
     path: '/hook',
     query: '',
@@ -117,7 +112,7 @@ const cases: Array<Omit<Vector, 'expected_sig'> & { tamper?: (sig: string) => st
   // verifiers must agree on the canonical form of `q=hello%20world&q=a%2Bb`.
   {
     name: 'api/GET/query-percent-encoded',
-    direction: 'polaris-api.v1',
+    direction: 'polaris-api',
     method: 'GET',
     path: '/v1/audit',
     query: 'q=hello%20world&q=a%2Bb&filter=k%3Dv',
@@ -132,7 +127,7 @@ const cases: Array<Omit<Vector, 'expected_sig'> & { tamper?: (sig: string) => st
   // must agree byte-for-byte across node/go/python.
   {
     name: 'api/GET/query-unreserved-special',
-    direction: 'polaris-api.v1',
+    direction: 'polaris-api',
     method: 'GET',
     path: '/v1/audit',
     query: 'q=he%21llo%27s&n=name%28x%29%2A',
@@ -146,7 +141,7 @@ const cases: Array<Omit<Vector, 'expected_sig'> & { tamper?: (sig: string) => st
   // before hashing (canonical form is byte-exact).
   {
     name: 'api/GET/path-percent-encoded',
-    direction: 'polaris-api.v1',
+    direction: 'polaris-api',
     method: 'GET',
     path: '/v1/send/raw/01HXR%2FWITHSLASH',
     query: '',
@@ -159,7 +154,7 @@ const cases: Array<Omit<Vector, 'expected_sig'> & { tamper?: (sig: string) => st
   // Nonce at the documented length boundary (16 chars — the minimum).
   {
     name: 'api/POST/nonce-min-length',
-    direction: 'polaris-api.v1',
+    direction: 'polaris-api',
     method: 'POST',
     path: '/v1/send',
     query: '',
@@ -173,7 +168,7 @@ const cases: Array<Omit<Vector, 'expected_sig'> & { tamper?: (sig: string) => st
   // truncation bugs.
   {
     name: 'api/POST/nonce-max-length',
-    direction: 'polaris-api.v1',
+    direction: 'polaris-api',
     method: 'POST',
     path: '/v1/send',
     query: '',
@@ -212,9 +207,26 @@ for (const c of cases) {
 }
 
 // Append additional negative cases that aren't derived from sign().
+// `v1=…` prefix is now rejected outright — exercises the un-versioning policy.
 out.push({
-  name: 'negative/algorithm-not-allowed',
-  direction: 'polaris-api.v1',
+  name: 'negative/legacy-v1-prefix-rejected',
+  direction: 'polaris-api',
+  method: 'POST',
+  path: '/v1/send/raw',
+  query: '',
+  ts: '1700000000000',
+  nonce: 'AAAABBBBCCCCDDDD',
+  secret: SECRET,
+  body: '{}',
+  expected_sig: 'v1=' + 'a'.repeat(64),
+  must_verify: false,
+  expected_error: 'invalid_signature',
+});
+
+// `v2=…` prefix is also rejected — same un-versioning policy.
+out.push({
+  name: 'negative/legacy-v2-prefix-rejected',
+  direction: 'polaris-api',
   method: 'POST',
   path: '/v1/send/raw',
   query: '',
@@ -224,12 +236,12 @@ out.push({
   body: '{}',
   expected_sig: 'v2=' + 'a'.repeat(64),
   must_verify: false,
-  expected_error: 'algorithm_rejected',
+  expected_error: 'invalid_signature',
 });
 
 out.push({
   name: 'negative/crlf-in-nonce',
-  direction: 'polaris-api.v1',
+  direction: 'polaris-api',
   method: 'POST',
   path: '/v1/send/raw',
   query: '',
@@ -237,14 +249,14 @@ out.push({
   nonce: 'AAAABBBBCCCC\r\nDD',
   secret: SECRET,
   body: '{}',
-  expected_sig: 'v1=' + 'a'.repeat(64),
+  expected_sig: 'a'.repeat(64),
   must_verify: false,
   expected_error: 'header_invalid',
 });
 
 out.push({
   name: 'negative/truncated-sig',
-  direction: 'polaris-api.v1',
+  direction: 'polaris-api',
   method: 'POST',
   path: '/v1/send/raw',
   query: '',
@@ -252,15 +264,15 @@ out.push({
   nonce: 'AAAABBBBCCCCDDDD',
   secret: SECRET,
   body: '{}',
-  expected_sig: 'v1=ab',
+  expected_sig: 'ab',
   must_verify: false,
-  expected_error: 'bad_signature',
+  expected_error: 'invalid_signature',
 });
 
 // Nonce too short — under the 16-char minimum.
 out.push({
   name: 'negative/nonce-too-short',
-  direction: 'polaris-api.v1',
+  direction: 'polaris-api',
   method: 'POST',
   path: '/v1/send/raw',
   query: '',
@@ -268,7 +280,7 @@ out.push({
   nonce: 'TOOSHORT',
   secret: SECRET,
   body: '{}',
-  expected_sig: 'v1=' + 'a'.repeat(64),
+  expected_sig: 'a'.repeat(64),
   must_verify: false,
   expected_error: 'header_invalid',
 });
@@ -276,7 +288,7 @@ out.push({
 // Nonce too long — over the 128-char maximum.
 out.push({
   name: 'negative/nonce-too-long',
-  direction: 'polaris-api.v1',
+  direction: 'polaris-api',
   method: 'POST',
   path: '/v1/send/raw',
   query: '',
@@ -284,7 +296,7 @@ out.push({
   nonce: 'A'.repeat(129),
   secret: SECRET,
   body: '{}',
-  expected_sig: 'v1=' + 'a'.repeat(64),
+  expected_sig: 'a'.repeat(64),
   must_verify: false,
   expected_error: 'header_invalid',
 });
@@ -293,7 +305,7 @@ out.push({
 // Forces verifiers to actually run HMAC, not just structural checks.
 out.push({
   name: 'negative/wrong-secret',
-  direction: 'polaris-api.v1',
+  direction: 'polaris-api',
   method: 'POST',
   path: '/v1/send/raw',
   query: '',
@@ -301,26 +313,21 @@ out.push({
   nonce: 'AAAABBBBCCCCDDDD',
   secret: SECRET,
   // Signature computed with a different secret; will not match.
-  expected_sig:
-    'v1=' +
-    (await (async () => {
-      const wrong = await sign(
-        {
-          direction: 'polaris-api.v1',
-          method: 'POST',
-          path: '/v1/send/raw',
-          query: '',
-          ts: '1700000000000',
-          nonce: 'AAAABBBBCCCCDDDD',
-          body: '{}',
-        },
-        'WRONG_SECRET_DIFFERENT_FROM_OURS_X1',
-      );
-      return wrong.replace(/^v1=/, '');
-    })()),
+  expected_sig: await sign(
+    {
+      direction: 'polaris-api',
+      method: 'POST',
+      path: '/v1/send/raw',
+      query: '',
+      ts: '1700000000000',
+      nonce: 'AAAABBBBCCCCDDDD',
+      body: '{}',
+    },
+    'WRONG_SECRET_DIFFERENT_FROM_OURS_X1',
+  ),
   body: '{}',
   must_verify: false,
-  expected_error: 'bad_signature',
+  expected_error: 'invalid_signature',
 });
 
 process.stdout.write(JSON.stringify({ version: 1, vectors: out }, null, 2) + '\n');

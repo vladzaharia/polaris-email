@@ -12,8 +12,10 @@
     { "binding": "KV_IDEMPOTENCY", "id": "${KV_IDEMPOTENCY_ID}" },
     { "binding": "KV_RATE_LIMIT", "id": "${KV_RATE_LIMIT_ID}" },
     { "binding": "KV_KEY_CACHE", "id": "${KV_KEY_CACHE_ID}" },
+    { "binding": "KV_REVOCATIONS", "id": "${KV_REVOCATIONS_ID}" },
   ],
   "vars": {
     "API_BASE_URL": "https://${POLARIS_API_HOSTNAME}",
+    "ALERT_WEBHOOK": "${ALERT_WEBHOOK}",
   },
 }

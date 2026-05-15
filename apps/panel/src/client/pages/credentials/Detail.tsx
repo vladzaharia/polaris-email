@@ -1,23 +1,22 @@
 // Credential detail — stats + rotate + revoke + code samples.
 //
-// Rotate returns the new secret in a one-shot modal; the panel never stores
-// it. Code samples use `{{credential_id}}` / `{{sender_address}}` /
-// `{{example_recipient}}` placeholders so the operator can copy verbatim.
+// Rotate returns the new secret via the shared `<SecretRevealDialog>`; the
+// panel never stores it (schema is hash-only). Revoke gates behind the
+// shared `<DestructiveActionDialog>` with a typed-confirmation of the
+// credential id to prevent accidental clicks. Code samples use
+// `{{credential_id}}` / `{{sender_address}}` / `{{example_recipient}}`
+// placeholders so the operator can copy verbatim.
 import { useState } from 'react';
 import { useParams } from '@tanstack/react-router';
 import { PageCard } from '../../layouts/PageCard.js';
 import { Button } from '../../components/ui/button.js';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../components/ui/tabs.js';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '../../components/ui/dialog.js';
 import { Badge } from '../../components/ui/badge.js';
 import { CodeBlock } from '../../components/CodeBlock.js';
+import { DestructiveActionDialog } from '../../components/DestructiveActionDialog.js';
+import { SecretRevealDialog } from '../../components/SecretRevealDialog.js';
 import { useAdminMutation, useAdminQuery } from '../../hooks/useAdminApi.js';
+import { credentialKeys } from '../../queryKeys.js';
 
 interface CredStats {
   credential_id: string;
@@ -46,20 +45,6 @@ await polaris.sendMessage({
   text: 'hello',
 });`;
 
-const pythonSample = `from polaris_sdk import Polaris
-
-polaris = Polaris(
-    base_url="https://api.polaris-email.example",
-    key_id="{{credential_id}}",
-    key_secret=os.environ["POLARIS_SECRET"],
-)
-polaris.send_message(
-    from_="{{sender_address}}",
-    to=["{{example_recipient}}"],
-    subject="hi",
-    text="hello",
-)`;
-
 const goSample = `client := polaris.New(polaris.Options{
     BaseURL:   "https://api.polaris-email.example",
     KeyID:     "{{credential_id}}",
@@ -75,23 +60,37 @@ _, err := client.SendMessage(ctx, &polaris.SendRequest{
 export function CredentialDetail() {
   const { id } = useParams({ from: '/credentials/$id' });
   const stats = useAdminQuery<CredStats>(
-    ['credential-stats', id],
+    credentialKeys.stats(id),
     `/api/admin/credentials/${id}/stats?window=24h`,
   );
-  const rotate = useAdminMutation<{ new_key_secret?: string; secret?: string }, undefined>(() => ({
-    path: `/api/admin/credentials/${id}/rotate`,
-    method: 'POST',
-    body: { mode: 'planned' },
-  }));
-  const revoke = useAdminMutation<unknown, undefined>(() => ({
-    path: `/api/admin/credentials/${id}/revoke`,
-    method: 'POST',
-    body: { mode: 'planned' },
-  }));
+  // Rotate is silent — the rotated secret is shown via SecretRevealDialog,
+  // which is its own UX confirmation. A toast on top would be noisy.
+  const rotate = useAdminMutation<{ new_key_secret?: string; secret?: string }, undefined>(
+    () => ({
+      path: `/api/admin/credentials/${id}/rotate`,
+      method: 'POST',
+      body: { mode: 'planned' },
+    }),
+    { silent: true, invalidateKeys: [credentialKeys.all] },
+  );
+  const revoke = useAdminMutation<unknown, undefined>(
+    () => ({
+      path: `/api/admin/credentials/${id}/revoke`,
+      method: 'POST',
+      body: { mode: 'planned' },
+    }),
+    { invalidateKeys: [credentialKeys.all], successMessage: 'Credential revoked.' },
+  );
   const [rotatedSecret, setRotatedSecret] = useState<string | null>(null);
+  const [confirmRevoke, setConfirmRevoke] = useState(false);
 
   return (
-    <PageCard title="Credential" description={id} decorative>
+    <PageCard
+      title="Credential"
+      breadcrumbs={[{ label: 'Credentials', to: '/credentials' }, { label: id }]}
+      description={id}
+      decorative
+    >
       <div className="space-y-6">
         <div className="flex flex-wrap items-center gap-2">
           <Button
@@ -104,12 +103,7 @@ export function CredentialDetail() {
           >
             {rotate.isPending ? 'Rotating…' : 'Rotate'}
           </Button>
-          <Button
-            size="sm"
-            variant="destructive"
-            onClick={() => revoke.mutate(undefined)}
-            disabled={revoke.isPending}
-          >
+          <Button size="sm" variant="destructive" onClick={() => setConfirmRevoke(true)}>
             Revoke
           </Button>
         </div>
@@ -144,7 +138,6 @@ export function CredentialDetail() {
             <TabsList>
               <TabsTrigger value="curl">curl</TabsTrigger>
               <TabsTrigger value="node">@polaris/sdk (Node)</TabsTrigger>
-              <TabsTrigger value="python">polaris-sdk (Python)</TabsTrigger>
               <TabsTrigger value="go">polaris-sdk-go</TabsTrigger>
             </TabsList>
             <TabsContent value="curl" className="mt-3">
@@ -153,9 +146,6 @@ export function CredentialDetail() {
             <TabsContent value="node" className="mt-3">
               <CodeBlock code={nodeSample} language="ts" />
             </TabsContent>
-            <TabsContent value="python" className="mt-3">
-              <CodeBlock code={pythonSample} language="python" />
-            </TabsContent>
             <TabsContent value="go" className="mt-3">
               <CodeBlock code={goSample} language="go" />
             </TabsContent>
@@ -163,17 +153,33 @@ export function CredentialDetail() {
         </section>
       </div>
 
-      <Dialog open={rotatedSecret != null} onOpenChange={(o) => !o && setRotatedSecret(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>New secret</DialogTitle>
-            <DialogDescription>
-              This is the only time the new secret is shown. Copy it now.
-            </DialogDescription>
-          </DialogHeader>
-          {rotatedSecret ? <CodeBlock code={rotatedSecret} /> : null}
-        </DialogContent>
-      </Dialog>
+      <SecretRevealDialog
+        open={rotatedSecret != null}
+        onOpenChange={(o) => !o && setRotatedSecret(null)}
+        title="New secret"
+        secretLabel="Credential secret"
+        secret={rotatedSecret}
+        note="Use this secret to sign requests. Polaris stores only the hash — there is no way to retrieve this value again."
+      />
+
+      <DestructiveActionDialog
+        open={confirmRevoke}
+        onOpenChange={setConfirmRevoke}
+        action="Revoke credential"
+        name={id}
+        blastRadius={[
+          'In-flight requests authenticating with this credential will fail with 401',
+          'New SMTPS/IMAP logins with this credential will fail',
+          'Existing message rows remain; only the credential itself is revoked',
+        ]}
+        reversible={false}
+        typedConfirmation={id}
+        onConfirm={async () => {
+          await revoke.mutateAsync(undefined);
+          setConfirmRevoke(false);
+        }}
+        isPending={revoke.isPending}
+      />
     </PageCard>
   );
 }

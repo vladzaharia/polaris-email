@@ -14,7 +14,7 @@ export interface OutboundQueueMessage {
   r2KeyOrInline: string;
   fromDomain: string;
   fromAddress: string;
-  tenantId: string;
+  mailboxId: string;
   domainId: string | null;
   mode: 'live' | 'test';
   retries: number;

@@ -34,7 +34,7 @@
       }
     },
     {
-      "files": ["services/in/**", "services/fanout/**", "services/out/**"],
+      "files": ["services/in/**", "services/out/**"],
       "rules": {
         "typescript/no-floating-promises": "warn"
       }

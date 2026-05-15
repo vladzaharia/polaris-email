@@ -28,6 +28,7 @@ import {
 import { Skeleton } from '../../components/ui/skeleton.js';
 import { Badge } from '../../components/ui/badge.js';
 import { useAdminMutation, useAdminQuery } from '../../hooks/useAdminApi.js';
+import { mailboxKeys } from '../../queryKeys.js';
 
 interface MailboxRow {
   id: string;
@@ -46,7 +47,7 @@ function CreateMailboxWizard() {
   const [description, setDescription] = useState('');
   const create = useAdminMutation<{ id: string }, { name: string; description?: string }>(
     (vars) => ({ path: '/api/admin/mailboxes', method: 'POST', body: vars }),
-    { invalidateKeys: [['mailboxes']] },
+    { invalidateKeys: [mailboxKeys.all], successMessage: 'Mailbox created.' },
   );
   const reset = () => {
     setStep(1);
@@ -138,7 +139,7 @@ function CreateMailboxWizard() {
 }
 
 export function MailboxesList() {
-  const q = useAdminQuery<{ data: MailboxRow[] }>(['mailboxes'], '/api/admin/mailboxes');
+  const q = useAdminQuery<{ data: MailboxRow[] }>(mailboxKeys.list(), '/api/admin/mailboxes');
   const rows = q.data?.data ?? [];
   return (
     <PageCard title="Mailboxes" description="Inbound + outbound mailbox registry." decorative>

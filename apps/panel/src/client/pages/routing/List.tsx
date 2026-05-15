@@ -18,6 +18,7 @@ import {
 import { Skeleton } from '../../components/ui/skeleton.js';
 import { Label } from '../../components/ui/label.js';
 import { useAdminQuery } from '../../hooks/useAdminApi.js';
+import { mailboxKeys } from '../../queryKeys.js';
 
 interface MailboxRow {
   id: string;
@@ -35,10 +36,13 @@ interface ReceiverRow {
 }
 
 export function RoutingList() {
-  const mailboxes = useAdminQuery<{ data: MailboxRow[] }>(['mailboxes'], '/api/admin/mailboxes');
+  const mailboxes = useAdminQuery<{ data: MailboxRow[] }>(
+    mailboxKeys.list(),
+    '/api/admin/mailboxes',
+  );
   const [mailboxId, setMailboxId] = useState('');
   const detail = useAdminQuery<{ receivers: ReceiverRow[] }>(
-    ['mailbox', mailboxId],
+    mailboxKeys.detail(mailboxId),
     `/api/admin/mailboxes/${mailboxId}`,
     { enabled: !!mailboxId },
   );

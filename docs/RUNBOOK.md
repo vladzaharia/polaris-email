@@ -26,42 +26,50 @@ the prod account.
 
 ### "Outbound to acme.com is failing"
 
+Drill into the failures with the platform's native log tooling — there is
+no `polaris-email logs` subcommand. From a workstation with `wrangler`
+configured:
+
 ```bash
-polaris-email logs failures --domain acme.com --since 1h
-polaris-email logs send --domain acme.com --status failed --since 1h
+wrangler tail polaris-email-api --status error --search "acme.com"
+wrangler tail polaris-email-out --status error --search "acme.com"
 ```
+
+Cross-reference the failed messages with `polaris-email status --domain acme.com`
+for aggregate rates.
 
 Look at error class:
 
 - **provider_5xx**: Cloudflare Email Service issue. Check
-  https://www.cloudflarestatus.com/. If sustained > 5 min, cut domain over
-  to fallback provider:
-  ```bash
-  polaris-email domain set-provider acme.com --provider ses
-  ```
-  (SES is not currently implemented as a provider; future work)
+  https://www.cloudflarestatus.com/. There is no built-in provider
+  fail-over; if the outage is sustained, soft-disable the domain
+  (`polaris-email domain disable acme.com`) so callers stop queueing
+  doomed messages, then re-enable once the upstream recovers.
 - **dkim_invalid**: receiver bouncing on DKIM. Check current DKIM key state:
   ```bash
   polaris-email domain show acme.com   # look for dkim_keys with state
   ```
-  If `retiring` was removed from DNS prematurely, restore via `polaris-email
-domain rotate-dkim acme.com --rollback`.
+  If a retiring key was removed from DNS prematurely, rotate again with
+  `polaris-email domain rotate-dkim acme.com` and republish the new
+  selector before retiring the old one.
 - **rate_limited**: tenant exceeding per-tenant rate limit. Coordinate with
-  tenant; if legitimate, raise their `tenants.rate_limit_per_min` via
-  `polaris-email tenant update`.
+  the tenant; rate-limit adjustments are an operator-side D1 update today
+  (no CLI verb).
 
 ### "Webhook deliveries are failing for service X"
 
 ```bash
-polaris-email logs webhooks --tenant <name> --since 1h --status failed
-polaris-email webhook dlq list --tenant <name>
+wrangler tail polaris-email-fanout --status error
+polaris-email webhook dlq list
 ```
 
 Per-subscription circuit breaker (A8) marks a sub `paused` after 5
-consecutive failures. To resume:
+consecutive failures. To bring a paused sub back online, update its row
+directly (no dedicated `resume` verb today):
 
 ```bash
-polaris-email webhook resume <sub_id>
+wrangler d1 execute polaris-email --command \
+  "UPDATE webhook_subs SET paused = 0, failure_count = 0 WHERE id = '<sub_id>'"
 ```
 
 If receiver is permanently broken and DLQ is filling:
@@ -98,15 +106,17 @@ Common causes:
 ### "Audit chain anchor is stale"
 
 ```bash
-polaris-email audit anchors --since 24h
+polaris-email audit anchors
 # Each entry should be ≤ 1 hour apart.
+polaris-email audit verify
+# Walks the chain end-to-end; any tamper or gap shows up here.
 ```
 
-If gap > 1h: the anchor cron stopped or is hitting an error. Check
-`workers/control-plane` logs for anchor cron failures. Re-trigger manually:
+If the gap is > 1h: the anchor cron stopped or is hitting an error. Check
+`services/cron` logs for anchor cron failures:
 
 ```bash
-polaris-email audit force-anchor   # for ops use only; recorded in audit
+wrangler tail polaris-email-cron --status error
 ```
 
 If R2 writes are failing, the anchor key may be revoked or the bucket may
@@ -137,29 +147,27 @@ wrangler d1 execute polaris-email --command \
 
 ### "D1 quota approaching"
 
-Single `polaris-email` D1; older message rows archive to R2 Parquet
-when storage approaches the 10 GB cap. Run the archival job:
+Single `polaris-email` D1; older message rows are archived to R2 by the
+retention janitor in `services/cron`. There is no CLI verb for ad-hoc
+archival yet — drive it from D1 directly. The retention job picks up
+soft-deleted (`expunged_at IS NOT NULL`) rows older than the configured
+window and removes them along with their R2 references:
 
 ```bash
-polaris-email db archive-messages --older-than 90d
-# Selects rows from messages older than 90 days, writes them to R2 as
-# Parquet (queryable via DuckDB), and DELETEs them from D1.
+# Inspect current usage:
+wrangler d1 info polaris-email
+# Force-run the cron job (cron worker exposes a /run endpoint for ops):
+wrangler tail polaris-email-cron --status ok
 ```
 
-Dump lifecycle:
-
-1. New month's database becomes write target.
-2. Prior month read-only for 90 days (replays still possible).
-3. Dump to R2 as Parquet via Logpush.
-4. D1 dropped.
-
-Manual dump: `polaris-email db dump-month 2026-04 --to-r2`.
+Long-term, the plan is monthly Logpush dumps to R2 Parquet; that pipeline
+is not yet wired up.
 
 ### "Cost alert: bill is 2x baseline"
 
-```bash
-polaris-email cost --month $(date +%Y-%m) --by-service
-```
+Cloudflare dashboard → Billing → Usage is the authoritative breakdown.
+There is no `polaris-email cost` command; we rely on Cloudflare's billing
+UI plus Logpush exports for service-level attribution.
 
 Cost cliffs to look for (I19):
 
@@ -180,8 +188,9 @@ mutations should also arrive via the bridge's webhook subscription
 (`message.received`-style invalidation).
 
 ```bash
-polaris-email bridge list
-polaris-email bridge logs <bridge-id> --since 5m
+# Inspect registered bridges + last-sync timestamps directly in D1:
+wrangler d1 execute polaris-email --command \
+  "SELECT id, name, last_sync_at, status FROM mail_bridges ORDER BY last_sync_at DESC"
 # on the host:
 docker compose -f docker-compose.tailscale.yml logs polaris-mail-bridge --tail 200
 # (or docker-compose.local.yml depending on deployment mode)

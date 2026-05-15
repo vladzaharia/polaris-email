@@ -1,5 +1,6 @@
-// Admin webhook DLQ routes. services/fanout writes a row here on terminal
-// webhook delivery failure; operators replay or drop them.
+// Admin webhook DLQ routes. The FANOUT_QUEUE consumer (see
+// services/api/src/queue/fanout.ts) writes a row here on terminal webhook
+// delivery failure; operators replay or drop them.
 import { Hono } from 'hono';
 import { audit } from '../../audit.js';
 import { requireScope } from '../../auth.js';

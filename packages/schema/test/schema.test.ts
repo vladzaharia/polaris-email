@@ -1,9 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   Address,
-  BulkRevokeTenantRequest,
   CreateRoutingRuleRequest,
-  CreateTenantRequest,
   CreateWebhookSubRequest,
   IssueApiKeyRequest,
   RotateRequest,
@@ -74,20 +72,6 @@ describe('admin requests', () => {
       }),
     ).toBeDefined();
   });
-  it('CreateTenantRequest', () => {
-    expect(CreateTenantRequest.parse({ id: 'svc', name: 'Svc' })).toBeDefined();
-  });
-  it('BulkRevokeTenantRequest enforces confirmation', () => {
-    expect(() =>
-      BulkRevokeTenantRequest.parse({
-        tenant_id: 'svc',
-        mode: 'emergency',
-        incident_ticket_id: 'INC-1',
-        confirmation: 'other',
-      }),
-    ).not.toThrow();
-    // Equality check is enforced by API logic, not schema; schema only constrains shape.
-  });
 });
 
 describe('negative validation', () => {
@@ -138,9 +122,6 @@ describe('negative validation', () => {
         events: ['message.received'],
       }),
     ).toThrow();
-  });
-  it('CreateTenantRequest rejects oversize name', () => {
-    expect(() => CreateTenantRequest.parse({ id: 'svc', name: 'a'.repeat(200) })).toThrow();
   });
   it('CreateRoutingRuleRequest rejects missing address_pattern', () => {
     expect(() =>

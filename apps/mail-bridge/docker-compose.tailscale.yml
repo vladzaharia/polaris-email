@@ -59,7 +59,6 @@ services:
       BRIDGE_POLARIS_HMAC_KEY_FILE: /run/secrets/hmac_key
       BRIDGE_SMTPS_ENABLED: ${BRIDGE_SMTPS_ENABLED:-true}
       BRIDGE_IMAP_ENABLED: ${BRIDGE_IMAP_ENABLED:-true}
-      BRIDGE_JMAP_ENABLED: ${BRIDGE_JMAP_ENABLED:-true}
       BRIDGE_CREDSTORE_PATH: /var/lib/polaris-bridge/credstore.db
       BRIDGE_MIRROR_PATH: /var/lib/polaris-bridge/mirror.db
       BRIDGE_LOGGING_FILE: /var/log/polaris-bridge/audit.jsonl

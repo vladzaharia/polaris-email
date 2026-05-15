@@ -1,4 +1,7 @@
 // Daemons list + register form.
+//
+// Registration mints a fresh HMAC key — the schema stores only the hash, so
+// the response is the single chance to capture the plaintext key.
 import { useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import { PageCard } from '../../layouts/PageCard.js';
@@ -15,15 +18,9 @@ import { Input } from '../../components/ui/input.js';
 import { Label } from '../../components/ui/label.js';
 import { Skeleton } from '../../components/ui/skeleton.js';
 import { Badge } from '../../components/ui/badge.js';
-import { CodeBlock } from '../../components/CodeBlock.js';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '../../components/ui/dialog.js';
+import { SecretRevealDialog } from '../../components/SecretRevealDialog.js';
 import { useAdminMutation, useAdminQuery } from '../../hooks/useAdminApi.js';
+import { bridgeKeys } from '../../queryKeys.js';
 
 interface DaemonRow {
   id: string;
@@ -34,12 +31,13 @@ interface DaemonRow {
 }
 
 export function DaemonsList() {
-  const q = useAdminQuery<{ data: DaemonRow[] }>(['daemons'], '/api/admin/daemons');
+  const q = useAdminQuery<{ data: DaemonRow[] }>(bridgeKeys.list(), '/api/admin/daemons');
   const [name, setName] = useState('');
   const [registered, setRegistered] = useState<{ name: string; hmac_key: string } | null>(null);
+  // Registration is silent — the new HMAC key is shown via SecretRevealDialog.
   const register = useAdminMutation<{ id: string; hmac_key: string }, { name: string }>(
     (vars) => ({ path: '/api/admin/daemons', method: 'POST', body: vars }),
-    { invalidateKeys: [['daemons']] },
+    { invalidateKeys: [bridgeKeys.all], silent: true },
   );
   return (
     <PageCard title="Daemons" description="On-prem submission/IMAP bridges." decorative>
@@ -101,15 +99,14 @@ export function DaemonsList() {
         </Table>
       )}
 
-      <Dialog open={registered != null} onOpenChange={(o) => !o && setRegistered(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Daemon {registered?.name} registered</DialogTitle>
-            <DialogDescription>Copy the HMAC key — it&apos;s only shown once.</DialogDescription>
-          </DialogHeader>
-          {registered ? <CodeBlock code={registered.hmac_key} /> : null}
-        </DialogContent>
-      </Dialog>
+      <SecretRevealDialog
+        open={registered != null}
+        onOpenChange={(o) => !o && setRegistered(null)}
+        title={`Bridge ${registered?.name ?? ''} registered`}
+        secretLabel="HMAC key"
+        secret={registered?.hmac_key ?? null}
+        note="Configure the bridge with this key now. Polaris stores only the hash — there is no way to retrieve this value again."
+      />
     </PageCard>
   );
 }

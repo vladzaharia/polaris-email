@@ -109,7 +109,8 @@ webhookSubs.delete('/v1/admin/webhook-subs/:id', requireScope('admin:rotate'), a
 });
 
 // Synthetic test: records an audit row tagged as a panel-initiated test;
-// services/fanout pollutes this branch with a real fire-and-forget delivery
+// the FANOUT_QUEUE consumer (services/api/src/queue/fanout.ts, folded in
+// during phase B1) pollutes this branch with a real fire-and-forget delivery
 // once it's wired against the same row. The panel uses this as a green/red
 // indicator that the row is reachable from the admin plane.
 webhookSubs.post('/v1/admin/webhook-subs/:id/test', requireScope('admin:rotate'), async (c) => {

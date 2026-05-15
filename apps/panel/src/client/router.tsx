@@ -30,6 +30,7 @@ import { DaemonsList } from './pages/daemons/List.js';
 import { DaemonDetail } from './pages/daemons/Detail.js';
 import { TestSendForm } from './pages/test-send/Form.js';
 import { Account } from './pages/settings/Account.js';
+import { Diagnostics } from './pages/diagnostics/Diagnostics.js';
 
 const rootRoute = createRootRoute({
   component: () => (
@@ -139,6 +140,11 @@ const account = createRoute({
   path: '/settings/account',
   component: Account,
 });
+const diagnostics = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/diagnostics',
+  component: Diagnostics,
+});
 
 const routeTree = rootRoute.addChildren([
   loginRoute,
@@ -160,6 +166,7 @@ const routeTree = rootRoute.addChildren([
   daemonDetail,
   testSend,
   account,
+  diagnostics,
 ]);
 
 const router = new Router({ routeTree });

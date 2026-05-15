@@ -93,36 +93,32 @@ Steps the wizard walks you through:
 Non-interactive: `polaris-email domain onboard --from-file domain.toml`. The
 TOML schema is documented in `docs/schemas/domain-onboard.toml.json`.
 
-### B. Manage tenants
+### B. Manage mailboxes
 
-```bash
-polaris-email tenant create newsletter --description "marketing newsletter sender"
-polaris-email tenant list
-polaris-email tenant show newsletter
-polaris-email tenant rotate-pepper newsletter   # bumps pepper_version on messages
-polaris-email tenant disable newsletter
-```
+The schema is mailbox-centric (see `docs/architecture.md`). Mailboxes are the unit
+of routing, auth scope, retention, and webhook delivery. Manage them via the admin
+REST surface (`POST /v1/admin/mailboxes`) — the panel is the easiest place to do
+this; there is no CLI subcommand specifically for mailbox CRUD today.
 
-A tenant is a consumer aggregate. It has zero or more **principals** (API keys
-
-- SMTP credentials). Senders are attached implicitly via `polaris-email cred
-issue --tenant <name> --senders <list>`.
+Each mailbox owns its senders, receivers, principals (API keys / SMTP creds), and
+webhook subscriptions. Senders are attached via `polaris-email cred issue
+--mailbox <id> --senders <list>` (see C).
 
 ### C. Manage credentials
 
 ```bash
 # API key for REST send
-polaris-email cred issue --tenant newsletter --type api \
+polaris-email cred issue --mailbox <mailbox-id> --type api \
     --senders "noreply@acme.com,alerts@mail.acme.com" \
     --output secret-file --output-path ./newsletter-api.key
 
 # SMTP credential for legacy clients
-polaris-email cred issue --tenant newsletter --type smtp \
+polaris-email cred issue --mailbox <mailbox-id> --type smtp \
     --senders "noreply@acme.com" \
     --output json   # for piping to op/pass
 
 # List, revoke, rotate
-polaris-email cred list --tenant newsletter
+polaris-email cred list --mailbox <mailbox-id>
 polaris-email cred revoke <id>
 polaris-email cred rotate <id> --planned       # demote to secondary
 polaris-email cred rotate <id> --emergency     # immediate revoke + new key
@@ -147,16 +143,16 @@ is a single per-zone catch-all; specific routing logic is in our code.
 
 ```bash
 polaris-email status --domain acme.com         # red/yellow/green snapshot
-polaris-email logs send --domain acme.com --follow
-polaris-email logs in --domain acme.com --since 1h
-polaris-email logs webhooks --domain acme.com --status failed
+wrangler tail polaris-email-out --status error --search "acme.com"   # outbound errors
+wrangler tail polaris-email-in --status error --search "acme.com"    # inbound errors
+wrangler tail polaris-email-api --status error --search "webhook"    # webhook failures
 polaris-email webhook dlq list
 polaris-email webhook dlq inspect <id>
 polaris-email webhook dlq replay <id>
 polaris-email webhook dlq drop <id> --confirm <id>   # two-person rule
 polaris-email audit verify                     # walk hash chain
 polaris-email audit anchors                    # list R2 anchors
-polaris-email cost --month 2026-05             # current month bill
+# Monthly bill: Cloudflare dashboard → Billing → Usage (no CLI command).
 ```
 
 ## Multi-host daemons
@@ -218,7 +214,7 @@ effect on the public DNS before progressing. The `domains` row is tombstoned
   growth > 0 over a 5-min window.
 - **Watch audit anchor age**: anchors run hourly; anchor age > 90 min is an
   alert (anchor service may be stuck).
-- **Cost monitoring**: `polaris-email cost --month $(date +%Y-%m)` weekly;
+- **Cost monitoring**: review the Cloudflare dashboard Billing → Usage page weekly;
   alert if Workers CPU-ms > 50% of subscription tier (I5 / I19 risk).
 
 See `docs/RUNBOOK.md` for incident response procedures.

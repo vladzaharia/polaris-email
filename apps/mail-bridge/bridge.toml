@@ -18,16 +18,12 @@ listen_addr = ":993"
 idle_timeout = "29m" # IMAP IDLE max per RFC 9051 §6.3.13 recommendation
 fetch_concurrency = 32
 
-[jmap]
+[webhook]
+# Internal webhook receiver — polaris fanout POSTs `message.received` events
+# here, which the bridge uses to drive IMAP IDLE pushes. Plain HTTP; expects
+# Tailscale or a local reverse proxy to terminate TLS in front.
 enabled = true
-listen_addr = ":443"
-session_path = "/jmap/session"
-api_path = "/jmap/api"
-upload_path = "/jmap/upload"
-download_path = "/jmap/download"
-ws_path = "/jmap/ws"
-eventsource_path = "/jmap/eventsource"
-max_concurrent_requests = 64
+listen_addr = ":8080"
 
 [tls]
 # Mode: "tailscale" uses tsnet.ListenTLS with auto-issued MagicDNS certs.

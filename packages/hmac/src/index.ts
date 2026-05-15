@@ -1,8 +1,8 @@
 // HMAC canonical-string signer/verifier for polaris-email.
 //
 // Domain-separation tags pin the signature to a direction:
-//   polaris-api.v1     — inbound API requests (caller → polaris-email)
-//   polaris-webhook.v1 — outbound webhooks    (polaris-email → consumer)
+//   polaris-api     — inbound API requests (caller → polaris-email)
+//   polaris-webhook — outbound webhooks    (polaris-email → consumer)
 //
 // Canonical string (newline-joined, no trailing newline):
 //   <domain>\n
@@ -13,10 +13,12 @@
 //   <X-Polaris-Nonce>\n
 //   <lowercase-hex(SHA-256(raw-body-bytes))>
 //
-// Signature header: `X-Polaris-Sig: v1=<lowercase-hex(HMAC-SHA256(secret, canonical))>`
-// Verifiers MUST compare the full `v1=` prefix against an allowlist; downgrade is rejected.
+// Signature header: `X-Polaris-Sig: <lowercase-hex(HMAC-SHA256(secret, canonical))>`.
+// The header is the bare hex tag — there is no algorithm prefix. Verifiers MUST
+// reject any value that doesn't match `^[0-9a-f]+$` with `header_invalid`
+// (signatures shaped like `v1=…` or `v2=…` are rejected by this rule).
 
-export type Direction = 'polaris-api.v1' | 'polaris-webhook.v1';
+export type Direction = 'polaris-api' | 'polaris-webhook';
 
 export interface CanonicalInput {
   direction: Direction;
@@ -31,7 +33,7 @@ export interface CanonicalInput {
 export interface SignedRequest {
   ts: string;
   nonce: string;
-  sig: string; // 'v1=<hex>'
+  sig: string; // bare lowercase hex
 }
 
 export interface VerifyInput {
@@ -42,7 +44,6 @@ export interface VerifyInput {
   headers: HeadersLike;
   body: Uint8Array | string;
   secret: string | Uint8Array;
-  allowedAlgorithms?: readonly string[]; // default ['v1']
   skewSeconds?: number; // default 300 (5 min)
   now?: () => number; // ms epoch, for tests
 }
@@ -51,10 +52,10 @@ export type HeadersLike = {
   get(name: string): string | null;
 };
 
-export type VerifyResultOk = { ok: true; algorithm: string; ts: number; nonce: string };
+export type VerifyResultOk = { ok: true; ts: number; nonce: string };
 export type VerifyResultErr = {
   ok: false;
-  code: 'missing_header' | 'header_invalid' | 'clock_skew' | 'algorithm_rejected' | 'bad_signature';
+  code: 'missing_header' | 'header_invalid' | 'clock_skew' | 'invalid_signature';
   message: string;
 };
 export type VerifyResult = VerifyResultOk | VerifyResultErr;
@@ -174,10 +175,11 @@ function secretBytes(secret: string | Uint8Array): Uint8Array {
 
 // ---------- sign + verify ----------
 
+/** Returns the bare lowercase-hex HMAC tag. No algorithm prefix. */
 export async function sign(input: CanonicalInput, secret: string | Uint8Array): Promise<string> {
   const canonical = await buildCanonical(input);
   const tag = await hmacSha256(secretBytes(secret), new TextEncoder().encode(canonical));
-  return 'v1=' + toHex(tag);
+  return toHex(tag);
 }
 
 /** Strict ASCII header value check: refuse whitespace, CR, LF, NUL. */
@@ -193,10 +195,9 @@ export function assertNoCrlf(name: string, value: string): void {
   }
 }
 
-const ALG_RE = /^v\d+=[0-9a-f]+$/;
+const SIG_HEX_RE = /^[0-9a-f]+$/;
 
 export async function verify(input: VerifyInput): Promise<VerifyResult> {
-  const allowed = new Set(input.allowedAlgorithms ?? ['v1']);
   const skew = (input.skewSeconds ?? 300) * 1000;
   const now = (input.now ?? Date.now)();
   const tsHeader = input.headers.get('x-polaris-ts');
@@ -217,14 +218,12 @@ export async function verify(input: VerifyInput): Promise<VerifyResult> {
       message: e instanceof Error ? e.message : 'invalid header',
     };
   }
-  if (!ALG_RE.test(sigHeader)) {
-    return { ok: false, code: 'header_invalid', message: 'signature format' };
-  }
-  const eqIdx = sigHeader.indexOf('=');
-  const prefix = sigHeader.slice(0, eqIdx);
-  const hex = sigHeader.slice(eqIdx + 1);
-  if (!allowed.has(prefix)) {
-    return { ok: false, code: 'algorithm_rejected', message: prefix };
+  // Reject anything that isn't bare lowercase hex. Versioned forms like
+  // `v1=…` / `v2=…` contain an `=` and fail this check — they are rejected
+  // with `invalid_signature` (not `header_invalid`) so consumers get a
+  // single, stable error code for "the signature is bad".
+  if (!SIG_HEX_RE.test(sigHeader)) {
+    return { ok: false, code: 'invalid_signature', message: 'signature format' };
   }
   const ts = Number.parseInt(tsHeader, 10);
   if (!Number.isFinite(ts) || `${ts}` !== tsHeader) {
@@ -257,14 +256,14 @@ export async function verify(input: VerifyInput): Promise<VerifyResult> {
   const expected = await hmacSha256(secretBytes(input.secret), new TextEncoder().encode(canonical));
   let provided: Uint8Array;
   try {
-    provided = fromHex(hex);
+    provided = fromHex(sigHeader);
   } catch {
-    return { ok: false, code: 'header_invalid', message: 'sig hex invalid' };
+    return { ok: false, code: 'invalid_signature', message: 'sig hex invalid' };
   }
   if (!constantTimeEqual(expected, provided)) {
-    return { ok: false, code: 'bad_signature', message: 'hmac mismatch' };
+    return { ok: false, code: 'invalid_signature', message: 'hmac mismatch' };
   }
-  return { ok: true, algorithm: prefix, ts, nonce: nonceHeader };
+  return { ok: true, ts, nonce: nonceHeader };
 }
 
 /** Convenience: generate a nonce (24 base32 crockford chars from 15 random bytes). */

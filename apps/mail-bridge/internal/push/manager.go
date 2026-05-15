@@ -1,5 +1,4 @@
-// Package push fans state-change events out to IMAP IDLE clients,
-// JMAP WebSocket clients, and JMAP EventSource clients.
+// Package push fans state-change events out to IMAP IDLE clients.
 //
 // The Manager is the single registry; webhook handlers call Broadcast when
 // polaris fires a `message.received` event; each subscriber type wraps its
@@ -10,15 +9,18 @@ import (
 	"sync"
 )
 
-// StateChange is the JMAP RFC 8887 payload — `changed: { [accountId]: { [type]: state } }`.
+// StateChange describes a mailbox state delta. The fields are kept as a
+// generic key/value map so the underlying transport (today: IMAP IDLE) can
+// translate the event into protocol-native frames without coupling the
+// manager to a specific wire shape.
 type StateChange struct {
 	Type    string                       `json:"@type"`
 	Changed map[string]map[string]string `json:"changed"`
 }
 
-// Sink is anything that can receive a StateChange. Implementations may
-// translate the event into protocol-native frames (JSON-over-WebSocket,
-// SSE `data:`, or an IMAP `* <n> EXISTS` line).
+// Sink is anything that can receive a StateChange. Implementations translate
+// the event into a protocol-native frame (today only IMAP IDLE's
+// `* <n> EXISTS` untagged response).
 type Sink interface {
 	Deliver(StateChange) error
 	// ID is a per-connection unique identifier used by Unsubscribe.

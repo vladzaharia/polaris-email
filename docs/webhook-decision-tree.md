@@ -23,7 +23,6 @@ Is your service reachable on the public internet via HTTPS?
 1. Pick one of the three patterns above and tell the operator your URL.
 2. Implement signature verification with the appropriate library. The signature header is `X-Polaris-Sig: v2=…` and the body is the v2 envelope (`{event_id, event, occurred_at, message}`).
    - Node: `@polaris/sdk/webhook` (from the `@polaris/sdk` package).
-   - Python: `polaris_sdk.webhook` (from the `polaris-sdk` PyPI package).
    - Go: `polarissdkgo.VerifyWebhook` (from `github.com/vladzaharia/polaris-email/packages/sdk-go`).
 3. Read `message` directly from the envelope — no follow-up `GET /v1/messages/:id` is required. (You may still GET if you want signed attachment URLs that outlive the original delivery window.)
 4. Dedupe by `X-Polaris-Event-Id` for 24 h.

@@ -13,6 +13,7 @@ import {
 import { Badge } from '../../components/ui/badge.js';
 import { Skeleton } from '../../components/ui/skeleton.js';
 import { useAdminQuery } from '../../hooks/useAdminApi.js';
+import { domainKeys } from '../../queryKeys.js';
 
 interface DomainRow {
   id: string;
@@ -31,7 +32,7 @@ function statusBadge(s: string) {
 }
 
 export function DomainsList() {
-  const q = useAdminQuery<{ data: DomainRow[] }>(['domains'], '/api/admin/domains');
+  const q = useAdminQuery<{ data: DomainRow[] }>(domainKeys.list(), '/api/admin/domains');
   const rows = q.data?.data ?? [];
   return (
     <PageCard title="Domains" description="Sender/recipient domain registry." decorative>

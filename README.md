@@ -3,7 +3,7 @@
 Managed email service for the `polaris-*` family. One HMAC REST contract for
 both inbound retrieval and outbound submission (unified `Message` model),
 v2-envelope signed webhooks for inbound events, an on-prem Go mail bridge
-(SMTPS + IMAP + JMAP) for legacy clients, and a managed admin panel for
+(SMTPS + IMAP) for legacy clients, and a managed admin panel for
 mailboxes, API keys, routing, secrets, and operations.
 
 See [`docs/architecture.md`](docs/architecture.md) for the system view,
@@ -29,8 +29,8 @@ Cloudflare Workers (control plane):
 
 On-prem (per host):
 
-- `apps/mail-bridge` — single Go binary serving SMTPS (:465), IMAP4rev2 (:993), and
-  JMAP (:443). Renamed and absorbed from the old `apps/submission-daemon`. See
+- `apps/mail-bridge` — single Go binary serving SMTPS (:465) and IMAP4rev2 (:993).
+  Renamed and absorbed from the old `apps/submission-daemon`. See
   `apps/mail-bridge/README.md` and [`docs/mail-bridge.md`](docs/mail-bridge.md).
 
   Two equally-supported deployment modes (neither is "the default"):
@@ -52,18 +52,15 @@ Operator tooling:
 Shared packages:
 
 - `packages/hmac`, `packages/schema`, `packages/test-vectors` — signing primitives + types.
-- `packages/sdk-node`, `packages/sdk-python`, `packages/sdk-go` — first-party SDKs
-  (generated REST client + hand-written webhook verifier each). See
-  [`docs/sdk.md`](docs/sdk.md).
-- `packages/sdk-codegen` — codegen orchestrator (OpenAPI → TS/Py/Go) + CI regen-diff check.
+- `packages/sdk-node`, `packages/sdk-go` — first-party SDKs (hand-written REST client
+  - embedded webhook verifier). See [`docs/sdk.md`](docs/sdk.md).
 - `packages/pipeline` — the unified `processMessage` pipeline shared by
   `services/in` and `services/api`.
 - `packages/ids` — ULID + request-id generator (shared between services).
 - `packages/mime` — canonicalisation + sender-policy + IDNA address normalisation.
 - `packages/providers` — Provider interface + Cloudflare adapter.
 - `packages/cf-api` — Cloudflare API wrapper (zones, DNS, Email Routing/Service, DKIM).
-- `packages/migrations` — D1 migration runner.
-- `packages/revocation-do` — revocation Durable Object class (bound by `services/api`).
+- `packages/revocation` — KV-backed credential revocation primitive (≤60s propagation).
 
 Infrastructure: `infra/terraform/` defines zone + access-app modules and per-environment
 roots (staging / prod / anchors).
@@ -78,7 +75,7 @@ R2 URLs (`SIGNED_URL_TTL_SECONDS`, default 10 min).
 | `POST`   | `/v1/messages`                               | Submit (Content-Type: `application/json` or `message/rfc822`). |
 | `GET`    | `/v1/messages`                               | List (filter by mailbox_id, direction, status, since, …).      |
 | `GET`    | `/v1/messages/:id`                           | Fetch one message + signed attachment URLs.                    |
-| `POST`   | `/v1/messages/get`                           | Bulk fetch by id (JMAP-style).                                 |
+| `POST`   | `/v1/messages/get`                           | Bulk fetch by id.                                              |
 | `GET`    | `/v1/mailboxes/:id/changes`                  | Delta cursor for sync.                                         |
 | `GET`    | `/v1/mailboxes/:id/messages?fields=metadata` | Metadata-only listing.                                         |
 | `GET`    | `/v1/messages/:id/attachments/:n`            | Attachment download (URL is itself signed).                    |

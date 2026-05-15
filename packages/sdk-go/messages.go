@@ -14,6 +14,8 @@ import (
 	"strconv"
 )
 
+// (errors are defined in errors.go)
+
 // Attachment is the inline attachment shape returned by UnifiedMessage.
 type Attachment struct {
 	ContentType   string `json:"content_type"`
@@ -24,7 +26,7 @@ type Attachment struct {
 }
 
 // Message is a subset of the polaris `UnifiedMessage` shape — enough for the
-// bridge to render IMAP / JMAP responses.
+// bridge to render IMAP responses.
 type Message struct {
 	ID                    string       `json:"id"`
 	MailboxID             string       `json:"mailbox_id"`
@@ -101,30 +103,12 @@ type WebhookSub struct {
 
 // CredentialLookup is the (daemon-only) credential row used by the bridge.
 type CredentialLookup struct {
-	ID          string `json:"id"`
-	MailboxID   string `json:"mailbox_id"`
-	Protocol    string `json:"protocol"`
-	AuthType    string `json:"auth_type"`
-	Username    string `json:"username,omitempty"`
-	BcryptHash  string `json:"bcrypt_hash,omitempty"`
-	BearerToken string `json:"bearer_token,omitempty"`
-}
-
-// CreatePushSubscriptionRequest matches POST /v1/mailboxes/:id/push-subscriptions.
-type CreatePushSubscriptionRequest struct {
-	DeviceID  string `json:"device_id"`
-	PushType  string `json:"push_type"` // "websocket" | "eventsource"
-	ExpiresAt string `json:"expires_at,omitempty"`
-}
-
-// PushSubscription is one row in jmap_push_subscriptions.
-type PushSubscription struct {
-	ID        string `json:"id"`
-	MailboxID string `json:"mailbox_id"`
-	DeviceID  string `json:"device_id"`
-	PushType  string `json:"push_type"`
-	ExpiresAt string `json:"expires_at,omitempty"`
-	CreatedAt string `json:"created_at"`
+	ID         string `json:"id"`
+	MailboxID  string `json:"mailbox_id"`
+	Protocol   string `json:"protocol"`
+	AuthType   string `json:"auth_type"`
+	Username   string `json:"username,omitempty"`
+	BcryptHash string `json:"bcrypt_hash,omitempty"`
 }
 
 // --- helpers ---
@@ -137,10 +121,12 @@ func (c *Client) doJSON(
 ) error {
 	resp, rb, err := c.Do(ctx, method, path, query, body, "application/json", nil)
 	if err != nil {
+		// Network / transport error — return wrapped so callers using
+		// errors.Is(err, context.DeadlineExceeded) and similar still work.
 		return err
 	}
 	if resp.StatusCode >= 400 {
-		return fmt.Errorf("polaris-sdk-go: %s %s: %d %s", method, path, resp.StatusCode, string(rb))
+		return ParseAPIError(resp.StatusCode, rb, resp.Header)
 	}
 	if out == nil || len(rb) == 0 {
 		return nil
@@ -167,7 +153,7 @@ func (c *Client) DeleteMessage(ctx context.Context, id string) error {
 	return c.doJSON(ctx, "DELETE", "/v1/messages/"+id, "", nil, nil)
 }
 
-// BulkGetMessages performs a bulk fetch by id (JMAP Email/get).
+// BulkGetMessages performs a bulk fetch by id.
 func (c *Client) BulkGetMessages(ctx context.Context, ids []string) (*BulkGetResponse, error) {
 	body, err := json.Marshal(map[string]any{"ids": ids})
 	if err != nil {
@@ -202,7 +188,7 @@ func (c *Client) ExpungeMailbox(ctx context.Context, mailboxID string) (*Expunge
 	return &r, nil
 }
 
-// GetMailboxChanges returns the JMAP Email/changes delta since the given state.
+// GetMailboxChanges returns the mailbox change delta since the given state.
 func (c *Client) GetMailboxChanges(ctx context.Context, mailboxID string, sinceState int64) (*ChangesResponse, error) {
 	q := url.Values{}
 	q.Set("since_state", strconv.FormatInt(sinceState, 10))
@@ -261,8 +247,7 @@ func (c *Client) ListWebhookSubs(ctx context.Context, mailboxID string) ([]Webho
 }
 
 // LookupMailboxCredential resolves a (protocol, username) pair to the stored
-// credential row. Daemon-scoped; bridges call this to verify IMAP LOGIN /
-// JMAP bearer auth.
+// credential row. Daemon-scoped; bridges call this to verify IMAP LOGIN.
 func (c *Client) LookupMailboxCredential(ctx context.Context, protocol, username string) (*CredentialLookup, error) {
 	q := url.Values{}
 	q.Set("protocol", protocol)
@@ -274,20 +259,3 @@ func (c *Client) LookupMailboxCredential(ctx context.Context, protocol, username
 	return &r, nil
 }
 
-// CreatePushSubscription registers a JMAP push subscription.
-func (c *Client) CreatePushSubscription(ctx context.Context, mailboxID string, req CreatePushSubscriptionRequest) (*PushSubscription, error) {
-	body, err := json.Marshal(req)
-	if err != nil {
-		return nil, err
-	}
-	var r PushSubscription
-	if err := c.doJSON(ctx, "POST", "/v1/mailboxes/"+mailboxID+"/push-subscriptions", "", body, &r); err != nil {
-		return nil, err
-	}
-	return &r, nil
-}
-
-// DeletePushSubscription removes a push subscription.
-func (c *Client) DeletePushSubscription(ctx context.Context, mailboxID, subID string) error {
-	return c.doJSON(ctx, "DELETE", "/v1/mailboxes/"+mailboxID+"/push-subscriptions/"+subID, "", nil, nil)
-}

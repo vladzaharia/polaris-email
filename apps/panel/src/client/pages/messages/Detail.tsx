@@ -21,6 +21,7 @@ import {
   AccordionContent,
 } from '../../components/ui/accordion.js';
 import { useAdminQuery } from '../../hooks/useAdminApi.js';
+import { messageKeys } from '../../queryKeys.js';
 
 interface MessagePayload {
   id: string;
@@ -39,17 +40,21 @@ interface MessagePayload {
 
 export function MessageDetail() {
   const { id } = useParams({ from: '/messages/$id' });
-  const q = useAdminQuery<MessagePayload>(['message', id], `/api/messages/${id}`);
+  const q = useAdminQuery<MessagePayload>(messageKeys.detail(id), `/api/messages/${id}`);
+  const breadcrumbs = [
+    { label: 'Messages', to: '/messages' },
+    { label: q.data?.subject ?? id.slice(0, 12) },
+  ];
   if (q.isLoading) {
     return (
-      <PageCard title="Message">
+      <PageCard title="Message" breadcrumbs={breadcrumbs}>
         <Skeleton className="h-32 w-full" />
       </PageCard>
     );
   }
   if (q.error || !q.data) {
     return (
-      <PageCard title="Message">
+      <PageCard title="Message" breadcrumbs={breadcrumbs}>
         <p className="text-sm text-[var(--color-destructive)]">
           {q.error?.message ?? 'Not found.'}
         </p>
@@ -62,6 +67,7 @@ export function MessageDetail() {
   return (
     <PageCard
       title={m.subject ?? '(no subject)'}
+      breadcrumbs={breadcrumbs}
       description={`${m.direction} · ${m.status}`}
       decorative
     >

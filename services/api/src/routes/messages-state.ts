@@ -5,13 +5,13 @@
 //   * DELETE /v1/messages/:id                            — soft-expunge
 //   * POST   /v1/messages/get                            — bulk fetch by id
 //   * POST   /v1/mailboxes/:id/expunge                   — hard-purge expunged
-//   * GET    /v1/mailboxes/:id/changes?since_state=N     — Email/changes delta
+//   * GET    /v1/mailboxes/:id/changes?since_state=N     — changes delta
 //   * GET    /v1/mailboxes/:id/messages?fields=metadata  — bridge initial sync
 //
 // Auth: either tenant api_key HMAC (with `messages:read` / `imap_bridge:read`)
 // or daemon HMAC (`polaris-daemon.v1`, daemon scoped to `imap_bridge:read`).
 // Per L3.0, none of these mutators fire webhooks — only `change_id` is bumped
-// so the JMAP push transport notices.
+// so the IMAP CONDSTORE / IDLE transport notices.
 
 import { Hono, type Context } from 'hono';
 import { MessageFlag, type Message } from '@polaris-email/schema';
@@ -71,7 +71,7 @@ async function authenticateCaller(
     }
     const url = new URL(c.req.url);
     const result = await verify({
-      direction: 'polaris-api.v1',
+      direction: 'polaris-api',
       method: c.req.method,
       path: url.pathname,
       query: url.search.slice(1),
@@ -129,19 +129,16 @@ async function authenticateCaller(
   }
   const url = new URL(c.req.url);
   const result = await verify({
-    direction: 'polaris-api.v1',
+    direction: 'polaris-api',
     method: c.req.method,
     path: url.pathname,
     query: url.search.slice(1),
     headers: { get: (n: string) => c.req.header(n) ?? null },
     body: bodyBytes,
     secret: plaintext,
-    allowedAlgorithms: env.VERIFY_ALGORITHMS.split(','),
   });
   if (!result.ok) {
     if (result.code === 'clock_skew') return buildError(c, 'clock_skew', result.message);
-    if (result.code === 'algorithm_rejected')
-      return buildError(c, 'bad_signature', `algorithm not allowed: ${result.message}`);
     if (result.code === 'missing_header' || result.code === 'header_invalid')
       return buildError(c, 'bad_request', result.message);
     return buildError(c, 'bad_signature', 'hmac mismatch');

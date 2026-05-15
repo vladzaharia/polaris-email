@@ -9,6 +9,7 @@
 // canonical RFC822 bytes suitable for handing to processMessage().
 
 import { parseStrict, serialize, type ParsedMime, type Header } from './canonicalize.js';
+import { parseAddressList, parseFirstAddress, decodeMimeWord } from './headers.js';
 
 export interface MessageAttachmentMeta {
   filename: string;
@@ -85,22 +86,6 @@ export interface SendRequestLike {
   headers?: Record<string, string>;
   attachments?: { filename: string; content_type: string; content_base64: string }[];
   reply_to?: string;
-}
-
-const ADDR_RE = /(?:"[^"]*"\s*)?(?:<([^>]+)>|([^,;<>\s]+@[^,;<>\s]+))/g;
-function parseAddressList(value: string | undefined): string[] {
-  if (!value) return [];
-  const out: string[] = [];
-  let m: RegExpExecArray | null;
-  ADDR_RE.lastIndex = 0;
-  while ((m = ADDR_RE.exec(value))) {
-    const a = (m[1] ?? m[2] ?? '').trim().toLowerCase();
-    if (a) out.push(a);
-  }
-  return out;
-}
-function parseFirstAddress(value: string | undefined): string {
-  return parseAddressList(value)[0] ?? '';
 }
 
 function parseContentType(value: string): { type: string; boundary?: string; charset: string } {
@@ -256,28 +241,6 @@ function walkPartsWithHeaders(
   }
 }
 
-function decodeMimeWord(value: string | undefined): string | undefined {
-  if (!value) return undefined;
-  return value.replace(
-    /=\?([^?]+)\?([bBqQ])\?([^?]*)\?=/g,
-    (_: string, charset: string, enc: string, payload: string) => {
-      try {
-        if (enc.toUpperCase() === 'B') {
-          const bin = atob(payload);
-          const bytes = new Uint8Array(bin.length);
-          for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-          return new TextDecoder(charset).decode(bytes);
-        }
-        return payload
-          .replace(/_/g, ' ')
-          .replace(/=([0-9A-Fa-f]{2})/g, (_2, h: string) => String.fromCharCode(parseInt(h, 16)));
-      } catch {
-        return payload;
-      }
-    },
-  );
-}
-
 export interface ParsedMimeSummary {
   from: string;
   to: string[];
@@ -317,7 +280,7 @@ export function summarizeMime(raw: Uint8Array): ParsedMimeSummary {
   walkPartsWithHeaders(bodyText, contentType, topXfer, summary);
 
   const out: ParsedMimeSummary = {
-    from: parseFirstAddress(headerMap['from']),
+    from: parseFirstAddress(headerMap['from']) ?? '',
     to: parseAddressList(headerMap['to']),
     cc: parseAddressList(headerMap['cc']),
     bcc: parseAddressList(headerMap['bcc']),
@@ -327,7 +290,7 @@ export function summarizeMime(raw: Uint8Array): ParsedMimeSummary {
     headers: headerMap,
   };
   const subj = decodeMimeWord(headerMap['subject']);
-  if (subj !== undefined) out.subject = subj;
+  if (subj != null) out.subject = subj;
   if (headerMap['message-id']) out.headerMessageId = headerMap['message-id'];
   if (headerMap['references']) out.references = headerMap['references'];
   if (headerMap['in-reply-to']) out.inReplyTo = headerMap['in-reply-to'];

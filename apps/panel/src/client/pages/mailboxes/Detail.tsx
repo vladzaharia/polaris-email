@@ -27,7 +27,9 @@ import {
 import { Separator } from '../../components/ui/separator.js';
 import { Badge } from '../../components/ui/badge.js';
 import { Skeleton } from '../../components/ui/skeleton.js';
+import { DestructiveActionDialog } from '../../components/DestructiveActionDialog.js';
 import { useAdminMutation, useAdminQuery } from '../../hooks/useAdminApi.js';
+import { domainKeys, mailboxKeys, webhookKeys } from '../../queryKeys.js';
 
 interface MailboxDetailPayload {
   mailbox: {
@@ -66,14 +68,14 @@ function AddSenderDialog({ mailboxId }: { mailboxId: string }) {
   const [domainId, setDomainId] = useState('');
   const [localPart, setLocalPart] = useState('');
   const [isDefault, setIsDefault] = useState(false);
-  const domains = useAdminQuery<{ data: DomainRow[] }>(['domains'], '/api/admin/domains');
+  const domains = useAdminQuery<{ data: DomainRow[] }>(domainKeys.list(), '/api/admin/domains');
   const create = useAdminMutation<unknown, Record<string, unknown>>(
     (vars) => ({
       path: `/api/admin/mailboxes/${mailboxId}/senders`,
       method: 'POST',
       body: vars,
     }),
-    { invalidateKeys: [['mailbox', mailboxId]] },
+    { invalidateKeys: [mailboxKeys.detail(mailboxId)] },
   );
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -145,9 +147,9 @@ function AddReceiverDialog({ mailboxId }: { mailboxId: string }) {
   const [action, setAction] = useState<'webhook' | 'forward' | 'drop'>('webhook');
   const [webhookSubId, setWebhookSubId] = useState('');
   const [forwardTo, setForwardTo] = useState('');
-  const domains = useAdminQuery<{ data: DomainRow[] }>(['domains'], '/api/admin/domains');
+  const domains = useAdminQuery<{ data: DomainRow[] }>(domainKeys.list(), '/api/admin/domains');
   const subs = useAdminQuery<{ data: { id: string; url: string }[] }>(
-    ['webhook-subs', mailboxId],
+    webhookKeys.list(mailboxId),
     `/api/admin/webhook-subs?mailbox_id=${mailboxId}`,
   );
   const create = useAdminMutation<unknown, Record<string, unknown>>(
@@ -156,7 +158,7 @@ function AddReceiverDialog({ mailboxId }: { mailboxId: string }) {
       method: 'POST',
       body: vars,
     }),
-    { invalidateKeys: [['mailbox', mailboxId]] },
+    { invalidateKeys: [mailboxKeys.detail(mailboxId)] },
   );
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -261,9 +263,12 @@ function AddReceiverDialog({ mailboxId }: { mailboxId: string }) {
 
 export function MailboxDetail() {
   const { id } = useParams({ from: '/mailboxes/$id' });
-  const q = useAdminQuery<MailboxDetailPayload>(['mailbox', id], `/api/admin/mailboxes/${id}`);
+  const q = useAdminQuery<MailboxDetailPayload>(
+    mailboxKeys.detail(id),
+    `/api/admin/mailboxes/${id}`,
+  );
   const recent = useAdminQuery<{ data: Array<{ id: string; subject: string; status: string }> }>(
-    ['messages-recent', id],
+    mailboxKeys.recentMessages(id),
     `/api/messages?mailbox_id=${id}&limit=20`,
   );
   const disableSender = useAdminMutation<unknown, { senderId: string }>(
@@ -271,19 +276,38 @@ export function MailboxDetail() {
       path: `/api/admin/mailboxes/${id}/senders/${vars.senderId}`,
       method: 'DELETE',
     }),
-    { invalidateKeys: [['mailbox', id]] },
+    { invalidateKeys: [mailboxKeys.detail(id)], successMessage: 'Sender disabled.' },
   );
+  const disableReceiver = useAdminMutation<unknown, { receiverId: string }>(
+    (vars) => ({
+      path: `/api/admin/mailboxes/${id}/receivers/${vars.receiverId}`,
+      method: 'DELETE',
+    }),
+    { invalidateKeys: [mailboxKeys.detail(id)], successMessage: 'Receiver disabled.' },
+  );
+  const [confirmDisableSender, setConfirmDisableSender] = useState<{
+    id: string;
+    address: string;
+  } | null>(null);
+  const [confirmDisableReceiver, setConfirmDisableReceiver] = useState<{
+    id: string;
+    pattern: string;
+  } | null>(null);
 
+  const breadcrumbs = [
+    { label: 'Mailboxes', to: '/mailboxes' },
+    { label: q.data?.mailbox.name ?? id },
+  ];
   if (q.isLoading) {
     return (
-      <PageCard title="Mailbox">
+      <PageCard title="Mailbox" breadcrumbs={breadcrumbs}>
         <Skeleton className="h-32 w-full" />
       </PageCard>
     );
   }
   if (q.error || !q.data) {
     return (
-      <PageCard title="Mailbox">
+      <PageCard title="Mailbox" breadcrumbs={breadcrumbs}>
         <p className="text-sm text-[var(--color-destructive)]">
           {q.error?.message ?? 'Failed to load.'}
         </p>
@@ -295,6 +319,7 @@ export function MailboxDetail() {
   return (
     <PageCard
       decorative
+      breadcrumbs={breadcrumbs}
       title={d.mailbox.name}
       description={d.mailbox.description ?? 'No description.'}
     >
@@ -339,7 +364,7 @@ export function MailboxDetail() {
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => disableSender.mutate({ senderId: s.id })}
+                          onClick={() => setConfirmDisableSender({ id: s.id, address: s.address })}
                           disabled={disableSender.isPending}
                         >
                           Disable
@@ -367,12 +392,13 @@ export function MailboxDetail() {
                 <TableHead>Pattern</TableHead>
                 <TableHead>Action</TableHead>
                 <TableHead>Enabled</TableHead>
+                <TableHead></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {d.receivers.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={4} className="text-sm text-[var(--color-muted-foreground)]">
+                  <TableCell colSpan={5} className="text-sm text-[var(--color-muted-foreground)]">
                     No receivers yet.
                   </TableCell>
                 </TableRow>
@@ -383,6 +409,20 @@ export function MailboxDetail() {
                     <TableCell className="font-mono text-xs">{r.address_pattern}</TableCell>
                     <TableCell>{r.action}</TableCell>
                     <TableCell>{r.enabled ? 'yes' : 'no'}</TableCell>
+                    <TableCell>
+                      {r.enabled ? (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() =>
+                            setConfirmDisableReceiver({ id: r.id, pattern: r.address_pattern })
+                          }
+                          disabled={disableReceiver.isPending}
+                        >
+                          Disable
+                        </Button>
+                      ) : null}
+                    </TableCell>
                   </TableRow>
                 ))
               )}
@@ -438,6 +478,46 @@ export function MailboxDetail() {
         </section>
 
         <Separator />
+
+        <DestructiveActionDialog
+          open={confirmDisableSender != null}
+          onOpenChange={(o) => !o && setConfirmDisableSender(null)}
+          action="Disable sender"
+          name={confirmDisableSender?.address}
+          blastRadius={[
+            'Outbound messages using this address will be rejected',
+            'In-flight messages already in the outbound queue will still be sent',
+            'You can recreate the sender later, but the previous binding is removed',
+          ]}
+          reversible={false}
+          confirmLabel="Disable sender"
+          onConfirm={async () => {
+            if (!confirmDisableSender) return;
+            await disableSender.mutateAsync({ senderId: confirmDisableSender.id });
+            setConfirmDisableSender(null);
+          }}
+          isPending={disableSender.isPending}
+        />
+
+        <DestructiveActionDialog
+          open={confirmDisableReceiver != null}
+          onOpenChange={(o) => !o && setConfirmDisableReceiver(null)}
+          action="Disable receiver"
+          name={confirmDisableReceiver?.pattern}
+          blastRadius={[
+            'Inbound mail matching this pattern stops being routed to this mailbox',
+            'Mail will fall through to the next matching receiver, or be rejected',
+            'You can recreate the receiver later',
+          ]}
+          reversible={false}
+          confirmLabel="Disable receiver"
+          onConfirm={async () => {
+            if (!confirmDisableReceiver) return;
+            await disableReceiver.mutateAsync({ receiverId: confirmDisableReceiver.id });
+            setConfirmDisableReceiver(null);
+          }}
+          isPending={disableReceiver.isPending}
+        />
 
         <section>
           <h2 className="mb-2 text-sm font-semibold">Recent messages</h2>

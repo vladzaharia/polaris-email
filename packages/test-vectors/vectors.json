@@ -3,7 +3,7 @@
   "vectors": [
     {
       "name": "api/POST/messages/happy",
-      "direction": "polaris-api.v1",
+      "direction": "polaris-api",
       "method": "POST",
       "path": "/v1/send/raw",
       "query": "mode=test",
@@ -12,11 +12,11 @@
       "secret": "XBNRJYZ8WS5KQDVPM7T4F2H6CG3A1E9N",
       "body": "{\"from\":\"a@b.com\",\"to\":[\"c@d.com\"],\"subject\":\"hi\",\"category\":\"svc.test\"}",
       "must_verify": true,
-      "expected_sig": "v1=b5746c01bc5c185d668796e26ace4275ea2cc81e40847fc3e55eb8e886e8f108"
+      "expected_sig": "3dc5920cc9bd7db06e6001fd75bb3225802c01381e3b079fec05a6e70dae0c27"
     },
     {
       "name": "api/POST/messages/empty-query",
-      "direction": "polaris-api.v1",
+      "direction": "polaris-api",
       "method": "POST",
       "path": "/v1/send/raw",
       "query": "",
@@ -25,11 +25,11 @@
       "secret": "XBNRJYZ8WS5KQDVPM7T4F2H6CG3A1E9N",
       "body": "{\"x\":1}",
       "must_verify": true,
-      "expected_sig": "v1=9273bc6b9436eec81660eb8eef38d7f48225a84e61fba32135b4f2269852c373"
+      "expected_sig": "8dc2337c063499347f04166e098bf6e262eafa40ca3299383fb1599ea3bac8f0"
     },
     {
       "name": "api/POST/messages/multi-value-query",
-      "direction": "polaris-api.v1",
+      "direction": "polaris-api",
       "method": "POST",
       "path": "/v1/send/raw",
       "query": "b=2&a=1&a=2",
@@ -38,11 +38,11 @@
       "secret": "XBNRJYZ8WS5KQDVPM7T4F2H6CG3A1E9N",
       "body": "",
       "must_verify": true,
-      "expected_sig": "v1=6a8fcf2a0130a60b01f399dcbd3e3c92d5506723eec6846b9e14e83f34a3f4ca"
+      "expected_sig": "8a44af920d835cbd75e6b138dfe9bc9b75728431dfb6f1b5d407831b5eb52080"
     },
     {
       "name": "api/GET/admin/list/happy",
-      "direction": "polaris-api.v1",
+      "direction": "polaris-api",
       "method": "GET",
       "path": "/v1/admin/api-keys",
       "query": "service=expresscharge",
@@ -51,11 +51,11 @@
       "secret": "XBNRJYZ8WS5KQDVPM7T4F2H6CG3A1E9N",
       "body": "",
       "must_verify": true,
-      "expected_sig": "v1=cad302f0d9c4eb05264e58fa841d45114bb913678ad93e2021bb2c88eca036a0"
+      "expected_sig": "c76d7c915472727f00aa10a4a4e9aa24afa97762c7f982dd34d23bfd9afb026d"
     },
     {
       "name": "webhook/POST/external/happy",
-      "direction": "polaris-webhook.v1",
+      "direction": "polaris-webhook",
       "method": "POST",
       "path": "/email-hook",
       "query": "",
@@ -64,11 +64,11 @@
       "secret": "XBNRJYZ8WS5KQDVPM7T4F2H6CG3A1E9N",
       "body": "{\"event\":\"message.received\",\"event_id\":\"01HXR0000000000000000000A8\"}",
       "must_verify": true,
-      "expected_sig": "v1=ede8a17eb82c727f7963025bd8c7a074a02569ed2fb289f76bfdeb8f9dc9f0ab"
+      "expected_sig": "65277f11aae4f63868fde7ba6d3220b62b4454ab11138c3ba4190a3016879d7b"
     },
     {
       "name": "webhook/POST/empty-body",
-      "direction": "polaris-webhook.v1",
+      "direction": "polaris-webhook",
       "method": "POST",
       "path": "/hook",
       "query": "",
@@ -77,11 +77,11 @@
       "secret": "XBNRJYZ8WS5KQDVPM7T4F2H6CG3A1E9N",
       "body": "",
       "must_verify": true,
-      "expected_sig": "v1=8b8962fc0e0c51417f01e8f3fd42702c4cfce94f464dca44115be89bd20c061d"
+      "expected_sig": "4c6385a26a8afdeb292cbfaa7dc21d1cf934e67fc8074a903f1a5c1ae8b4e6ad"
     },
     {
       "name": "webhook/POST/utf8-body",
-      "direction": "polaris-webhook.v1",
+      "direction": "polaris-webhook",
       "method": "POST",
       "path": "/hook",
       "query": "",
@@ -90,11 +90,11 @@
       "secret": "XBNRJYZ8WS5KQDVPM7T4F2H6CG3A1E9N",
       "body": "{\"subject\":\"héllo 🌍 world\",\"note\":\"日本語\"}",
       "must_verify": true,
-      "expected_sig": "v1=277d00a996d3e733280fa7932bd50031caad35b3dbdf51a513897f1289d26117"
+      "expected_sig": "a4fedee1be82d5e003995fb02ae81125c488017c03490ae62572e2c7ce408a46"
     },
     {
       "name": "api/GET/query-percent-encoded",
-      "direction": "polaris-api.v1",
+      "direction": "polaris-api",
       "method": "GET",
       "path": "/v1/audit",
       "query": "q=hello%20world&q=a%2Bb&filter=k%3Dv",
@@ -103,11 +103,11 @@
       "secret": "XBNRJYZ8WS5KQDVPM7T4F2H6CG3A1E9N",
       "body": "",
       "must_verify": true,
-      "expected_sig": "v1=b98c46ae0e4313ceb15d473f93bace6c0168155e3bc9cae3d0afc5296945b24b"
+      "expected_sig": "753a37dee52c56c97ab276818da2da9135a55e149c73c3b9396f80965b9c551f"
     },
     {
       "name": "api/GET/query-unreserved-special",
-      "direction": "polaris-api.v1",
+      "direction": "polaris-api",
       "method": "GET",
       "path": "/v1/audit",
       "query": "q=he%21llo%27s&n=name%28x%29%2A",
@@ -116,11 +116,11 @@
       "secret": "XBNRJYZ8WS5KQDVPM7T4F2H6CG3A1E9N",
       "body": "",
       "must_verify": true,
-      "expected_sig": "v1=3334da12f80862262847a40adf273f79d8bac72e26bfc194a57430a6f789d515"
+      "expected_sig": "ddb4e1858d43f887ec3aca6248c446a008469d5f957f199748816505975831f9"
     },
     {
       "name": "api/GET/path-percent-encoded",
-      "direction": "polaris-api.v1",
+      "direction": "polaris-api",
       "method": "GET",
       "path": "/v1/send/raw/01HXR%2FWITHSLASH",
       "query": "",
@@ -129,11 +129,11 @@
       "secret": "XBNRJYZ8WS5KQDVPM7T4F2H6CG3A1E9N",
       "body": "",
       "must_verify": true,
-      "expected_sig": "v1=6291344512141837f9e539f4a8ce6f1ea6a23b53b443b02107145d00979e6d26"
+      "expected_sig": "f93b12040bc716cfc532d3d55ce54fd5ead9376f66306402932af9249fb85b12"
     },
     {
       "name": "api/POST/nonce-min-length",
-      "direction": "polaris-api.v1",
+      "direction": "polaris-api",
       "method": "POST",
       "path": "/v1/send",
       "query": "",
@@ -142,11 +142,11 @@
       "secret": "XBNRJYZ8WS5KQDVPM7T4F2H6CG3A1E9N",
       "body": "{}",
       "must_verify": true,
-      "expected_sig": "v1=1e4a001cc580494f45be6d5e40ce6107992c9b82d52e6f8bb40bd4b6a71231b5"
+      "expected_sig": "b187fb3a2989536acb357dc4ecd347e2b619a25eeebfc8b64ba8969aa1192e65"
     },
     {
       "name": "api/POST/nonce-max-length",
-      "direction": "polaris-api.v1",
+      "direction": "polaris-api",
       "method": "POST",
       "path": "/v1/send",
       "query": "",
@@ -155,11 +155,25 @@
       "secret": "XBNRJYZ8WS5KQDVPM7T4F2H6CG3A1E9N",
       "body": "{}",
       "must_verify": true,
-      "expected_sig": "v1=a4e1fb0d4181627db0c630763aebe06a5b6091e042561ebd1774d8a4da7a8250"
+      "expected_sig": "47966a4c57c94f633c90f04efdc8f98ce5c59e63106b81ddfc5c24869621da26"
     },
     {
-      "name": "negative/algorithm-not-allowed",
-      "direction": "polaris-api.v1",
+      "name": "negative/legacy-v1-prefix-rejected",
+      "direction": "polaris-api",
+      "method": "POST",
+      "path": "/v1/send/raw",
+      "query": "",
+      "ts": "1700000000000",
+      "nonce": "AAAABBBBCCCCDDDD",
+      "secret": "XBNRJYZ8WS5KQDVPM7T4F2H6CG3A1E9N",
+      "body": "{}",
+      "expected_sig": "v1=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "must_verify": false,
+      "expected_error": "invalid_signature"
+    },
+    {
+      "name": "negative/legacy-v2-prefix-rejected",
+      "direction": "polaris-api",
       "method": "POST",
       "path": "/v1/send/raw",
       "query": "",
@@ -169,11 +183,11 @@
       "body": "{}",
       "expected_sig": "v2=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       "must_verify": false,
-      "expected_error": "algorithm_rejected"
+      "expected_error": "invalid_signature"
     },
     {
       "name": "negative/crlf-in-nonce",
-      "direction": "polaris-api.v1",
+      "direction": "polaris-api",
       "method": "POST",
       "path": "/v1/send/raw",
       "query": "",
@@ -181,13 +195,13 @@
       "nonce": "AAAABBBBCCCC\r\nDD",
       "secret": "XBNRJYZ8WS5KQDVPM7T4F2H6CG3A1E9N",
       "body": "{}",
-      "expected_sig": "v1=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "expected_sig": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       "must_verify": false,
       "expected_error": "header_invalid"
     },
     {
       "name": "negative/truncated-sig",
-      "direction": "polaris-api.v1",
+      "direction": "polaris-api",
       "method": "POST",
       "path": "/v1/send/raw",
       "query": "",
@@ -195,13 +209,13 @@
       "nonce": "AAAABBBBCCCCDDDD",
       "secret": "XBNRJYZ8WS5KQDVPM7T4F2H6CG3A1E9N",
       "body": "{}",
-      "expected_sig": "v1=ab",
+      "expected_sig": "ab",
       "must_verify": false,
-      "expected_error": "bad_signature"
+      "expected_error": "invalid_signature"
     },
     {
       "name": "negative/nonce-too-short",
-      "direction": "polaris-api.v1",
+      "direction": "polaris-api",
       "method": "POST",
       "path": "/v1/send/raw",
       "query": "",
@@ -209,13 +223,13 @@
       "nonce": "TOOSHORT",
       "secret": "XBNRJYZ8WS5KQDVPM7T4F2H6CG3A1E9N",
       "body": "{}",
-      "expected_sig": "v1=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "expected_sig": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       "must_verify": false,
       "expected_error": "header_invalid"
     },
     {
       "name": "negative/nonce-too-long",
-      "direction": "polaris-api.v1",
+      "direction": "polaris-api",
       "method": "POST",
       "path": "/v1/send/raw",
       "query": "",
@@ -223,23 +237,23 @@
       "nonce": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
       "secret": "XBNRJYZ8WS5KQDVPM7T4F2H6CG3A1E9N",
       "body": "{}",
-      "expected_sig": "v1=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "expected_sig": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       "must_verify": false,
       "expected_error": "header_invalid"
     },
     {
       "name": "negative/wrong-secret",
-      "direction": "polaris-api.v1",
+      "direction": "polaris-api",
       "method": "POST",
       "path": "/v1/send/raw",
       "query": "",
       "ts": "1700000000000",
       "nonce": "AAAABBBBCCCCDDDD",
       "secret": "XBNRJYZ8WS5KQDVPM7T4F2H6CG3A1E9N",
-      "expected_sig": "v1=4add647739525a7a9bbaeae7799d05e3e970709aa8187799c1c518d6febaaca6",
+      "expected_sig": "6a899360325103c757a8448c7431388cee57ae0e7c56c28e7e7fe2698339693d",
       "body": "{}",
       "must_verify": false,
-      "expected_error": "bad_signature"
+      "expected_error": "invalid_signature"
     }
   ]
 }

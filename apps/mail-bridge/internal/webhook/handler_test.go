@@ -23,7 +23,7 @@ func signRequest(secret, body []byte) (ts, nonce, sig string) {
 	sum := sha256.Sum256(body)
 	bodyHex := hex.EncodeToString(sum[:])
 	canonical := strings.Join([]string{
-		"polaris-webhook.v1",
+		"polaris-webhook",
 		"POST",
 		testPath,
 		"",
@@ -33,7 +33,7 @@ func signRequest(secret, body []byte) (ts, nonce, sig string) {
 	}, "\n")
 	mac := hmac.New(sha256.New, secret)
 	mac.Write([]byte(canonical))
-	sig = "v2=" + hex.EncodeToString(mac.Sum(nil))
+	sig = hex.EncodeToString(mac.Sum(nil))
 	return
 }
 
@@ -68,7 +68,7 @@ func TestHandlerInvalidSignature(t *testing.T) {
 	r := httptest.NewRequest(http.MethodPost, testPath, bytes.NewReader([]byte(`{}`)))
 	r.Header.Set("X-Polaris-Ts", strconv.FormatInt(time.Now().UnixMilli(), 10))
 	r.Header.Set("X-Polaris-Nonce", "ABCDEFGHJKMNPQRS")
-	r.Header.Set("X-Polaris-Sig", "v2=deadbeef")
+	r.Header.Set("X-Polaris-Sig", "deadbeef")
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, r)
 	if w.Code != http.StatusUnauthorized {

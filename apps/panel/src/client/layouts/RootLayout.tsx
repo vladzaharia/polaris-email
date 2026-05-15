@@ -3,16 +3,20 @@
 // - ThemeProvider: toggles `.dark` on <html>, persists to localStorage.
 // - QueryClientProvider: TanStack Query for SDK hooks.
 // - TooltipProvider: shadcn/Radix tooltip context.
-// - Toaster: sonner toasts.
+// - Toaster: sonner toasts. `useAdminMutation` (and ad-hoc callers) push
+//   success/error feedback through this.
 // - ErrorBoundary: catches uncaught render errors so the whole app doesn't
 //   white-screen on a single misbehaving page.
+//
+// Note: the 428 "step_up_required" global event channel was removed. The
+// backend still issues 428 for sensitive operations, but the panel now
+// surfaces it as a regular `ApiError` and the mutation toast wiring renders
+// the message. Real WebAuthn step-up is a future feature.
 import { Component, createContext, useContext, useEffect, useState } from 'react';
 import type { ErrorInfo, ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Toaster } from '../components/ui/sonner.js';
 import { TooltipProvider } from '../components/ui/tooltip.js';
-import { StepUpModal } from '../components/StepUpModal.js';
-import type { StepUpEventDetail } from '../lib/api.js';
 
 type Theme = 'light' | 'dark';
 
@@ -62,23 +66,12 @@ const queryClient = new QueryClient({
 
 export function RootLayout({ children }: { children: ReactNode }) {
   const [theme, setThemeState] = useState<Theme>(readInitialTheme);
-  const [stepUpOpen, setStepUpOpen] = useState(false);
 
   useEffect(() => {
     const root = document.documentElement;
     root.classList.toggle('dark', theme === 'dark');
     window.localStorage.setItem('polaris-theme', theme);
   }, [theme]);
-
-  useEffect(() => {
-    const handler = (_e: Event): void => {
-      // The detail (stepUpUrl) is consumed by the StepUpModal's POST /api/step-up
-      // call directly; we just need to open the dialog here.
-      setStepUpOpen(true);
-    };
-    window.addEventListener('stepup:required', handler as EventListener);
-    return () => window.removeEventListener('stepup:required', handler as EventListener);
-  }, []);
 
   const setTheme = (t: Theme) => setThemeState(t);
 
@@ -87,14 +80,9 @@ export function RootLayout({ children }: { children: ReactNode }) {
       <QueryClientProvider client={queryClient}>
         <TooltipProvider delayDuration={150}>
           <ErrorBoundary>{children}</ErrorBoundary>
-          <StepUpModal open={stepUpOpen} onClose={() => setStepUpOpen(false)} />
           <Toaster />
         </TooltipProvider>
       </QueryClientProvider>
     </ThemeCtx.Provider>
   );
 }
-
-// Re-export so consumers picking up the symbol from RootLayout don't need a
-// separate import path.
-export type { StepUpEventDetail };

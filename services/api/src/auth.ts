@@ -2,6 +2,7 @@
 // performs nonce-dedup, and attaches the key record to the context.
 import type { Context, MiddlewareHandler } from 'hono';
 import { verify } from '@polaris-email/hmac';
+import { revocationCheck } from '@polaris-email/revocation';
 import type { Env } from './env.js';
 import { buildError } from './errors.js';
 
@@ -28,7 +29,7 @@ declare module 'hono' {
 
 const NONCE_TTL_SECONDS = 10 * 60; // 10 min
 
-export function hmacAuth(direction: 'polaris-api.v1'): MiddlewareHandler<{ Bindings: Env }> {
+export function hmacAuth(direction: 'polaris-api'): MiddlewareHandler<{ Bindings: Env }> {
   return async (c, next) => {
     const env = c.env;
     const keyId = c.req.header('x-polaris-key-id');
@@ -133,6 +134,18 @@ export function hmacAuth(direction: 'polaris-api.v1'): MiddlewareHandler<{ Bindi
       return buildError(c, 'key_revoked', 'key has been revoked');
     }
 
+    // Per-principal revocation check (KV_REVOCATIONS, 60 s in-memory cache).
+    // This is the authoritative revocation signal for generic HMAC auth: the
+    // api_keys row may still read `primary` from a stale KV_KEY_CACHE entry
+    // immediately after an admin revoke, but KV_REVOCATIONS keyed by
+    // principal_id is invalidated synchronously by the revoke handler.
+    if (row.principal_id) {
+      const revoked = await revocationCheck(env, row.principal_id).catch(() => false);
+      if (revoked) {
+        return buildError(c, 'key_revoked', 'principal revoked');
+      }
+    }
+
     // We have a hashed secret on disk and a candidate header signature. We can't HMAC-verify
     // *without* the plaintext secret. So we MUST also stash plaintext for short windows in KV
     // after issuance (`pending_plaintext`). That's done by /admin/api-keys issue/rotate
@@ -162,12 +175,9 @@ export function hmacAuth(direction: 'polaris-api.v1'): MiddlewareHandler<{ Bindi
       },
       body: bodyText,
       secret: plaintext,
-      allowedAlgorithms: env.VERIFY_ALGORITHMS.split(','),
     });
     if (!result.ok) {
       if (result.code === 'clock_skew') return buildError(c, 'clock_skew', result.message);
-      if (result.code === 'algorithm_rejected')
-        return buildError(c, 'bad_signature', `algorithm not allowed: ${result.message}`);
       if (result.code === 'missing_header' || result.code === 'header_invalid')
         return buildError(c, 'bad_request', result.message);
       return buildError(c, 'bad_signature', 'hmac mismatch');

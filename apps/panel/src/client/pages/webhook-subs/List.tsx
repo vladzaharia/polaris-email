@@ -14,6 +14,7 @@ import { Skeleton } from '../../components/ui/skeleton.js';
 import { Badge } from '../../components/ui/badge.js';
 import { Label } from '../../components/ui/label.js';
 import { useAdminQuery } from '../../hooks/useAdminApi.js';
+import { mailboxKeys, webhookKeys } from '../../queryKeys.js';
 
 interface MailboxRow {
   id: string;
@@ -31,11 +32,14 @@ interface SubRow {
 
 export function WebhookSubsList() {
   const [mailboxId, setMailboxId] = useState('');
-  const mailboxes = useAdminQuery<{ data: MailboxRow[] }>(['mailboxes'], '/api/admin/mailboxes');
+  const mailboxes = useAdminQuery<{ data: MailboxRow[] }>(
+    mailboxKeys.list(),
+    '/api/admin/mailboxes',
+  );
   const path = mailboxId
     ? `/api/admin/webhook-subs?mailbox_id=${mailboxId}`
     : '/api/admin/webhook-subs';
-  const q = useAdminQuery<{ data: SubRow[] }>(['webhook-subs', mailboxId], path);
+  const q = useAdminQuery<{ data: SubRow[] }>(webhookKeys.list(mailboxId || undefined), path);
   return (
     <PageCard
       title="Webhook subscriptions"

@@ -227,6 +227,9 @@ export const Principal = z.object({
 });
 export type Principal = z.infer<typeof Principal>;
 
+// Internal (D1 row) shape. `secret_argon2id` is the persisted hash only — the
+// plaintext secret is returned by POST /v1/admin/api-keys exactly once and
+// NEVER persisted in the clear. GET responses use `ApiKeyMetadata`.
 export const ApiKey = z.object({
   id: Ulid,
   principal_id: Ulid,
@@ -244,6 +247,46 @@ export const ApiKey = z.object({
 });
 export type ApiKey = z.infer<typeof ApiKey>;
 
+// Public GET response shape for /v1/admin/api-keys. Strips both the stored
+// hash (`secret_argon2id`) and any hint of the plaintext. Per A11/B6.
+export const ApiKeyMetadata = z.object({
+  id: Ulid,
+  principal_id: Ulid,
+  prefix: z.string(),
+  scopes: z.string(),
+  rate_limit_per_min: z.number().int().positive().optional(),
+  status: z.enum(['primary', 'secondary', 'revoked']),
+  created_at: z.string(),
+  last_used_at: z.string().nullable().optional(),
+  last_used_ip: z.string().nullable().optional(),
+  last_used_ua: z.string().nullable().optional(),
+  revoked_at: z.string().nullable().optional(),
+  disabled_at: z.string().nullable().optional(),
+});
+export type ApiKeyMetadata = z.infer<typeof ApiKeyMetadata>;
+
+// One-shot response for POST /v1/admin/api-keys (issue). The `key_secret`
+// plaintext is shown ONCE; subsequent GETs return `ApiKeyMetadata` only.
+export const ApiKeyCreatedResponse = z.object({
+  key_id: Ulid,
+  key_secret: z.string(),
+  prefix: z.string(),
+  created_at: z.number().int().nonnegative(),
+});
+export type ApiKeyCreatedResponse = z.infer<typeof ApiKeyCreatedResponse>;
+
+// One-shot response for POST /v1/admin/api-keys/:id/rotate. Same read-once
+// contract — `new_key_secret` is shown only here.
+export const ApiKeyRotatedResponse = z.object({
+  new_key_id: Ulid,
+  new_key_secret: z.string(),
+  prev_status: z.enum(['planned', 'emergency']),
+});
+export type ApiKeyRotatedResponse = z.infer<typeof ApiKeyRotatedResponse>;
+
+// Internal (D1 row) shape. `bcrypt_hash` is the persisted hash only — the
+// plaintext SMTP password is returned by POST /v1/admin/senders/:id/smtp-
+// credentials exactly once and never persisted in the clear.
 export const SmtpCredential = z.object({
   id: Ulid,
   principal_id: Ulid,
@@ -257,8 +300,35 @@ export const SmtpCredential = z.object({
 });
 export type SmtpCredential = z.infer<typeof SmtpCredential>;
 
+// Public GET response shape for SMTP-credential listings. Strips the bcrypt
+// hash. Per A11/B6.
+export const SmtpCredentialMetadata = z.object({
+  id: Ulid,
+  principal_id: Ulid,
+  sender_id: Ulid.nullable().optional(),
+  daemon_id: Ulid.nullable().optional(),
+  username: Address,
+  created_at: z.string(),
+  last_used_at: z.string().nullable().optional(),
+  disabled_at: z.string().nullable().optional(),
+});
+export type SmtpCredentialMetadata = z.infer<typeof SmtpCredentialMetadata>;
+
+// One-shot response for POST /v1/admin/senders/:id/smtp-credentials.
+export const SmtpCredentialCreatedResponse = z.object({
+  id: Ulid,
+  username: Address,
+  secret: z.string(),
+  created_at: z.number().int().nonnegative(),
+});
+export type SmtpCredentialCreatedResponse = z.infer<typeof SmtpCredentialCreatedResponse>;
+
 // ---------- webhook subs ----------
 
+// Internal (D1 row) shape. The polaris API itself signs every webhook
+// delivery, so the plaintext `secret` is retained server-side by design.
+// Public GET responses use `WebhookSubMetadata` and never surface `secret`
+// or `secret_prev`.
 export const WebhookSub = z.object({
   id: Ulid,
   mailbox_id: Ulid,
@@ -272,6 +342,69 @@ export const WebhookSub = z.object({
   disabled_at: z.string().nullable(),
 });
 export type WebhookSub = z.infer<typeof WebhookSub>;
+
+// Public GET response shape for /v1/admin/webhook-subs. Omits the signing
+// `secret` + `secret_prev`. Per A11.
+export const WebhookSubMetadata = z.object({
+  id: Ulid,
+  mailbox_id: Ulid,
+  url: z.string().url(),
+  kind: z.enum(['external', 'tailnet']),
+  events: z.string(),
+  paused_at: z.string().nullable(),
+  created_at: z.string(),
+  disabled_at: z.string().nullable(),
+});
+export type WebhookSubMetadata = z.infer<typeof WebhookSubMetadata>;
+
+// One-shot response for POST /v1/admin/webhook-subs. The plaintext signing
+// secret is shown ONCE; subscribers store it locally to verify deliveries.
+export const WebhookSubCreatedResponse = z.object({
+  id: Ulid,
+  secret: z.string(),
+});
+export type WebhookSubCreatedResponse = z.infer<typeof WebhookSubCreatedResponse>;
+
+// Daemon (a.k.a. "bridge" — renamed in B4) — internal row shape. The
+// argon2id hash of the HMAC key lives in `hmac_key_secret_name` (legacy
+// column name retained until B4 renames it to `hmac_key_hash`).
+export const Daemon = z.object({
+  id: Ulid,
+  name: z.string().min(1).max(120),
+  hmac_key_secret_name: z.string().nullable().optional(),
+  access_token_id: z.string().nullable().optional(),
+  last_seen_at: z.string().nullable().optional(),
+  created_at: z.string(),
+  disabled_at: z.string().nullable().optional(),
+});
+export type Daemon = z.infer<typeof Daemon>;
+
+// Public GET response shape for /v1/admin/daemons. Omits the stored hash.
+// Per A11/B6 the hash itself is not user-actionable, so we omit it.
+export const DaemonMetadata = z.object({
+  id: Ulid,
+  name: z.string().min(1).max(120),
+  access_token_id: z.string().nullable().optional(),
+  last_seen_at: z.string().nullable().optional(),
+  created_at: z.string(),
+  disabled_at: z.string().nullable().optional(),
+});
+export type DaemonMetadata = z.infer<typeof DaemonMetadata>;
+
+// One-shot responses for POST /v1/admin/daemons (register) and
+// POST /v1/admin/daemons/:id/rotate. The HMAC key plaintext is shown ONCE.
+export const DaemonCreatedResponse = z.object({
+  id: Ulid,
+  name: z.string().min(1).max(120),
+  hmac_key: z.string(),
+});
+export type DaemonCreatedResponse = z.infer<typeof DaemonCreatedResponse>;
+
+export const DaemonRotatedResponse = z.object({
+  id: Ulid,
+  hmac_key: z.string(),
+});
+export type DaemonRotatedResponse = z.infer<typeof DaemonRotatedResponse>;
 
 // ---------- message plane ----------
 
@@ -492,12 +625,6 @@ export const AuditAction = z.enum([
   'message.expunged',
   // rate limiting
   'rate_limit.exceeded',
-  // legacy tenant ops — accepted by the audit CHECK for historic-log replay
-  // only. New code paths MUST NOT emit these.
-  'tenant.create',
-  'tenant.update',
-  'tenant.disable',
-  'tenant.rotate_pepper',
 ]);
 export type AuditAction = z.infer<typeof AuditAction>;
 
@@ -590,24 +717,6 @@ export const CreateSmtpCredentialRequest = z.object({
   label: z.string().min(1).max(120).optional(),
 });
 
-// Pre-mailbox bootstrap shapes kept until C-auth / C-routes pass. These were
-// "tenant" in the old schema; map them to a slug-shaped admin payload so the
-// admin route still compiles. New code MUST NOT use these.
-export const CreateTenantRequest = z.object({
-  id: z.string().min(1).max(64),
-  name: z.string().min(1).max(120),
-  description: z.string().max(2000).optional(),
-});
-export type CreateTenantRequest = z.infer<typeof CreateTenantRequest>;
-
-export const BulkRevokeTenantRequest = z.object({
-  tenant_id: z.string().min(1).max(64),
-  mode: z.literal('emergency'),
-  incident_ticket_id: z.string().min(1).max(120),
-  confirmation: z.string().min(1).max(64),
-});
-export type BulkRevokeTenantRequest = z.infer<typeof BulkRevokeTenantRequest>;
-
 // ---------- mail bridge (Phase L) ----------
 //
 // IMAP system flags are RFC 9051 §2.3.2 ("backslash"-prefixed identifiers).
@@ -628,36 +737,63 @@ export const MessageFlag = z.union([
 ]);
 export type MessageFlag = z.infer<typeof MessageFlag>;
 
-export const MailBridgeProtocol = z.enum(['imap', 'jmap', 'smtps']);
+// `jmap` was removed in C1 / B6 (read-once secrets migration drops the
+// bearer-token rows + column). Only the IMAP and SMTPS protocols remain.
+export const MailBridgeProtocol = z.enum(['imap', 'smtps']);
 export type MailBridgeProtocol = z.infer<typeof MailBridgeProtocol>;
 
-export const MailBridgeAuthType = z.enum(['password', 'bearer_token']);
+// `bearer_token` was dropped with JMAP (C1 / B6); password is the only
+// surviving auth type for mailbox credentials.
+export const MailBridgeAuthType = z.enum(['password']);
 export type MailBridgeAuthType = z.infer<typeof MailBridgeAuthType>;
 
-// MailboxCredential: a row in `mailbox_credentials` (see migration 0002).
-// Plaintext passwords / bearer tokens are NEVER returned via the API; this
-// shape is the stored representation minus the plaintext column.
+// MailboxCredential — internal (D1) shape, see migration 0002 + 0005. The
+// plaintext password is returned by the issue / rotate routes exactly once
+// and NEVER persists outside the response. Public GET responses use
+// `MailboxCredentialMetadata`.
 export const MailboxCredential = z.object({
   id: Ulid,
   mailbox_id: Ulid,
   protocol: MailBridgeProtocol,
   auth_type: MailBridgeAuthType,
-  username: z.string().min(1).max(254).nullable().optional(),
-  // bcrypt hash is opaque to consumers; surfaced here for completeness.
-  bcrypt_hash: z.string().nullable().optional(),
-  // bearer token is a one-way reference; surfaced here as the stored value
-  // (NOT the plaintext, which is only ever returned at issue time).
-  bearer_token: z.string().nullable().optional(),
+  username: z.string().min(1).max(254),
+  // bcrypt hash is opaque to consumers; surfaced for daemon credential
+  // lookup (which authenticates over admin HMAC). Plaintext-free.
+  bcrypt_hash: z.string(),
   created_at: z.string(),
   last_used_at: z.string().nullable().optional(),
   disabled_at: z.string().nullable().optional(),
 });
 export type MailboxCredential = z.infer<typeof MailboxCredential>;
 
+// Public GET response shape for /v1/admin/mailboxes/:id/credentials. Strips
+// the stored hash entirely. Per A11.
+export const MailboxCredentialMetadata = z.object({
+  id: Ulid,
+  mailbox_id: Ulid,
+  protocol: MailBridgeProtocol,
+  auth_type: MailBridgeAuthType,
+  username: z.string().min(1).max(254),
+  created_at: z.string(),
+  last_used_at: z.string().nullable().optional(),
+  disabled_at: z.string().nullable().optional(),
+});
+export type MailboxCredentialMetadata = z.infer<typeof MailboxCredentialMetadata>;
+
+// One-shot response for POST /v1/admin/mailboxes/:id/credentials and
+// POST /.../credentials/:credId/rotate. Plaintext shown ONCE.
+export const MailboxCredentialCreatedResponse = z.object({
+  id: Ulid,
+  mailbox_id: Ulid.optional(),
+  protocol: MailBridgeProtocol.optional(),
+  auth_type: MailBridgeAuthType.optional(),
+  plaintext: z.string(),
+});
+export type MailboxCredentialCreatedResponse = z.infer<typeof MailboxCredentialCreatedResponse>;
+
 // MailboxMessageState: one row per (mailbox_id, message_id) in
 // `mailbox_messages_state` (see migration 0002). `uid` + `uid_validity` drive
-// IMAP UID semantics; `change_id` drives IMAP CONDSTORE MODSEQ and JMAP
-// Email/changes deltas.
+// IMAP UID semantics; `change_id` drives IMAP CONDSTORE MODSEQ.
 export const MailboxMessageState = z.object({
   message_id: Ulid,
   mailbox_id: Ulid,
@@ -669,17 +805,3 @@ export const MailboxMessageState = z.object({
   change_id: z.number().int().nonnegative(),
 });
 export type MailboxMessageState = z.infer<typeof MailboxMessageState>;
-
-export const JmapPushType = z.enum(['websocket', 'eventsource']);
-export type JmapPushType = z.infer<typeof JmapPushType>;
-
-// JmapPushSubscription: a row in `jmap_push_subscriptions` (see migration 0002).
-export const JmapPushSubscription = z.object({
-  id: Ulid,
-  mailbox_id: Ulid,
-  device_id: z.string().min(1).max(120),
-  push_type: JmapPushType,
-  expires_at: z.string().nullable().optional(),
-  created_at: z.string(),
-});
-export type JmapPushSubscription = z.infer<typeof JmapPushSubscription>;

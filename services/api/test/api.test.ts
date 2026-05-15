@@ -22,7 +22,7 @@ async function signedRequest(
   const nonce = generateNonce();
   const sig = await sign(
     {
-      direction: 'polaris-api.v1',
+      direction: 'polaris-api',
       method,
       path: u.pathname,
       query: u.search,
@@ -124,7 +124,7 @@ describe('bootstrap', () => {
         'content-type': 'application/json',
         'x-polaris-ts': String(Date.now()),
         'x-polaris-nonce': generateNonce(),
-        'x-polaris-sig': 'v1=' + 'a'.repeat(64),
+        'x-polaris-sig': 'a'.repeat(64),
       },
       body: '{}',
     });
@@ -1044,18 +1044,17 @@ describe('bridge: auto-mark-read', () => {
 });
 
 describe('admin: mailbox_credentials lifecycle', () => {
-  it('issues smtps/imap/jmap credentials then rotates and disables', async () => {
+  it('issues smtps/imap credentials then rotates and disables', async () => {
     const { env, admin } = await bootstrapEnv();
     const mbId = await createMailbox(env, admin, 'cred-mb');
 
     const protocols: Array<{
-      protocol: 'smtps' | 'imap' | 'jmap';
-      auth_type: 'password' | 'bearer_token';
+      protocol: 'smtps' | 'imap';
+      auth_type: 'password';
       username?: string;
     }> = [
       { protocol: 'smtps', auth_type: 'password', username: 'smtp-user' },
       { protocol: 'imap', auth_type: 'password', username: 'imap-user' },
-      { protocol: 'jmap', auth_type: 'bearer_token' },
     ];
     const issued: { id: string; plaintext: string; protocol: string }[] = [];
     for (const body of protocols) {
@@ -1090,12 +1089,11 @@ describe('admin: mailbox_credentials lifecycle', () => {
     );
     expect(listRes.status).toBe(200);
     const listBody = (await listRes.json()) as {
-      data: { id: string; protocol: string; bcrypt_hash?: unknown; bearer_token?: unknown }[];
+      data: { id: string; protocol: string; bcrypt_hash?: unknown }[];
     };
-    expect(listBody.data.length).toBe(3);
+    expect(listBody.data.length).toBe(2);
     for (const r of listBody.data) {
       expect(r.bcrypt_hash).toBeUndefined();
-      expect(r.bearer_token).toBeUndefined();
     }
 
     // Rotate one — fresh plaintext returned.

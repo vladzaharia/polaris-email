@@ -12,6 +12,7 @@ import {
   TableRow,
 } from '../../components/ui/table.js';
 import { useAdminQuery } from '../../hooks/useAdminApi.js';
+import { auditKeys } from '../../queryKeys.js';
 
 interface Me {
   authenticated: boolean;
@@ -29,8 +30,8 @@ interface AuditEntry {
 }
 
 export function Account() {
-  const me = useAdminQuery<Me>(['me'], '/api/me');
-  const audit = useAdminQuery<{ data: AuditEntry[] }>(['audit-chain'], '/api/admin/audit/chain');
+  const me = useAdminQuery<Me>(['me'] as const, '/api/me');
+  const audit = useAdminQuery<{ data: AuditEntry[] }>(auditKeys.chain(), '/api/admin/audit/chain');
   const myEntries = (audit.data?.data ?? []).filter((e) =>
     me.data?.email ? e.actor.includes(me.data.email) : false,
   );

@@ -1,14 +1,15 @@
 // `@polaris/sdk/webhook` — Verify polaris-email webhook deliveries.
 //
-// Hand-written (not codegen output) so the constant-time compare and
-// header validation stay auditable. The accepted signature tag is `v2=`,
-// matching the envelope shape emitted by `services/fanout` and documented
-// in `docs/messages.md`. The underlying HMAC scheme and the
-// `polaris-webhook.v1` HMAC direction tag are unchanged from the prior
-// implementation.
-import { createHmac, createHash, timingSafeEqual } from 'node:crypto';
+// Thin wrapper around `@polaris-email/hmac`'s strict canonical-string verifier.
+// Historical context: this file once carried its own hand-written HMAC
+// implementation alongside the canonical TS package; the duplication was
+// collapsed in cleanup phase D2. The HMAC scheme itself was un-versioned in
+// phase B3 — direction tags are `polaris-api` / `polaris-webhook` (no `.v1`),
+// and the `X-Polaris-Sig` header is bare lowercase hex (no `v1=`/`v2=` prefix).
 
-export type Direction = 'polaris-api.v1' | 'polaris-webhook.v1';
+import { verify, type Direction, type VerifyResult } from '@polaris-email/hmac';
+
+export type { Direction, VerifyResult };
 
 export interface VerifyWebhookInput {
   direction?: Direction;
@@ -18,25 +19,10 @@ export interface VerifyWebhookInput {
   headers: Headers | Record<string, string | string[] | undefined>;
   body: Buffer | Uint8Array | string;
   secret: string | Buffer;
-  /** Default `['v1', 'v2']`. */
-  allowedAlgorithms?: string[];
   /** Default 300 seconds. */
   skewSeconds?: number;
   now?: () => number;
 }
-
-export type VerifyResult =
-  | { ok: true; algorithm: string; ts: number; nonce: string }
-  | {
-      ok: false;
-      code:
-        | 'missing_header'
-        | 'header_invalid'
-        | 'clock_skew'
-        | 'algorithm_rejected'
-        | 'bad_signature';
-      message: string;
-    };
 
 function pickHeader(h: VerifyWebhookInput['headers'], name: string): string | null {
   if (h instanceof Headers) return h.get(name);
@@ -47,112 +33,31 @@ function pickHeader(h: VerifyWebhookInput['headers'], name: string): string | nu
   return Array.isArray(v) ? (v[0] ?? null) : v;
 }
 
-function noCrlf(s: string): boolean {
-  for (let i = 0; i < s.length; i++) {
-    const c = s.charCodeAt(i);
-    if (c === 0x0a || c === 0x0d || c === 0x00 || c === 0x09 || c === 0x20 || c > 0x7e)
-      return false;
-  }
-  return s.length > 0;
+function asUint8(body: VerifyWebhookInput['body']): Uint8Array {
+  if (typeof body === 'string') return new TextEncoder().encode(body);
+  if (body instanceof Uint8Array) return body;
+  return new Uint8Array(body as ArrayBufferLike);
 }
 
-function canonicalQuery(
-  q: string | URLSearchParams | Record<string, string | string[]> | undefined,
-): string {
-  if (q == null) return '';
-  let pairs: [string, string][];
-  if (typeof q === 'string') {
-    if (!q) return '';
-    pairs = [...new URLSearchParams(q.startsWith('?') ? q.slice(1) : q).entries()];
-  } else if (q instanceof URLSearchParams) {
-    pairs = [...q.entries()];
-  } else {
-    pairs = [];
-    for (const [k, v] of Object.entries(q)) {
-      if (Array.isArray(v)) for (const vv of v) pairs.push([k, vv]);
-      else pairs.push([k, v]);
-    }
-  }
-  pairs.sort((a, b) => {
-    const ka = a[0].toLowerCase();
-    const kb = b[0].toLowerCase();
-    if (ka < kb) return -1;
-    if (ka > kb) return 1;
-    if (a[1] < b[1]) return -1;
-    if (a[1] > b[1]) return 1;
-    return 0;
-  });
-  const enc = (s: string): string =>
-    encodeURIComponent(s).replace(
-      /[!'()*]/g,
-      (c) => '%' + c.charCodeAt(0).toString(16).toUpperCase(),
-    );
-  return pairs.map(([k, v]) => enc(k.toLowerCase()) + '=' + enc(v)).join('&');
+function asSecretString(secret: VerifyWebhookInput['secret']): string {
+  if (typeof secret === 'string') return secret;
+  return Buffer.from(secret).toString('utf8');
 }
 
-export function verifyWebhook(input: VerifyWebhookInput): VerifyResult {
-  const direction = input.direction ?? 'polaris-webhook.v1';
-  const method = (input.method ?? 'POST').toUpperCase();
-  const allowed = new Set(input.allowedAlgorithms ?? ['v1', 'v2']);
-  const skew = (input.skewSeconds ?? 300) * 1000;
-  const now = (input.now ?? Date.now)();
-  const tsRaw = pickHeader(input.headers, 'x-polaris-ts');
-  const nonce = pickHeader(input.headers, 'x-polaris-nonce');
-  const sig = pickHeader(input.headers, 'x-polaris-sig');
-  if (!tsRaw) return { ok: false, code: 'missing_header', message: 'X-Polaris-Ts' };
-  if (!nonce) return { ok: false, code: 'missing_header', message: 'X-Polaris-Nonce' };
-  if (!sig) return { ok: false, code: 'missing_header', message: 'X-Polaris-Sig' };
-  if (!noCrlf(tsRaw) || !noCrlf(nonce) || !noCrlf(sig)) {
-    return { ok: false, code: 'header_invalid', message: 'whitespace/CRLF in header' };
-  }
-  if (!/^v\d+=[0-9a-f]+$/.test(sig)) {
-    return { ok: false, code: 'header_invalid', message: 'sig format' };
-  }
-  const eq = sig.indexOf('=');
-  const prefix = sig.slice(0, eq);
-  const hex = sig.slice(eq + 1);
-  if (!allowed.has(prefix)) return { ok: false, code: 'algorithm_rejected', message: prefix };
-  const ts = Number.parseInt(tsRaw, 10);
-  if (!Number.isFinite(ts) || `${ts}` !== tsRaw) {
-    return { ok: false, code: 'header_invalid', message: 'ts not integer' };
-  }
-  if (Math.abs(now - ts) > skew) return { ok: false, code: 'clock_skew', message: 'ts skew' };
-  if (nonce.length < 16 || nonce.length > 128) {
-    return { ok: false, code: 'header_invalid', message: 'nonce length' };
-  }
-  if (!/^[A-Z]+$/.test(method)) {
-    return { ok: false, code: 'header_invalid', message: 'method' };
-  }
-  if (!input.path.startsWith('/')) {
-    return { ok: false, code: 'header_invalid', message: 'path' };
-  }
-  const bodyBuf =
-    typeof input.body === 'string'
-      ? Buffer.from(input.body, 'utf8')
-      : input.body instanceof Buffer
-        ? input.body
-        : Buffer.from(input.body);
-  const bodyHash = createHash('sha256').update(bodyBuf).digest('hex');
-  const canonical = [
+export function verifyWebhook(input: VerifyWebhookInput): Promise<VerifyResult> {
+  const direction: Direction = input.direction ?? 'polaris-webhook';
+  const method = input.method ?? 'POST';
+  return verify({
     direction,
     method,
-    input.path,
-    canonicalQuery(input.query),
-    tsRaw,
-    nonce,
-    bodyHash,
-  ].join('\n');
-  const secretBuf =
-    typeof input.secret === 'string' ? Buffer.from(input.secret, 'utf8') : input.secret;
-  const expected = createHmac('sha256', secretBuf).update(canonical).digest();
-  let provided: Buffer;
-  try {
-    provided = Buffer.from(hex, 'hex');
-  } catch {
-    return { ok: false, code: 'header_invalid', message: 'sig hex' };
-  }
-  if (expected.length !== provided.length || !timingSafeEqual(expected, provided)) {
-    return { ok: false, code: 'bad_signature', message: 'hmac mismatch' };
-  }
-  return { ok: true, algorithm: prefix, ts, nonce };
+    path: input.path,
+    query: input.query,
+    headers: {
+      get: (name: string) => pickHeader(input.headers, name),
+    },
+    body: asUint8(input.body),
+    secret: asSecretString(input.secret),
+    skewSeconds: input.skewSeconds,
+    now: input.now,
+  });
 }

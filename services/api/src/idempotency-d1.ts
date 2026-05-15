@@ -5,8 +5,10 @@
 // both write. D1 is single-region serializable; INSERT ... ON CONFLICT
 // DO NOTHING ... RETURNING gives us a true atomic claim.
 //
-// Keys are scoped by `(mailbox_id, idempotency_key)` per the mailbox-centric
-// schema (services/api/migrations/0001_init.sql).
+// Keys are scoped by `(principal_id, key)` per the composite primary key
+// introduced in `services/api/migrations/0004_idempotency_composite_pk.sql`.
+// Two principals using the same Idempotency-Key string get independent rows;
+// only retries from the same principal collide. principal_id is required.
 
 import type { Env } from './env.js';
 
@@ -30,10 +32,13 @@ export async function tryClaim(
   env: Env,
   key: string,
   mailboxId: string,
-  principalId: string | null,
+  principalId: string,
 ): Promise<IdemClaim> {
   if (!key) {
     throw new Error('idempotency key required');
+  }
+  if (!principalId) {
+    throw new Error('principal id required for idempotency claim');
   }
   // SQLite's INSERT OR IGNORE + RETURNING gives us the atomic semantics we need.
   // If a row exists, RETURNING is empty; we then SELECT to fetch the message_id.
@@ -48,18 +53,27 @@ export async function tryClaim(
     return { first: true };
   }
   // Duplicate — fetch the existing row's message_id (may be null if the original
-  // request hasn't reached recordClaim() yet).
-  const row = await env.DB.prepare(`SELECT message_id FROM idempotency_keys WHERE key = ?1`)
-    .bind(key)
+  // request hasn't reached recordClaim() yet). Scoped to (principal_id, key) so
+  // a different principal's row with the same key cannot leak through.
+  const row = await env.DB.prepare(
+    `SELECT message_id FROM idempotency_keys WHERE principal_id = ?1 AND key = ?2`,
+  )
+    .bind(principalId, key)
     .first<{ message_id: string | null }>();
   return { first: false, messageId: row?.message_id ?? undefined };
 }
 
 /** Attach the message_id to the claim; called after the messages row is created. */
-export async function recordClaim(env: Env, key: string, messageId: string): Promise<void> {
+export async function recordClaim(
+  env: Env,
+  principalId: string,
+  key: string,
+  messageId: string,
+): Promise<void> {
   await env.DB.prepare(
-    `UPDATE idempotency_keys SET message_id = ?2 WHERE key = ?1 AND message_id IS NULL`,
+    `UPDATE idempotency_keys SET message_id = ?3
+       WHERE principal_id = ?1 AND key = ?2 AND message_id IS NULL`,
   )
-    .bind(key, messageId)
+    .bind(principalId, key, messageId)
     .run();
 }

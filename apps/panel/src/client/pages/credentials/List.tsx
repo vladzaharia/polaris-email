@@ -15,6 +15,7 @@ import { Skeleton } from '../../components/ui/skeleton.js';
 import { Badge } from '../../components/ui/badge.js';
 import { Label } from '../../components/ui/label.js';
 import { useAdminQuery } from '../../hooks/useAdminApi.js';
+import { credentialKeys, mailboxKeys } from '../../queryKeys.js';
 
 interface MailboxRow {
   id: string;
@@ -30,10 +31,13 @@ interface CredRow {
 }
 
 export function CredentialsList() {
-  const mailboxes = useAdminQuery<{ data: MailboxRow[] }>(['mailboxes'], '/api/admin/mailboxes');
+  const mailboxes = useAdminQuery<{ data: MailboxRow[] }>(
+    mailboxKeys.list(),
+    '/api/admin/mailboxes',
+  );
   const [mailboxId, setMailboxId] = useState<string>('');
   const creds = useAdminQuery<{ data: CredRow[] }>(
-    ['credentials', mailboxId],
+    credentialKeys.list(mailboxId),
     `/api/admin/credentials?mailbox=${mailboxId}`,
     { enabled: !!mailboxId },
   );

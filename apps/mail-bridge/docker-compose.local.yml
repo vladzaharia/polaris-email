@@ -2,7 +2,7 @@
 # See README.md for the other (docker-compose.tailscale.yml for tailnet-fronted mode).
 #
 # Local / host-network mode:
-#   - Bridge binds 465/993/443 directly to the host network.
+#   - Bridge binds 465/993 directly to the host network.
 #   - Operator owns the firewall, reverse proxy (if any), and TLS termination
 #     (operator-mounted PEM at /etc/polaris-bridge/tls/, or Lego ACME-DNS-01).
 #   - Suitable when the host is already the public entry point or sits behind
@@ -31,7 +31,6 @@ services:
     ports:
       - '${BRIDGE_SMTPS_PORT:-465}:465'
       - '${BRIDGE_IMAP_PORT:-993}:993'
-      - '${BRIDGE_JMAP_PORT:-443}:443'
     environment:
       BRIDGE_TLS_MODE: local
       BRIDGE_TLS_CERT_PATH: /etc/polaris-bridge/tls/fullchain.pem
@@ -41,7 +40,6 @@ services:
       BRIDGE_POLARIS_HMAC_KEY_FILE: /run/secrets/hmac_key
       BRIDGE_SMTPS_ENABLED: ${BRIDGE_SMTPS_ENABLED:-true}
       BRIDGE_IMAP_ENABLED: ${BRIDGE_IMAP_ENABLED:-true}
-      BRIDGE_JMAP_ENABLED: ${BRIDGE_JMAP_ENABLED:-true}
       BRIDGE_CREDSTORE_PATH: /var/lib/polaris-bridge/credstore.db
       BRIDGE_MIRROR_PATH: /var/lib/polaris-bridge/mirror.db
       BRIDGE_LOGGING_FILE: /var/log/polaris-bridge/audit.jsonl

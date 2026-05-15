@@ -9,8 +9,16 @@ then-contract migrations within it.
 
 ```
 migrations/
-  0001_init.sql       Canonical v1 schema. Nothing was deployed prior to
-                      this; the v1 from-scratch shape lives entirely here.
+  0001_init.sql                  Canonical v1 schema. Nothing was deployed
+                                 prior to this; the v1 from-scratch shape
+                                 lives entirely here.
+  0002_bridge.sql                Phase L mail-bridge tables.
+  0003_audit_actions.sql         Widens audit_log.action for Phase L.
+  0004_idempotency_composite_pk  A8 fix — (principal_id, key) composite PK.
+  0005_read_once_secrets.sql     A11 / B6 — drops plaintext secret columns
+                                 and JMAP bearer-token rows. Hard cutover;
+                                 every existing secret is regenerated in
+                                 the same maintenance window.
 ```
 
 `wrangler d1 migrations apply polaris-email --remote` consumes this

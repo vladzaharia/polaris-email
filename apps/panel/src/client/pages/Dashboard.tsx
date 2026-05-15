@@ -15,6 +15,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs.js';
 import { Skeleton } from '../components/ui/skeleton.js';
 import { useAdminQuery } from '../hooks/useAdminApi.js';
+import { statsKeys } from '../queryKeys.js';
 
 interface StatsOverview {
   window: '24h' | '7d' | '30d';
@@ -64,7 +65,7 @@ function StatCard({
 
 function WindowedCards({ window }: { window: '24h' | '7d' | '30d' }) {
   const q = useAdminQuery<StatsOverview>(
-    ['stats-overview', window],
+    statsKeys.overview(window),
     `/api/admin/stats/overview?window=${window}`,
   );
   if (q.isLoading) {

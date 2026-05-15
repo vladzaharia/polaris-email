@@ -11,6 +11,7 @@ import { buildError } from '../errors.js';
 import { hashSecret } from '../hashing.js';
 import { ulid } from '@polaris-email/ids';
 import { generateSecret } from '@polaris-email/hmac';
+import { revoke } from '@polaris-email/revocation';
 import { auditRoutes } from './admin/audit.js';
 import { credentials } from './admin/credentials.js';
 import { credentialsMailbox } from './admin/credentials-mailbox.js';
@@ -28,7 +29,7 @@ import { zones } from './admin/zones.js';
 export const admin = new Hono<{ Bindings: Env }>();
 
 // /v1/admin/bootstrap signs with POLARIS_SECRET_A, not an api key — bypass hmacAuth there.
-const adminHmac = hmacAuth('polaris-api.v1');
+const adminHmac = hmacAuth('polaris-api');
 admin.use('/v1/admin/*', async (c, next) => {
   if (c.req.path === '/v1/admin/bootstrap') return next();
   return adminHmac(c, next);
@@ -327,11 +328,10 @@ admin.post('/v1/admin/api-keys/:id/revoke', requireScope('admin:rotate'), async 
   await c.env.KV_KEY_CACHE.delete(`plain:${id}`);
   await c.env.KV_KEY_CACHE.delete(`key:${id}`);
   if (keyRow?.principal_id) {
-    const doId = c.env.REVOCATION_DO.idFromName(keyRow.principal_id);
-    await c.env.REVOCATION_DO.get(doId).fetch('https://revocation-do/revoke', {
-      method: 'POST',
-      body: JSON.stringify({ reason: body.reason ?? null }),
-    });
+    // Stamp KV_REVOCATIONS so generic HMAC auth (auth.ts) and the
+    // RFC822 send path both see the revocation immediately, even if
+    // KV_KEY_CACHE entries linger in another colo.
+    await revoke(c.env, keyRow.principal_id);
   }
   await audit(c.env, {
     actor: `key:${key.key_id}`,

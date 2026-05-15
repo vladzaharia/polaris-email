@@ -1,9 +1,9 @@
-// Mailbox state helpers for the IMAP / JMAP bridge.
+// Mailbox state helpers for the IMAP bridge.
 //
 // Phase L allocates per-(mailbox, message) state in `mailbox_messages_state`
-// the first time IMAP / JMAP touches a message. The bridge also reads from
+// the first time IMAP touches a message. The bridge also reads from
 // `mailbox_uid_counter` (sequential UID per mailbox) and
-// `mailbox_change_counter` (monotonic MODSEQ / Email-changes id).
+// `mailbox_change_counter` (monotonic MODSEQ).
 //
 // This helper centralises the read-allocate-write dance so every callsite
 // (PATCH /v1/messages/:id, POST /v1/mailboxes/:id/expunge, the inbound pipeline

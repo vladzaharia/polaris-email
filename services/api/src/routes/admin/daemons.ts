@@ -1,5 +1,10 @@
 // Admin daemons routes. The `daemons` row records each registered
 // submission-daemon instance + its HMAC key reference.
+//
+// Read-once secret discipline (A11 / B6):
+//   * POST /v1/admin/daemons returns the plaintext HMAC key ONCE.
+//   * POST /v1/admin/daemons/:id/rotate returns the new key ONCE.
+//   * GET responses omit the stored hash column entirely.
 import { Hono } from 'hono';
 import { audit } from '../../audit.js';
 import { bodyText, requireScope } from '../../auth.js';
@@ -22,11 +27,13 @@ interface DaemonRow {
 }
 
 daemons.get('/v1/admin/daemons', requireScope('admin:read'), async (c) => {
+  // Note: `hmac_key_secret_name` (the stored argon2id hash of the HMAC key)
+  // is deliberately omitted from GET responses per A11.
   const rows = await c.env.DB.prepare(
-    `SELECT id, name, hmac_key_secret_name, access_token_id,
+    `SELECT id, name, access_token_id,
             last_seen_at, created_at, disabled_at
      FROM daemons ORDER BY name ASC`,
-  ).all<DaemonRow>();
+  ).all<Omit<DaemonRow, 'hmac_key_secret_name'>>();
   return c.json({ data: rows.results });
 });
 
@@ -68,26 +75,28 @@ daemons.post('/v1/admin/daemons', requireScope('admin:rotate'), async (c) => {
 daemons.get('/v1/admin/daemons/lookup', requireScope('admin:read'), async (c) => {
   const name = c.req.query('name');
   if (!name) return buildError(c, 'bad_request', 'name required');
+  // Hash column omitted from GET responses (A11).
   const row = await c.env.DB.prepare(
-    `SELECT id, name, hmac_key_secret_name, access_token_id,
+    `SELECT id, name, access_token_id,
             last_seen_at, created_at, disabled_at
      FROM daemons WHERE name = ?`,
   )
     .bind(name)
-    .first<DaemonRow>();
+    .first<Omit<DaemonRow, 'hmac_key_secret_name'>>();
   if (!row) return buildError(c, 'not_found', 'daemon not found');
   return c.json(row);
 });
 
 daemons.get('/v1/admin/daemons/:id', requireScope('admin:read'), async (c) => {
   const id = c.req.param('id');
+  // Hash column omitted from GET responses (A11).
   const row = await c.env.DB.prepare(
-    `SELECT id, name, hmac_key_secret_name, access_token_id,
+    `SELECT id, name, access_token_id,
             last_seen_at, created_at, disabled_at
      FROM daemons WHERE id = ?`,
   )
     .bind(id)
-    .first<DaemonRow>();
+    .first<Omit<DaemonRow, 'hmac_key_secret_name'>>();
   if (!row) return buildError(c, 'not_found', 'daemon not found');
   return c.json(row);
 });

@@ -42,6 +42,11 @@ components:
       name: Idempotency-Key
       in: header
       required: false
+      description: |
+        Idempotency keys are scoped per principal: the same key string used by
+        two different principals never collides. Retries from the same
+        principal with the same key return the original `message_id`. Keys are
+        cached for 24h.
       schema: { type: string, pattern: '^[A-Za-z0-9_-]{8,128}$' }
   schemas:
     Ulid:
@@ -184,7 +189,12 @@ components:
           type: array
           items: { $ref: '#/components/schemas/SendRequestAttachment' }
         reply_to: { type: string }
-        idempotency_key: { type: string }
+        idempotency_key:
+          type: string
+          description: |
+            Scoped per principal — see the `Idempotency-Key` header parameter.
+            Two principals using the same string get independent claims; the
+            same principal retrying gets the original `message_id`.
     SendResponse:
       type: object
       required: [message_id, status, fresh]

@@ -1,10 +1,9 @@
 // Package client wraps polaris-sdk-go for the polaris-email admin CLI.
 //
-// Phase F: the CLI was a standalone HMAC implementation; it now delegates
-// signing to `github.com/polaris-email/polaris-sdk-go`. The internal helpers
-// (CanonicalQuery / BuildCanonical / Sign / GenerateNonce / NowMillis in
-// hmac.go) are kept as thin re-exports so the existing 12 subcommand files
-// don't need to change shape.
+// The CLI used to carry its own copy of the HMAC scheme (see the deleted
+// `internal/client/hmac.go`). After cleanup phase D2 the canonical helpers
+// live in `github.com/polaris-email/polaris-sdk-go`; this package just wraps
+// the SDK with the CLI's HTTP transport + dry-run sink.
 package client
 
 import (
@@ -56,13 +55,13 @@ func (c *Client) Request(ctx context.Context, method, path string, query url.Val
 	if query != nil {
 		rawQuery = query.Encode()
 	}
-	ts := NowMillis()
-	nonce, err := GenerateNonce()
+	ts := polarissdk.NowMillis()
+	nonce, err := polarissdk.GenerateNonce()
 	if err != nil {
 		return nil, err
 	}
-	sig, err := Sign(CanonicalInput{
-		Direction: DirectionAPI,
+	sig, err := polarissdk.Sign(polarissdk.CanonicalInput{
+		Direction: polarissdk.DirectionAPI,
 		Method:    method,
 		Path:      path,
 		Query:     rawQuery,

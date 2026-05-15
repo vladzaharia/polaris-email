@@ -43,8 +43,7 @@ type Config struct {
 }
 
 // Source produces TLS listeners on demand. The returned tls.Config and
-// listener factories are wired into each protocol server (SMTPS / IMAP /
-// JMAP).
+// listener factories are wired into each protocol server (SMTPS / IMAP).
 type Source struct {
 	cfg      Config
 	mu       sync.Mutex

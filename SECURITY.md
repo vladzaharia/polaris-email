@@ -16,9 +16,9 @@
 
 3. **Consumer-held API keys → services/api** — adversary holds one leaked key.
    Mitigated by: per-key HMAC secrets (rotation is per-key), `sender_scopes` restricts
-   `from` addresses, rate limits per-key, emergency revoke with ≤5 s propagation
-   via the synchronous `REVOCATION_DO` Durable Object, `api_key_usage` log records
-   every IP/UA/Ray.
+   `from` addresses, rate limits per-key, emergency revoke with ≤60 s propagation
+   via the KV-backed `revocationCheck` (`KV_REVOCATIONS` namespace + 60 s per-Worker
+   cache), `api_key_usage` log records every IP/UA/Ray.
 
 4. **Panel session → admin endpoints** — adversary has a stolen panel session.
    Mitigated by: better-auth with OIDC group gating (`polaris-admins`, default IdP
@@ -65,13 +65,12 @@
 
 ## Gating checklist for first non-synthetic consumer
 
-- [ ] HMAC test vectors (`packages/test-vectors/vectors.json`) green in all three SDK
-      webhook verifiers (`@polaris/sdk/webhook`, `polaris_sdk.webhook`,
-      `polaris-sdk-go`).
+- [ ] HMAC test vectors (`packages/test-vectors/vectors.json`) green in both SDK
+      webhook verifiers (`@polaris/sdk/webhook`, `polaris-sdk-go`).
 - [ ] Audit hash-chain verified end-to-end with `bin/audit-verify.sh`; latest
       `audit_anchors` row matches the off-platform anchor mirror.
-- [ ] `REVOCATION_DO` synchronous revocation drill: revoke a test key, confirm next
-      authenticated request returns `key_revoked` within ≤5 s.
+- [ ] `revocationCheck` drill: revoke a test key, confirm next authenticated request
+      returns `key_revoked` within ≤60 s (KV propagation + cache TTL).
 - [ ] R2 Object Lock active in compliance mode on both `polaris-email` and the
       anchors bucket; verified via `wrangler r2 bucket info`.
 - [ ] End-to-end synthetic green for 7 consecutive days.

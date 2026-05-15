@@ -1,18 +1,32 @@
 // Package polarissdk provides the Go SDK for polaris-email.
 //
 // `webhook.go` is the hand-written HMAC verifier; consumers receiving webhook
-// deliveries should call `VerifyWebhook` to validate the request before
-// trusting its body.
+// deliveries should call `VerifyWebhook` (strict canonical-string form) to
+// validate the request before trusting its body.
 //
 // `client.go` (hand-written) wraps the generated low-level operations with
 // HMAC signing for the API direction.
 //
 // `generated.go` is the oapi-codegen output — DO NOT EDIT directly; rerun
 // `pnpm --filter @polaris/sdk-codegen run generate`.
+//
+// BREAKING CHANGE (cleanup plan A9): the prior `VerifyWebhook(payload []byte,
+// sigHeader, secret string) bool` short overload has been removed. It HMAC'd
+// the raw payload — not the canonical string — and shared its name with the
+// strict Python/TS verifiers, which made it a silent footgun for callers who
+// expected canonical-string semantics. The strict verifier formerly named
+// `VerifyWebhookFull` is now `VerifyWebhook` and is the only entry point.
+//
+// BREAKING CHANGE (cleanup plan B3): HMAC versioning removed entirely.
+// Domain tags are now `polaris-api` / `polaris-webhook` (no `.v1`) and the
+// `X-Polaris-Sig` header is bare lowercase hex (no `v1=`/`v2=` prefix). The
+// AllowedAlgorithms field has been deleted; signatures shaped like `v1=…`
+// or `v2=…` are rejected with `CodeInvalidSignature`.
 package polarissdk
 
 import (
 	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -27,85 +41,46 @@ import (
 type Direction string
 
 const (
-	DirectionAPI     Direction = "polaris-api.v1"
-	DirectionWebhook Direction = "polaris-webhook.v1"
+	DirectionAPI     Direction = "polaris-api"
+	DirectionWebhook Direction = "polaris-webhook"
 )
 
 // VerifyInput carries the inputs needed to verify a single request signature.
-//
-// AllowedAlgorithms defaults to {"v1","v2"} — the v2 tag is what the fanout
-// worker emits today; v1 is kept on the allowlist so subscribers can still
-// verify deliveries signed before the v2 rollout.
 type VerifyInput struct {
-	Direction         Direction
-	Method            string
-	Path              string
-	Query             string
-	Headers           map[string]string
-	Body              []byte
-	Secret            []byte
-	AllowedAlgorithms []string
-	SkewSeconds       int
-	Now               time.Time
+	Direction   Direction
+	Method      string
+	Path        string
+	Query       string
+	Headers     map[string]string
+	Body        []byte
+	Secret      []byte
+	SkewSeconds int
+	Now         time.Time
 }
 
 // VerifyCode is a stable error code returned in the Result for tests / log routing.
 type VerifyCode string
 
 const (
-	CodeMissingHeader     VerifyCode = "missing_header"
-	CodeHeaderInvalid     VerifyCode = "header_invalid"
-	CodeClockSkew         VerifyCode = "clock_skew"
-	CodeAlgorithmRejected VerifyCode = "algorithm_rejected"
-	CodeBadSignature      VerifyCode = "bad_signature"
+	CodeMissingHeader    VerifyCode = "missing_header"
+	CodeHeaderInvalid    VerifyCode = "header_invalid"
+	CodeClockSkew        VerifyCode = "clock_skew"
+	CodeInvalidSignature VerifyCode = "invalid_signature"
 )
 
 // VerifyResult is the result of VerifyWebhook.
 type VerifyResult struct {
-	OK        bool
-	Algorithm string
-	Ts        int64
-	Nonce     string
-	Code      VerifyCode
-	Err       error
+	OK    bool
+	Ts    int64
+	Nonce string
+	Code  VerifyCode
+	Err   error
 }
 
-// VerifyWebhook returns true when the signature on the input headers matches
-// HMAC-SHA256 of the canonical string under `secret`. The convenience boolean
-// wrapper mirrors the spec in the README; callers that need granular errors
-// should use VerifyWebhookFull.
-func VerifyWebhook(payload []byte, signatureHeader string, secret []byte) bool {
-	// Convenience form expects the *full* `X-Polaris-Sig` header value. The
-	// canonical string requires `ts`/`nonce`/method/path which this short form
-	// can't recover — so this overload only verifies the prefix is valid and
-	// the hex is reachable. Callers wiring real HTTP requests should call
-	// VerifyWebhookFull below.
-	eq := strings.IndexByte(signatureHeader, '=')
-	if eq <= 0 {
-		return false
-	}
-	prefix := signatureHeader[:eq]
-	if prefix != "v1" && prefix != "v2" {
-		return false
-	}
-	hexStr := signatureHeader[eq+1:]
-	provided, err := hex.DecodeString(hexStr)
-	if err != nil {
-		return false
-	}
-	mac := hmac.New(sha256.New, secret)
-	mac.Write(payload)
-	expected := mac.Sum(nil)
-	return hmac.Equal(expected, provided)
-}
-
-// VerifyWebhookFull performs the strict canonical-string verification used by
-// the SDK tests and recommended for production use.
-func VerifyWebhookFull(in VerifyInput) VerifyResult {
-	allowed := in.AllowedAlgorithms
-	if len(allowed) == 0 {
-		allowed = []string{"v1", "v2"}
-	}
+// VerifyWebhook performs the strict canonical-string verification used by the
+// SDK tests and required for production use. The signature header is bare
+// lowercase hex; prefixed forms (`v1=…` / `v2=…`) are rejected.
+func VerifyWebhook(in VerifyInput) VerifyResult {
 	if in.Direction == "" {
 		in.Direction = DirectionWebhook
 	}
@@ -135,26 +110,10 @@ func VerifyWebhookFull(in VerifyInput) VerifyResult {
 	if !noCRLF(tsRaw) || !noCRLF(nonce) || !noCRLF(sig) {
 		return VerifyResult{Code: CodeHeaderInvalid, Err: errors.New("crlf")}
 	}
-	eq := strings.IndexByte(sig, '=')
-	if eq <= 0 {
-		return VerifyResult{Code: CodeHeaderInvalid, Err: errors.New("sig format")}
-	}
-	prefix := sig[:eq]
-	hexStr := sig[eq+1:]
-	for _, c := range hexStr {
-		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')) {
-			return VerifyResult{Code: CodeHeaderInvalid, Err: errors.New("sig hex")}
-		}
-	}
-	algoOK := false
-	for _, a := range allowed {
-		if prefix == a {
-			algoOK = true
-			break
-		}
-	}
-	if !algoOK {
-		return VerifyResult{Code: CodeAlgorithmRejected, Err: errors.New(prefix)}
+	// Bare lowercase hex only. Reject anything containing `=` or any
+	// non-hex character (covers `v1=…`, `v2=…`, and similar prefixes).
+	if !isLowerHex(sig) {
+		return VerifyResult{Code: CodeInvalidSignature, Err: errors.New("sig format")}
 	}
 	ts, err := strconv.ParseInt(tsRaw, 10, 64)
 	if err != nil {
@@ -190,11 +149,11 @@ func VerifyWebhookFull(in VerifyInput) VerifyResult {
 	mac := hmac.New(sha256.New, in.Secret)
 	mac.Write([]byte(canonical))
 	expected := mac.Sum(nil)
-	provided, err := hex.DecodeString(hexStr)
+	provided, err := hex.DecodeString(sig)
 	if err != nil || len(provided) != len(expected) || !hmac.Equal(expected, provided) {
-		return VerifyResult{Code: CodeBadSignature, Err: errors.New("hmac mismatch")}
+		return VerifyResult{Code: CodeInvalidSignature, Err: errors.New("hmac mismatch")}
 	}
-	return VerifyResult{OK: true, Algorithm: prefix, Ts: ts, Nonce: nonce}
+	return VerifyResult{OK: true, Ts: ts, Nonce: nonce}
 }
 
 func pickHeader(h map[string]string, name string) (string, bool) {
@@ -217,6 +176,135 @@ func noCRLF(s string) bool {
 	}
 	return true
 }
+
+func isLowerHex(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, c := range s {
+		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')) {
+			return false
+		}
+	}
+	return true
+}
+
+// ---------- exported signing helpers (used by polaris-cli and bridge consumers) ----------
+
+// CanonicalInput holds everything needed to build the canonical signing string.
+type CanonicalInput struct {
+	Direction Direction
+	Method    string
+	Path      string
+	Query     string // raw query string (without leading "?")
+	TS        string // unix milliseconds as decimal string
+	Nonce     string
+	Body      []byte
+}
+
+// BuildCanonical constructs the canonical string per the spec. Lower-cased
+// HTTP method, RFC 3986 query canonicalization, and lowercase-hex body hash.
+func BuildCanonical(in CanonicalInput) (string, error) {
+	if err := AssertNoCrlf("ts", in.TS); err != nil {
+		return "", err
+	}
+	if err := AssertNoCrlf("nonce", in.Nonce); err != nil {
+		return "", err
+	}
+	method := strings.ToUpper(in.Method)
+	for i := 0; i < len(method); i++ {
+		c := method[i]
+		if c < 'A' || c > 'Z' {
+			return "", errors.New("hmac: invalid HTTP method")
+		}
+	}
+	if !strings.HasPrefix(in.Path, "/") {
+		return "", errors.New("hmac: path must start with /")
+	}
+	bodyHash := sha256.Sum256(in.Body)
+	return strings.Join([]string{
+		string(in.Direction),
+		method,
+		in.Path,
+		CanonicalQuery(in.Query),
+		in.TS,
+		in.Nonce,
+		hex.EncodeToString(bodyHash[:]),
+	}, "\n"), nil
+}
+
+// Sign returns the bare lowercase-hex HMAC tag (no algorithm prefix).
+func Sign(in CanonicalInput, secret []byte) (string, error) {
+	canon, err := BuildCanonical(in)
+	if err != nil {
+		return "", err
+	}
+	mac := hmac.New(sha256.New, secret)
+	mac.Write([]byte(canon))
+	return hex.EncodeToString(mac.Sum(nil)), nil
+}
+
+// CanonicalQuery sorts query parameters by lowercase key, then value, and
+// percent-encodes per RFC 3986 to match the TypeScript implementation.
+func CanonicalQuery(raw string) string {
+	return canonicalQuery(raw)
+}
+
+// AssertNoCrlf rejects strings containing whitespace, control characters, or
+// non-ASCII bytes — matching the TS implementation's strict header guard.
+func AssertNoCrlf(name, value string) error {
+	if value == "" {
+		return errors.New("hmac: " + name + " empty")
+	}
+	for i := 0; i < len(value); i++ {
+		c := value[i]
+		if c == 0x0a || c == 0x0d || c == 0x00 || c == 0x09 || c == 0x20 {
+			return errors.New("hmac: " + name + " contains whitespace or control character")
+		}
+		if c > 0x7e {
+			return errors.New("hmac: " + name + " non-ASCII")
+		}
+	}
+	return nil
+}
+
+// GenerateNonce returns a 24-character Crockford base32 nonce derived from 15
+// random bytes — matching the TS generator.
+func GenerateNonce() (string, error) {
+	b := make([]byte, 15)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return Crockford32(b), nil
+}
+
+const crockfordAlphabet = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
+
+// Crockford32 encodes bytes using Crockford base32 (no padding).
+func Crockford32(in []byte) string {
+	var bits, acc uint32
+	var sb strings.Builder
+	for _, b := range in {
+		acc = (acc << 8) | uint32(b)
+		bits += 8
+		for bits >= 5 {
+			bits -= 5
+			sb.WriteByte(crockfordAlphabet[(acc>>bits)&31])
+		}
+	}
+	if bits > 0 {
+		sb.WriteByte(crockfordAlphabet[(acc<<(5-bits))&31])
+	}
+	return sb.String()
+}
+
+// NowMillis returns the current time as a unix-ms decimal string.
+func NowMillis() string {
+	return strconv.FormatInt(time.Now().UnixMilli(), 10)
+}
+
+// ---------- internal canonical-query helper (kept private so it can keep the
+// minimal API surface; CanonicalQuery is the public wrapper) ----------
 
 func canonicalQuery(raw string) string {
 	if raw == "" {
@@ -260,6 +348,12 @@ func canonicalQuery(raw string) string {
 func rfcEncode(s string) string {
 	enc := url.QueryEscape(s)
 	enc = strings.ReplaceAll(enc, "+", "%20")
+	// QueryEscape leaves these unencoded; RFC 3986 strict requires encoding.
+	enc = strings.ReplaceAll(enc, "!", "%21")
+	enc = strings.ReplaceAll(enc, "'", "%27")
+	enc = strings.ReplaceAll(enc, "(", "%28")
+	enc = strings.ReplaceAll(enc, ")", "%29")
+	enc = strings.ReplaceAll(enc, "*", "%2A")
 	return enc
 }
 

@@ -43,27 +43,31 @@ func (r *Refresher) Run(ctx context.Context) {
 // tick pulls deltas for each tracked mailbox and merges them.
 func (r *Refresher) tick(ctx context.Context) {
 	for _, mb := range r.Mailboxes {
-		last, err := r.Mirror.LastState(ctx, mb)
-		if err != nil {
-			log.Printf("mirror: last_state(%s) failed: %v", mb, err)
-			continue
-		}
-		ch, err := r.Client.GetMailboxChanges(ctx, mb, last)
-		if err != nil {
-			// Soft failure — likely transient network blip.
-			log.Printf("mirror: changes(%s, since=%d) failed: %v", mb, last, err)
-			continue
-		}
-		if err := r.Mirror.ApplyChanges(ctx, mb, Changes{
-			Updated: ch.Updated,
-			Deleted: ch.Deleted,
-			State:   ch.State,
-		}); err != nil {
-			log.Printf("mirror: apply(%s) failed: %v", mb, err)
+		if err := r.RefreshMailbox(ctx, mb); err != nil {
+			log.Printf("mirror: refresh(%s): %v", mb, err)
 		}
 	}
 }
 
-// TODO(production): wire a reactive-refresh entry point that the webhook
-// handler invokes when a `message.received` event lands. The current
-// `Refresher.tick` covers correctness but not low-latency push.
+// RefreshMailbox pulls the latest delta for a single mailbox and merges it
+// into the mirror. Safe to call from the webhook handler (low-latency
+// reactive refresh) and from the periodic tick (baseline safety net).
+//
+// Errors are returned so the caller can decide how to react; transient
+// failures should be logged but not abort whatever surrounding flow is
+// happening (e.g. webhook still 204s, baseline tick moves on to next mb).
+func (r *Refresher) RefreshMailbox(ctx context.Context, mailboxID string) error {
+	last, err := r.Mirror.LastState(ctx, mailboxID)
+	if err != nil {
+		return err
+	}
+	ch, err := r.Client.GetMailboxChanges(ctx, mailboxID, last)
+	if err != nil {
+		return err
+	}
+	return r.Mirror.ApplyChanges(ctx, mailboxID, Changes{
+		Updated: ch.Updated,
+		Deleted: ch.Deleted,
+		State:   ch.State,
+	})
+}

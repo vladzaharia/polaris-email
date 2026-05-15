@@ -7,9 +7,10 @@ import { Button } from '../../components/ui/button.js';
 import { Input } from '../../components/ui/input.js';
 import { Label } from '../../components/ui/label.js';
 import { useAdminQuery } from '../../hooks/useAdminApi.js';
+import { mailboxKeys } from '../../queryKeys.js';
 import { useStream } from '../../hooks/useStream.js';
 import { Badge } from '../../components/ui/badge.js';
-import { apiFetch } from '../../lib/api.js';
+import { apiFetch, ApiError } from '../../lib/api.js';
 
 interface MailboxRow {
   id: string;
@@ -23,10 +24,13 @@ interface SenderRow {
 const TIMELINE_ORDER = ['queued', 'sending', 'sent', 'delivered'];
 
 export function TestSendForm() {
-  const mailboxes = useAdminQuery<{ data: MailboxRow[] }>(['mailboxes'], '/api/admin/mailboxes');
+  const mailboxes = useAdminQuery<{ data: MailboxRow[] }>(
+    mailboxKeys.list(),
+    '/api/admin/mailboxes',
+  );
   const [mailboxId, setMailboxId] = useState('');
   const detail = useAdminQuery<{ senders: SenderRow[] }>(
-    ['mailbox', mailboxId],
+    mailboxKeys.detail(mailboxId),
     `/api/admin/mailboxes/${mailboxId}`,
     { enabled: !!mailboxId },
   );
@@ -48,26 +52,23 @@ export function TestSendForm() {
     setMessageId(null);
     setSubmitting(true);
     try {
-      const r = await apiFetch<{ message_id?: string; error?: string; message?: string }>(
-        '/api/test-send',
-        {
-          method: 'POST',
-          body: JSON.stringify({
-            from,
-            to: to
-              .split(',')
-              .map((s) => s.trim())
-              .filter(Boolean),
-            subject,
-            text,
-          }),
-        },
-      );
-      if (r.status >= 400) {
-        setError(r.body?.message ?? r.body?.error ?? `HTTP ${r.status}`);
-      } else if (r.body?.message_id) {
+      const r = await apiFetch<{ message_id?: string }>('/api/test-send', {
+        method: 'POST',
+        body: JSON.stringify({
+          from,
+          to: to
+            .split(',')
+            .map((s) => s.trim())
+            .filter(Boolean),
+          subject,
+          text,
+        }),
+      });
+      if (r.body?.message_id) {
         setMessageId(r.body.message_id);
       }
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : String(err));
     } finally {
       setSubmitting(false);
     }

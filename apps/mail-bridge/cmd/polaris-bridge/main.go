@@ -1,14 +1,13 @@
 // Command polaris-bridge is the on-prem polaris mail bridge.
 //
-// One binary spawns three concurrent listeners:
+// One binary spawns two concurrent listeners:
 //
 //   - SMTPS submission   (:465, RFC 6409 / 8314)
 //   - IMAP4rev2          (:993, RFC 9051 subset)
-//   - JMAP               (:443, RFC 8620/8621/8887 subset)
 //
-// All three share one auth lookup (mailbox_credentials), one bridge-local
+// Both share one auth lookup (mailbox_credentials), one bridge-local
 // SQLite mirror, and one push.Manager fanning state-change events out to
-// IMAP IDLE / JMAP WebSocket / JMAP SSE subscribers.
+// IMAP IDLE subscribers.
 package main
 
 import (
@@ -29,7 +28,6 @@ import (
 	"github.com/vladzaharia/polaris-email/apps/mail-bridge/internal/credstore"
 	"github.com/vladzaharia/polaris-email/apps/mail-bridge/internal/forwarder"
 	bridgeimap "github.com/vladzaharia/polaris-email/apps/mail-bridge/internal/imap"
-	"github.com/vladzaharia/polaris-email/apps/mail-bridge/internal/jmap"
 	"github.com/vladzaharia/polaris-email/apps/mail-bridge/internal/push"
 	dsmtp "github.com/vladzaharia/polaris-email/apps/mail-bridge/internal/smtp"
 	mirrorstore "github.com/vladzaharia/polaris-email/apps/mail-bridge/internal/store"
@@ -77,7 +75,7 @@ func main() {
 		HTTPClient:         httpClient,
 	})
 
-	// Polaris SDK client used by IMAP/JMAP listeners + push.
+	// Polaris SDK client used by the IMAP listener + push.
 	sdkClient := polarissdk.NewClient(cfg.APIURL)
 	sdkClient.DaemonID = cfg.DaemonID
 	sdkClient.DaemonSecret = cfg.HMACKey
@@ -120,17 +118,25 @@ func main() {
 		}
 	}()
 
-	// Webhook receiver handler. Secret is filled in once bootstrap completes;
-	// during initial boot the handler simply rejects.
-	wh := &webhook.Handler{Manager: pushMgr, Path: "/internal/webhook/message-received"}
-
-	// Baseline mirror refresh.
+	// Baseline mirror refresh. Constructed before the webhook handler so the
+	// reactive (webhook-driven) refresh path can reuse it.
 	refresher := &mirrorstore.Refresher{
 		Mirror:   mirrorDB,
 		Client:   sdkClient,
 		Interval: 30 * time.Second,
 	}
 	go refresher.Run(ctx)
+
+	// Webhook receiver handler. Secret is filled in once bootstrap completes;
+	// during initial boot the handler simply rejects. The refresher is wired
+	// in so an inbound `message.received` event force-pulls the latest
+	// mirror state BEFORE the IDLE-push fan-out fires — otherwise clients
+	// race the fetch and see stale rows.
+	wh := &webhook.Handler{
+		Manager:   pushMgr,
+		Path:      "/internal/webhook/message-received",
+		Refresher: refresher,
+	}
 
 	// TLS source.
 	tlsSrc, err := bridgetls.New(bridgetls.Config{
@@ -194,24 +200,31 @@ func main() {
 		}()
 	}
 
-	// JMAP listener (also serves the webhook receiver on the same mux).
-	if enabled("BRIDGE_JMAP_ENABLED", true) {
-		jmapSrv := jmap.New(jmap.Options{
-			ListenAddr: getenvDefault("BRIDGE_JMAP_LISTEN_ADDR", ":443"),
-			TLSConfig:  tlsConfigFor(tlsSrc),
-			SessionURL: publicURL,
-		}, jmap.Deps{
-			Client:         sdkClient,
-			Mirror:         mirrorDB,
-			Push:           pushMgr,
-			WebhookHandler: wh,
-		})
+	// Webhook receiver — served on its own minimal HTTP listener. The
+	// deployment fronts the bridge with either Tailscale (mTLS inside the
+	// tailnet) or a local reverse proxy, so this listener is plain HTTP by
+	// default. Operators that want TLS termination at the bridge itself
+	// can put the listener behind a wrapper.
+	if enabled("BRIDGE_WEBHOOK_ENABLED", true) {
+		mux := http.NewServeMux()
+		mux.Handle(wh.Path, wh)
+		webhookSrv := &http.Server{
+			Addr:              getenvDefault("BRIDGE_WEBHOOK_LISTEN_ADDR", ":8080"),
+			Handler:           mux,
+			ReadHeaderTimeout: 15 * time.Second,
+		}
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			if err := jmapSrv.Serve(ctx); err != nil {
-				log.Printf("jmap server exited: %v", err)
+			if err := webhookSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				log.Printf("webhook server exited: %v", err)
 			}
+		}()
+		go func() {
+			<-ctx.Done()
+			shutCtx, c := context.WithTimeout(context.Background(), 10*time.Second)
+			defer c()
+			_ = webhookSrv.Shutdown(shutCtx)
 		}()
 	}
 

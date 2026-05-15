@@ -1,8 +1,8 @@
 # polaris-email cost model
 
 Forward projections at three traffic tiers. Re-run quarterly; every quarter the
-operator updates `polaris-email cost --month YYYY-MM` against the projection
-and notes any deltas in this doc.
+operator pulls the previous month's actuals from the Cloudflare dashboard Billing
+→ Usage page and notes any deltas against the projection in this doc.
 
 All figures USD, list pricing as of May 2026, Workers Paid plan ($5/mo
 subscription floor). Excludes Email Service per-message pricing (operator
@@ -105,28 +105,20 @@ Things that disproportionately blow the bill if not watched:
    single master pepper + HKDF-derived per-tenant peppers (H5/I13 — already
    shipped in `@polaris-email/crypto-utils`).
 
-## How `polaris-email cost` is computed
+## How to read actuals
 
-The CLI command pulls from two sources:
+Two sources to cross-check against the projections above:
 
-1. **Cloudflare Billing API** (`/accounts/{id}/billing/profile`) — service-
-   level breakdown for the current month. Requires a scoped API token with
-   `Account › Billing: Read`.
+1. **Cloudflare dashboard → Billing → Usage** — service-level breakdown for the
+   current and prior months. Authoritative for line-item amounts.
 2. **Workers Analytics Engine** — per-Worker CPU-ms, request counts, and
-   subrequest counts joined to message volume from `messages` D1 table.
-
-Output formats:
-
-- `--output table` (default): summary by service with comparison to last month
-- `--output json`: full breakdown for piping to spreadsheets/Datadog
-- `--by-service`: each CF service line item separately
-- `--by-domain`: attempts to attribute cost to onboarded domains via
-  per-domain Analytics Engine counters
+   subrequest counts joined to message volume from the `messages` D1 table.
+   Query directly via `wrangler` or pipe to a spreadsheet.
 
 ## Re-evaluation cadence
 
 - **Quarterly**: re-run this projection; update the per-tier rows with
-  observed values from `polaris-email cost`.
+  observed values from the Cloudflare Billing dashboard.
 - **On any pricing announcement from Cloudflare**: pause the
   Email-Service-only domains and re-evaluate the Provider interface
   fallback decision (A15 / Resolved Q1).

@@ -5,7 +5,9 @@
 # Service list, in deploy order.
 # `panel` lives under apps/ rather than services/; deploy.sh resolves the path
 # via polaris_service_path().
-POLARIS_SERVICES=(api out in fanout cron panel)
+# Note: `cron` + `fanout` were folded into `api` during phase B1; the api
+# Worker now hosts the cron triggers and the FANOUT_QUEUE consumer.
+POLARIS_SERVICES=(api out in panel)
 
 # Resolve a service name to its on-disk path (services/<name> or apps/<name>).
 polaris_service_path() {
@@ -76,25 +78,14 @@ load_env_deploy() {
   set +a
 }
 
-# HMAC-sign a request and emit the three headers (TS NONCE SIG) on stdout space-separated.
-# Args: <secret> <method> <path> <body-string>
-# Uses the same canonical string as bin/bootstrap.sh: polaris-api.v1\n<METHOD>\n<PATH>\n\n<TS>\n<NONCE>\n<BH>
-polaris_sign() {
-  local secret="$1" method="$2" path="$3" body="${4:-}"
-  local ts nonce bh sig canon
-  ts="$(date +%s)000"
-  nonce="$(openssl rand -hex 12)"
-  bh="$(printf '%s' "$body" | openssl dgst -sha256 -hex | awk '{print $2}')"
-  canon="polaris-api.v1\n${method}\n${path}\n\n${ts}\n${nonce}\n${bh}"
-  sig="$(printf '%b' "$canon" | openssl dgst -sha256 -hmac "$secret" -hex | awk '{print $2}')"
-  printf '%s %s %s\n' "$ts" "$nonce" "$sig"
-}
-
 # polaris_api_call <method> <path> <body> [admin]   — admin=1 uses POLARIS_SECRET_A from bootstrap-output.
 # Echoes the response body. Returns curl's exit code.
+#
+# Signing is delegated to `polaris-email auth sign` — the canonical HMAC scheme
+# lives in one place (packages/sdk-go) and the shell only orchestrates curl.
 polaris_api_call() {
   local method="$1" path="$2" body="${3:-}" use_admin="${4:-0}"
-  local secret key_id base_url
+  local secret key_id base_url body_file
   load_env_deploy
   base_url="https://${POLARIS_API_HOSTNAME:-polaris-email-api.workers.dev}"
   if [[ "$use_admin" == "1" ]]; then
@@ -104,17 +95,21 @@ polaris_api_call() {
   else
     die "polaris_api_call: only admin mode is implemented"
   fi
-  local triplet ts nonce sig
-  triplet="$(polaris_sign "$secret" "$method" "$path" "$body")"
-  ts="$(awk '{print $1}' <<<"$triplet")"
-  nonce="$(awk '{print $2}' <<<"$triplet")"
-  sig="$(awk '{print $3}' <<<"$triplet")"
+  body_file="$(mktemp -t polaris-body)"
+  trap 'rm -f "$body_file"' RETURN
+  printf '%s' "$body" > "$body_file"
+  local headers ts nonce sig
+  headers="$(POLARIS_SECRET="$secret" polaris-email auth sign \
+    --method "$method" --path "$path" --body "$body_file")"
+  ts="$(awk -F': ' '/^X-Polaris-Ts:/  {print $2}' <<<"$headers")"
+  nonce="$(awk -F': ' '/^X-Polaris-Nonce:/ {print $2}' <<<"$headers")"
+  sig="$(awk -F': ' '/^X-Polaris-Sig:/ {print $2}' <<<"$headers")"
   curl -sS -X "$method" "${base_url}${path}" \
     -H 'content-type: application/json' \
     -H "x-polaris-key-id: ${key_id}" \
     -H "x-polaris-ts: ${ts}" \
     -H "x-polaris-nonce: ${nonce}" \
-    -H "x-polaris-sig: v1=${sig}" \
+    -H "x-polaris-sig: ${sig}" \
     --data "$body"
 }
 

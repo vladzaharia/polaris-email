@@ -5,7 +5,7 @@
 // - Identity is daemon_id from X-Polaris-Daemon-Id.
 // - Cloudflare Access service token (CF-Access-Client-Id +
 //   CF-Access-Client-Secret) verified by Access in front of the Worker.
-// - The polaris-api.v1 direction is the HMAC canonical-string prefix; secret
+// - The polaris-api direction is the HMAC canonical-string prefix; secret
 //   isolation provides cross-context separation since tenant API keys live
 //   in api_keys rows and the daemon secret lives only in Workers Secrets.
 
@@ -43,7 +43,7 @@ export function daemonHmacAuth(): MiddlewareHandler<{ Bindings: Env }> {
 
     const url = new URL(c.req.url);
     const result = await verify({
-      direction: 'polaris-api.v1',
+      direction: 'polaris-api',
       method: c.req.method,
       path: url.pathname,
       query: url.search.slice(1),

@@ -47,7 +47,7 @@ operator-facing prose.
 ```
 
 `direction` is the most important field: `in` rows come from inbound MIME
-(Email Routing or IMAP/JMAP via the mail bridge); `out` rows come from REST
+(Email Routing or IMAP via the mail bridge); `out` rows come from REST
 submission (`POST /v1/messages` with `application/json` or `message/rfc822`).
 The pipeline is the same for both; only `direction` differs.
 
@@ -81,7 +81,7 @@ cross-mailbox queries) and are HMAC-signed as `polaris-api.v1`.
 | ------------------------------------------------ | ----------------------------------------------------------- |
 | `GET /v1/messages`                               | Filtered list (mailbox_id, direction, status, q, since, …). |
 | `GET /v1/messages/:id`                           | Single message with bodies + signed attachment URLs.        |
-| `POST /v1/messages/get`                          | Bulk fetch by id (JMAP-style; up to 256 ids per call).      |
+| `POST /v1/messages/get`                          | Bulk fetch by id (up to 256 ids per call).                  |
 | `GET /v1/mailboxes/:id/changes?since=<state>`    | Delta cursor for sync (returns ids changed since state).    |
 | `GET /v1/mailboxes/:id/messages?fields=metadata` | Metadata-only listing — no bodies, no signed URLs.          |
 | `GET /v1/messages/:id/attachments/:n`            | Direct attachment fetch; the URL is itself signed.          |
@@ -141,9 +141,15 @@ full message is inlined; consumers no longer need a follow-up GET). See
 Events emitted:
 
 - `message.received` — inbound mail accepted and persisted.
-- `message.sent` — outbound message confirmed delivered by the provider.
-- `message.bounced` — permanent delivery failure.
-- `message.deferred` — transient failure; will retry.
+- `message.sent` — outbound message handed off successfully to the
+  Cloudflare Email Service binding.
+- `message.delivered` — terminal success state, set once the last
+  subscribed webhook has confirmed delivery (`services/fanout` is the
+  only emitter; `services/out` never sets this directly).
+- `message.bounced` — permanent remote-side delivery failure (mailbox
+  rejected the message).
+- `message.failed` — permanent local-side failure (binding misconfigured,
+  R2 body missing, DKIM unavailable, retries exhausted).
 
 State mutations (`PATCH` / `DELETE` / `expunge`) intentionally emit no
 webhook.

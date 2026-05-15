@@ -72,13 +72,13 @@ Hard cutover; no overlap window. Everything below ships together.
 ### On-prem mail bridge
 
 - **`apps/submission-daemon` → `apps/mail-bridge`.** The renamed
-  application consolidates SMTPS submission (:465), IMAP4rev2 retrieval
-  (:993), and JMAP (:443) into a single Go binary.
+  application consolidates SMTPS submission (:465) and IMAP4rev2 retrieval
+  (:993) into a single Go binary.
 - **Two equally-supported deployment modes** (neither is "the default"):
   - **Tailnet-fronted** via `tailscale/tailscale` sidecar + MagicDNS +
     `tsnet.ListenTLS` (Lego ACME-DNS-01 fallback). Compose:
     `apps/mail-bridge/docker-compose.tailscale.yml`.
-  - **Local / host-network** — bridge binds 465/993/443 directly; operator
+  - **Local / host-network** — bridge binds 465/993 directly; operator
     owns firewall + TLS. Compose: `apps/mail-bridge/docker-compose.local.yml`.
 
 ### Services

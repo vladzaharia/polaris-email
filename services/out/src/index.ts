@@ -5,10 +5,11 @@
 // writes the canonical status to D1 (messages table), and emits a fanout
 // event.
 //
-// The `delivered` transition is the responsibility of services/fanout (it
-// flips messages.status to 'delivered' on the last successful webhook
-// delivery). This worker only handles received → sending →
-// sent | bounced | failed.
+// The `delivered` transition is the responsibility of the FANOUT_QUEUE
+// consumer hosted in services/api (see services/api/src/queue/fanout.ts —
+// folded in during phase B1). That consumer flips messages.status to
+// 'delivered' on the last successful webhook delivery. This worker only
+// handles received → sending → sent | bounced | failed.
 //
 // The per-domain binding name is derived from mail_domains.name by uppercasing
 // and substituting non-alphanumerics with `_`, prefixed with `EMAIL_`. E.g.
@@ -97,7 +98,7 @@ async function handleOne(env: Env, msg: OutboundQueueMessage): Promise<void> {
       event_id: ulid(),
       event: 'message.failed',
       message_id: msg.messageId,
-      mailbox_id: msg.tenantId,
+      mailbox_id: msg.mailboxId,
       domain_id: msg.domainId,
       created_at: Date.now(),
       data: { reason: 'no_domain_row', from_domain: msg.fromDomain },
@@ -113,7 +114,7 @@ async function handleOne(env: Env, msg: OutboundQueueMessage): Promise<void> {
       event_id: ulid(),
       event: 'message.sent',
       message_id: msg.messageId,
-      mailbox_id: msg.tenantId,
+      mailbox_id: msg.mailboxId,
       domain_id: domainId,
       created_at: Date.now(),
       data: { test: true },
@@ -130,7 +131,7 @@ async function handleOne(env: Env, msg: OutboundQueueMessage): Promise<void> {
       event_id: ulid(),
       event: 'message.failed',
       message_id: msg.messageId,
-      mailbox_id: msg.tenantId,
+      mailbox_id: msg.mailboxId,
       domain_id: domainId,
       created_at: Date.now(),
       data: { reason: 'no_binding', binding: bindingName },
@@ -154,7 +155,7 @@ async function handleOne(env: Env, msg: OutboundQueueMessage): Promise<void> {
         event_id: ulid(),
         event: 'message.bounced',
         message_id: msg.messageId,
-        mailbox_id: msg.tenantId,
+        mailbox_id: msg.mailboxId,
         domain_id: domainId,
         created_at: Date.now(),
         data: { permanent_bounces: result.permanent_bounces },
@@ -165,7 +166,7 @@ async function handleOne(env: Env, msg: OutboundQueueMessage): Promise<void> {
         event_id: ulid(),
         event: 'message.sent',
         message_id: msg.messageId,
-        mailbox_id: msg.tenantId,
+        mailbox_id: msg.mailboxId,
         domain_id: domainId,
         created_at: Date.now(),
         data: { delivered: result.delivered, queued: result.queued },
@@ -179,7 +180,7 @@ async function handleOne(env: Env, msg: OutboundQueueMessage): Promise<void> {
         event_id: ulid(),
         event: 'message.failed',
         message_id: msg.messageId,
-        mailbox_id: msg.tenantId,
+        mailbox_id: msg.mailboxId,
         domain_id: domainId,
         created_at: Date.now(),
         data: { reason: err.slice(0, 256), retries: msg.retries },

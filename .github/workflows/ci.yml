@@ -66,40 +66,6 @@ jobs:
       - working-directory: packages/sdk-go
         run: go test ./...
 
-  python-test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with: { python-version: '3.12' }
-      - uses: pnpm/action-setup@v4
-        with: { version: 9 }
-      - uses: actions/setup-node@v4
-        with: { node-version: 22 }
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter @polaris-email/test-vectors run generate
-      - working-directory: packages/sdk-python
-        run: python -m unittest discover -s tests -v
-
-  sdk-regen-check:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with: { go-version: '1.22' }
-      - uses: actions/setup-java@v4
-        with: { distribution: temurin, java-version: '17' }
-      - uses: pnpm/action-setup@v4
-        with: { version: 9 }
-      - uses: actions/setup-node@v4
-        with: { node-version: 22, cache: pnpm }
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter @polaris/sdk-codegen run generate
-      - name: Verify regen produces zero diff
-        run: |
-          git diff --exit-code packages/sdk-node packages/sdk-python packages/sdk-go \
-            || (echo 'SDK out of sync with openapi/polaris-email.yaml; run `pnpm --filter @polaris/sdk-codegen run generate` and commit'; exit 1)
-
   openapi-validate:
     runs-on: ubuntu-latest
     steps:

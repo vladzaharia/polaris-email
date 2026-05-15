@@ -1,16 +1,14 @@
 # SDKs
 
-polaris-email ships three first-party SDKs, all generated from
-[`openapi/polaris-email.yaml`](../openapi/polaris-email.yaml). Each one
-ships a hand-written webhook verifier alongside the generated REST client;
-the verifier is intentionally not codegen output so the security-critical
-constant-time compare and header validation stay auditable.
+polaris-email ships two first-party SDKs (Node and Go). Each one ships a
+hand-written webhook verifier alongside the REST client; the verifier is
+intentionally hand-written so the security-critical constant-time compare
+and header validation stay auditable.
 
-| Language | Package          | HMAC client | Webhook verifier             |
-| -------- | ---------------- | ----------- | ---------------------------- |
-| Node/TS  | `@polaris/sdk`   | generated   | `@polaris/sdk/webhook`       |
-| Python   | `polaris-sdk`    | generated   | `polaris_sdk.webhook`        |
-| Go       | `polaris-sdk-go` | generated   | `polarissdkgo.VerifyWebhook` |
+| Language | Package          | HMAC client  | Webhook verifier             |
+| -------- | ---------------- | ------------ | ---------------------------- |
+| Node/TS  | `@polaris/sdk`   | hand-written | `@polaris/sdk/webhook`       |
+| Go       | `polaris-sdk-go` | hand-written | `polarissdkgo.VerifyWebhook` |
 
 ## `@polaris/sdk` (Node)
 
@@ -77,43 +75,6 @@ const envelope = JSON.parse(rawBodyBuffer.toString('utf8'));
 // envelope.message is the full Message; no extra GET required.
 ```
 
-## `polaris-sdk` (Python)
-
-`httpx` + Pydantic v2. Sync and async clients share the same models.
-
-```python
-from polaris_sdk import PolarisClient
-
-client = PolarisClient(
-    base_url=os.environ["POLARIS_EMAIL_URL"],
-    key_id=os.environ["POLARIS_EMAIL_KEY_ID"],
-    key_secret=os.environ["POLARIS_EMAIL_KEY_SECRET"],
-)
-res = client.messages.send(
-    from_="noreply@example.com",
-    to=["user@external.com"],
-    subject="Hi",
-    text="Hello",
-)
-```
-
-Webhook verifier (`polaris_sdk.webhook`):
-
-```python
-from polaris_sdk.webhook import verify_webhook
-
-result = verify_webhook(
-    secret=os.environ["POLARIS_WEBHOOK_SECRET"],
-    method=request.method,
-    path=request.path,
-    query=request.query_string.decode(),
-    headers=dict(request.headers),
-    raw_body=await request.body(),
-)
-if not result.ok:
-    return Response(status_code=401)
-```
-
 ## `polaris-sdk-go` (Go)
 
 HMAC-signing client with explicit context.
@@ -148,50 +109,12 @@ result := polarissdkgo.VerifyWebhook(polarissdkgo.VerifyInput{
 if !result.OK { http.Error(w, "bad sig", 401); return }
 ```
 
-## Codegen workflow
-
-`packages/sdk-codegen/` orchestrates regen across all three languages from
-the single OpenAPI spec:
-
-```bash
-pnpm --filter @polaris-email/sdk-codegen regen
-```
-
-This:
-
-1. Runs `openapi-generator-cli` for Python and Go clients.
-2. Runs the in-house TypeScript generator for the Node SDK (custom
-   templates so the React/TanStack hooks land in `/react`).
-3. Re-renders the hand-written webhook verifiers (untouched if their
-   source files match; the generator only validates they still exist and
-   compile).
-4. Runs `oxfmt` + each language's formatter.
-
-A CI job (`.github/workflows/sdk-regen-check.yml`) runs the same command
-and `git diff --exit-code`s; any drift between the spec and the checked-in
-SDK source fails CI. To intentionally land an SDK change, update the spec
-first, then commit the regenerated SDK output in the same PR.
-
-### Toolchain caveat
-
-Full regen requires:
-
-- **Java 17+** (for `openapi-generator-cli`'s JAR).
-- **Go 1.22+** binary on `$PATH` (for the Go client's `go vet` /
-  `go build` smoke after generation).
-
-The CI image has both. Local contributors who only touch one language can
-run just that subset via `pnpm --filter @polaris-email/sdk-codegen regen:ts`,
-`…regen:py`, or `…regen:go`.
-
 ## Where the hand-written verifier lives
 
-| SDK              | Verifier source                              |
-| ---------------- | -------------------------------------------- |
-| `@polaris/sdk`   | `packages/sdk-node/src/webhook.ts`           |
-| `polaris-sdk`    | `packages/sdk-python/polaris_sdk/webhook.py` |
-| `polaris-sdk-go` | `packages/sdk-go/webhook.go`                 |
+| SDK              | Verifier source                    |
+| ---------------- | ---------------------------------- |
+| `@polaris/sdk`   | `packages/sdk-node/src/webhook.ts` |
+| `polaris-sdk-go` | `packages/sdk-go/webhook.go`       |
 
-These files are listed in `packages/sdk-codegen/preserve.json` and skipped
-by the generator's overwrite pass. They share canonical test vectors from
+Both verifiers share canonical test vectors from
 `packages/test-vectors/vectors.json`; every verifier MUST pass them in CI.

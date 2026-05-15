@@ -49,7 +49,7 @@ default = "prod"
 api_url    = "https://api.polaris-email.example.com"
 token      = "<HMAC secret>"
 key_id     = "<API key id>"
-account_id = "<CF account id, used by 'polaris-email cost'>"
+account_id = "<CF account id>"
 
 [profiles.staging]
 api_url    = "https://staging-api.polaris-email.example.com"
@@ -86,12 +86,15 @@ polaris-email domain bulk-onboard \
   --zone example.com --outbound
 ```
 
-### B. Manage tenants and credentials
+### B. Issue credentials
+
+The schema is mailbox-centric. Mailbox CRUD lives in the admin REST surface
+(`POST /v1/admin/mailboxes`) or the panel UI. Once a mailbox exists, issue
+credentials via:
 
 ```sh
-polaris-email tenant create auth-service --description "Auth service"
 polaris-email cred issue \
-  --tenant auth-service --type smtp \
+  --mailbox <mailbox-id> --type smtp \
   --senders 'noreply@acme.com,alerts@mail.acme.com'
 ```
 
@@ -126,9 +129,9 @@ routes:
 ### D. Inspect activity
 
 ```sh
-polaris-email logs send --domain acme.com
-polaris-email logs failures --since 1h
-polaris-email logs send --follow              # opens Bubble Tea TUI
+wrangler tail polaris-email-out --status error --search "acme.com"
+wrangler tail polaris-email-api --status error --since 1h
+wrangler tail polaris-email-out --status ok   # full Workers log stream
 polaris-email status
 polaris-email webhook dlq list
 polaris-email webhook dlq drop <id> \
@@ -174,7 +177,7 @@ preview mode:
 
 ```sh
 polaris-email domain onboard acme.com --inbound --outbound --dry-run
-polaris-email cred issue --tenant t1 --type smtp --senders 'a@b.com' --dry-run
+polaris-email cred issue --mailbox <mailbox-id> --type smtp --senders 'a@b.com' --dry-run
 ```
 
 ## Build from source

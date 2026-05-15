@@ -1,5 +1,6 @@
 // Webhook DLQ browser — GET /v1/admin/webhook-dlq. Per-row Replay + Drop
-// buttons audited.
+// buttons. Drop is gated behind the shared destructive dialog because it
+// removes the row irreversibly; the original webhook delivery is gone.
 import { useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import { PageCard } from '../../layouts/PageCard.js';
@@ -16,7 +17,9 @@ import { Input } from '../../components/ui/input.js';
 import { Label } from '../../components/ui/label.js';
 import { Skeleton } from '../../components/ui/skeleton.js';
 import { Badge } from '../../components/ui/badge.js';
+import { DestructiveActionDialog } from '../../components/DestructiveActionDialog.js';
 import { useAdminMutation, useAdminQuery } from '../../hooks/useAdminApi.js';
+import { dlqKeys } from '../../queryKeys.js';
 
 interface DlqRow {
   id: string;
@@ -30,14 +33,15 @@ interface DlqRow {
 
 export function DlqBrowser() {
   const [subFilter, setSubFilter] = useState('');
-  const q = useAdminQuery<{ data: DlqRow[] }>(['webhook-dlq'], '/api/admin/webhook-dlq');
+  const [dropTarget, setDropTarget] = useState<DlqRow | null>(null);
+  const q = useAdminQuery<{ data: DlqRow[] }>(dlqKeys.list(), '/api/admin/webhook-dlq');
   const replay = useAdminMutation<unknown, { id: string }>(
     (vars) => ({ path: `/api/admin/webhook-dlq/${vars.id}/replay`, method: 'POST' }),
-    { invalidateKeys: [['webhook-dlq']] },
+    { invalidateKeys: [dlqKeys.all], successMessage: 'Replay queued.' },
   );
   const drop = useAdminMutation<unknown, { id: string }>(
     (vars) => ({ path: `/api/admin/webhook-dlq/${vars.id}/drop`, method: 'POST' }),
-    { invalidateKeys: [['webhook-dlq']] },
+    { invalidateKeys: [dlqKeys.all], successMessage: 'DLQ entry dropped.' },
   );
 
   const rows = (q.data?.data ?? []).filter((r) =>
@@ -105,7 +109,7 @@ export function DlqBrowser() {
                     <Button
                       size="sm"
                       variant="destructive"
-                      onClick={() => drop.mutate({ id: r.id })}
+                      onClick={() => setDropTarget(r)}
                       disabled={drop.isPending}
                     >
                       Drop
@@ -117,6 +121,26 @@ export function DlqBrowser() {
           </TableBody>
         </Table>
       )}
+
+      <DestructiveActionDialog
+        open={dropTarget != null}
+        onOpenChange={(o) => !o && setDropTarget(null)}
+        action="Drop DLQ entry"
+        name={dropTarget?.id}
+        blastRadius={[
+          'The original webhook delivery is discarded — there is no later way to replay it',
+          'The downstream consumer will never see this event',
+          'The associated message row is not affected',
+        ]}
+        reversible={false}
+        confirmLabel="Drop"
+        onConfirm={async () => {
+          if (!dropTarget) return;
+          await drop.mutateAsync({ id: dropTarget.id });
+          setDropTarget(null);
+        }}
+        isPending={drop.isPending}
+      />
     </PageCard>
   );
 }

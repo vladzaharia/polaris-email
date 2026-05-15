@@ -56,7 +56,6 @@ export class MockD1 {
     this.tables.set('mailbox_uid_counter', []);
     this.tables.set('mailbox_change_counter', []);
     this.tables.set('mailbox_credentials', []);
-    this.tables.set('jmap_push_subscriptions', []);
     this.tables.set('audit_log', [
       {
         id: 0,
@@ -127,6 +126,52 @@ function executeSql<T>(
     if (!m) throw new Error('mock: bad insert ' + trimmed);
     const conflict = m[1]?.toLowerCase();
     const table = m[2]!;
+    // Phase A7: support `INSERT INTO tbl (cols) SELECT ?,?,... WHERE (SELECT IFNULL(MAX(id),-1) FROM tbl) = ?`
+    // — a CAS form used by audit() to serialise hash-chain writes without a
+    // schema-level unique index. The trailing `?` is the expected MAX(id);
+    // if it doesn't match, the insert writes zero rows and the caller retries.
+    const casColsM = trimmed.match(/insert\s+into\s+\w+\s*\(([^)]+)\)\s*select\s+/i);
+    const casWhereM = trimmed.match(
+      /select\s+([^]+?)\s+where\s*\(\s*select\s+ifnull\s*\(\s*max\s*\(\s*id\s*\)\s*,\s*-?\d+\s*\)\s+from\s+(\w+)\s*\)\s*=\s*\?\s*$/is,
+    );
+    if (casColsM && casWhereM) {
+      const cols = casColsM[1]!.split(',').map((x) => x.trim());
+      const selectList = casWhereM[1]!.split(',').map((x) => x.trim());
+      const guardTable = casWhereM[2]!;
+      const guardRows = db.tables.get(guardTable) ?? [];
+      const observedMax = guardRows.reduce((acc, r) => {
+        const n = Number(r['id'] ?? -1);
+        return Number.isFinite(n) && n > acc ? n : acc;
+      }, -1);
+      const expectedMax = params[params.length - 1];
+      if (Number(observedMax) !== Number(expectedMax)) {
+        return { results: [], meta: { changes: 0 } };
+      }
+      // Bind the leading params (all but the trailing CAS sentinel) to the
+      // SELECT placeholder list in order.
+      const rows = db.tables.get(table);
+      if (!rows) throw new Error('mock: unknown table ' + table);
+      const row: TableRow = {};
+      let pi = 0;
+      cols.forEach((c, i) => {
+        const tok = selectList[i];
+        if (tok === undefined) {
+          row[c] = undefined;
+          return;
+        }
+        if (tok === '?') row[c] = params[pi++];
+        else if (/^-?\d+(\.\d+)?$/.test(tok)) row[c] = Number(tok);
+        else if (/^'.*'$/.test(tok)) row[c] = tok.slice(1, -1);
+        else if (tok.toLowerCase() === 'null') row[c] = null;
+        else row[c] = tok;
+      });
+      if (table === 'audit_log' && row['id'] === undefined) {
+        const maxId = rows.reduce((m, r) => Math.max(m, Number(r['id'] ?? 0)), 0);
+        row['id'] = maxId + 1;
+      }
+      rows.push(row);
+      return { results: [], meta: { changes: 1 } };
+    }
     const colsM = trimmed.match(/\(([^)]+)\)\s*VALUES/i);
     if (!colsM) throw new Error('mock: insert columns ' + trimmed);
     const cols = colsM[1]!.split(',').map((x) => x.trim());
@@ -178,6 +223,23 @@ function executeSql<T>(
     } else if (conflict === 'ignore') {
       if (rows.some((r) => r['id'] !== undefined && r['id'] === row['id'])) {
         return { results: [], meta: { changes: 0 } };
+      }
+      // Composite PK on idempotency_keys (principal_id, key) per migration
+      // 0004. INSERT OR IGNORE must observe the composite uniqueness; this
+      // is what makes the pipeline's tryClaim() return `first: false` on a
+      // replay.
+      if (table === 'idempotency_keys') {
+        if (
+          rows.some(
+            (r) =>
+              r['principal_id'] != null &&
+              r['key'] != null &&
+              r['principal_id'] === row['principal_id'] &&
+              r['key'] === row['key'],
+          )
+        ) {
+          return { results: [], meta: { changes: 0 } };
+        }
       }
     }
     // For audit_log auto-increment, assign id if not given
@@ -500,35 +562,6 @@ export class MockQueue<T> {
   }
 }
 
-function mkRevocationDoNamespace() {
-  // In-memory store, name → revoked? (true once /revoke has fired).
-  const state = new Map<string, boolean>();
-  return {
-    idFromName(name: string) {
-      return { __name: name, toString: () => name } as unknown as DurableObjectId;
-    },
-    get(id: { __name: string }) {
-      return {
-        async fetch(url: string, init?: { method?: string }) {
-          const u = new URL(url);
-          if (u.pathname === '/check') {
-            return new Response(JSON.stringify({ revoked: state.get(id.__name) === true }), {
-              headers: { 'content-type': 'application/json' },
-            });
-          }
-          if (u.pathname === '/revoke' && (init?.method ?? 'GET') === 'POST') {
-            state.set(id.__name, true);
-            return new Response(JSON.stringify({ ok: true }), {
-              headers: { 'content-type': 'application/json' },
-            });
-          }
-          return new Response('not-found', { status: 404 });
-        },
-      };
-    },
-  };
-}
-
 export function mkEnv(overrides: Partial<Env> = {}): Env {
   const env = {
     DB: new MockD1() as unknown as D1Database,
@@ -537,9 +570,8 @@ export function mkEnv(overrides: Partial<Env> = {}): Env {
     KV_IDEMPOTENCY: new MockKV() as unknown as KVNamespace,
     KV_RATE_LIMIT: new MockKV() as unknown as KVNamespace,
     KV_KEY_CACHE: new MockKV() as unknown as KVNamespace,
+    KV_REVOCATIONS: new MockKV() as unknown as KVNamespace,
     OUTBOUND_QUEUE: new MockQueue<OutboundQueueMessage>() as unknown as Queue<OutboundQueueMessage>,
-    REVOCATION_DO: mkRevocationDoNamespace() as unknown as DurableObjectNamespace,
-    VERIFY_ALGORITHMS: 'v1',
     API_BASE_URL: 'https://polaris-email-api.workers.dev',
     POLARIS_SECRET_A: 'test-control-plane-secret',
     ARGON2_PEPPER: 'test-pepper',

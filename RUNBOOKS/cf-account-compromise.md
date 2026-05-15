@@ -30,7 +30,7 @@ Assume the polaris-email Cloudflare account has been (or is suspected of being) 
 
 ## Recovery
 
-1. Rotate every secret (every API key, IMAP/JMAP/SMTPS password, webhook secret, `POLARIS_SECRET_A`, anchor signing key). All emergency-mode.
+1. Rotate every secret (every API key, IMAP/SMTPS password, webhook secret, `POLARIS_SECRET_A`, anchor signing key). All emergency-mode.
 2. Redeploy from a clean source checkout pinned to a digest known to predate the compromise.
 3. Restore D1 from PITR to a point before the compromise; reconcile against R2 (which is append-only / locked).
 4. Verify Logpush mirror integrity, confirm audit-chain anchors line up.
