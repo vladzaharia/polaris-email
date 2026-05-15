@@ -16,6 +16,7 @@
 // `plrs.im` → `EMAIL_PLRS_IM`. Operators must declare the matching
 // `send_email` binding in services/out/wrangler.local.jsonc.
 import { ulid } from '@polaris-email/ids';
+import { MAX_MESSAGE_SIZE_VERIFIED } from '@polaris-email/mime';
 import type { Env, FanoutEvent, OutboundQueueMessage, SendEmailBinding } from './env.js';
 
 function bindingNameForDomain(name: string): string {
@@ -135,6 +136,32 @@ async function handleOne(env: Env, msg: OutboundQueueMessage): Promise<void> {
       domain_id: domainId,
       created_at: Date.now(),
       data: { reason: 'no_binding', binding: bindingName },
+    });
+    return;
+  }
+
+  // Phase A.7 — belt-and-suspenders: reject before binding.send to avoid
+  // surfacing E_CONTENT_TOO_LARGE from CF after we've already claimed the
+  // 'sending' status. The cap matches the API-layer's pre-enqueue check
+  // (services/api/src/routes/messages.ts) so a queue message that somehow
+  // exceeds the cap (stale enqueue, bug) fails cleanly here with a typed
+  // last_error.
+  if (raw.byteLength > MAX_MESSAGE_SIZE_VERIFIED) {
+    await setStatus(env, msg.messageId, 'failed', {
+      last_error: `message_too_large:${raw.byteLength}`,
+    });
+    await fanout(env, {
+      event_id: ulid(),
+      event: 'message.failed',
+      message_id: msg.messageId,
+      mailbox_id: msg.mailboxId,
+      domain_id: domainId,
+      created_at: Date.now(),
+      data: {
+        reason: 'message_too_large',
+        bytes: raw.byteLength,
+        cap: MAX_MESSAGE_SIZE_VERIFIED,
+      },
     });
     return;
   }

@@ -379,6 +379,9 @@ importers:
       '@polaris-email/ids':
         specifier: workspace:*
         version: link:../../packages/ids
+      '@polaris-email/mime':
+        specifier: workspace:*
+        version: link:../../packages/mime
       '@polaris-email/schema':
         specifier: workspace:*
         version: link:../../packages/schema
