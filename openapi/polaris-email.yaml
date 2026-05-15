@@ -90,6 +90,14 @@ components:
                 - unauthorized
                 - forbidden
                 - conflict
+                # Phase A — CF Email Service compliance
+                - too_many_recipients
+                - subject_too_long
+                - message_too_large
+                - header_not_allowed
+                - header_too_long
+                - too_many_custom_headers
+                - custom_headers_too_large
             message: { type: string }
             retryable: { type: boolean }
             request_id: { type: string }
