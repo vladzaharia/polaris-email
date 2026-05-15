@@ -18,6 +18,7 @@
     "lint": "oxlint ."
   },
   "dependencies": {
+    "@polaris-email/mime": "workspace:*",
     "zod": "^3.23.0"
   },
   "devDependencies": {
