@@ -927,6 +927,18 @@ export const AuditAction = z.enum([
   // W2b — LLM-assisted triage (migration 0018).
   'triage.classify',
   'triage.operator_override',
+  // Hybrid Policy Engine (migration 0019).
+  'policy.decide',
+  'policy.verdict_block',
+  'policy.verdict_hold',
+  'policy.override',
+  'policy.config_update',
+  'message.held',
+  'message.held_release',
+  'message.held_drop',
+  'moderation.feedback_recorded',
+  'inbound_sender_block.create',
+  'inbound_sender_block.delete',
 ]);
 export type AuditAction = z.infer<typeof AuditAction>;
 

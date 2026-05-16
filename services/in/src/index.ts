@@ -12,6 +12,7 @@ import { handleComplaint, PLATFORM_COMPLAINTS_MAILBOX_ID } from './complaint-ing
 import { handleDmarcReport, PLATFORM_DMARC_REPORTS_MAILBOX_ID } from './dmarc-ingest.js';
 import { handleTlsRptReport, PLATFORM_TLS_REPORTS_MAILBOX_ID } from './tlsrpt-ingest.js';
 import { handleUnsubMailto } from './unsub-ingest.js';
+import { attachDecisionToMessage, evaluateInboundPolicy } from './lib/policy-dispatch.js';
 
 // Inbound-edge sentinel for the message-size cap. We use the CF verified-
 // domain ceiling (25 MiB) — inbound is only accepted on already-verified
@@ -323,6 +324,46 @@ export default {
         : '';
     const authResults = parseAuthResults(authHeader);
 
+    // 0019 — Hybrid Policy Engine. Runs Stages 1+2+3 (LLM tiebreaker
+    // when heuristics land in the uncertain band AND env.AI is bound).
+    // Fail-to-hold on any LLM error — admin moderates via the panel.
+    // For 'hold' / 'block' the engine stores the raw MIME in R2 under
+    // policy_held/ or policy_blocked/, inserts the audit row, and we
+    // skip processMessage entirely.
+    const policyAction = await evaluateInboundPolicy(env, {
+      mailboxId: match.mailbox_id,
+      domainId: domainRow.id,
+      envelopeFrom: envelopeFrom || '',
+      envelopeTo: envelopeTo || '',
+      rawMime: raw,
+      authResults,
+    });
+    if (policyAction.kind === 'block') {
+      // eslint-disable-next-line no-console
+      console.warn(
+        'in: policy.block',
+        `mailbox=${match.mailbox_id}`,
+        `decision=${policyAction.decision.decision_id}`,
+        `score=${policyAction.decision.total_score}`,
+        `top_reasons=${policyAction.decision.reasons
+          .slice(0, 3)
+          .map((r) => r.reason_code)
+          .join(',')}`,
+      );
+      return;
+    }
+    if (policyAction.kind === 'hold') {
+      // eslint-disable-next-line no-console
+      console.warn(
+        'in: policy.hold',
+        `mailbox=${match.mailbox_id}`,
+        `decision=${policyAction.decision.decision_id}`,
+        `hold_id=${policyAction.hold_id}`,
+        `score=${policyAction.decision.total_score}`,
+      );
+      return;
+    }
+
     let result;
     try {
       result = await processMessage(env, {
@@ -338,6 +379,21 @@ export default {
       console.error('in: processMessage error', e instanceof Error ? e.message : 'unknown');
       message.setReject('451 4.7.1 ingest error');
       return;
+    }
+
+    // Backfill the policy_decisions row with the freshly-minted message_id
+    // (the engine writes the row at evaluation time with message_id=NULL
+    // because processMessage hadn't run yet).
+    try {
+      await attachDecisionToMessage(env, policyAction.decision, result.messageId);
+    } catch (e) {
+      // Best-effort: a missed link only loses the message ↔ decision
+      // join, not the audit trail itself.
+      // eslint-disable-next-line no-console
+      console.error(
+        'in: attachDecisionToMessage error',
+        e instanceof Error ? e.message : 'unknown',
+      );
     }
 
     // P0 (#1): wrap the fanout-enqueue loop in try/catch. Without this, an

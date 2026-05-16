@@ -16,6 +16,7 @@
     "@polaris-email/ids": "workspace:*",
     "@polaris-email/mime": "workspace:*",
     "@polaris-email/pipeline": "workspace:*",
+    "@polaris-email/policy-engine": "workspace:*",
     "@polaris-email/suppressions": "workspace:*",
     "@polaris-email/tlsrpt-parser": "workspace:*",
     "@polaris-email/triage-schema": "workspace:*"

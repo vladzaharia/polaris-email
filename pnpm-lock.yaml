@@ -438,6 +438,9 @@ importers:
       '@polaris-email/pipeline':
         specifier: workspace:*
         version: link:../../packages/pipeline
+      '@polaris-email/policy-engine':
+        specifier: workspace:*
+        version: link:../../packages/policy-engine
       '@polaris-email/suppressions':
         specifier: workspace:*
         version: link:../../packages/suppressions
