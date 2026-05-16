@@ -158,6 +158,14 @@ adminProxyRoutes.post('/api/admin/webhook-dlq/:id/drop', withApproval('webhook_d
   forward(c, `/v1/admin/webhook-dlq/${c.req.param('id')}/drop`),
 );
 
+// W2c — manual "Run threshold cron now" is approval-gated (it can suppress
+// senders, so it's destructive).
+adminProxyRoutes.post(
+  '/api/admin/sender-abuse-threshold/run',
+  withApproval('sender_abuse.threshold_run'),
+  (c) => forward(c, '/v1/admin/sender-abuse-threshold/run'),
+);
+
 // W2d — Test-alert button is approval-gated; the read-only listing falls
 // through to the catchall.
 adminProxyRoutes.post('/api/admin/alerts/test', withApproval('admin.alert.test'), (c) =>

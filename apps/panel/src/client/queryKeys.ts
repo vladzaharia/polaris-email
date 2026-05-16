@@ -85,6 +85,14 @@ export const cfZoneKeys = {
   detail: (name: string) => [...cfZoneKeys.all, 'detail', name] as const,
 };
 
+// Sender abuse profiles (W2c) — per-principal tier + lifetime counters.
+export const senderAbuseKeys = {
+  all: ['sender-abuse'] as const,
+  list: (filters?: Record<string, string | undefined>) =>
+    [...senderAbuseKeys.all, 'list', filters ?? {}] as const,
+  detail: (type: string, id: string) => [...senderAbuseKeys.all, 'detail', type, id] as const,
+};
+
 // Admin alerts (W2d) — operator-facing alert history.
 export const adminAlertKeys = {
   all: ['admin-alerts'] as const,

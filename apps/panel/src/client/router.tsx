@@ -179,6 +179,12 @@ const adminAlertsList = createRoute({
   component: lazyRouteComponent(() => import('./pages/admin-alerts/List.js'), 'AdminAlertsList'),
   errorComponent: RouteError,
 });
+const senderAbuseList = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/sender-abuse',
+  component: lazyRouteComponent(() => import('./pages/sender-abuse/List.js'), 'SenderAbuseList'),
+  errorComponent: RouteError,
+});
 const suppressionDetail = createRoute({
   getParentRoute: () => rootRoute,
   path: '/suppressions/$id',
@@ -215,6 +221,7 @@ const routeTree = rootRoute.addChildren([
   suppressionDetail,
   abuseReportsList,
   adminAlertsList,
+  senderAbuseList,
 ]);
 
 // Phase 6d.8 — `defaultPendingComponent` swaps in PageSkeleton on every

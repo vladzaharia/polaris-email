@@ -27,6 +27,7 @@ import { stats } from './admin/stats.js';
 import { status } from './admin/status.js';
 import { abuseEvents } from './admin/abuse-events.js';
 import { alerts as adminAlerts } from './admin/alerts.js';
+import { senderAbuse } from './admin/sender-abuse.js';
 import { suppressions } from './admin/suppressions.js';
 import { webhookDlq } from './admin/webhook-dlq.js';
 import { webhookSubs } from './admin/webhook-subs.js';
@@ -62,6 +63,7 @@ admin.route('/', stats);
 admin.route('/', suppressions);
 admin.route('/', abuseEvents);
 admin.route('/', adminAlerts);
+admin.route('/', senderAbuse);
 
 // ---------- api keys ----------
 

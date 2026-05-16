@@ -885,6 +885,9 @@ export const AuditAction = z.enum([
   'abuse_event.record',
   // W2d — Admin alert pipeline (migration 0012).
   'admin.alert.sent',
+  // W2c — Sender abuse profile + escalating suppression (migration 0013).
+  'sender_abuse_profile.tier_advance',
+  'sender.suppress_auto',
 ]);
 export type AuditAction = z.infer<typeof AuditAction>;
 

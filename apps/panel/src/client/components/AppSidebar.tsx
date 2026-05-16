@@ -46,6 +46,7 @@ const OPERATIONS: NavItem[] = [
   { to: '/dlq', label: 'DLQ browser', icon: BarChart3 },
   { to: '/reports/abuse', label: 'Abuse reports', icon: AlertTriangle },
   { to: '/admin-alerts', label: 'Admin alerts', icon: AlertOctagon },
+  { to: '/sender-abuse', label: 'Sender abuse', icon: AlertTriangle },
 ];
 
 const CONFIGURATION: NavItem[] = [
