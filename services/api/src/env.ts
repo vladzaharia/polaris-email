@@ -57,6 +57,9 @@ export interface Env {
    *  every alert fires every time (the admin_alerts table itself still
    *  records every call). */
   KV_ADMIN_ALERTS?: KVNamespace;
+  /** W3 — HMAC secret CF Email Service uses to sign bounce webhook events.
+   *  Rotated independently from operator admin keys. */
+  CF_EVENT_HMAC?: string;
   /** Synthetic probe upper-bound latency, milliseconds, as a string. */
   MAX_LATENCY_MS?: string;
   /** Grace window (days) for the janitor's expunged_at sweep. */
