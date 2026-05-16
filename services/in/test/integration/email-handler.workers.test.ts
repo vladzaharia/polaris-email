@@ -11,12 +11,8 @@
 // the worker isolate through vitest's `inject()` channel — importing
 // `@cloudflare/vitest-pool-workers` directly from a test file that runs
 // inside workerd crashes the runtime.
-import {
-  env,
-  applyD1Migrations,
-  createExecutionContext,
-  waitOnExecutionContext,
-} from 'cloudflare:test';
+import { applyD1Migrations, createExecutionContext, waitOnExecutionContext } from 'cloudflare:test';
+import { env } from 'cloudflare:workers';
 import { beforeAll, describe, expect, inject, it } from 'vitest';
 import worker from '../../src/index.js';
 
