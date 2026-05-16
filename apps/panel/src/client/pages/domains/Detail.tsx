@@ -21,6 +21,7 @@ import {
 } from '../../components/ui/table.js';
 import { DestructiveActionDialog } from '../../components/DestructiveActionDialog.js';
 import { useAdminMutation, useAdminQuery } from '../../hooks/useAdminApi.js';
+import { formatRelative } from '../../lib/format.js';
 import { domainKeys } from '../../queryKeys.js';
 
 interface DomainPayload {
@@ -280,13 +281,17 @@ export function DomainDetail() {
             <span className="font-medium">Max age</span>
             <span>{d.mta_sts_max_age != null ? `${d.mta_sts_max_age}s` : '—'}</span>
             <span className="font-medium">MTA-STS verified</span>
-            <span>{d.mta_sts_verified_at ?? 'never'}</span>
+            <span title={d.mta_sts_verified_at ?? undefined}>
+              {d.mta_sts_verified_at ? formatRelative(d.mta_sts_verified_at) : 'never'}
+            </span>
             <span className="font-medium">TLS-RPT enabled</span>
             <span>{d.tlsrpt_enabled === 1 ? 'yes' : 'no'}</span>
             <span className="font-medium">TLS-RPT rua</span>
             <span className="font-mono text-xs">{d.tlsrpt_rua ?? '—'}</span>
             <span className="font-medium">TLS-RPT verified</span>
-            <span>{d.tlsrpt_verified_at ?? 'never'}</span>
+            <span title={d.tlsrpt_verified_at ?? undefined}>
+              {d.tlsrpt_verified_at ? formatRelative(d.tlsrpt_verified_at) : 'never'}
+            </span>
           </div>
           <div className="flex flex-wrap gap-2">
             {(!d.mta_sts_mode || d.mta_sts_mode === 'none') && (
