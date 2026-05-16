@@ -1,10 +1,13 @@
-// Thin /api/me + step-up + logout endpoints. The heavy lifting lives in
-// better-auth's mounted handler at /api/auth/*; this file exposes the
-// panel-friendly shape the React client expects.
+// Thin /api/me + logout endpoints. The heavy lifting lives in better-auth's
+// mounted handler at /api/auth/*; this file exposes the panel-friendly shape
+// the React client expects.
+//
+// Note: there is no `/api/step-up` endpoint. Sensitive actions are gated on
+// the two-person `withApproval(action)` flow in `../auth/approvals.ts`, not
+// on a self-elevation token. See `../auth/middleware.ts` for the rationale.
 import { Hono } from 'hono';
 import type { Env } from '../env.js';
 import { makeAuth } from '../auth/index.js';
-import { issueStepUp } from '../auth/step-up.js';
 
 export const sessionRoutes = new Hono<{ Bindings: Env }>();
 
@@ -23,18 +26,6 @@ sessionRoutes.post('/api/logout', async (c) => {
   const auth = makeAuth(c.env);
   await auth.api.signOut({ headers: c.req.raw.headers });
   return c.json({ ok: true });
-});
-
-sessionRoutes.post('/api/step-up', async (c) => {
-  const s = c.get('session');
-  if (!s) return c.json({ error: 'unauthorized' }, 401);
-  // In production the client first completes a fresh WebAuthn assertion via
-  // better-auth's /api/auth/two-factor endpoints, then POSTs here to record
-  // the elevation. The flow is intentionally trust-on-this-request — the
-  // re-auth itself is the gate.
-  const body = (await c.req.json().catch(() => ({}))) as { reason?: string };
-  const result = await issueStepUp(c, body.reason ?? 'manual', 5 * 60_000);
-  return c.json(result);
 });
 
 // Dev-mode escape hatch: stamp a session as any subject without going

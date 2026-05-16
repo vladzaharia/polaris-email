@@ -30,6 +30,12 @@ const (
 	ModeTailscale Mode = "tailscale"
 )
 
+// ErrTailscaleUnsupported is returned by New when Mode == ModeTailscale and
+// the build does not include tsnet integration. Callers must treat this as
+// a fatal startup error — falling back to plaintext IMAP/SMTPS would expose
+// LOGIN over the wire.
+var ErrTailscaleUnsupported = errors.New("tls.tailscale: tsnet integration not compiled into this build (future enhancement); use BRIDGE_TLS_MODE=local with mounted PEMs, or run behind a tailscale-serve sidecar")
+
 // Config selects a Mode plus mode-specific knobs.
 type Config struct {
 	Mode      Mode
@@ -64,11 +70,14 @@ func New(cfg Config) (*Source, error) {
 		}
 		return s, nil
 	case ModeTailscale:
-		// TODO(L.5): wire tsnet.Server.ListenTLS. The tsnet dep adds ~30MB
-		// to the binary and requires TS_AUTHKEY at runtime; for this slice
-		// we error out with a clear message so deployments don't silently
-		// fall back to local mode.
-		return nil, errors.New("tls.tailscale: tsnet integration deferred — set mode=\"local\" and mount certs")
+		// tsnet.ListenTLS is a future enhancement (TODO(L.5)): the tsnet dep
+		// adds ~30MB to the binary and requires TS_AUTHKEY at runtime, so we
+		// keep it out of this build. We return ErrTailscaleUnsupported here;
+		// callers MUST treat it as fatal and abort startup, never silently
+		// fall back to plaintext (the Phase 2d audit caught a path where
+		// main.go logged the error and kept going, which left port 993 in
+		// `InsecureAuth` mode against the public internet).
+		return nil, ErrTailscaleUnsupported
 	default:
 		return nil, fmt.Errorf("tls: unknown mode %q", cfg.Mode)
 	}

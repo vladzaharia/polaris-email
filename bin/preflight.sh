@@ -27,6 +27,8 @@ check "jq installed"        "command -v jq"                                     
 check "openssl installed"   "command -v openssl"                                       "brew install openssl || apt-get install openssl"
 check "git installed"       "command -v git"                                           "install git"
 check "curl installed"      "command -v curl"                                          "install curl"
+check "envsubst installed"  "command -v envsubst"                                      "brew install gettext || apt-get install gettext-base"
+check "polaris-email CLI"   "command -v polaris-email"                                 "(cd apps/polaris-cli && go build -o \$(go env GOPATH)/bin/polaris-email ./cmd/polaris-email) — required for bootstrap step 7 admin-key minting"
 
 if [[ "${POLARIS_REQUIRE_DOCKER:-0}" == "1" ]]; then
   check "docker compose"    "docker compose version"                                   "install Docker Desktop or docker-compose-plugin"
@@ -84,6 +86,20 @@ if [[ -f "$ENV_FILE" ]]; then
       403)     printf '  FAIL CF_API_TOKEN lacks Email Routing:Edit\n       fix: re-issue the token with Email Routing scopes (Read + Edit)\n'
                FAIL=1 ;;
       *)       printf '  warn CF_API_TOKEN Email Routing scope check inconclusive (HTTP %s)\n' "$er_code" ;;
+    esac
+
+    # Zone:Read across the account is required by the new CF-zone discover
+    # endpoint (services/api/src/routes/admin/cf-zones.ts) — it lists every
+    # zone in the operator's account and inspects each one. A 200 from
+    # `/zones?account.id=...&per_page=1` confirms the token can list zones.
+    z_code="$(curl -s -o /dev/null -w '%{http_code}' \
+      -H "Authorization: Bearer ${CF_API_TOKEN}" \
+      "https://api.cloudflare.com/client/v4/zones?account.id=${CF_ACCOUNT_ID}&per_page=1" || echo "000")"
+    case "$z_code" in
+      200) printf '  ok   CF_API_TOKEN has Zone:Read scope\n' ;;
+      403) printf '  FAIL CF_API_TOKEN lacks Zone:Read across the account\n       fix: re-issue the token including Account-level Zone:Read (required for the panel /cf-zones discover view)\n'
+           FAIL=1 ;;
+      *)   printf '  warn CF_API_TOKEN Zone:Read scope check inconclusive (HTTP %s)\n' "$z_code" ;;
     esac
   fi
 else

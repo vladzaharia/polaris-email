@@ -4,6 +4,7 @@ export {
   getHeader,
   setHeader,
   MimeError,
+  TRANSPORT_FORBIDDEN_HEADERS,
   type Header,
   type ParsedMime,
 } from './canonicalize.js';

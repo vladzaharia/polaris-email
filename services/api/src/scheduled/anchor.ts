@@ -8,33 +8,33 @@
 // Phase O1 replaced the prior `env.R2_ANCHORS.put(...)` (the O0 stop-gap)
 // with `putObjectWithLock` against an S3-compatible endpoint.
 import { putObjectWithLock } from '@polaris-email/object-lock';
+import { toHex } from '@polaris-email/hmac';
 import type { Env } from '../env.js';
 
-function asBuf(u8: Uint8Array): ArrayBuffer {
-  const b = new ArrayBuffer(u8.byteLength);
-  new Uint8Array(b).set(u8);
-  return b;
-}
 function b64ToBytes(b64: string): Uint8Array {
   const bin = atob(b64);
   const out = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
   return out;
 }
-function toHex(b: Uint8Array): string {
-  let s = '';
-  for (const x of b) s += x.toString(16).padStart(2, '0');
-  return s;
-}
+
+// Local HMAC-SHA256 helper. The `@polaris-email/hmac` package keeps its
+// HMAC primitive private to enforce its canonical-string contract; the
+// anchor canonical is `polaris-email/anchor\n<id>\n<row_hash>\n<ts>`,
+// which is incompatible with that contract, so we sign locally.
 async function hmac(secret: Uint8Array, data: Uint8Array): Promise<Uint8Array> {
+  const secretBuf = new ArrayBuffer(secret.byteLength);
+  new Uint8Array(secretBuf).set(secret);
+  const dataBuf = new ArrayBuffer(data.byteLength);
+  new Uint8Array(dataBuf).set(data);
   const key = await crypto.subtle.importKey(
     'raw',
-    asBuf(secret),
+    secretBuf,
     { name: 'HMAC', hash: 'SHA-256' },
     false,
     ['sign'],
   );
-  return new Uint8Array(await crypto.subtle.sign('HMAC', key, asBuf(data)));
+  return new Uint8Array(await crypto.subtle.sign('HMAC', key, dataBuf));
 }
 
 export async function anchor(env: Env): Promise<void> {
@@ -60,14 +60,28 @@ export async function anchor(env: Env): Promise<void> {
     signed_at: signedAt,
     sig: sigHex,
   };
-  // Write to the external Object-Lock target (B2 by default). The
-  // `externalRef` is the S3 object key; `audit_anchors.external_ref`
-  // stores just the key — the bucket/endpoint live in env.
-  await putObjectWithLock(env, externalRef, JSON.stringify(payload));
+  // 4a.6: durability ordering — write D1 BEFORE B2.
+  //
+  // The previous order (B2 first, then D1) had a tear-window: a B2 success
+  // followed by a D1 failure produced an anchor that was visible
+  // off-platform but invisible to `verifyChain`, breaking the integrity
+  // guarantee for the next verifier run.
+  //
+  // The reverse order is safe because the B2 object key includes
+  // `signedAt` (millisecond precision), so a retry after a B2 failure
+  // produces a new key on the second attempt — no idempotency conflict,
+  // and at most we leave behind a D1 row whose `external_ref` points at
+  // a missing B2 object (operators see this as a "stale anchor" alert
+  // and re-anchor manually). That failure mode is dramatically less bad
+  // than an anchor that exists in B2 but invisible to D1.
   await env.DB.prepare(
     `INSERT INTO audit_anchors (last_audit_id, last_row_hash, signature, signed_at, external_ref)
      VALUES (?, ?, ?, ?, ?)`,
   )
     .bind(head.id, head.row_hash, sigHex, signedAt, externalRef)
     .run();
+  // Now publish to the external Object-Lock target (B2 by default). The
+  // `externalRef` is the S3 object key; `audit_anchors.external_ref`
+  // stores just the key — the bucket/endpoint live in env.
+  await putObjectWithLock(env, externalRef, JSON.stringify(payload));
 }

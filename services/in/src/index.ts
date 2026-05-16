@@ -6,6 +6,7 @@
 // edge-specific concerns (raw-stream reading, rate shed, recipient -> mailbox
 // resolution, forward primitive, fanout queue dispatch).
 import { ulid } from '@polaris-email/ids';
+import { parseAuthResults } from '@polaris-email/mime';
 import { processMessage, type PipelineEnv } from '@polaris-email/pipeline';
 
 // Inbound-edge sentinel for the 25MiB stream cap. Strict MIME validation
@@ -21,12 +22,11 @@ class IngestError extends Error {
   }
 }
 
-interface Env {
+interface Env extends PipelineEnv {
   DB: D1Database;
   R2: R2Bucket;
   KV_RATE_LIMIT: KVNamespace;
   FANOUT_QUEUE: Queue<FanoutInbound>;
-  OUTBOUND_QUEUE?: Queue<unknown>;
 }
 
 interface FanoutInbound {
@@ -61,22 +61,33 @@ async function readAll(stream: ReadableStream<Uint8Array>): Promise<Uint8Array> 
   return out;
 }
 
-async function rateShed(env: Env, domainId: string, sourceIp: string | null): Promise<boolean> {
+async function rateShed(env: Env, domainId: string): Promise<boolean> {
+  // Per-domain rate shed only. CF Email Routing's `ForwardableEmailMessage`
+  // does not currently expose a remote IP / cf-connecting-ip header, so the
+  // previous per-IP branch was always fed `null` and never executed. Until
+  // the platform exposes a peer IP we keep the surface minimal — a future
+  // platform update can re-introduce the per-IP bucket.
+  //
+  // 4a.7: ordering note. We read, evaluate against the cap, and only
+  // increment when the request is admitted. Pre-Phase-2c the counter was
+  // bumped before the cap check, so a single noisy domain that already
+  // tripped the limit kept inflating the counter (and the KV TTL kept
+  // resetting), wedging the bucket for ~90s. The cap-check-before-write
+  // shape below releases the bucket as soon as the first admitted request
+  // in the next minute lands.
+  //
+  // KV is eventually consistent, so two concurrent requests at count=N
+  // can both read N and both write N+1 (instead of N+2). The undercount
+  // is bounded by isolate concurrency for a single domain — under steady
+  // load the bucket still trips, just up to ~10 messages later than the
+  // strict count would. We accept this; a Durable Object counter is the
+  // right next step if precision matters for billing.
   const bucket = Math.floor(Date.now() / 60_000);
-  const a = await env.KV_RATE_LIMIT.get(`dom:${domainId}:${bucket}`);
-  const aCount = a ? Number.parseInt(a, 10) : 0;
-  if (aCount >= 120) return true;
-  await env.KV_RATE_LIMIT.put(`dom:${domainId}:${bucket}`, String(aCount + 1), {
-    expirationTtl: 90,
-  });
-  if (sourceIp) {
-    const b = await env.KV_RATE_LIMIT.get(`ip:${sourceIp}:${bucket}`);
-    const bCount = b ? Number.parseInt(b, 10) : 0;
-    if (bCount >= 60) return true;
-    await env.KV_RATE_LIMIT.put(`ip:${sourceIp}:${bucket}`, String(bCount + 1), {
-      expirationTtl: 90,
-    });
-  }
+  const key = `dom:${domainId}:${bucket}`;
+  const cur = await env.KV_RATE_LIMIT.get(key);
+  const count = cur ? Number.parseInt(cur, 10) : 0;
+  if (Number.isFinite(count) && count >= 120) return true;
+  await env.KV_RATE_LIMIT.put(key, String(count + 1), { expirationTtl: 90 });
   return false;
 }
 
@@ -145,6 +156,16 @@ export default {
       message.setReject('550 5.1.1 unknown user');
       return;
     }
+
+    // P0 (#2): rate-shed BEFORE the action branch so the forward path is
+    // also limited. The previous code only rate-shed the webhook/store
+    // path; a flood targeted at a forward route bypassed the limit
+    // entirely.
+    if (await rateShed(env, domainRow.id)) {
+      message.setReject('451 4.7.1 rate limit');
+      return;
+    }
+
     if (match.action === 'forward' && match.forward_to) {
       // Hand off to CF Email Routing's forward primitive. No D1 / R2 / fanout
       // write — the forward target owns the message lifecycle from here.
@@ -152,21 +173,28 @@ export default {
       return;
     }
 
-    // Rate-shed by domain + (optional) source IP.
-    if (await rateShed(env, domainRow.id, null)) {
-      message.setReject('451 4.7.1 rate limit');
-      return;
-    }
+    // Phase 3f — extract DKIM/SPF/DMARC verdicts from the
+    // `Authentication-Results:` header that CF Email Routing prepends.
+    // The pipeline persists these into messages.auth_dkim / auth_spf /
+    // auth_dmarc when populated; previously this struct was always `{}`,
+    // which left the columns NULL and stripped a useful trust signal from
+    // every inbound row. CF puts the header in `message.headers` (a
+    // Headers-shaped object); fall back to the empty struct if absent.
+    const authHeader =
+      typeof message.headers?.get === 'function'
+        ? (message.headers.get('authentication-results') ?? '')
+        : '';
+    const authResults = parseAuthResults(authHeader);
 
     let result;
     try {
-      result = await processMessage(env as unknown as PipelineEnv, {
+      result = await processMessage(env, {
         direction: 'in',
         mailboxId: match.mailbox_id,
         rawMime: raw,
         source: 'cf_email_routing',
         recipientAddress: envelopeTo,
-        auth: {},
+        auth: authResults,
       });
     } catch (e) {
       // eslint-disable-next-line no-console
@@ -175,16 +203,36 @@ export default {
       return;
     }
 
+    // P0 (#1): wrap the fanout-enqueue loop in try/catch. Without this, an
+    // exception from `FANOUT_QUEUE.send()` propagates out of the email
+    // handler — CF Email Routing then retries the entire ingest, which
+    // re-runs `processMessage` and (because content-addressed dedup short-
+    // circuits) re-enqueues only the un-sent fanout messages. That's
+    // mostly safe, but it costs a full re-ingest per fanout failure and
+    // depends on dedup to keep the message row stable. Failing this path
+    // softly via setReject lets CF's own retry policy handle the retry
+    // without running the entire pipeline again.
     const occurred_at = Date.now();
-    for (const enq of result.fanoutEnqueues ?? []) {
-      await env.FANOUT_QUEUE.send({
-        event_id: ulid(),
-        event: enq.event,
-        message_id: result.messageId,
-        mailbox_id: match.mailbox_id,
-        webhook_sub_id: enq.webhookSubId,
-        created_at: occurred_at,
-      });
+    try {
+      for (const enq of result.fanoutEnqueues ?? []) {
+        await env.FANOUT_QUEUE.send({
+          event_id: ulid(),
+          event: enq.event,
+          message_id: result.messageId,
+          mailbox_id: match.mailbox_id,
+          webhook_sub_id: enq.webhookSubId,
+          created_at: occurred_at,
+        });
+      }
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.error(
+        'in: fanout enqueue error',
+        result.messageId,
+        e instanceof Error ? e.message : 'unknown',
+      );
+      message.setReject('451 4.7.1 fanout enqueue failed');
+      return;
     }
   },
 };

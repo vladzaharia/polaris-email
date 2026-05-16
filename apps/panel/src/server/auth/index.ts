@@ -45,7 +45,16 @@ export interface Auth {
   };
 }
 
+// Phase 6d.5 — memoize per-env. Workers reuse `env` across requests in the
+// same isolate; `betterAuth(...)` is heavyweight (drizzle adapter init,
+// plugin construction, cookie config), so caching saves the rebuild on
+// every /api/auth/* hit. WeakMap keys on the env reference and lets the
+// instance get collected when the isolate recycles.
+const authCache = new WeakMap<Env, Auth>();
+
 export function makeAuth(env: Env): Auth {
+  const cached = authCache.get(env);
+  if (cached) return cached;
   const db = drizzle(env.DB, { schema });
   const cookiePath = env.COOKIE_PATH || '/panel';
   const instance = betterAuth({
@@ -121,6 +130,15 @@ export function makeAuth(env: Env): Auth {
     },
     advanced: {
       cookies: {
+        // Phase 3e.1 — session cookie security stance:
+        //   * httpOnly: true   — JS in the SPA cannot read or steal the token.
+        //   * secure:   true   — only sent over HTTPS; rejects plain http.
+        //   * sameSite: 'lax'  — third-party top-level navigations are
+        //     allowed (so OIDC redirects survive); cross-site form POSTs are
+        //     blocked, which is sufficient for CSRF mitigation given the
+        //     panel's same-origin XHR pattern.
+        // The `path` is scoped to the panel mount so the cookie isn't
+        // smeared across other apps on the same parent domain.
         sessionToken: {
           name: 'polaris_panel_session',
           attributes: {
@@ -134,5 +152,7 @@ export function makeAuth(env: Env): Auth {
       },
     },
   });
-  return instance as unknown as Auth;
+  const auth = instance as unknown as Auth;
+  authCache.set(env, auth);
+  return auth;
 }

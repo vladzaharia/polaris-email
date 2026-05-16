@@ -53,19 +53,48 @@ services:
       tailscale:
         condition: service_healthy
     environment:
+      # Listener / TLS knobs (BRIDGE_TLS_MODE: "tailscale" | "local";
+      # tailscale mode requires a tsnet build — see internal/tls/tls.go).
+      # Cert paths point at the lego output layout under
+      # /etc/polaris-bridge/tls/certificates/<domain>.{crt,key} — Lego
+      # writes there by default when --path is the parent directory. The
+      # mount is read-only; rotation is handled by re-running the lego
+      # profile (`docker compose --profile lego up`).
       BRIDGE_TLS_MODE: tailscale
+      BRIDGE_TLS_CERT_PATH: /etc/polaris-bridge/tls/certificates/${BRIDGE_FQDN:-polaris-mail-${REGION:-us-east}.example.com}.crt
+      BRIDGE_TLS_KEY_PATH: /etc/polaris-bridge/tls/certificates/${BRIDGE_FQDN:-polaris-mail-${REGION:-us-east}.example.com}.key
+      # Bridge identity (consumed by config.Load; the *_FILE forms read from
+      # docker-secret mounts so the secret never enters the env table).
+      BRIDGE_NAME: polaris-mail-${REGION:-us-east}
       BRIDGE_POLARIS_API_URL: ${POLARIS_API_URL:-https://api.polaris.example.com}
       BRIDGE_POLARIS_BRIDGE_ID_FILE: /run/secrets/bridge_id
       BRIDGE_POLARIS_HMAC_KEY_FILE: /run/secrets/hmac_key
+      # Cloudflare Access service-token pair fronting the polaris control
+      # plane. Required even on tailnet because the API itself sits behind
+      # cf-access.
+      BRIDGE_ACCESS_CLIENT_ID: ${ACCESS_CLIENT_ID:-}
+      BRIDGE_ACCESS_CLIENT_SECRET: ${ACCESS_CLIENT_SECRET:-}
+      # Public URL used by webhook bootstrap to compute target URLs.
+      BRIDGE_PUBLIC_URL: ${BRIDGE_PUBLIC_URL:-https://polaris-mail-${REGION:-us-east}.example.ts.net}
+      # Listener toggles (default on; set to "false" to skip).
       BRIDGE_SMTPS_ENABLED: ${BRIDGE_SMTPS_ENABLED:-true}
       BRIDGE_IMAP_ENABLED: ${BRIDGE_IMAP_ENABLED:-true}
+      BRIDGE_WEBHOOK_ENABLED: ${BRIDGE_WEBHOOK_ENABLED:-true}
+      # On-disk paths.
       BRIDGE_CREDSTORE_PATH: /var/lib/polaris-bridge/credstore.db
       BRIDGE_MIRROR_PATH: /var/lib/polaris-bridge/mirror.db
       BRIDGE_LOGGING_FILE: /var/log/polaris-bridge/audit.jsonl
     volumes:
       - bridge-data:/var/lib/polaris-bridge
       - bridge-logs:/var/log/polaris-bridge
-      - lego-certs:/etc/polaris-bridge/lego:ro
+      # Lego writes to /.lego (its --path) → /.lego/certificates/<domain>.crt
+      # We mount the same volume at /etc/polaris-bridge/tls so the loader's
+      # BRIDGE_TLS_CERT_PATH (set above) resolves to
+      # /etc/polaris-bridge/tls/certificates/<domain>.crt — the layout
+      # Lego produces. Pre-Phase-4b.8 the mount target was
+      # /etc/polaris-bridge/lego while the loader looked at
+      # /etc/polaris-bridge/tls; the bridge silently failed cert load.
+      - lego-certs:/etc/polaris-bridge/tls:ro
       - ./bridge.toml:/etc/polaris-bridge/bridge.toml:ro
       - ./secrets:/run/secrets:ro
     healthcheck:

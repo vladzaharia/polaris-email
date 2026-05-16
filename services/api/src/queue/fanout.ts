@@ -18,7 +18,7 @@
 // Absorbed from the standalone `services/fanout` Worker in phase B1. The
 // `polaris-email-api` Worker now binds the FANOUT_QUEUE consumer directly and
 // routes batches to `fanoutQueueConsumer` from its top-level `queue` export.
-import { sign, generateNonce } from '@polaris-email/hmac';
+import { sign, generateNonce, sha256Hex } from '@polaris-email/hmac';
 import { ulid } from '@polaris-email/ids';
 import { extractAttachmentParts, mimeToMessage, type MessageRowMeta } from '@polaris-email/mime';
 import type { Env } from '../env.js';
@@ -89,7 +89,7 @@ async function loadMessageRow(env: Env, id: string): Promise<MessageRowFull | nu
 async function loadRawMime(env: Env, key: string): Promise<Uint8Array | null> {
   const obj = await env.R2.get(key);
   if (!obj) return null;
-  const buf = await (obj as unknown as { arrayBuffer(): Promise<ArrayBuffer> }).arrayBuffer();
+  const buf = await obj.arrayBuffer();
   return new Uint8Array(buf);
 }
 
@@ -110,7 +110,7 @@ async function buildEnvelope(
   for (let i = 0; i < (message.attachments?.length ?? 0); i++) {
     const part = parts[i];
     if (!part) continue;
-    const attSha = await sha256HexBytes(part.bytes);
+    const attSha = await sha256Hex(part.bytes);
     message.attachments[i]!.url = r2PublicUrl(
       env,
       attachmentR2Key(attSha, part.filename),
@@ -124,16 +124,6 @@ async function buildEnvelope(
     message,
   };
   return { body: JSON.stringify(envelope), messageStatus: row.status };
-}
-
-async function sha256HexBytes(data: Uint8Array): Promise<string> {
-  const buf = new ArrayBuffer(data.byteLength);
-  new Uint8Array(buf).set(data);
-  const digest = await crypto.subtle.digest('SHA-256', buf);
-  const bytes = new Uint8Array(digest);
-  let out = '';
-  for (const b of bytes) out += b.toString(16).padStart(2, '0');
-  return out;
 }
 
 async function deliver(env: Env, ev: FanoutEvent): Promise<void> {
@@ -184,6 +174,10 @@ async function deliver(env: Env, ev: FanoutEvent): Promise<void> {
 
 async function deliverToSub(env: Env, ev: FanoutEvent, sub: SubRow, body: string): Promise<void> {
   const nowIso = new Date().toISOString();
+  // Idempotent insert. INSERT OR REPLACE would clobber the attempts counter
+  // on retries, so we keep INSERT OR IGNORE: the row appears once, and
+  // subsequent retries no-op here and only mutate via the atomic UPDATE
+  // below.
   await env.DB.prepare(
     `INSERT OR IGNORE INTO message_deliveries
        (message_id, webhook_sub_id, status, attempts, next_attempt_at, created_at)
@@ -237,12 +231,21 @@ async function deliverToSub(env: Env, ev: FanoutEvent, sub: SubRow, body: string
     return;
   }
 
-  const prev = await env.DB.prepare(
-    `SELECT attempts FROM message_deliveries WHERE message_id = ? AND webhook_sub_id = ?`,
+  // 4a.2: atomic attempts increment. Two concurrent fanout retries used to
+  // both read `attempts=N` and both write `attempts=N+1` (instead of N+2),
+  // sticking the message at `sending` indefinitely. UPDATE ... RETURNING
+  // serialises the read+write and guarantees a strictly monotonic counter.
+  const incremented = await env.DB.prepare(
+    `UPDATE message_deliveries
+       SET attempts = attempts + 1,
+           last_error = ?1,
+           last_response_code = ?2
+     WHERE message_id = ?3 AND webhook_sub_id = ?4
+     RETURNING attempts`,
   )
-    .bind(ev.message_id, sub.id)
+    .bind(result.body.slice(0, 256), result.status, ev.message_id, sub.id)
     .first<{ attempts: number }>();
-  const attempts = (prev?.attempts ?? 0) + 1;
+  const attempts = incremented?.attempts ?? 1;
   const isTerminal = attempts >= 6;
   const finalStatus = isTerminal ? 'dlq' : 'failed';
   const nextAttemptAt = isTerminal
@@ -250,22 +253,13 @@ async function deliverToSub(env: Env, ev: FanoutEvent, sub: SubRow, body: string
     : new Date(Date.now() + Math.min(60_000 * 2 ** attempts, 60 * 60_000)).toISOString();
   await env.DB.prepare(
     `UPDATE message_deliveries
-       SET status = ?, attempts = ?, last_error = ?, last_response_code = ?,
-           next_attempt_at = ?
+       SET status = ?, next_attempt_at = ?
      WHERE message_id = ? AND webhook_sub_id = ?`,
   )
-    .bind(
-      finalStatus,
-      attempts,
-      result.body.slice(0, 256),
-      result.status,
-      nextAttemptAt,
-      ev.message_id,
-      sub.id,
-    )
+    .bind(finalStatus, nextAttemptAt, ev.message_id, sub.id)
     .run();
   if (isTerminal) {
-    const bodyHash = await sha256Hex(body);
+    const bodyHash = await sha256Hex(new TextEncoder().encode(body));
     await env.DB.prepare(
       `INSERT INTO webhook_dlq
          (id, message_id, webhook_sub_id, payload_sha256, last_status_code,
@@ -288,6 +282,14 @@ async function deliverToSub(env: Env, ev: FanoutEvent, sub: SubRow, body: string
   throw new Error(`webhook ${sub.id} failed ${result.status}`);
 }
 
+/**
+ * 4a.2: atomic CAS terminal-success bookkeeping. The SELECT side reads
+ * the up-to-date delivery aggregates; the UPDATE only flips one row and
+ * uses a `status IN ('sent','sending')` precondition so two concurrent
+ * callers cannot both flip (idempotency). The previous `status !=
+ * 'delivered'` allowed flips from any other terminal state which could
+ * silently overwrite a `bounced` or `failed` outcome on a late retry.
+ */
 async function maybeMarkDelivered(env: Env, messageId: string): Promise<void> {
   const row = await env.DB.prepare(
     `SELECT
@@ -304,17 +306,9 @@ async function maybeMarkDelivered(env: Env, messageId: string): Promise<void> {
   await env.DB.prepare(
     `UPDATE messages
        SET status = 'delivered', delivered_at = ?
-     WHERE id = ? AND status != 'delivered'`,
+     WHERE id = ? AND status IN ('sent','sending','received')`,
   )
     .bind(nowIso, messageId)
     .run();
 }
 
-async function sha256Hex(s: string): Promise<string> {
-  const data = new TextEncoder().encode(s);
-  const digest = await crypto.subtle.digest('SHA-256', data);
-  const bytes = new Uint8Array(digest);
-  let out = '';
-  for (const b of bytes) out += b.toString(16).padStart(2, '0');
-  return out;
-}

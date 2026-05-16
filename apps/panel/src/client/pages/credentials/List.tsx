@@ -39,6 +39,9 @@ import { StatusBadge } from '../../components/StatusBadge.js';
 import { SecretRevealDialog } from '../../components/SecretRevealDialog.js';
 import { useAdminMutation, useAdminQuery } from '../../hooks/useAdminApi.js';
 import { credentialKeys, mailboxKeys } from '../../queryKeys.js';
+import { formatDate, formatRelative } from '../../lib/format.js';
+import { ErrorText } from '../../components/ErrorText.js';
+import { EmptyState } from '../../components/EmptyState.js';
 
 interface MailboxRow {
   id: string;
@@ -140,9 +143,7 @@ function IssueCredentialDialog({ mailboxes }: { mailboxes: MailboxRow[] }) {
                 placeholder="e.g. noreply@acme.example"
               />
             </div>
-            {issue.error ? (
-              <p className="text-sm text-[var(--color-destructive)]">{issue.error.message}</p>
-            ) : null}
+            <ErrorText error={issue.error} />
           </div>
           <DialogFooter>
             <Button
@@ -215,15 +216,19 @@ export function CredentialsList() {
         <IssueCredentialDialog mailboxes={mailboxList} />
       </div>
       {!mailboxId ? (
-        <p className="text-sm text-[var(--color-muted-foreground)]">
-          Pick a mailbox above to list credentials.
-        </p>
+        <EmptyState
+          title="Pick a mailbox to list credentials"
+          description="Credentials are scoped to a single mailbox; choose one from the dropdown above."
+        />
       ) : creds.isLoading ? (
         <Skeleton className="h-24 w-full" />
       ) : creds.error ? (
-        <p className="text-sm text-[var(--color-destructive)]">{creds.error.message}</p>
+        <ErrorText error={creds.error} />
       ) : (creds.data?.data ?? []).length === 0 ? (
-        <p className="text-sm text-[var(--color-muted-foreground)]">No credentials.</p>
+        <EmptyState
+          title="No credentials"
+          description="This mailbox has no API keys or SMTP credentials yet. Use the button above to issue one."
+        />
       ) : (
         <Table>
           <TableHeader>
@@ -248,7 +253,9 @@ export function CredentialsList() {
                 <TableCell>
                   <StatusBadge kind="credential" value={c.status} />
                 </TableCell>
-                <TableCell className="text-xs">{c.created_at}</TableCell>
+                <TableCell className="text-xs" title={formatDate(c.created_at)}>
+                  {formatRelative(c.created_at)}
+                </TableCell>
               </TableRow>
             ))}
           </TableBody>

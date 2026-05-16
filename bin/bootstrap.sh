@@ -99,7 +99,7 @@ parse_kv_id() {
   printf '%s' "$id"
 }
 
-for kv in polaris-email-nonce polaris-email-idempotency polaris-email-rate-limit polaris-email-key-cache; do
+for kv in polaris-email-nonce polaris-email-idempotency polaris-email-rate-limit polaris-email-key-cache polaris-email-revocations; do
   if [[ -n "$(state_get ".kv[\"$kv\"].id")" ]]; then
     log "  kv/$kv already in state — skipping"
     continue
@@ -170,7 +170,7 @@ gen() { openssl rand -base64 32 | tr -d '\n='; }
 
 put_secret() { # svc, name, value
   local svc="$1" name="$2" val="$3"
-  printf '%s' "$val" | (cd "services/$svc" && wrangler secret put "$name" >/dev/null)
+  printf '%s' "$val" | (cd "$(polaris_service_path "$svc")" && wrangler secret put "$name" >/dev/null)
 }
 
 if [[ -z "$(secret_seen POLARIS_SECRET_A)" ]]; then
@@ -193,9 +193,33 @@ fi
 
 if [[ -z "$(secret_seen ANCHOR_SIGNING_KEY)" ]]; then
   ANCHOR_SIGN="$(gen)"
-  put_secret anchor ANCHOR_SIGNING_KEY "$ANCHOR_SIGN" || warn "put ANCHOR_SIGNING_KEY failed on anchor"
+  put_secret api ANCHOR_SIGNING_KEY "$ANCHOR_SIGN" || warn "put ANCHOR_SIGNING_KEY failed on api"
   secret_record ANCHOR_SIGNING_KEY
 fi
+
+# Backblaze B2 credentials for audit anchors (Phase O1). The endpoint / bucket
+# / region land in vars (set via configure.sh); these two are pushed as Worker
+# secrets here. Skip cleanly if the operator hasn't configured B2 yet — the
+# anchor cron will warn and skip until they're seeded.
+if [[ -z "$(secret_seen ANCHOR_S3_ACCESS_KEY_ID)" && -n "${ANCHOR_S3_ACCESS_KEY_ID:-}" ]]; then
+  put_secret api ANCHOR_S3_ACCESS_KEY_ID "$ANCHOR_S3_ACCESS_KEY_ID" || warn "put ANCHOR_S3_ACCESS_KEY_ID failed on api"
+  secret_record ANCHOR_S3_ACCESS_KEY_ID
+fi
+if [[ -z "$(secret_seen ANCHOR_S3_SECRET_ACCESS_KEY)" && -n "${ANCHOR_S3_SECRET_ACCESS_KEY:-}" ]]; then
+  put_secret api ANCHOR_S3_SECRET_ACCESS_KEY "$ANCHOR_S3_SECRET_ACCESS_KEY" || warn "put ANCHOR_S3_SECRET_ACCESS_KEY failed on api"
+  secret_record ANCHOR_S3_SECRET_ACCESS_KEY
+fi
+
+# Panel OIDC client secret. Skip if not configured (panel can run with the
+# dev-mode login when DEV_MODE=1, but that must not be enabled in prod).
+if [[ -z "$(secret_seen OIDC_CLIENT_SECRET)" && -n "${OIDC_CLIENT_SECRET:-}" ]]; then
+  put_secret panel OIDC_CLIENT_SECRET "$OIDC_CLIENT_SECRET" || warn "put OIDC_CLIENT_SECRET failed on panel"
+  secret_record OIDC_CLIENT_SECRET
+fi
+
+# Note: BRIDGE_HMAC_KEY is intentionally NOT seeded here. Per phase 2h the
+# global bridge key was replaced with per-bridge secrets stored as
+# bridges.hmac_secret_hash; bridge registration mints them per-bridge.
 
 ##############################################################################
 # 6/8  deploy Workers
@@ -219,13 +243,13 @@ else
     body_file="$(mktemp -t polaris-bootstrap-body)"
     printf '{}' > "$body_file"
     headers="$(POLARIS_SECRET="$POL_A" polaris-email auth sign \
-      --method POST --path /admin/bootstrap --body "$body_file")"
+      --method POST --path /v1/admin/bootstrap --body "$body_file")"
     rm -f "$body_file"
     ts="$(awk -F': ' '/^X-Polaris-Ts:/ {print $2}' <<<"$headers")"
     nonce="$(awk -F': ' '/^X-Polaris-Nonce:/ {print $2}' <<<"$headers")"
     sig="$(awk -F': ' '/^X-Polaris-Sig:/ {print $2}' <<<"$headers")"
     API_URL="https://${POLARIS_API_HOSTNAME}"
-    resp="$(curl -sS -X POST "$API_URL/admin/bootstrap" \
+    resp="$(curl -sS -X POST "$API_URL/v1/admin/bootstrap" \
       -H 'content-type: application/json' \
       -H "x-polaris-ts: $ts" -H "x-polaris-nonce: $nonce" -H "x-polaris-sig: $sig" \
       -d '{}' || echo '{"error":"bootstrap_failed"}')"

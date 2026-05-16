@@ -263,7 +263,25 @@ function executeSql<T>(
     return { results: [], meta: { changes: 1 } };
   }
   if (lower.startsWith('update ')) {
-    const m = trimmed.match(/update\s+(\w+)\s+set\s+(.+?)\s+where\s+(.+)$/is);
+    // 4a.3: support `UPDATE ... RETURNING <cols>` so the new atomic counter
+    // allocation paths in lib/state.ts and packages/pipeline can run under
+    // the in-memory mock. We strip the RETURNING tail before the WHERE
+    // parser sees it, then synthesise the result rows from the mutated
+    // values after the SET ops apply.
+    const retM = trimmed.match(/^([\s\S]+?)\s+returning\s+(.+)$/i);
+    const updateBody = retM ? retM[1]! : trimmed;
+    const returningCols = retM
+      ? retM[2]!.split(',').map((c) => {
+          const aliasM = c.trim().match(/^([\w()+\-*/\s]+?)(?:\s+as\s+(\w+))?$/i);
+          if (aliasM) {
+            const expr = aliasM[1]!.trim();
+            const alias = aliasM[2]?.trim() ?? expr;
+            return { expr, alias };
+          }
+          return { expr: c.trim(), alias: c.trim() };
+        })
+      : [];
+    const m = updateBody.match(/update\s+(\w+)\s+set\s+(.+?)\s+where\s+(.+)$/is);
     if (!m) throw new Error('mock: bad update ' + trimmed);
     const table = m[1]!;
     const setClause = m[2]!;
@@ -272,17 +290,31 @@ function executeSql<T>(
     if (!rows) throw new Error('mock: unknown table ' + table);
     // Bound parameters fill SET first, then WHERE
     let pi = 0;
-    const setOps: Array<{ col: string; idx: number | null; literal?: unknown }> = [];
+    interface SetOp {
+      col: string;
+      idx: number | null;
+      literal?: unknown;
+      // 4a.3: support `col = col + 1` arithmetic for atomic counter bumps.
+      arith?: { src: string; delta: number };
+    }
+    const setOps: SetOp[] = [];
     for (const part of setClause.split(',')) {
       const setM = part.trim().match(/^(\w+)\s*=\s*(.+)$/);
       if (!setM) continue;
       const col = setM[1]!;
       const val = setM[2]!.trim();
       const numMatch = val.match(/^\?(\d+)$/);
+      const arithMatch = val.match(/^(\w+)\s*\+\s*(\d+)$/);
       if (val === '?') {
         setOps.push({ col, idx: pi++ });
       } else if (numMatch) {
         setOps.push({ col, idx: Number(numMatch[1]) - 1 });
+      } else if (arithMatch) {
+        setOps.push({
+          col,
+          idx: null,
+          arith: { src: arithMatch[1]!, delta: Number(arithMatch[2]) },
+        });
       } else if (rows.length && val.match(/^[A-Za-z_]\w*$/) && val in rows[0]!) {
         // column-to-column copy (e.g. imap_pw_bcrypt_prev = imap_pw_bcrypt)
         setOps.push({ col, idx: null, literal: val });
@@ -334,20 +366,44 @@ function executeSql<T>(
       return true;
     };
     let changes = 0;
+    const returningRows: TableRow[] = [];
     for (const row of rows) {
       if (whereMatches(row)) {
         for (const s of setOps) {
           if (s.idx != null) row[s.col] = params[s.idx];
-          else if (typeof s.literal === 'string' && s.literal in row) {
+          else if (s.arith) {
+            const cur = Number(row[s.arith.src] ?? 0);
+            row[s.col] = cur + s.arith.delta;
+          } else if (typeof s.literal === 'string' && s.literal in row) {
             row[s.col] = row[s.literal];
           } else {
             row[s.col] = s.literal;
           }
         }
         changes++;
+        if (returningCols.length) {
+          const out: TableRow = {};
+          for (const { expr, alias } of returningCols) {
+            // Support bare column names; arithmetic forms are not used by
+            // current callers but degrade gracefully.
+            if (expr in row) {
+              out[alias] = row[expr];
+            } else {
+              const arith = expr.match(/^(\w+)\s*([+-])\s*(\d+)$/);
+              if (arith && arith[1]! in row) {
+                const cur = Number(row[arith[1]!] ?? 0);
+                out[alias] =
+                  arith[2] === '+' ? cur + Number(arith[3]) : cur - Number(arith[3]);
+              } else {
+                out[alias] = null;
+              }
+            }
+          }
+          returningRows.push(out);
+        }
       }
     }
-    return { results: [], meta: { changes } };
+    return { results: returningRows as T[], meta: { changes } };
   }
   if (lower.startsWith('select ')) {
     // Very limited: extract table and where eq params.

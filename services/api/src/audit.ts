@@ -1,19 +1,20 @@
-// Append-only, hash-chained audit log writer.
-// Every state mutation goes through audit(); CI runs lint:audit-coverage to verify call-sites.
+// Append-only, hash-chained audit log reader/verifier.
 //
-// Concurrency model (Phase A7 hardening):
-//   The chain is `row_hash = sha256(actor || action || target || meta || prev_hash || at)`
-//   so every new row must read the previous tip and chain off it. A naive
-//   read-then-write lets two concurrent writers observe the same tip and
-//   produce a forked chain (`verifyChain` would later find a `prev_hash`
-//   mismatch and refuse to validate).
+// The single canonical writer (`audit()`) lives in `@polaris-email/pipeline`
+// so services/api, services/in, and services/out all hash-chain through the
+// same compare-and-swap. We re-export it here under its previous name so
+// existing in-tree callers (admin, messages, bootstrap, messages-state,
+// scheduled handlers) keep working unchanged.
 //
-//   We avoid the fork with a SQLite compare-and-swap (CAS): the INSERT only
-//   succeeds if `MAX(id)` is still what we read. If a concurrent writer beat
-//   us, `meta.changes === 0` and we retry with the new tip. The retry loop
-//   is bounded; under realistic contention it terminates in 1–2 iterations.
+// Concurrency model is documented in `packages/pipeline/src/audit.ts`.
 import type { AuditAction } from '@polaris-email/schema';
-import { sha256Hex } from './hashing.js';
+import {
+  audit as pipelineAudit,
+  buildAuditInsert as pipelineBuildAuditInsert,
+  type AuditArgs as PipelineAuditArgs,
+  type AuditWriterEnv,
+} from '@polaris-email/pipeline';
+import { sha256Hex } from '@polaris-email/hmac';
 import type { Env } from './env.js';
 
 export interface AuditArgs {
@@ -24,50 +25,23 @@ export interface AuditArgs {
   at?: number;
 }
 
-const MAX_AUDIT_RETRIES = 8;
-
 /**
  * Write one audit row, chaining the row_hash to the previous row's row_hash.
- *
- * Uses an INSERT ... SELECT ... WHERE compare-and-swap on `MAX(id)` so that
- * concurrent writers can't both succeed against the same tip. If the CAS
- * fails (`changes === 0`) we re-read and retry up to `MAX_AUDIT_RETRIES`
- * times. Under SQLite/D1's serialised writer this loop converges quickly;
- * an exhausted retry budget throws so callers can surface the failure.
+ * Thin wrapper that narrows `AuditArgs.action` to the schema-validated
+ * `AuditAction` enum at API boundaries; the actual CAS retry loop lives in
+ * `@polaris-email/pipeline`.
  */
 export async function audit(env: Env, args: AuditArgs): Promise<void> {
-  const at = args.at ?? Date.now();
-  const meta = JSON.stringify(args.meta ?? {});
+  return pipelineAudit(env as unknown as AuditWriterEnv, args satisfies PipelineAuditArgs);
+}
 
-  for (let attempt = 0; attempt < MAX_AUDIT_RETRIES; attempt++) {
-    // Read the current tip (id + row_hash). Returning -1 for the empty-table
-    // case keeps the CAS comparison aligned with the SELECT MAX(...) below.
-    const tip = await env.DB.prepare(
-      `SELECT id, row_hash FROM audit_log ORDER BY id DESC LIMIT 1`,
-    ).first<{ id: number; row_hash: string }>();
-    const prevId: number = tip?.id ?? -1;
-    const prevHash: string = tip?.row_hash ?? '0'.repeat(64);
-
-    const canonical = [args.actor, args.action, args.target ?? '', meta, prevHash, String(at)].join(
-      '\n',
-    );
-    const rowHash = await sha256Hex(canonical);
-
-    // CAS insert: only succeeds if the tip we observed is still the latest.
-    // If another writer appended between our SELECT and our INSERT, the
-    // subquery yields a different id and the INSERT writes zero rows; we
-    // detect that via meta.changes and loop.
-    const res = await env.DB.prepare(
-      `INSERT INTO audit_log (actor, action, target, meta, prev_hash, row_hash, at)
-       SELECT ?, ?, ?, ?, ?, ?, ?
-       WHERE (SELECT IFNULL(MAX(id), -1) FROM audit_log) = ?`,
-    )
-      .bind(args.actor, args.action, args.target ?? null, meta, prevHash, rowHash, at, prevId)
-      .run();
-    if (res.meta && res.meta.changes && res.meta.changes > 0) return;
-    // changes === 0 → contention. Loop and re-read the tip.
-  }
-  throw new Error('audit: CAS exhausted after retries');
+/**
+ * Build a CAS audit-insert prepared statement so a caller can fold the
+ * audit-row write into the same `db.batch([...])` as the primary mutation.
+ * See `packages/pipeline/src/audit.ts` for the CAS contract.
+ */
+export async function buildAuditInsert(env: Env, args: AuditArgs) {
+  return pipelineBuildAuditInsert(env as unknown as AuditWriterEnv, args satisfies PipelineAuditArgs);
 }
 
 /**
@@ -122,7 +96,7 @@ export async function verifyChain(
     const canonical = [r.actor, r.action, r.target ?? '', r.meta, r.prev_hash, String(r.at)].join(
       '\n',
     );
-    const expected = await sha256Hex(canonical);
+    const expected = await sha256Hex(new TextEncoder().encode(canonical));
     if (expected !== r.row_hash) {
       return { ok: false, brokenAt: r.id, reason: 'row_hash mismatch' };
     }

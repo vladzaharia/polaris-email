@@ -7,9 +7,11 @@ served from the Workers Assets binding, and sessions are managed by
 talking to the same `polaris-email` D1 database used by `services/api`.
 Authentication is delegated to an OIDC IdP (Cloudflare Access by
 default); the panel sits behind a Cloudflare Access app for an
-additional zero-trust gate. Sensitive actions step up by re-prompting
-through Access and surface as HTTP `428 Precondition Required` to the
-client until the step-up cookie is present.
+additional zero-trust gate. Destructive actions are gated on a
+two-person `withApproval` flow: the requester opens an approval row, a
+second admin approves it, and the mutation is then re-issued with the
+approval id. The server returns HTTP `428 Precondition Required` with
+`{ code: 'approval_required' }` until that header is present.
 
 ## Dev commands
 
@@ -59,7 +61,7 @@ Vars (committed defaults in `wrangler.jsonc`, override in
 | `ADMIN_GROUP`   | `polaris-admins` | OIDC `groups` claim required for admin role-sync.                          |
 | `COOKIE_PATH`   | `/panel`         | Session cookie `Path`. Override to `/` for subdomain deployment mode.      |
 | `COOKIE_DOMAIN` | _(unset)_        | Set to `.example.com` when the panel and API live on different subdomains. |
-| `DEV_MODE`      | _(unset)_        | When `"1"`, relaxes secure-cookie + step-up checks for local dev only.     |
+| `DEV_MODE`      | _(unset)_        | When `"1"`, relaxes secure-cookie checks and enables `/api/dev/login` for local dev only. |
 
 Secrets (`wrangler secret put`):
 
@@ -87,11 +89,14 @@ hook runs `afterSignInRoleSync(env, userId, claims)`, which inspects the
 OIDC `groups` claim against `ADMIN_GROUP` and writes the `admin` flag
 onto the user row. Subsequent requests hit `auth.api.getSession`, which
 returns the user + session from D1; a missing or expired session
-short-circuits to a redirect. Sensitive actions (DLQ drop, two-person
-operations, credential rotation) require a step-up cookie minted by
-re-running through Access; the server returns `428 Precondition Required`
-until that cookie is presented, at which point the route handler permits
-the mutation.
+short-circuits to a redirect. Sensitive actions (DLQ drop, credential
+rotate/revoke, bridge HMAC rotate, DKIM rotate, mailbox sender/receiver
+disable, webhook subscription delete, …) are wrapped in
+`withApproval(action)` middleware: the route returns
+`428 Precondition Required` with `{ code: 'approval_required', action }`
+unless the request carries an `x-polaris-approval-id` header pointing at
+an `approved` row in the `approvals` table that was approved by a
+*different* admin than the caller.
 
 ## Route inventory
 

@@ -40,7 +40,7 @@ fi
 
 # KV — `wrangler kv namespace list` supports JSON output.
 if kv_json="$(wrangler kv namespace list 2>/dev/null)"; then
-  for ns in polaris-email-nonce polaris-email-idempotency polaris-email-rate-limit polaris-email-key-cache; do
+  for ns in polaris-email-nonce polaris-email-idempotency polaris-email-rate-limit polaris-email-key-cache polaris-email-revocations; do
     id="$(printf '%s' "$kv_json" | jq -r --arg n "$ns" '.[] | select(.title==$n) | .id // empty' | head -1)"
     [[ -n "$id" ]] && tset --arg n "$ns" '.kv[$n] = {id: $id, recovered_at: $at}' id "$id" at "$(date -u +%FT%TZ)" || true
   done

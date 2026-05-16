@@ -123,4 +123,41 @@ describe('revoke', () => {
     await revoke(env, 'p1');
     expect(await revocationCheck(env, 'p1')).toBe(true);
   });
+
+  it('Phase 3g: keysToInvalidate busts each KV_KEY_CACHE entry', async () => {
+    // Ensures the bundled cache-bust path runs for every key handed in.
+    // Without this the caller has to remember to manually delete each
+    // matching key:* / plain:* / bridge_plain:* entry; that's the
+    // easy-to-forget step we're folding into `revoke()`.
+    const { env, keyCache } = mkEnv();
+    keyCache.store.set('key:K1', '{}');
+    keyCache.store.set('plain:K1', 'sek');
+    keyCache.store.set('bridge_plain:B1', 'sek');
+    await revoke(env, 'p1', ['key:K1', 'plain:K1', 'bridge_plain:B1']);
+    expect(keyCache.store.has('key:K1')).toBe(false);
+    expect(keyCache.store.has('plain:K1')).toBe(false);
+    expect(keyCache.store.has('bridge_plain:B1')).toBe(false);
+    expect(keyCache.deleteCalls).toBe(3);
+  });
+
+  it('Phase 3g: keysToInvalidate is optional and absent => no cache deletes', async () => {
+    const { env, keyCache } = mkEnv();
+    keyCache.store.set('key:K1', '{}');
+    await revoke(env, 'p1');
+    expect(keyCache.store.has('key:K1')).toBe(true);
+    expect(keyCache.deleteCalls).toBe(0);
+  });
+
+  it('Phase 3g: cache-delete failure does not throw out of revoke()', async () => {
+    const { env, revocations } = mkEnv();
+    // Override delete to throw.
+    (env.KV_KEY_CACHE as unknown as { delete(k: string): Promise<void> }).delete = async () => {
+      throw new Error('boom');
+    };
+    // Suppress the warn log so the test output stays clean.
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    await expect(revoke(env, 'p1', ['key:K1'])).resolves.toBeUndefined();
+    expect(revocations.store.has('p1')).toBe(true);
+    warn.mockRestore();
+  });
 });

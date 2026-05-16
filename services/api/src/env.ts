@@ -57,8 +57,18 @@ export interface Env {
   ARGON2_PEPPER?: string;
   /** HMAC master pepper for HKDF-derived per-tenant peppers (I13). */
   PEPPER_MASTER?: string;
-  /** HMAC key shared with the submission bridge for /v1/bridge/* + /v1/messages (RFC822). */
-  BRIDGE_HMAC_KEY?: string;
+  // Phase 2h: BRIDGE_HMAC_KEY (shared global) removed. Per-bridge HMAC
+  // secrets live in `bridges.hmac_key_secret_name` (argon2 hash) plus
+  // KV_KEY_CACHE under `bridge_plain:<id>` (plaintext, 1h TTL). See
+  // services/api/src/bridge-auth.ts.
+
+  // -- CF zone discovery + configure (cf-zones.ts) --------------------------
+  /** CF API token. Needs Zone:Read across the account + Email Routing:Edit. */
+  CF_API_TOKEN?: string;
+  /** CF account ID — used to scope the zone listing + sender onboarding. */
+  CF_ACCOUNT_ID?: string;
+  /** Worker name the catch-all rule must target. Default `polaris-email-in`. */
+  WORKER_NAME_INBOUND?: string;
 }
 
 export interface OutboundQueueMessage {
@@ -68,8 +78,11 @@ export interface OutboundQueueMessage {
   r2KeyOrInline: string;
   fromDomain: string;
   fromAddress: string;
+  /** Envelope recipients (RCPT TO). See `services/out/src/env.ts`. */
+  envelopeTo?: string[];
   mailboxId: string;
   domainId: string | null;
   mode: 'live' | 'test';
-  retries: number;
+  // `retries` removed in Phase 2b — services/out reads CF Workers Queues'
+  // native `m.attempts` counter instead of trusting the queue body.
 }

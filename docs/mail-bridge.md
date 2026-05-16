@@ -6,11 +6,12 @@ retrieval**. (No JMAP — the hand-rolled JMAP listener was deleted in
 phase C1.) Replaces the old `apps/submission-bridge`; the SMTPS code path
 is the same, joined by an IMAP listener and a bridge-local SQLite mirror.
 
-The IMAP listener will be migrated to
+The IMAP listener runs on
 [`github.com/emersion/go-imap/v2`](https://github.com/emersion/go-imap)
-(sibling of `go-smtp` and `go-sasl` already in use). **In progress** — the
-current commit still ships the hand-rolled handler; the migration lands in
-phase O2. The on-the-wire protocol the operator sees does not change.
+(sibling of `go-smtp` and `go-sasl` already in use). The migration off the
+hand-rolled handler landed in phase O2; the on-the-wire protocol the
+operator sees did not change. Pre-launch hardening additionally fixed
+STORE / EXPUNGE / `BODY[]` correctness paths in this listener.
 
 ## Architecture
 
@@ -45,7 +46,9 @@ Pick whichever matches your network topology. Neither mode is "the default."
   namespace.
 - Hostname pattern: `polaris-mail-${REGION}.<tailnet>.ts.net` (MagicDNS).
 - TLS: Tailscale-issued certs via `tsnet.ListenTLS` (preferred), Lego
-  ACME-DNS-01 as fallback.
+  ACME-DNS-01 as fallback. Cert paths follow the Lego output layout:
+  `/etc/polaris-bridge/tls/certificates/<fqdn>.{crt,key}`. Rotation is
+  driven by re-running the `lego` profile (`docker compose --profile lego up`).
 - Only tailnet members reach the bridge; the host exposes no public ports.
 - Compose: `apps/mail-bridge/docker-compose.tailscale.yml`.
 - Use when: every mail client is on your tailnet (operator laptops, regional
@@ -60,7 +63,11 @@ Tailnet ACL example:
 
 ### Mode 2 — Local / host-network
 
-- Bridge binds 465 / 993 directly to the host network.
+- Bridge binds **465 (SMTPS) + 993 (IMAPS) + 8080 (webhook receiver)**
+  directly to the host network. Port 8080 is the inbound webhook target
+  polaris fires on `message.received`; either expose it directly or put a
+  reverse proxy in front of it and set `BRIDGE_PUBLIC_URL` to the proxy's
+  HTTPS URL.
 - Operator owns firewall, reverse proxy (optional), TLS termination.
 - TLS sources, in priority order: operator-mounted PEM at
   `/etc/polaris-bridge/tls/`, then Lego ACME-DNS-01 if the `lego` profile
@@ -70,7 +77,9 @@ Tailnet ACL example:
   behind a load balancer / reverse proxy that you manage.
 
 Reverse-proxy hint (haproxy / nginx-stream): pass SMTPS (`:465`) and IMAPS
-(`:993`) through as raw TCP via a layer-4 LB.
+(`:993`) through as raw TCP via a layer-4 LB. The webhook receiver
+(`:8080`) is plain HTTP — terminate TLS at your reverse proxy when you
+want public-internet TLS for it.
 
 ## Mail-client setup
 
@@ -135,11 +144,6 @@ library version in `apps/mail-bridge/go.mod`.
   body FETCH hits the nearest replica. Documented operational notes for
   region-pair latency (target: < 10ms intra-region for FETCH metadata,
   < 100ms cross-region for body bytes).
-- **O2 — IMAP migration to `emersion/go-imap` v2**: replace the
-  hand-rolled handler with the upstream library (LOGIN, AUTHENTICATE
-  PLAIN, CAPABILITY, LIST, SELECT/EXAMINE, FETCH, STORE, EXPUNGE,
-  IDLE, CONDSTORE, header/flag SEARCH). The bridge-side `internal/store/`
-  and webhook-driven push fan-out are preserved as-is.
 
 Out of polaris-mail-bridge product scope (deliberate cuts, not deferrals):
 

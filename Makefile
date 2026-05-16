@@ -41,7 +41,7 @@ deploy-changed: ## Deploy only services whose code (or transitive package deps) 
 
 rollback: ## Roll back one service (SERVICE=api) to the previous Worker version using wrangler rollback.
 	@if [ -z "$(SERVICE)" ]; then echo "usage: make rollback SERVICE=api" >&2; exit 2; fi
-	@cd services/$(SERVICE) && wrangler rollback
+	@bash -c 'source $(BIN)/_lib.sh && cd "$$(polaris_service_path $(SERVICE))" && wrangler rollback'
 
 smoke: ## End-to-end health check: /healthz, signed diagnostics, synthetic send.
 	@$(BIN)/smoke.sh

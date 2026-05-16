@@ -62,6 +62,45 @@ export interface ExpectedRecord {
   match?: 'exact' | 'contains' | 'normalized';
 }
 
+// `GET /zones/{zone_id}/email/routing/dns` — CF reports the records it
+// requires for routing to function. Records that CF has auto-published and
+// locked carry `locked: true`. The `errors` array surfaces CF's own
+// verification feedback (typos in records, conflicting MX, etc.).
+export const EmailRoutingDnsRecordSchema = z.object({
+  type: z.string(),
+  name: z.string(),
+  content: z.string(),
+  priority: z.number().optional(),
+  ttl: z.number().optional(),
+  required: z.boolean().optional(),
+  locked: z.boolean().optional(),
+});
+export type EmailRoutingDnsRecord = z.infer<typeof EmailRoutingDnsRecordSchema>;
+
+// CF returns either {records: [...], errors: [...]} (newer API) or just an
+// array of records (older shape). Normalize to the object form.
+export interface EmailRoutingDnsState {
+  errors: string[];
+  records: EmailRoutingDnsRecord[];
+}
+
+// Raw schema (preserves CF's wire shape — union of object + array). We
+// normalize to the `EmailRoutingDnsState` interface in `parseEmailRoutingDnsState`
+// to keep the typed client signature simple.
+export const EmailRoutingDnsStateRawSchema = z.union([
+  z.object({
+    errors: z.array(z.string()).optional(),
+    records: z.array(EmailRoutingDnsRecordSchema).optional(),
+  }),
+  z.array(EmailRoutingDnsRecordSchema),
+]);
+
+export function parseEmailRoutingDnsState(raw: unknown): EmailRoutingDnsState {
+  const v = EmailRoutingDnsStateRawSchema.parse(raw);
+  if (Array.isArray(v)) return { records: v, errors: [] };
+  return { records: v.records ?? [], errors: v.errors ?? [] };
+}
+
 export interface DnsOps {
   deleteRecord(zoneId: string, recordId: string): Promise<void>;
   findRecord(zoneId: string, filter: { type?: string; name?: string }): Promise<DnsRecord | null>;

@@ -7,41 +7,74 @@ deployment. Pairs with `docs/runbook.md` (incident response) and
 ## Prerequisites
 
 - Cloudflare account on the **Workers Paid** plan with Email Routing and Email
-  Service available.
-- Three Cloudflare accounts provisioned (`polaris-prod`, `polaris-anchors`,
-  `polaris-staging`) per the multi-account topology (I11). At minimum prod is
-  required to start.
+  Service available. Single account: `polaris-prod` (the previous
+  three-account topology was collapsed in phase O1; audit anchors moved
+  off-Cloudflare to Backblaze B2).
+- A **Backblaze B2 bucket** with Object Lock COMPLIANCE for audit anchors,
+  plus a write-only Application Key. Setup steps live in
+  [`infra/terraform/README.md`](../infra/terraform/README.md).
 - `polaris-email` CLI installed: `brew install vladzaharia/tap/polaris-email`,
   or `go install github.com/vladzaharia/polaris-email/apps/polaris-cli/cmd/polaris-email@latest`,
-  or download from GitHub Releases.
+  or download from GitHub Releases. The CLI is required for everything in
+  this document.
 - `terraform` 1.6+ for IaC managing DNS, Email Routing rules, Email Service
-  onboarding, and Cloudflare Access apps.
+  onboarding, Cloudflare Access apps, and the R2 public custom domain.
 - `wrangler` CLI for Workers/D1/KV/R2/Queues deploys.
+
+### Cloudflare API token scopes
+
+The `CF_API_TOKEN` set in `.env.deploy` (and pushed as a Worker secret) needs
+the following scopes — broader than the original "just Email Routing on a
+specific zone" model so the panel's `/cf-zones` discover view can list every
+zone in the account:
+
+- **Account → Email Routing → Edit** — required for `enable_routing`,
+  catch-all rule writes, sender onboarding via Email Service.
+- **Account → Workers Email Sending → Edit** — required for the new
+  Email Service `/sender-domains` endpoint.
+- **Account → Zone → Read** — required to list every zone in the account
+  for the `/cf-zones` discover view.
+- **Zone → Zone → Edit** — required when CF auto-publish falls back to
+  manual DNS record creation (non-CF DNS edge case).
+- **Zone → DNS → Edit** — same fallback scope.
+
+`make preflight` checks both Email Routing and Zone:Read scopes and fails
+loudly if either is missing.
 
 ## Bootstrap
 
-One-time per environment:
+There are two related but distinct bootstrap flows; pick based on what you
+need:
 
-```bash
-polaris-email bootstrap --env prod
-```
+- **`make bootstrap`** (this repo's `bin/bootstrap.sh`) — the cold-start
+  Cloudflare provisioning path: D1 + KV + R2 + Queues, render
+  `wrangler.local.jsonc` files, deploy every Worker, mint the first admin
+  key. This is the canonical first step; see
+  [`docs/deploy.md`](deploy.md) for the full sequence.
+- **`polaris-email bootstrap --env prod`** (the CLI wizard) — interactive
+  helper that wraps `make bootstrap` and additionally prompts for
+  Terraform variables, validates the B2 anchor target, and saves a
+  `terraform.tfvars` skeleton. Use it when you want a guided experience or
+  are bootstrapping a brand-new operator environment.
 
-The wizard:
+Either way the flow is:
 
-1. Reads CF account IDs + scoped API tokens from prompt or `--from-file`.
-2. Provisions D1 (single `polaris-email` database. Earlier revisions
-   was rolled back; one DB is sufficient at expected volume), KV
-   namespaces, R2 buckets (including the anchors bucket
-   in the `polaris-anchors` account with object lock in compliance mode), and
-   Queues.
+1. Reads CF account ID + scoped API token from prompt or `--from-file`.
+2. Provisions D1 (single `polaris-email` database — sufficient at expected
+   volume), 5 KV namespaces (nonce, idempotency, rate-limit, key-cache,
+   revocations), the `polaris-email` R2 bucket (Object Lock COMPLIANCE), and
+   5 Queues. The Backblaze B2 anchor bucket is **not** provisioned by this
+   tool — bring it yourself per the prerequisites.
 3. Runs schema migrations from `services/api/migrations/` (canonical
    `0001_init.sql`).
-4. Deploys the control-plane Workers (`services/api`, `services/out`,
-   `services/in`, `services/fanout`, `services/cron`) and the panel
-   (`apps/panel`).
+4. Deploys the four Workers (`services/api`, `services/out`,
+   `services/in`) and the panel (`apps/panel`). The previous separate
+   `services/fanout` + `services/cron` Workers were folded into
+   `services/api` in phase B1.
 5. Mints the first operator API key with `admin:read` + `admin:audit:rotate`
    scopes, anchored as the genesis audit entry.
-6. Saves a `terraform.tfvars` skeleton you can fill in for the IaC pieces.
+6. (CLI wizard only) Saves a `terraform.tfvars` skeleton you can fill in for
+   the IaC pieces.
 
 ## Mailbox-centric routing
 
@@ -61,37 +94,61 @@ the new schema.
 
 ## Five workflows
 
-### A. Onboard a new domain
+### A. Discover and configure CF zones (primary path)
+
+The polaris-email panel and CLI now treat **Cloudflare as the source of
+truth for what zones exist**. Instead of declaring "onboard this domain by
+name", the operator picks from the live list of zones in their CF account
+and asks polaris to converge each one to the canonical state.
+
+**Panel (primary)** — open `/cf-zones`. Every zone in the operator's CF
+account appears with six status badges: Routing enabled / DNS records
+locked by CF / Sender onboarded / Catch-all → polaris-email-in / Named-rule
+conflicts / D1 mailbox row. Click a zone → side panel showing the diff and
+an `Apply` button gated on `withApproval('cf_zone.configure')`. The 5 already-
+configured zones (`plrs.im`, `polaris.video`, `polaris.express`, `vlad.gg`,
+`scruffy.spot`) should appear fully green.
+
+**CLI (parity)**:
+
+```bash
+polaris-email cf-zone list                # all zones, status grid
+polaris-email cf-zone status plrs.im      # detailed per-zone view
+polaris-email cf-zone configure newdomain.com           # dry-run diff (default)
+polaris-email cf-zone configure newdomain.com --apply   # actually apply
+polaris-email cf-zone configure newdomain.com --apply --ops set_catch_all_worker  # subset
+```
+
+**What `configure` actually does**, in CF-first order:
+
+1. **`enable_routing`** — POST `/zones/{id}/email/routing/enable`.
+   Cloudflare auto-publishes the inbound MX records pointing at
+   `route1/2/3.mx.cloudflare.net` and an SPF TXT record, locking them so
+   subsequent edits go through CF.
+2. **`set_catch_all_worker`** — PUT `/zones/{id}/email/routing/rules/catch_all`
+   pointing at the `polaris-email-in` Worker.
+3. **`onboard_sender_domain`** — POST `/accounts/{acc}/email-service/sender-domains`.
+   CF auto-publishes the DKIM CNAMEs (with wildcard), SPF include for the
+   `cf-bounce.<domain>`, DMARC, and the bounce MX. We DoH-verify after.
+4. **`create_d1_mail_domain`** — INSERT a `mail_domains` row so polaris-email
+   tracks the domain internally (used by sender lookups, send_email binding
+   resolution, etc.).
+
+Operator-defined named rules (e.g. `support@example.com → forward to ops@`)
+are **listed in the status view but never modified**. The diff surfaces them
+as warnings ("3 named rules will intercept mail before the catch-all") so the
+operator can decide whether to clean them up via the CF dashboard.
+
+### A1. Legacy: declarative `domain onboard` (deprecated)
+
+The old `polaris-email domain onboard <name>` flow still works for the
+edge case where the operator wants polaris-email to manage a domain that
+isn't in the same CF account (e.g. a partner-owned zone with a one-off
+delegation). Prefer `cf-zone configure` for everything else.
 
 ```bash
 polaris-email domain onboard acme.com
 ```
-
-Steps the wizard walks you through:
-
-1. Capabilities: pick inbound, outbound, or both. `--wildcard-subdomains`
-   defaults to true (covers `*.acme.com` automatically; explicit subdomain
-   onboarding only when override is needed — see Resolved Q6).
-2. CF zone discovery (walks up subdomain labels if needed; refuses if no
-   parent zone is on the account).
-3. Outbound onboarding via Email Service. **Cloudflare auto-publishes the
-   DKIM CNAME (with wildcard if `wildcard_subdomains`), SPF, DMARC, and
-   `cf-bounce` MX records on the zone**; we just confirm via DoH that they
-   appeared. DKIM key is ed25519 by default, RSA-2048 fallback. (Operators
-   running on non-CF DNS pass `--cf-managed-dns=false` and the wizard falls
-   back to publishing the records itself via the DNS API.)
-4. Inbound onboarding: Email Routing enable (CF auto-publishes the inbound
-   MX records pointing at `route1/2/3.mx.cloudflare.net`) + single
-   catch-all rule `*@<zone>` → `workers/in` (per I8 catch-all-only routing).
-5. DNS verification state machine (A10): `published → seen_via_authoritative
-→ seen_via_three_resolvers → confirmed`. The `published` step now means
-   "CF reports the record exists in its zone" — a CF API check, not a
-   write-and-poll. The remaining steps are DoH-only and confirm the
-   public-internet view matches.
-6. Registers the `domains` row + `dkim_keys(state='active')` row.
-
-Non-interactive: `polaris-email domain onboard --from-file domain.toml`. The
-TOML schema is documented in `docs/schemas/domain-onboard.toml.json`.
 
 ### B. Manage mailboxes
 
@@ -126,6 +183,10 @@ polaris-email cred rotate <id> --emergency     # immediate revoke + new key
 
 Plaintext is shown **once** at issuance. The CLI never reads it back.
 
+`--mailbox` is the canonical flag (Phase 7b — the schema is mailbox-centric).
+`--tenant` is accepted as a deprecated alias for one release with a warning
+on stderr; new automation should use `--mailbox`.
+
 ### D. Manage inbound routes
 
 ```bash
@@ -143,17 +204,29 @@ is a single per-zone catch-all; specific routing logic is in our code.
 
 ```bash
 polaris-email status --domain acme.com         # red/yellow/green snapshot
+polaris-email status --queues                  # queue + DLQ depths only
+polaris-email auth verify --secret-file ./key  # offline HMAC sig check
 wrangler tail polaris-email-out --status error --search "acme.com"   # outbound errors
-wrangler tail polaris-email-in --status error --search "acme.com"    # inbound errors
-wrangler tail polaris-email-api --status error --search "webhook"    # webhook failures
+wrangler tail polaris-email-in  --status error --search "acme.com"   # inbound errors
+wrangler tail polaris-email-api --status error --search "webhook"    # webhook + cron failures (fanout + cron live in services/api)
 polaris-email webhook dlq list
 polaris-email webhook dlq inspect <id>
 polaris-email webhook dlq replay <id>
 polaris-email webhook dlq drop <id> --confirm <id>   # two-person rule
 polaris-email audit verify                     # walk hash chain
-polaris-email audit anchors                    # list R2 anchors
+polaris-email audit anchors                    # list B2 anchors (off-Cloudflare)
 # Monthly bill: Cloudflare dashboard → Billing → Usage (no CLI command).
 ```
+
+The `--queues` flag on `status` (Phase 7b) is the recommended fast path for
+DLQ depth alerts — it skips the per-domain rollups and returns just the
+inbound/outbound/fanout queue + DLQ depths. Pair it with the daily DLQ
+watch in the section below.
+
+`auth verify` (Phase 7b) reproduces the HMAC verification path used by the
+control plane against a canonical-string + signature pair, useful when a
+client reports `bad_signature` and you need to confirm whether the bug is
+on the signer or the verifier. See `polaris-email auth verify --help`.
 
 ## Multi-host bridges
 
@@ -166,8 +239,12 @@ polaris-email bridge register edge-eu1
 
 polaris-email bridge list
 polaris-email bridge rotate edge-eu1           # rotate HMAC + Access token
-polaris-email bridge deregister edge-eu1
+polaris-email bridge deregister edge-eu1 --confirm-name edge-eu1
 ```
+
+`bridge deregister` requires `--confirm-name <name>` matching the bridge
+name (Phase 7b). This is a fat-finger guard — there is no two-person rule
+on bridge deregistration, so we make typos expensive instead.
 
 The bridge refuses to start without a valid `registration.json`. Each bridge
 has its own HMAC key in Workers Secrets and its own Cloudflare Access service
@@ -211,9 +288,11 @@ effect on the public DNS before progressing. The `domains` row is tombstoned
 ## Daily operations
 
 - **Watch DLQ depth**: alert if `polaris-email status --queues` shows DLQ
-  growth > 0 over a 5-min window.
-- **Watch audit anchor age**: anchors run hourly; anchor age > 90 min is an
-  alert (anchor service may be stuck).
+  growth > 0 over a 5-min window. (`--queues` was added in Phase 7b for
+  exactly this fast-path check.)
+- **Watch audit anchor age**: anchors run hourly and land in Backblaze B2;
+  anchor age > 90 min is an alert (anchor cron inside `services/api` may be
+  stuck).
 - **Cost monitoring**: review the Cloudflare dashboard Billing → Usage page weekly;
   alert if Workers CPU-ms > 50% of subscription tier (I5 / I19 risk).
 

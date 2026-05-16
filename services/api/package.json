@@ -17,7 +17,6 @@
     "@polaris-email/mime": "workspace:*",
     "@polaris-email/object-lock": "workspace:*",
     "@polaris-email/pipeline": "workspace:*",
-    "@polaris-email/providers": "workspace:*",
     "@polaris-email/revocation": "workspace:*",
     "@polaris-email/schema": "workspace:*",
     "bcryptjs": "^2.4.3",

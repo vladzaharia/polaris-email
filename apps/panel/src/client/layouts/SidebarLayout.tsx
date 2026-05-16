@@ -10,6 +10,15 @@ export function SidebarLayout({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(false);
   return (
     <div className="flex min-h-screen w-full">
+      {/* Skip-link — first focusable element on the page so keyboard users
+          can jump past the sidebar. Visually hidden until focused, then
+          surfaces as a normal button. (Phase 6c.1) */}
+      <a
+        href="#main"
+        className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:rounded-md focus:bg-[var(--color-primary)] focus:px-3 focus:py-2 focus:text-sm focus:text-[var(--color-primary-foreground)] focus:shadow-lg focus:outline-none focus:ring-2 focus:ring-[var(--color-ring)]"
+      >
+        Skip to main content
+      </a>
       {/* Desktop sidebar — hidden on small screens. */}
       <aside className="hidden w-64 shrink-0 border-r md:block">
         <AppSidebar />
@@ -29,7 +38,9 @@ export function SidebarLayout({ children }: { children: ReactNode }) {
           </Sheet>
           <div className="text-sm font-semibold">polaris-email</div>
         </header>
-        <main className="flex-1 p-6">{children}</main>
+        <main id="main" className="flex-1 p-6">
+          {children}
+        </main>
       </div>
     </div>
   );

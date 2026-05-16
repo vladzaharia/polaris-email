@@ -110,6 +110,18 @@ func VerifyWebhook(in VerifyInput) VerifyResult {
 	if !ok {
 		return VerifyResult{Code: CodeMissingHeader, Err: errors.New("X-Polaris-Sig")}
 	}
+	// Empty values are detected explicitly because noCRLF treats them as
+	// "invalid" but the resulting "crlf" message is misleading. Distinguishing
+	// empty from CRLF makes the failure mode clear in audit logs.
+	if tsRaw == "" {
+		return VerifyResult{Code: CodeHeaderInvalid, Err: errors.New("ts empty")}
+	}
+	if nonce == "" {
+		return VerifyResult{Code: CodeHeaderInvalid, Err: errors.New("nonce empty")}
+	}
+	if sig == "" {
+		return VerifyResult{Code: CodeHeaderInvalid, Err: errors.New("sig empty")}
+	}
 	if !noCRLF(tsRaw) || !noCRLF(nonce) || !noCRLF(sig) {
 		return VerifyResult{Code: CodeHeaderInvalid, Err: errors.New("crlf")}
 	}
@@ -157,6 +169,32 @@ func VerifyWebhook(in VerifyInput) VerifyResult {
 		return VerifyResult{Code: CodeInvalidSignature, Err: errors.New("hmac mismatch")}
 	}
 	return VerifyResult{OK: true, Ts: ts, Nonce: nonce}
+}
+
+// VerifyAndParseWebhook verifies the request signature and, on success,
+// parses the body into a typed WebhookEnvelope. The VerifyResult is always
+// returned so callers can read Code/Err on failure; the envelope is non-nil
+// only when verification succeeded *and* the body parsed cleanly.
+//
+// Convenience over the two-step VerifyWebhook → ParseWebhookEnvelope dance
+// for the common case. Use the underlying primitives if you need to inspect
+// the verified body before parsing it.
+func VerifyAndParseWebhook(in VerifyInput) (*WebhookEnvelope, VerifyResult) {
+	res := VerifyWebhook(in)
+	if !res.OK {
+		return nil, res
+	}
+	env, err := ParseWebhookEnvelope(in.Body)
+	if err != nil {
+		return nil, VerifyResult{
+			OK:    false,
+			Ts:    res.Ts,
+			Nonce: res.Nonce,
+			Code:  CodeHeaderInvalid,
+			Err:   err,
+		}
+	}
+	return env, res
 }
 
 func pickHeader(h map[string]string, name string) (string, bool) {

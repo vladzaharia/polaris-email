@@ -43,23 +43,6 @@ type Zone struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
-// Tenant is the consumer aggregate.
-type Tenant struct {
-	ID            string    `json:"id"`
-	Name          string    `json:"name"`
-	Description   string    `json:"description,omitempty"`
-	Environment   string    `json:"environment,omitempty"`
-	PepperVersion int       `json:"pepper_version"`
-	DisabledAt    *time.Time `json:"disabled_at,omitempty"`
-	CreatedAt     time.Time `json:"created_at"`
-}
-
-type TenantCreateRequest struct {
-	Name        string `json:"name"`
-	Description string `json:"description,omitempty"`
-	Environment string `json:"environment,omitempty"`
-}
-
 // Bridge represents a registered mail bridge.
 type Bridge struct {
 	ID          string     `json:"id"`
@@ -174,10 +157,20 @@ type LogEntry struct {
 
 // StatusReport is the response from GET /v1/admin/status.
 type StatusReport struct {
-	Bridges      []BridgeHealth `json:"bridges"`
-	Domains      []DomainHealth `json:"domains"`
-	ErrorRate1h  float64        `json:"error_rate_1h"`
-	ErrorRate24h float64        `json:"error_rate_24h"`
+	Bridges      []BridgeHealth        `json:"bridges"`
+	Domains      []DomainHealth        `json:"domains"`
+	ErrorRate1h  float64               `json:"error_rate_1h"`
+	ErrorRate24h float64               `json:"error_rate_24h"`
+	// Queues is populated only when ?include=queues was requested. The map
+	// key is the Workers Queue name (e.g. "polaris-out", "polaris-fanout").
+	Queues map[string]QueueDepth `json:"queues,omitempty"`
+}
+
+// QueueDepth is one entry in StatusReport.Queues. `DLQ` reports the
+// dead-letter queue depth for the same logical queue.
+type QueueDepth struct {
+	Depth int `json:"depth"`
+	DLQ   int `json:"dlq"`
 }
 
 type BridgeHealth struct {
@@ -223,4 +216,101 @@ type CostLine struct {
 	UnitName  string  `json:"unit"`
 	UnitCount float64 `json:"unit_count"`
 	Cost      float64 `json:"cost_usd"`
+}
+
+// ---------------- CF-zone discovery + configure ----------------
+//
+// These mirror the shapes exported by `packages/cf-api/src/discovery.ts`
+// (and the `/v1/admin/cf-zones[...]` endpoints in services/api). The CLI
+// consumes them via the SDK helpers in cf_zones.go.
+
+// ZoneSummary is the minimal Cloudflare zone identification triple returned
+// by the discovery layer.
+type ZoneSummary struct {
+	ID     string `json:"id"`
+	Name   string `json:"name"`
+	Status string `json:"status,omitempty"`
+}
+
+// NamedRouteRule represents one named-address Email Routing rule on a zone.
+// `RoutesToPolaris` is the inspector's verdict on whether the rule's action
+// targets the polaris-email-in Worker (vs. forwarding mail elsewhere).
+type NamedRouteRule struct {
+	Name            string `json:"name"`
+	Enabled         bool   `json:"enabled"`
+	AddressPattern  string `json:"address_pattern,omitempty"`
+	ActionType      string `json:"action_type,omitempty"`
+	ActionTarget    string `json:"action_target,omitempty"`
+	RoutesToPolaris bool   `json:"routes_to_polaris"`
+}
+
+// ZoneDomainStatus is the per-zone health report rendered by `cf-zone list`
+// and `cf-zone status`. Six checks roll up into `Overall` ("ok"/"warn"/
+// "error") server-side.
+type ZoneDomainStatus struct {
+	Zone                 ZoneSummary      `json:"zone"`
+	RoutingEnabled       bool             `json:"routing_enabled"`
+	RoutingStatus        string           `json:"routing_status"`
+	RoutingStatusOK      bool             `json:"routing_status_ok"`
+	DNSRecordsLocked     bool             `json:"dns_records_locked"`
+	DNSRecordErrors      []string         `json:"dns_record_errors"`
+	SenderOnboarded      bool             `json:"sender_onboarded"`
+	SenderMissingRecords []string         `json:"sender_missing_records"`
+	CatchAllTarget       *string          `json:"catch_all_target"`
+	CatchAllCorrect      bool             `json:"catch_all_correct"`
+	NamedRules           []NamedRouteRule `json:"named_rules"`
+	HasConflictingRules  bool             `json:"has_conflicting_rules"`
+	D1MailDomainExists   bool             `json:"d1_mail_domain_exists"`
+	Overall              string           `json:"overall"`
+	Error                *string          `json:"error"`
+}
+
+// ZoneConfigureOp is one step in the planned configure diff. `Detail` is a
+// free-form bag (e.g. the catch-all target name, the auto-publish payload).
+type ZoneConfigureOp struct {
+	Kind        string         `json:"kind"`
+	Description string         `json:"description"`
+	Detail      map[string]any `json:"detail,omitempty"`
+}
+
+// ZoneConfigureDiff is the planning artefact returned by the dry-run path
+// and embedded inside ZoneConfigureResult.
+type ZoneConfigureDiff struct {
+	Zone     ZoneSummary       `json:"zone"`
+	Current  ZoneDomainStatus  `json:"current"`
+	Ops      []ZoneConfigureOp `json:"ops"`
+	Warnings []string          `json:"warnings"`
+}
+
+// ZoneConfigureAppliedFailure is one failed op in an apply response.
+type ZoneConfigureAppliedFailure struct {
+	Op    ZoneConfigureOp `json:"op"`
+	Error string          `json:"error"`
+}
+
+// ZoneConfigureApplyResult is the nested `result` on a non-dry-run apply.
+type ZoneConfigureApplyResult struct {
+	Applied      []ZoneConfigureOp             `json:"applied"`
+	Failed       []ZoneConfigureAppliedFailure `json:"failed"`
+	AllSucceeded bool                          `json:"all_succeeded"`
+}
+
+// ZoneConfigureResult is the full envelope returned by
+// POST /v1/admin/cf-zones/:name/configure (both dry-run and apply paths).
+type ZoneConfigureResult struct {
+	DryRun bool                      `json:"dry_run"`
+	Diff   ZoneConfigureDiff         `json:"diff"`
+	Result *ZoneConfigureApplyResult `json:"result,omitempty"`
+}
+
+// CFZonesListResponse is the envelope returned by GET /v1/admin/cf-zones.
+type CFZonesListResponse struct {
+	Data      []ZoneDomainStatus `json:"data"`
+	FetchedAt string             `json:"fetched_at"`
+	Cached    bool               `json:"cached"`
+}
+
+// CFZoneGetResponse is the envelope returned by GET /v1/admin/cf-zones/:name.
+type CFZoneGetResponse struct {
+	Data ZoneDomainStatus `json:"data"`
 }

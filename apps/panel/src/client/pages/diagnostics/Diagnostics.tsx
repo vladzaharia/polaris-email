@@ -24,7 +24,8 @@ import {
 import { Badge } from '../../components/ui/badge.js';
 import { Skeleton } from '../../components/ui/skeleton.js';
 import { useAdminQuery } from '../../hooks/useAdminApi.js';
-import { diagnosticsKeys, statsKeys } from '../../queryKeys.js';
+import { bridgeKeys, diagnosticsKeys, dlqKeys, statsKeys } from '../../queryKeys.js';
+import { formatDate, formatRelative } from '../../lib/format.js';
 
 interface DiagCheck {
   name: string;
@@ -52,6 +53,35 @@ interface StatsOverview {
 
 interface HealthzPayload {
   ok: boolean;
+  // Some panel deployments embed the build SHA in /healthz so the operator
+  // can confirm which revision is serving without shelling into the worker.
+  // Optional — older deploys won't populate this.
+  build_sha?: string;
+  version?: string;
+}
+
+interface BridgeRow {
+  id: string;
+  name: string;
+  last_seen_at: string | null;
+  disabled_at: string | null;
+}
+
+interface DlqRow {
+  id: string;
+  message_id: string | null;
+  webhook_sub_id: string;
+  attempts: number;
+  last_status_code: number | null;
+  last_error: string | null;
+  dlq_at: string;
+}
+
+interface QueueDepths {
+  // Anticipated payload from a future GET /v1/admin/queues. Until that
+  // endpoint exists, this card will render the "unavailable" placeholder.
+  // Shape kept generic so the card can survive shape evolution.
+  data?: { name: string; depth: number; in_flight?: number }[];
 }
 
 function Unavailable({ message }: { message?: string }) {
@@ -103,19 +133,182 @@ function PanelLivenessCard() {
         <CardDescription>GET /healthz</CardDescription>
       </CardHeader>
       <CardContent>
+        <div className="space-y-2">
+          {q.isLoading ? (
+            <Skeleton className="h-8 w-24" />
+          ) : q.error ? (
+            <Badge variant="destructive">down</Badge>
+          ) : q.data?.ok ? (
+            <Badge variant="success">up</Badge>
+          ) : (
+            <Badge variant="secondary">unknown</Badge>
+          )}
+          {q.data?.build_sha || q.data?.version ? (
+            <div className="font-mono text-xs text-[var(--color-muted-foreground)]">
+              {q.data.version ? `v${q.data.version} · ` : ''}
+              {q.data.build_sha ? q.data.build_sha.slice(0, 12) : ''}
+            </div>
+          ) : null}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function BridgesCard() {
+  const q = useAdminQuery<{ data: BridgeRow[] }>(bridgeKeys.list(), '/api/admin/bridges');
+  // "Online" is best-effort: a bridge with no last_seen_at OR a stale one
+  // (>5min) is treated as offline. The bridge daemon heartbeats on a much
+  // tighter cadence than that, so 5min is well into "actually broken".
+  const STALE_MS = 5 * 60_000;
+  const rows = q.data?.data ?? [];
+  const active = rows.filter((b) => !b.disabled_at);
+  const online = active.filter(
+    (b) => b.last_seen_at && Date.now() - new Date(b.last_seen_at).getTime() < STALE_MS,
+  );
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Bridges</CardTitle>
+        <CardDescription>
+          On-prem bridges currently heartbeating.{' '}
+          <Link to="/bridges" className="underline">
+            View bridges
+          </Link>
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
         {q.isLoading ? (
-          <Skeleton className="h-8 w-24" />
+          <Skeleton className="h-12 w-full" />
         ) : q.error ? (
-          <Badge variant="destructive">down</Badge>
-        ) : q.data?.ok ? (
-          <Badge variant="success">up</Badge>
+          <Unavailable message={q.error.message} />
+        ) : active.length === 0 ? (
+          <Unavailable message="No bridges registered." />
         ) : (
-          <Badge variant="secondary">unknown</Badge>
+          <div className="flex flex-wrap gap-3 text-sm">
+            <span>
+              Online{' '}
+              <Badge variant={online.length === active.length ? 'success' : 'warning'}>
+                {online.length}/{active.length}
+              </Badge>
+            </span>
+            {online.length < active.length ? (
+              <span className="text-xs text-[var(--color-muted-foreground)]">
+                stale &gt; 5min
+              </span>
+            ) : null}
+          </div>
         )}
       </CardContent>
     </Card>
   );
 }
+
+function RecentFailuresCard() {
+  // Recent webhook failures are surfaced from the DLQ — the most useful
+  // incident-triage signal is "what's been failing in the last hour".
+  const q = useAdminQuery<{ data: DlqRow[] }>(
+    diagnosticsKeys.recentFailures(),
+    '/api/admin/webhook-dlq',
+  );
+  const HOUR_MS = 60 * 60_000;
+  const recent = (q.data?.data ?? []).filter(
+    (r) => Date.now() - new Date(r.dlq_at).getTime() < HOUR_MS,
+  );
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Recent webhook failures (1h)</CardTitle>
+        <CardDescription>
+          Latest entries on the dead-letter queue.{' '}
+          <Link to="/dlq" className="underline">
+            Browse DLQ
+          </Link>
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {q.isLoading ? (
+          <Skeleton className="h-12 w-full" />
+        ) : q.error ? (
+          <Unavailable message={q.error.message} />
+        ) : recent.length === 0 ? (
+          <p className="text-xs text-[var(--color-muted-foreground)]">
+            No failures in the last hour.
+          </p>
+        ) : (
+          <ul className="space-y-1 text-xs">
+            {recent.slice(0, 5).map((r) => (
+              <li key={r.id} className="flex items-center gap-2">
+                {r.last_status_code ? (
+                  <Badge variant="destructive">{r.last_status_code}</Badge>
+                ) : (
+                  <Badge variant="outline">err</Badge>
+                )}
+                <span className="font-mono">{r.webhook_sub_id.slice(0, 10)}…</span>
+                <span
+                  className="ml-auto text-[var(--color-muted-foreground)]"
+                  title={formatDate(r.dlq_at)}
+                >
+                  {formatRelative(r.dlq_at)}
+                </span>
+              </li>
+            ))}
+            {recent.length > 5 ? (
+              <li className="text-[var(--color-muted-foreground)]">
+                +{recent.length - 5} more
+              </li>
+            ) : null}
+          </ul>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function QueueDepthsCard() {
+  // Wired to a hypothetical /v1/admin/queues endpoint. The card degrades to
+  // "unavailable" until the upstream API exposes it; once it lands we get
+  // queue visibility for free without touching this component.
+  const q = useAdminQuery<QueueDepths>(diagnosticsKeys.queues(), '/api/admin/queues');
+  const rows = q.data?.data ?? [];
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Queue depths</CardTitle>
+        <CardDescription>Submission, retry, webhook fan-out queues.</CardDescription>
+      </CardHeader>
+      <CardContent>
+        {q.isLoading ? (
+          <Skeleton className="h-12 w-full" />
+        ) : q.error ? (
+          <Unavailable message={q.error.message} />
+        ) : rows.length === 0 ? (
+          <Unavailable message="No queue telemetry available." />
+        ) : (
+          <ul className="space-y-1 text-xs">
+            {rows.map((q) => (
+              <li key={q.name} className="flex items-center gap-2">
+                <span className="font-mono">{q.name}</span>
+                <Badge variant={q.depth > 0 ? 'warning' : 'secondary'}>{q.depth}</Badge>
+                {q.in_flight != null ? (
+                  <span className="text-[var(--color-muted-foreground)]">
+                    in-flight {q.in_flight}
+                  </span>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// Suppress the unused-import warning for dlqKeys — kept exported via
+// queryKeys.ts and used by other pages, but the diagnostics card uses
+// `diagnosticsKeys.recentFailures()` so the dlq query stays cache-distinct
+// from the DLQ browser page (different filters).
+void dlqKeys;
 
 function DlqCard() {
   // Reuse the stats overview the dashboard already consumes — keeps the
@@ -188,8 +381,11 @@ function AuditAnchorCard() {
               head id <Badge variant="secondary">{head.id ?? '—'}</Badge>
             </div>
             {head.created_at ? (
-              <div className="text-xs text-[var(--color-muted-foreground)]">
-                anchored {head.created_at}
+              <div
+                className="text-xs text-[var(--color-muted-foreground)]"
+                title={formatDate(head.created_at)}
+              >
+                anchored {formatRelative(head.created_at)}
               </div>
             ) : null}
             {head.hash ? (
@@ -214,7 +410,10 @@ export function Diagnostics() {
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <HealthCard />
         <PanelLivenessCard />
+        <BridgesCard />
+        <QueueDepthsCard />
         <DlqCard />
+        <RecentFailuresCard />
         <AuditAnchorCard />
       </div>
     </PageCard>

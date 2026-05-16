@@ -8,8 +8,15 @@
 // `composeFromJson()` does the reverse: takes a SendRequest and produces
 // canonical RFC822 bytes suitable for handing to processMessage().
 
-import { parseStrict, serialize, type ParsedMime, type Header } from './canonicalize.js';
+import { MimeError, parseStrict, serialize, type ParsedMime, type Header } from './canonicalize.js';
 import { parseAddressList, parseFirstAddress, decodeMimeWord } from './headers.js';
+
+// 4a.8: cap multipart recursion depth. A nested multipart bomb (legal MIME
+// in RFC terms but unbounded) can otherwise exhaust the Worker stack and
+// take the whole isolate down. Ten levels covers every realistic
+// real-world client (Apple Mail, Gmail, Outlook all stop at ~3) with
+// generous headroom.
+const MAX_MULTIPART_DEPTH = 10;
 
 export interface MessageAttachmentMeta {
   filename: string;
@@ -182,29 +189,54 @@ function getSubHeader(
   return undefined;
 }
 
-function walkPartsWithHeaders(
+/**
+ * Visitor invoked by `walkParts()` for every leaf MIME part it finds.
+ * Returning nothing simply continues the walk; the visitor is responsible
+ * for any state it accumulates (body summary, attachment list, etc.).
+ *
+ * - `body`     — raw body string for this part (still in the source charset).
+ * - `decoded`  — decoded bytes (after CTE), pre-computed since most visitors
+ *                need them and the cost is paid once.
+ * - `parsedCt` — already-parsed Content-Type (`type`/`boundary`/`charset`).
+ * - `filename` — extracted filename (from Content-Disposition or `name=`),
+ *                or `null` for inline parts that have neither. Used by
+ *                visitors to disambiguate "attachment-shaped" leaves from
+ *                inline text bodies.
+ */
+type PartVisitor = (part: {
+  body: string;
+  decoded: Uint8Array;
+  parsedCt: { type: string; boundary?: string; charset: string };
+  xfer: string;
+  filename: string | null;
+}) => void;
+
+/**
+ * Walk an RFC822 body recursively, invoking `visit()` for every leaf
+ * (non-multipart) part it encounters. Replaces the two near-identical
+ * boundary-splitting loops that previously lived in
+ * `walkPartsWithHeaders` and `walkExtractAttachments`.
+ *
+ * Caps recursion at MAX_MULTIPART_DEPTH (10) to bound stack depth on a
+ * malicious nested multipart bomb.
+ */
+function walkParts(
   body: string,
   topContentType: string,
   topXfer: string,
-  summary: BodySummary,
+  visit: PartVisitor,
+  depth = 0,
 ): void {
+  if (depth > MAX_MULTIPART_DEPTH) {
+    throw new MimeError(
+      `multipart nesting exceeds ${MAX_MULTIPART_DEPTH}`,
+      'multipart_too_deep',
+    );
+  }
   const ct = parseContentType(topContentType);
   if (!(ct.type.startsWith('multipart/') && ct.boundary)) {
     const decoded = decodePart(body, topXfer);
-    if (ct.type === 'text/html') {
-      summary.html = new TextDecoder(ct.charset).decode(decoded);
-      summary.body_bytes += decoded.byteLength;
-    } else if (ct.type.startsWith('text/')) {
-      summary.text = new TextDecoder(ct.charset).decode(decoded);
-      summary.body_bytes += decoded.byteLength;
-    } else {
-      summary.attachments.push({
-        filename: 'attachment',
-        content_type: ct.type,
-        size_bytes: decoded.byteLength,
-      });
-      summary.attachments_total_bytes += decoded.byteLength;
-    }
+    visit({ body, decoded, parsedCt: ct, xfer: topXfer, filename: null });
     return;
   }
   const boundary = ct.boundary;
@@ -232,27 +264,69 @@ function walkPartsWithHeaders(
     const subXfer = (getSubHeader(subHeaders, 'content-transfer-encoding') ?? '').toLowerCase();
     const inner = parseContentType(subCt);
     if (inner.type.startsWith('multipart/') && inner.boundary) {
-      walkPartsWithHeaders(pbody, subCt, subXfer, summary);
+      walkParts(pbody, subCt, subXfer, visit, depth + 1);
       continue;
     }
     const filenameMatch =
       subDisp.match(/filename\*?=["']?([^;"']+)/i) ?? subCt.match(/name=["']?([^;"']+)/i);
     const decoded = decodePart(pbody, subXfer);
-    if (filenameMatch || /^application\/|image\/|video\/|audio\//.test(inner.type)) {
+    const filename = filenameMatch?.[1] ? filenameMatch[1].slice(0, 255) : null;
+    visit({ body: pbody, decoded, parsedCt: inner, xfer: subXfer, filename });
+  }
+}
+
+function walkPartsWithHeaders(
+  body: string,
+  topContentType: string,
+  topXfer: string,
+  summary: BodySummary,
+): void {
+  // Track whether we're at the synthetic root call so a top-level non-multipart
+  // leaf still gets `summary.body_bytes` bumped — the original code relied on
+  // the depth-0 branch to do this without checking filename presence.
+  let isFirstLeaf = true;
+  walkParts(body, topContentType, topXfer, ({ decoded, parsedCt, filename }) => {
+    if (isFirstLeaf) {
+      // Top-level (non-multipart) message body. Mirror the original branch
+      // that didn't consult `filename` and wrote text/html or
+      // attachment-as-octet wholesale.
+      isFirstLeaf = false;
+      if (parsedCt.type === 'text/html') {
+        summary.html = new TextDecoder(parsedCt.charset).decode(decoded);
+        summary.body_bytes += decoded.byteLength;
+      } else if (parsedCt.type.startsWith('text/')) {
+        summary.text = new TextDecoder(parsedCt.charset).decode(decoded);
+        summary.body_bytes += decoded.byteLength;
+      } else {
+        summary.attachments.push({
+          filename: 'attachment',
+          content_type: parsedCt.type,
+          size_bytes: decoded.byteLength,
+        });
+        summary.attachments_total_bytes += decoded.byteLength;
+      }
+      return;
+    }
+    // Multipart leaf: classify as attachment when there's an explicit filename
+    // OR a binary-leaning content-type. Keeps the same heuristic as the
+    // original `walkPartsWithHeaders`.
+    const isAttachmentShape =
+      filename !== null || /^application\/|image\/|video\/|audio\//.test(parsedCt.type);
+    if (isAttachmentShape) {
       summary.attachments.push({
-        filename: (filenameMatch?.[1] ?? 'attachment').slice(0, 255),
-        content_type: inner.type,
+        filename: filename ?? 'attachment',
+        content_type: parsedCt.type,
         size_bytes: decoded.byteLength,
       });
       summary.attachments_total_bytes += decoded.byteLength;
-    } else if (inner.type === 'text/html' && !summary.html) {
-      summary.html = new TextDecoder(inner.charset).decode(decoded);
+    } else if (parsedCt.type === 'text/html' && !summary.html) {
+      summary.html = new TextDecoder(parsedCt.charset).decode(decoded);
       summary.body_bytes += decoded.byteLength;
-    } else if (inner.type.startsWith('text/') && !summary.text) {
-      summary.text = new TextDecoder(inner.charset).decode(decoded);
+    } else if (parsedCt.type.startsWith('text/') && !summary.text) {
+      summary.text = new TextDecoder(parsedCt.charset).decode(decoded);
       summary.body_bytes += decoded.byteLength;
     }
-  }
+  });
 }
 
 /**
@@ -274,58 +348,31 @@ function walkExtractAttachments(
   topXfer: string,
   out: ExtractedAttachment[],
 ): void {
-  const ct = parseContentType(topContentType);
-  if (!(ct.type.startsWith('multipart/') && ct.boundary)) {
-    if (ct.type === 'text/html' || ct.type.startsWith('text/')) return;
-    const decoded = decodePart(body, topXfer);
-    out.push({
-      filename: 'attachment',
-      content_type: ct.type,
-      size_bytes: decoded.byteLength,
-      bytes: decoded,
-    });
-    return;
-  }
-  const boundary = ct.boundary;
-  const delim = '--' + boundary;
-  const end = delim + '--';
-  const parts: string[] = [];
-  let i = body.indexOf(delim);
-  if (i < 0) return;
-  while (i >= 0) {
-    const next = body.indexOf(delim, i + delim.length);
-    if (next < 0) break;
-    const chunk = body
-      .slice(i + delim.length, next)
-      .replace(/^\r?\n/, '')
-      .replace(/\r?\n$/, '');
-    parts.push(chunk);
-    if (body.indexOf(end, next) === next) break;
-    i = next;
-  }
-  for (const p of parts) {
-    const { headerStr, body: pbody } = splitHeadersBodyText(p);
-    const subHeaders = parseSubHeaders(headerStr);
-    const subCt = getSubHeader(subHeaders, 'content-type') ?? 'text/plain';
-    const subDisp = getSubHeader(subHeaders, 'content-disposition') ?? '';
-    const subXfer = (getSubHeader(subHeaders, 'content-transfer-encoding') ?? '').toLowerCase();
-    const inner = parseContentType(subCt);
-    if (inner.type.startsWith('multipart/') && inner.boundary) {
-      walkExtractAttachments(pbody, subCt, subXfer, out);
-      continue;
-    }
-    const filenameMatch =
-      subDisp.match(/filename\*?=["']?([^;"']+)/i) ?? subCt.match(/name=["']?([^;"']+)/i);
-    if (filenameMatch || /^application\/|image\/|video\/|audio\//.test(inner.type)) {
-      const decoded = decodePart(pbody, subXfer);
+  let isFirstLeaf = true;
+  walkParts(body, topContentType, topXfer, ({ decoded, parsedCt, filename }) => {
+    if (isFirstLeaf) {
+      isFirstLeaf = false;
+      // Top-level non-multipart: only treat as attachment if it isn't text/*.
+      if (parsedCt.type === 'text/html' || parsedCt.type.startsWith('text/')) return;
       out.push({
-        filename: (filenameMatch?.[1] ?? 'attachment').slice(0, 255),
-        content_type: inner.type,
+        filename: 'attachment',
+        content_type: parsedCt.type,
+        size_bytes: decoded.byteLength,
+        bytes: decoded,
+      });
+      return;
+    }
+    const isAttachmentShape =
+      filename !== null || /^application\/|image\/|video\/|audio\//.test(parsedCt.type);
+    if (isAttachmentShape) {
+      out.push({
+        filename: filename ?? 'attachment',
+        content_type: parsedCt.type,
         size_bytes: decoded.byteLength,
         bytes: decoded,
       });
     }
-  }
+  });
 }
 
 /**
@@ -539,7 +586,21 @@ export function composeFromJson(req: SendRequestLike): Uint8Array {
       );
     }
     for (const a of req.attachments!) {
-      const wrapped = a.content_base64.replace(/\s+/g, '').replace(/(.{76})/g, '$1\r\n');
+      // 4a.12: validate base64 before embedding. atob throws on invalid
+      // input; the previous code wrapped raw bytes verbatim, which silently
+      // produced a syntactically broken MIME part that downstream parsers
+      // (and SMTP receivers) rejected with no context. We surface the
+      // failure as a typed MimeError so callers can map to a 400.
+      const cleaned = a.content_base64.replace(/\s+/g, '');
+      try {
+        atob(cleaned);
+      } catch {
+        throw new MimeError(
+          `attachment ${a.filename}: invalid base64`,
+          'invalid_attachment_base64',
+        );
+      }
+      const wrapped = cleaned.replace(/(.{76})/g, '$1\r\n');
       parts.push(
         `--${outerBoundary}\r\nContent-Type: ${a.content_type}; name="${a.filename}"\r\nContent-Disposition: attachment; filename="${a.filename}"\r\nContent-Transfer-Encoding: base64\r\n\r\n${wrapped}\r\n`,
       );

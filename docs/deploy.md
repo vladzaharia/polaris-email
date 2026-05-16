@@ -13,10 +13,12 @@ see [`docs/operator.md`](operator.md) and the `polaris-email` CLI in
 
 ## 1. Prerequisites (manual, one-time)
 
-- [ ] Cloudflare account with an API token scoped: **Workers:Edit, D1:Edit, R2:Edit, Queues:Edit, KV:Edit, Email Routing:Edit, Zone:Read, DNS:Edit**.
+- [ ] Cloudflare account with an API token scoped: **Workers:Edit, D1:Edit, R2:Edit, Queues:Edit, KV:Edit, Email Routing:Edit, Workers Email Sending:Edit, Zone:Read (account-wide), Zone:Edit, DNS:Edit**. The `Zone:Read` across the account is required by the panel `/cf-zones` discover view (lists every zone in the account); the previous "Email Routing on a specific zone" scope is no longer sufficient.
 - [ ] At least one domain on Cloudflare DNS for inbound mail.
-- [ ] (Optional) An OIDC provider client for the admin panel (`apps/panel`).
-- [ ] Local tools: `git`, `pnpm` ≥ 9, `wrangler` (installed via `pnpm install`), `jq`, `openssl`, `curl`.
+- [ ] (Optional) An OIDC provider client for the admin panel (`apps/panel`). You will need both `OIDC_CLIENT_ID` and `OIDC_CLIENT_SECRET`.
+- [ ] **Backblaze B2 bucket** for the audit-anchor target (Object Lock COMPLIANCE, 7-year retention) plus a write-only Application Key. Anchors live **off-Cloudflare** so a fully-compromised CF account cannot rewrite history. Step-by-step setup is in [`infra/terraform/README.md`](../infra/terraform/README.md) under "Audit anchors are NOT on Cloudflare". Capture `ANCHOR_S3_ENDPOINT`, `ANCHOR_S3_BUCKET`, `ANCHOR_S3_REGION`, `ANCHOR_S3_ACCESS_KEY_ID`, `ANCHOR_S3_SECRET_ACCESS_KEY`. Bootstrap will refuse to deploy `services/api` without these.
+- [ ] Local tools: `git`, `pnpm` ≥ 9, `wrangler` (installed via `pnpm install`), `jq`, `openssl`, `curl`, `go` ≥ 1.22.
+- [ ] **`polaris-email` Go CLI** on `$PATH`. Either `go install github.com/vladzaharia/polaris-email/apps/polaris-cli/cmd/polaris-email@latest`, `brew install vladzaharia/tap/polaris-email`, or grab a release binary from GitHub. The CLI signs admin requests, registers bridges, and runs the smoke checks.
 
 Validate everything is in place:
 
@@ -27,6 +29,19 @@ make preflight
 
 `make preflight` is a hard gate. Each failing check prints its remediation on the next line.
 
+### Terraform sequencing (optional but recommended)
+
+`bin/bootstrap.sh` makes the minimum CF API calls needed to spin Workers/D1/KV/R2/Queues. It is **not** the same surface as `infra/terraform/`, which manages DNS records, Email Routing rules, Email Service onboarding, Cloudflare Access apps, and the R2 public custom domain (`r2.mail.plrs.im`). For first-time cold starts on a new account, run Terraform **before** `make bootstrap` so the zone-level resources exist:
+
+```sh
+cd infra/terraform/envs/prod
+terraform init
+terraform apply        # creates DNS / Email Routing / Email Service / Access scaffold
+cd -
+```
+
+Existing operators who manage zone resources by hand can skip Terraform; the rest of the runbook does not depend on it. See [`infra/terraform/README.md`](../infra/terraform/README.md) for the full split between Terraform-managed and Wrangler-managed resources.
+
 ---
 
 ## 2. Cold start
@@ -36,17 +51,27 @@ make configure       # interactive — writes .env.deploy (gitignored, mode 0600
 make bootstrap       # runs preflight, then bin/bootstrap.sh end-to-end
 ```
 
+`make configure` prompts for everything that has to be a wrangler secret on the deployed Workers, including:
+
+- `OIDC_CLIENT_ID` and `OIDC_CLIENT_SECRET` (panel auth — leave blank to skip the panel)
+- `ANCHOR_S3_ENDPOINT`, `ANCHOR_S3_BUCKET`, `ANCHOR_S3_REGION`, `ANCHOR_S3_ACCESS_KEY_ID`, `ANCHOR_S3_SECRET_ACCESS_KEY` (Backblaze B2 anchor target — required, see prerequisites)
+- the alert webhook + the production hostname
+
+`BRIDGE_HMAC_KEY` is **not** a global secret. Each bridge gets its own HMAC key minted at registration (`polaris-email bridge register <name>`); the secret is delivered once in the response and stored under that bridge's `BRIDGE_<NAME>_HMAC_KEY` slot. There is no shared bridge secret to seed at bootstrap.
+
 `make bootstrap` performs the following, idempotently:
 
 1. `pnpm install --frozen-lockfile` and `pnpm -r run build`.
-2. Creates **D1** (`polaris-email`), **R2** (`polaris-email`, EU jurisdiction, 90d compliance lock), **4 KV namespaces** (nonce, idempotency, rate-limit, key-cache), **5 Queues** (outbound, inbound, fanout, + 2 DLQs). All IDs are captured into `.deploy-state.json` (gitignored). Reruns skip already-known resources.
+2. Creates **D1** (`polaris-email`), **R2** (`polaris-email`, EU jurisdiction, 90d compliance lock), **5 KV namespaces** (nonce, idempotency, rate-limit, key-cache, **revocations**), **5 Queues** (outbound, inbound, fanout, + 2 DLQs). All IDs are captured into `.deploy-state.json` (gitignored). Reruns skip already-known resources. (`KV_REVOCATIONS` was added in phase A1 to back the synchronous credential-revocation path; the previous Durable Object that owned this state was deleted.)
 3. Renders `services/*/wrangler.local.jsonc` from each `wrangler.local.template.jsonc` using `.deploy-state.json` + `.env.deploy`.
 4. Applies D1 migrations remotely.
 5. Seeds master secrets: `POLARIS_SECRET_A`, `ARGON2_PEPPER`, `ANCHOR_SIGNING_KEY`. Creation timestamps go to `secrets.created.json` (no values).
-6. `bin/deploy.sh --all` deploys every Worker in dependency order (api → out → in → fanout → cron → panel).
+6. `bin/deploy.sh --all` deploys the four Workers in dependency order: `polaris-email-api` → `polaris-email-out` → `polaris-email-in` → `polaris-email-panel`. (The previous `services/fanout` and `services/cron` Workers were folded into `services/api` in phase B1.)
 7. HMAC-signs `POST /v1/admin/bootstrap`, captures the returned `admin_key_id` + `admin_key_secret` into `.bootstrap-output.json` (gitignored, mode 0600) **and** prints them once.
 
 **Copy the admin key into your password manager immediately.** It is not recoverable.
+
+After the cold-start completes, open the admin panel and visit **`/cf-zones`**. Every Cloudflare zone in the account will appear with a six-badge status grid. Click each zone you want polaris-email to handle and apply the diff — that's the primary onboarding path post-deploy. See [`docs/operator.md` § Workflow A](operator.md) for the full flow.
 
 ---
 

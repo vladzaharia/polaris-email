@@ -132,6 +132,19 @@
       "expected_sig": "f93b12040bc716cfc532d3d55ce54fd5ead9376f66306402932af9249fb85b12"
     },
     {
+      "name": "interop/POST/query-pipe-encoded-with-body",
+      "direction": "polaris-api",
+      "method": "POST",
+      "path": "/v1/messages",
+      "query": "filter=foo%7Cbar&order=created_at%7Cdesc",
+      "ts": "1700000000000",
+      "nonce": "INTEROPPIPEXXXXX",
+      "secret": "XBNRJYZ8WS5KQDVPM7T4F2H6CG3A1E9N",
+      "body": "{\"limit\":50,\"cursor\":\"01HXR000ABCDEFGHJKMNPQRSTV\"}",
+      "must_verify": true,
+      "expected_sig": "540e741e53dde1d7fb7781362787b6e4c5e660d55cd2262868980d88f9555014"
+    },
+    {
       "name": "api/POST/nonce-min-length",
       "direction": "polaris-api",
       "method": "POST",

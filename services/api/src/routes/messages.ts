@@ -1,7 +1,7 @@
 // Unified /v1/messages REST surface.
 //
 // POST /v1/messages
-//   - Content-Type: application/json     -> tenant API-key HMAC, SendRequest JSON
+//   - Content-Type: application/json     -> mailbox API-key HMAC, SendRequest JSON
 //   - Content-Type: message/rfc822       -> bridge HMAC, raw bytes
 // GET  /v1/messages                       -> list + filters (messages:read)
 // GET  /v1/messages/:id                   -> single message (messages:read)
@@ -18,7 +18,7 @@
 
 import { Hono, type Context } from 'hono';
 import { SendRequest } from '@polaris-email/schema';
-import { verify } from '@polaris-email/hmac';
+import { verify, sha256Hex } from '@polaris-email/hmac';
 import { ulid } from '@polaris-email/ids';
 import {
   composeFromJson,
@@ -29,7 +29,6 @@ import {
   MimeError,
   SenderPolicyError,
   type UnifiedMessage,
-  type MessageRowMeta,
 } from '@polaris-email/mime';
 import { revocationCheck } from '@polaris-email/revocation';
 import type { Env } from '../env.js';
@@ -39,6 +38,10 @@ import { processMessage, ProcessMessageError } from '../process-message.js';
 import { rateLimit } from '../rate-limit.js';
 import { r2PublicUrl, attachmentR2Key } from '../lib/r2-public-url.js';
 import { autoMarkRead } from './messages-state.js';
+import { lookupBridgeSecret } from '../bridge-auth.js';
+import { NONCE_TTL_SECONDS } from '../auth.js';
+import { MessageRow, rowMeta } from '../lib/message-row.js';
+import { loadR2Bytes } from '../lib/r2-helpers.js';
 
 export const messages = new Hono<{ Bindings: Env }>();
 
@@ -120,6 +123,17 @@ async function authenticateApiKey(
     .catch(() => ({ results: [] as { sender_id: string }[] }));
   const senderScopeIds = (scopeRows.results ?? []).map((r) => r.sender_id);
 
+  // Per-principal revocation check BEFORE HMAC verify. Mirrors the order
+  // used by the shared `hmacAuth` middleware in `auth.ts`: KV_REVOCATIONS
+  // is the authoritative revocation signal because the api_keys row may
+  // still read `primary` from a stale KV_KEY_CACHE entry immediately after
+  // an admin revoke. Phase 3b.1 — previously this check ran AFTER HMAC
+  // verification, which let a revoked-but-still-cached key burn through a
+  // verify cycle.
+  if (await revocationCheck(env, keyRow.principal_id).catch(() => false)) {
+    return buildError(c, 'key_revoked', 'principal revoked');
+  }
+
   const plaintext = await env.KV_KEY_CACHE.get(`plain:${keyId}`);
   if (!plaintext) {
     return buildError(c, 'key_propagating', 'key plaintext not yet propagated', {
@@ -147,7 +161,7 @@ async function authenticateApiKey(
   const nonceKey = `nonce:${keyId}:${result.nonce}`;
   const seen = await env.KV_NONCE.get(nonceKey);
   if (seen) return buildError(c, 'nonce_replay', 'nonce already used for this key');
-  c.executionCtx.waitUntil(env.KV_NONCE.put(nonceKey, '1', { expirationTtl: 10 * 60 }));
+  c.executionCtx.waitUntil(env.KV_NONCE.put(nonceKey, '1', { expirationTtl: NONCE_TTL_SECONDS }));
 
   let parsedScopes: string[] = [];
   try {
@@ -185,8 +199,17 @@ async function authenticateBridge(
   if (!submissionId || !/^[0-9A-HJKMNP-TV-Z]{26}$/.test(submissionId)) {
     return buildError(c, 'unauthorized', 'invalid submission_id format');
   }
-  if (!env.BRIDGE_HMAC_KEY) {
-    return buildError(c, 'unauthorized', 'bridge auth not configured on server');
+  const lookup = await lookupBridgeSecret(env, bridgeId);
+  if (!lookup.ok) {
+    if (lookup.code === 'key_propagating') {
+      return buildError(
+        c,
+        'key_propagating',
+        'bridge plaintext not in cache; rotate to repopulate',
+        { 'retry-after': '2' },
+      );
+    }
+    return buildError(c, 'unauthorized', `bridge: ${lookup.code}`);
   }
   const url = new URL(c.req.url);
   const result = await verify({
@@ -196,76 +219,12 @@ async function authenticateBridge(
     query: url.search.slice(1),
     headers: { get: (n: string) => c.req.header(n) ?? null },
     body: bodyBytes,
-    secret: env.BRIDGE_HMAC_KEY,
+    secret: lookup.secret,
   });
   if (!result.ok) {
     return buildError(c, 'unauthorized', `bridge HMAC: ${result.code}`);
   }
   return { bridgeId, submissionId };
-}
-
-async function loadR2Bytes(env: Env, key: string): Promise<Uint8Array | null> {
-  const obj = await env.R2.get(key);
-  if (!obj) return null;
-  const buf = await (obj as unknown as { arrayBuffer(): Promise<ArrayBuffer> }).arrayBuffer();
-  return new Uint8Array(buf);
-}
-
-type MessageRow = {
-  id: string;
-  mailbox_id: string;
-  principal_id: string | null;
-  direction: 'in' | 'out';
-  status: string;
-  from_addr: string;
-  to_addrs: string | null;
-  subject: string | null;
-  r2_key: string;
-  body_bytes: number | null;
-  attachments_total_bytes: number | null;
-  thread_id: string | null;
-  header_message_id: string | null;
-  auth_spf: string | null;
-  auth_dkim: string | null;
-  auth_dmarc: string | null;
-  auth_remote_ip: string | null;
-  received_at_bridge: string | null;
-  received_at_api: string | null;
-  queued_at: string | null;
-  sending_at: string | null;
-  sent_at: string | null;
-  delivered_at: string | null;
-  failed_at: string | null;
-  bounce_metadata: string | null;
-  last_error: string | null;
-  created_at: string;
-};
-
-function rowMeta(row: MessageRow): MessageRowMeta {
-  return {
-    id: row.id,
-    mailbox_id: row.mailbox_id,
-    direction: row.direction,
-    status: row.status,
-    thread_id: row.thread_id,
-    header_message_id: row.header_message_id,
-    auth_spf: row.auth_spf,
-    auth_dkim: row.auth_dkim,
-    auth_dmarc: row.auth_dmarc,
-    auth_remote_ip: row.auth_remote_ip,
-    body_bytes: row.body_bytes,
-    attachments_total_bytes: row.attachments_total_bytes,
-    received_at_bridge: row.received_at_bridge,
-    received_at_api: row.received_at_api,
-    queued_at: row.queued_at,
-    sending_at: row.sending_at,
-    sent_at: row.sent_at,
-    delivered_at: row.delivered_at,
-    failed_at: row.failed_at,
-    bounce_metadata: row.bounce_metadata,
-    last_error: row.last_error,
-    created_at: row.created_at,
-  };
 }
 
 async function renderMessageBodies(
@@ -313,16 +272,6 @@ async function renderMessageBodies(
     delete out.text;
     delete out.html;
   }
-  return out;
-}
-
-async function sha256Hex(data: Uint8Array): Promise<string> {
-  const buf = new ArrayBuffer(data.byteLength);
-  new Uint8Array(buf).set(data);
-  const digest = await crypto.subtle.digest('SHA-256', buf);
-  const bytes = new Uint8Array(digest);
-  let out = '';
-  for (const b of bytes) out += b.toString(16).padStart(2, '0');
   return out;
 }
 
@@ -436,7 +385,7 @@ messages.post('/v1/messages', async (c) => {
       return buildError(
         c,
         'bad_content_type',
-        'tenant API-key auth requires Content-Type: application/json',
+        'mailbox API-key auth requires Content-Type: application/json',
       );
     }
     const authResult = await authenticateBridge(c, bodyBytes);

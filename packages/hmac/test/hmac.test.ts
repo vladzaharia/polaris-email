@@ -31,6 +31,65 @@ describe('canonicalQuery', () => {
     expect(canonicalQuery(undefined)).toBe('');
     expect(canonicalQuery('q=a b')).toBe('q=a%20b');
   });
+
+  it('strips a leading `?` so call-sites may pass either url.search or url.search.slice(1)', () => {
+    // Phase 3b.2 — verifying convergence between auth.ts (passes
+    // `new URL(c.req.url).search` with the leading `?`) and
+    // bridge-auth.ts / messages.ts / messages-state.ts (pass
+    // `url.search.slice(1)` without it). Both must canonicalise identically
+    // or signatures diverge for query-bearing requests.
+    expect(canonicalQuery('?a=1&b=2')).toBe(canonicalQuery('a=1&b=2'));
+    expect(canonicalQuery('?')).toBe(canonicalQuery(''));
+    expect(canonicalQuery('?since_state=12&limit=50')).toBe(
+      canonicalQuery('since_state=12&limit=50'),
+    );
+  });
+});
+
+describe('verify with query strings (call-site convergence)', () => {
+  // Phase 3b.2 sanity test — signatures must round-trip whether the verifier
+  // hands the canonicaliser the raw `url.search` (`?a=1&b=2`) or the
+  // already-stripped form (`a=1&b=2`). Without this, a request signed via
+  // the api-key middleware path would fail when re-verified by the bridge
+  // path (or vice versa) for the same URL.
+  const TS_LOCAL = TS;
+  const NONCE_LOCAL = NONCE;
+  it('round-trips both forms', async () => {
+    const baseWithQ = {
+      direction: 'polaris-api' as const,
+      method: 'GET',
+      path: '/v1/mailboxes/01HABCDEFGHJKMNPQRSTVWXYZ0/changes',
+      query: 'since_state=12',
+      ts: TS_LOCAL,
+      nonce: NONCE_LOCAL,
+      body: '',
+    };
+    const sig = await sign(baseWithQ, SECRET);
+    const verifiedWithoutQ = await verify({
+      ...baseWithQ,
+      query: 'since_state=12',
+      headers: headers({
+        'x-polaris-ts': TS_LOCAL,
+        'x-polaris-nonce': NONCE_LOCAL,
+        'x-polaris-sig': sig,
+      }),
+      secret: SECRET,
+      now: () => Number(TS_LOCAL),
+    });
+    const verifiedWithQ = await verify({
+      ...baseWithQ,
+      query: '?since_state=12',
+      headers: headers({
+        'x-polaris-ts': TS_LOCAL,
+        'x-polaris-nonce': NONCE_LOCAL,
+        'x-polaris-sig': sig,
+      }),
+      secret: SECRET,
+      now: () => Number(TS_LOCAL),
+    });
+    expect(verifiedWithoutQ.ok).toBe(true);
+    expect(verifiedWithQ.ok).toBe(true);
+  });
 });
 
 describe('buildCanonical', () => {

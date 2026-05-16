@@ -57,8 +57,15 @@ token      = "<staging secret>"
 key_id     = "<staging key id>"
 ```
 
-Select a profile with `--profile staging` (default is `prod`). `--api-url`,
-`--token`, and `--key-id` always override config-file values.
+Select a profile with `--profile staging` (default is `prod`). The
+resolution order for `--api-url`, `--token`, and `--key-id` is:
+
+1. CLI flag (`--api-url`, `--token`, `--key-id`)
+2. Environment variable (`POLARIS_API_URL`, `POLARIS_TOKEN`, `POLARIS_KEY_ID`)
+3. Profile in the config file
+
+This means `POLARIS_TOKEN=$(op read …) polaris-email status` works even when
+no config file is present — the env vars carry the credentials.
 
 ## Workflows
 
@@ -97,6 +104,10 @@ polaris-email cred issue \
   --mailbox <mailbox-id> --type smtp \
   --senders 'noreply@acme.com,alerts@mail.acme.com'
 ```
+
+The `--tenant` flag is accepted as a deprecated alias for `--mailbox` and
+prints a warning. Update CI scripts at your earliest convenience; the alias
+will be removed in a future release.
 
 The plaintext secret is printed exactly once. Pipe to your secret store:
 
@@ -147,6 +158,76 @@ polaris-email bridge register bridge-iad-1 --form compose \
 
 This mints the bridge's HMAC key + Cloudflare Access service token (returned
 once) and prints a docker-compose snippet ready to drop into the bridge host.
+
+Deregistering a bridge requires `--confirm-name <name>` so a fat-finger
+delete doesn't tear down a live host:
+
+```sh
+polaris-email bridge deregister bridge-iad-1 --confirm-name bridge-iad-1
+```
+
+### F. Discover + configure Cloudflare zones
+
+`cf-zone` operates against the live Cloudflare account (via the
+`POST /v1/admin/cf-zones[...]` admin endpoints) and reconciles each zone
+against polaris-email's six readiness checks: Email Routing on, MX/SPF
+records locked by Cloudflare, sender domain onboarded, catch-all rule
+points at the `polaris-email-in` Worker, no conflicting named rules, and
+a matching `mail_domains` row in D1.
+
+```sh
+# Inventory every zone with rolled-up readiness pills.
+polaris-email cf-zone list
+polaris-email cf-zone list --refresh   # bypass the 60s server-side cache
+
+# Drill into one zone — prints each check + DNS errors / missing records /
+# named-rule routing targets.
+polaris-email cf-zone status plrs.im
+
+# Plan a configure run (dry-run by default — nothing is applied).
+polaris-email cf-zone configure plrs.im
+
+# Apply the planned ops (exits non-zero if any fail).
+polaris-email cf-zone configure plrs.im --apply
+
+# Restrict to a subset of ops (useful for partial recovery after a failure).
+polaris-email cf-zone configure plrs.im --apply \
+  --ops enable_routing,set_catch_all_worker
+```
+
+Output of a typical dry-run:
+
+```
+Zone: plrs.im
+Diff:
+  - enable_routing: Enable Cloudflare Email Routing on plrs.im
+  - set_catch_all_worker: Point catch-all rule at the polaris-email-in Worker
+  - create_d1_mail_domain: Create polaris-email mail_domains row for plrs.im
+
+Warnings:
+  ⚠ 2 named-address rule(s) on plrs.im route mail elsewhere
+
+(dry run — pass --apply to actually configure)
+```
+
+`-o json` returns the raw envelope (`ZoneConfigureResult` for `configure`,
+`CFZonesListResponse` for `list`, `ZoneDomainStatus` for `status`) so the
+output can be piped into jq or stored as an audit artefact.
+
+### G. Verify a bad-signature report
+
+When a webhook subscriber reports a verification failure, capture the
+`X-Polaris-*` headers + raw body and replay them locally:
+
+```sh
+polaris-email auth verify \
+  --method POST --path /v1/messages --body req.json \
+  --ts 1700000000000 --nonce <nonce> --sig <hex> \
+  --secret "$(op read op://Vault/Polaris/secret)"
+```
+
+Returns `OK` on stdout (exit 0) for a valid signature; on failure prints
+`INVALID code=<code> err=<reason>` on stderr (exit 1).
 
 ## Multi-profile usage
 

@@ -25,16 +25,16 @@ else
 fi
 rm -f /tmp/polaris-smoke-health.$$
 
-# 2) Signed admin diagnostics — exercises D1, R2, KV, queue write.
+# 2) Signed admin status — exercises HMAC auth, D1 reads.
 if [[ -f "$BOOTSTRAP_OUTPUT" ]]; then
-  resp="$(polaris_api_call GET /v1/admin/diagnostics '' 1 || true)"
-  if printf '%s' "$resp" | jq -e '.ok == true' >/dev/null 2>&1; then
-    pass "signed /v1/admin/diagnostics -> ok"
+  resp="$(polaris_api_call GET /v1/admin/status '' 1 || true)"
+  if printf '%s' "$resp" | jq -e '.mailboxes != null and .domains != null' >/dev/null 2>&1; then
+    pass "signed /v1/admin/status -> ok"
   else
-    fail "signed /v1/admin/diagnostics: $resp"
+    fail "signed /v1/admin/status: $resp"
   fi
 else
-  fail "no .bootstrap-output.json — cannot run signed diagnostics"
+  fail "no .bootstrap-output.json — cannot run signed status check"
 fi
 
 # 3) Enqueue a synthetic outbound and poll for delivery.

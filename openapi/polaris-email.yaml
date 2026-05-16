@@ -4,14 +4,14 @@ info:
   version: 0.2.0
   description: |
     HMAC-authenticated REST surface for polaris-email. All requests are signed with
-    `X-Polaris-Sig: v1=<hex(HMAC-SHA256(secret, canonical))>` where canonical is
-    `polaris-api.v1\n<METHOD>\n<path>\n<canonical-query>\n<X-Polaris-Ts>\n<X-Polaris-Nonce>\n<sha256-hex(body)>`.
+    `X-Polaris-Sig: <hex(HMAC-SHA256(secret, canonical))>` where canonical is
+    `polaris-api\n<METHOD>\n<path>\n<canonical-query>\n<X-Polaris-Ts>\n<X-Polaris-Nonce>\n<sha256-hex(body)>`.
 
     Webhooks delivered to subscribers (the WebhookEnvelope schema below) are signed
-    `X-Polaris-Sig: v2=<hex>` over the canonical string
-    `polaris-webhook.v1\nPOST\n<path>\n<canonical-query>\n<ts>\n<nonce>\n<sha256-hex(body)>`.
-    Consumers should verify with the SDK (`@polaris/sdk/webhook`, `polaris_sdk.webhook`,
-    or `polariswebhook.VerifyWebhook`).
+    `X-Polaris-Sig: <hex>` over the canonical string
+    `polaris-webhook\nPOST\n<path>\n<canonical-query>\n<ts>\n<nonce>\n<sha256-hex(body)>`.
+    Consumers should verify with the SDK (`@polaris-email/sdk-node`'s `verifyWebhook`
+    or `polariswebhook.VerifyWebhook` from `packages/sdk-go`).
 servers:
   - url: https://polaris-email-api.workers.dev
 security:
@@ -159,7 +159,7 @@ components:
         auth: { $ref: '#/components/schemas/MessageAuth' }
         body_bytes: { type: integer, minimum: 0 }
         attachments_total_bytes: { type: integer, minimum: 0 }
-        received_at_daemon: { type: string }
+        received_at_bridge: { type: string }
         received_at_api: { type: string }
         queued_at: { type: string }
         sending_at: { type: string }
@@ -267,7 +267,7 @@ components:
       required: [event_id, event, occurred_at, message]
       description: |
         v2 webhook envelope delivered to subscribers. The HTTP request carries
-        `X-Polaris-Sig: v2=<hex>`, `X-Polaris-Ts`, `X-Polaris-Nonce`,
+        `X-Polaris-Sig: <hex>`, `X-Polaris-Ts`, `X-Polaris-Nonce`,
         `X-Polaris-Event-Id`, and `X-Polaris-Event` headers. Verify with the SDK
         `verifyWebhook` helper.
       properties:
@@ -390,7 +390,7 @@ components:
           type: array
           minItems: 1
           items: { $ref: '#/components/schemas/WebhookEventType' }
-    DaemonCredentialsResponse:
+    BridgeCredentialsResponse:
       type: object
       required: [updates, deletions, mirror_version]
       properties:
@@ -424,8 +424,8 @@ paths:
       summary: Submit a message (JSON or RFC822)
       description: |
         Unified submission endpoint. Content-Type selects the auth flavor:
-        - `application/json`: tenant API-key HMAC, body is a SendRequest.
-        - `message/rfc822`: mail-bridge daemon HMAC, body is raw RFC822 bytes.
+        - `application/json`: mailbox API-key HMAC, body is a SendRequest.
+        - `message/rfc822`: per-bridge HMAC, body is raw RFC822 bytes.
       parameters:
         - { $ref: '#/components/parameters/KeyId' }
         - { $ref: '#/components/parameters/Ts' }
@@ -804,13 +804,14 @@ paths:
       responses:
         '201':
           description: created
-  /v1/daemon/credentials:
+  /v1/bridge/credentials:
     get:
-      summary: Submission-daemon credential mirror
+      summary: Mail-bridge credential mirror
       description: |
         Returns the current set of active SMTP submission credentials plus
         the set of disabled credentials to remove. Polled by the
-        mail-bridge to keep its local SQLite mirror current.
+        mail-bridge to keep its local SQLite mirror current. (Renamed from
+        `/v1/daemon/credentials` in phase B4 — the legacy alias is gone.)
       parameters:
         - { $ref: '#/components/parameters/KeyId' }
         - { $ref: '#/components/parameters/Ts' }
@@ -823,7 +824,7 @@ paths:
           description: credential delta
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/DaemonCredentialsResponse' }
+              schema: { $ref: '#/components/schemas/BridgeCredentialsResponse' }
   /v1/admin/bootstrap:
     post:
       summary: One-time seed of the first admin key. Signed with POLARIS_SECRET_A.
@@ -847,8 +848,8 @@ webhooks:
       summary: Webhook delivered to a subscriber
       description: |
         polaris-email POSTs a `WebhookEnvelope` to each matching subscription URL.
-        The request carries `X-Polaris-Sig: v2=<hex>` signed over
-        `polaris-webhook.v1\nPOST\n<path>\n<canonical-query>\n<ts>\n<nonce>\n<sha256-hex(body)>`
+        The request carries `X-Polaris-Sig: <hex>` signed over
+        `polaris-webhook\nPOST\n<path>\n<canonical-query>\n<ts>\n<nonce>\n<sha256-hex(body)>`
         with the subscription's secret. Verify with the SDK
         `verifyWebhook(...)` helper.
       requestBody:

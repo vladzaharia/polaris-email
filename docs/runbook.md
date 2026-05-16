@@ -59,9 +59,13 @@ Look at error class:
 ### "Webhook deliveries are failing for service X"
 
 ```bash
-wrangler tail polaris-email-fanout --status error
+wrangler tail polaris-email-api --status error --search webhook
 polaris-email webhook dlq list
 ```
+
+Note: webhook fan-out runs **inside** `services/api` (folded in from the
+old `services/fanout` Worker in phase B1). There is no separate
+`polaris-email-fanout` Worker to tail.
 
 Per-subscription circuit breaker (A8) marks a sub `paused` after 5
 consecutive failures. To bring a paused sub back online, update its row
@@ -112,19 +116,23 @@ polaris-email audit verify
 # Walks the chain end-to-end; any tamper or gap shows up here.
 ```
 
-If the gap is > 1h: the anchor cron stopped or is hitting an error. Check
-`services/cron` logs for anchor cron failures:
+If the gap is > 1h: the anchor cron stopped or is hitting an error. The
+anchor cron lives inside `services/api` (phase B1 folded the standalone
+`services/cron` Worker into `services/api`). Tail it:
 
 ```bash
-wrangler tail polaris-email-cron --status error
+wrangler tail polaris-email-api --status error --search anchor
 ```
 
-If R2 writes are failing, the anchor key may be revoked or the bucket may
-have hit object-lock conflicts. Check the `polaris-anchors` account state.
+If the B2 writes are failing, the anchor key may have been revoked, the
+bucket policy may have changed, or the account may be over its B2 cap.
+Verify with `polaris-email audit anchors` and the Backblaze B2 console.
 
-The external anchor mirror (signed Git or transparency log) is the
-authoritative backstop; if R2 anchors are lost, the external mirror is what
-prevents history forgery.
+Backblaze B2 is the authoritative external backstop (Object Lock COMPLIANCE
+~7-year retention, write-only Application Key). If anchor writes have been
+silently dropped, comparing the latest D1 `audit_anchors` row against the
+most recent B2 object is the tamper-evidence signal — see
+`bin/audit-verify.sh`.
 
 ### "Schema migration applied but Worker rolled back"
 
@@ -148,16 +156,18 @@ wrangler d1 execute polaris-email --command \
 ### "D1 quota approaching"
 
 Single `polaris-email` D1; older message rows are archived to R2 by the
-retention janitor in `services/cron`. There is no CLI verb for ad-hoc
-archival yet — drive it from D1 directly. The retention job picks up
-soft-deleted (`expunged_at IS NOT NULL`) rows older than the configured
-window and removes them along with their R2 references:
+nightly retention janitor cron, which runs **inside `services/api`** (the
+standalone `services/cron` Worker was folded into `services/api` in
+phase B1). There is no CLI verb for ad-hoc archival yet — drive it from D1
+directly. The retention job picks up soft-deleted (`expunged_at IS NOT
+NULL`) rows older than the configured window and removes them along with
+their R2 references:
 
 ```bash
 # Inspect current usage:
 wrangler d1 info polaris-email
-# Force-run the cron job (cron worker exposes a /run endpoint for ops):
-wrangler tail polaris-email-cron --status ok
+# Watch the cron tick land:
+wrangler tail polaris-email-api --status ok --search janitor
 ```
 
 Long-term, the plan is monthly Logpush dumps to R2 Parquet; that pipeline
@@ -235,5 +245,9 @@ polaris-email webhook dlq drop <id> --confirm <id>
   unverifiable).
 - **Never** run `polaris-email domain delete` without checking for live
   webhook subscriptions first; orphan subs lose inbound mail silently.
-- **Two-person rule** is enforced by Cloudflare Access for: `tenant
-rotate-pepper`, `domain delete`, `webhook dlq drop`, anchor key rotation.
+- **Two-person rule** is enforced via the panel's `withApproval(action)`
+  middleware (`apps/panel/src/server/auth/approvals.ts`) for: API-key
+  rotate / revoke, bridge rotate / deregister, mailbox-credential rotate,
+  `domain delete`, `webhook dlq drop`, anchor key rotation. (The earlier
+  WebAuthn step-up flow was removed in phase 2f; destructive ops now gate
+  on a second admin's approval, not a self-elevating token.)

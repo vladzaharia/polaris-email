@@ -1,7 +1,9 @@
 {
   "name": "@polaris/sdk",
   "version": "0.1.0",
+  "//private": "Internal-only within the polaris-* service family (see LICENSE). Not published to npm; consumed via pnpm workspace by apps/panel and services/*. Removing `private` requires a LICENSE change and a publish workflow (publishConfig, repository, npm credentials).",
   "private": true,
+  "license": "SEE LICENSE IN LICENSE",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

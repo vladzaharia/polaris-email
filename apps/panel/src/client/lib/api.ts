@@ -10,11 +10,12 @@
 // `apiFetch` falls back gracefully when the body isn't JSON or doesn't match
 // the envelope shape — the raw status text becomes the message.
 //
-// Step-up / 428 responses are no longer auto-handled in the panel. The
-// backend still returns 428 for sensitive operations, but the panel now
-// surfaces this as a regular `ApiError` (code `step_up_required`) and the
-// caller can render a toast asking the operator to re-sign-in. Real WebAuthn
-// step-up wiring is out of scope for this pass.
+// 428 Precondition Required is reserved for the two-person approval flow:
+// the server returns `{ code: 'approval_required', action }` when a
+// destructive route needs an approved approval-id (see
+// `server/auth/approvals.ts`). The panel surfaces this as a regular
+// `ApiError` and the calling page is responsible for guiding the operator
+// through the approval workflow.
 
 /** Typed error thrown by `apiFetch` on any non-2xx response. */
 export class ApiError extends Error {

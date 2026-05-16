@@ -16,6 +16,7 @@ import {
 import { RootLayout } from './layouts/RootLayout.js';
 import { SidebarLayout } from './layouts/SidebarLayout.js';
 import { RouteError } from './components/RouteError.js';
+import { PageSkeleton } from './components/PageSkeleton.js';
 
 const rootRoute = createRootRoute({
   component: () => (
@@ -109,12 +110,9 @@ const routingList = createRoute({
   component: lazyRouteComponent(() => import('./pages/routing/List.js'), 'RoutingList'),
   errorComponent: RouteError,
 });
-const routingDetail = createRoute({
-  getParentRoute: () => rootRoute,
-  path: '/routing/$id',
-  component: lazyRouteComponent(() => import('./pages/routing/Detail.js'), 'RoutingDetail'),
-  errorComponent: RouteError,
-});
+// /routing/$id was removed — receiver detail pages are nested under
+// MailboxDetail's Receivers section, so the standalone route was a redundant
+// stub. Routing list rows now link to the parent mailbox.
 const dlqBrowser = createRoute({
   getParentRoute: () => rootRoute,
   path: '/dlq',
@@ -151,6 +149,18 @@ const diagnostics = createRoute({
   component: lazyRouteComponent(() => import('./pages/diagnostics/Diagnostics.js'), 'Diagnostics'),
   errorComponent: RouteError,
 });
+const cfZonesList = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/cf-zones',
+  component: lazyRouteComponent(() => import('./pages/cf-zones/List.js'), 'CfZonesList'),
+  errorComponent: RouteError,
+});
+const cfZoneDetail = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/cf-zones/$name',
+  component: lazyRouteComponent(() => import('./pages/cf-zones/Detail.js'), 'CfZoneDetail'),
+  errorComponent: RouteError,
+});
 
 const routeTree = rootRoute.addChildren([
   loginRoute,
@@ -166,18 +176,25 @@ const routeTree = rootRoute.addChildren([
   webhookSubsList,
   webhookSubDetail,
   routingList,
-  routingDetail,
   dlqBrowser,
   bridgesList,
   bridgeDetail,
   testSend,
   account,
   diagnostics,
+  cfZonesList,
+  cfZoneDetail,
 ]);
 
+// Phase 6d.8 — `defaultPendingComponent` swaps in PageSkeleton on every
+// lazy route load, so navigation to a not-yet-fetched chunk shows a
+// stable skeleton instead of a blank panel. `defaultPendingMs` keeps the
+// skeleton from flashing for fast transitions.
 const router = new Router({
   routeTree,
   defaultErrorComponent: RouteError,
+  defaultPendingComponent: PageSkeleton,
+  defaultPendingMs: 200,
 });
 
 declare module '@tanstack/react-router' {

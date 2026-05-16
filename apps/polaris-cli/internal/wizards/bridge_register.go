@@ -166,6 +166,7 @@ After=network-online.target
 Environment=API_BASE_URL={{.APIURL}}
 Environment=BRIDGE_ID={{.Bridge.ID}}
 Environment=BRIDGE_NAME={{.Bridge.Name}}
+Environment=ENVIRONMENT={{.Bridge.Environment}}
 Environment=BRIDGE_HMAC_KEY_ID={{.HMACKeyID}}
 Environment=BRIDGE_HMAC_SECRET={{.HMACSec}}
 Environment=CF_ACCESS_CLIENT_ID={{.AccID}}

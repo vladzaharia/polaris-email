@@ -75,6 +75,41 @@ const envelope = JSON.parse(rawBodyBuffer.toString('utf8'));
 // envelope.message is the full Message; no extra GET required.
 ```
 
+The signature header is the **un-versioned** `X-Polaris-Sig: <hex>` — there
+is no `v1=` / `v2=` prefix. The HMAC was un-versioned in phase B3; both the
+API direction (`polaris-api`) and the webhook direction (`polaris-webhook`)
+sign with the same un-versioned format. See
+[`docs/hmac-reference.md`](hmac-reference.md) for the canonical spec.
+
+### `listAllMessages` AsyncIterable (Phase 7a)
+
+The Node SDK ships an `AsyncIterable` helper that auto-paginates through
+the whole result set, hiding the `next_offset` cursor:
+
+```ts
+for await (const message of polaris.listAllMessages('mailbox_id=01J...&limit=100')) {
+  // Each iteration yields one Message; the SDK fetches the next page
+  // transparently when the current one drains.
+}
+```
+
+Use this when you want every message and don't want to track cursors;
+fall back to manual `polaris.listMessages(...)` when you need to checkpoint
+the cursor for resumable jobs.
+
+### `assertIdempotencyKey` (Phase 7a)
+
+Both SDKs ship a strict client-side validator for `Idempotency-Key`
+values so a malformed key fails before the round-trip. In Node:
+
+```ts
+import { assertIdempotencyKey } from '@polaris/sdk';
+
+assertIdempotencyKey(key); // throws TypeError if !/^[A-Za-z0-9_-]{8,128}$/
+```
+
+The pattern matches the OpenAPI parameter definition exactly.
+
 ## `polaris-sdk-go` (Go)
 
 HMAC-signing client with explicit context.
@@ -108,6 +143,34 @@ result := polarissdkgo.VerifyWebhook(polarissdkgo.VerifyInput{
 })
 if !result.OK { http.Error(w, "bad sig", 401); return }
 ```
+
+### `WebhookEnvelope` + parse helpers (Phase 7a)
+
+The Go SDK ships a typed `WebhookEnvelope` struct and two parse helpers so
+consumers don't have to roll their own JSON shape:
+
+```go
+// One-step verify + parse in the happy path:
+env, res := polarissdkgo.VerifyAndParseWebhook(in)
+if !res.OK { http.Error(w, "bad sig", 401); return }
+fmt.Println(env.Event, env.Message.Subject)
+
+// Or the two-step dance, if you want to inspect the raw body first:
+res := polarissdkgo.VerifyWebhook(in)
+if !res.OK { http.Error(w, "bad sig", 401); return }
+env, err := polarissdkgo.ParseWebhookEnvelope(in.RawBody)
+```
+
+The header tag is the **un-versioned** `X-Polaris-Sig: <hex>` — phase B3
+removed `v1=` / `v2=` prefixes.
+
+### Typed API errors (Phase 7a)
+
+Both SDKs surface the OpenAPI `Error` shape as typed values: `PolarisError`
+(TS) is a discriminated union; sdk-go exports concrete `*APIError`
+sub-types per error code (`*BadSignatureError`, `*KeyRevokedError`,
+`*RateLimitedError`, …). Switch on the type to handle retryability
+without parsing the JSON yourself.
 
 ## Where the hand-written verifier lives
 

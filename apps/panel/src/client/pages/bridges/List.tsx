@@ -5,22 +5,16 @@
 import { useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import { PageCard } from '../../layouts/PageCard.js';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '../../components/ui/table.js';
+import { PaginatedTable } from '../../components/PaginatedTable.js';
 import { Button } from '../../components/ui/button.js';
 import { Input } from '../../components/ui/input.js';
 import { Label } from '../../components/ui/label.js';
-import { Skeleton } from '../../components/ui/skeleton.js';
 import { StatusBadge } from '../../components/StatusBadge.js';
 import { SecretRevealDialog } from '../../components/SecretRevealDialog.js';
+import { ErrorText } from '../../components/ErrorText.js';
 import { useAdminMutation, useAdminQuery } from '../../hooks/useAdminApi.js';
 import { bridgeKeys } from '../../queryKeys.js';
+import { formatDate, formatRelative } from '../../lib/format.js';
 
 interface BridgeRow {
   id: string;
@@ -62,40 +56,47 @@ export function BridgesList() {
           {register.isPending ? 'Registering…' : 'Register'}
         </Button>
       </div>
-      {q.isLoading ? (
-        <Skeleton className="h-32 w-full" />
-      ) : q.error ? (
-        <p className="text-sm text-[var(--color-destructive)]">{q.error.message}</p>
-      ) : (q.data?.data ?? []).length === 0 ? (
-        <p className="text-sm text-[var(--color-muted-foreground)]">No bridges registered.</p>
+      {q.error ? (
+        <ErrorText error={q.error} />
       ) : (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>Last seen</TableHead>
-              <TableHead>Status</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {(q.data?.data ?? []).map((d) => (
-              <TableRow key={d.id}>
-                <TableCell>
-                  <Link to="/bridges/$id" params={{ id: d.id }} className="underline">
-                    {d.name}
-                  </Link>
-                </TableCell>
-                <TableCell className="text-xs">{d.last_seen_at ?? '—'}</TableCell>
-                <TableCell>
-                  <StatusBadge
-                    kind="bridge"
-                    value={d.disabled_at ? 'deregistered' : 'registered'}
-                  />
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+        <PaginatedTable<BridgeRow>
+          caption="Registered on-prem bridges and their last heartbeat."
+          loading={q.isLoading}
+          rows={q.data?.data ?? []}
+          empty="No bridges registered."
+          rowKey={(d) => d.id}
+          columns={[
+            {
+              key: 'name',
+              header: 'Name',
+              cell: (d) => (
+                <Link to="/bridges/$id" params={{ id: d.id }} className="underline">
+                  {d.name}
+                </Link>
+              ),
+            },
+            {
+              key: 'last_seen_at',
+              header: 'Last seen',
+              className: 'text-xs',
+              cell: (d) => (
+                <span title={d.last_seen_at ? formatDate(d.last_seen_at) : undefined}>
+                  {formatRelative(d.last_seen_at)}
+                </span>
+              ),
+            },
+            {
+              key: 'status',
+              header: 'Status',
+              cell: (d) => (
+                <StatusBadge
+                  kind="bridge"
+                  value={d.disabled_at ? 'deregistered' : 'registered'}
+                />
+              ),
+            },
+          ]}
+        />
       )}
 
       <SecretRevealDialog

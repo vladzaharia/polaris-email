@@ -187,6 +187,9 @@ importers:
       typescript:
         specifier: ^5.5.0
         version: 5.9.3
+      vitest:
+        specifier: ^2.0.0
+        version: 2.1.9(@types/node@22.19.18)(lightningcss@1.32.0)
 
   packages/mime:
     devDependencies:
@@ -198,6 +201,10 @@ importers:
         version: 2.1.9(@types/node@22.19.18)(lightningcss@1.32.0)
 
   packages/object-lock:
+    dependencies:
+      '@polaris-email/hmac':
+        specifier: workspace:*
+        version: link:../hmac
     devDependencies:
       '@cloudflare/workers-types':
         specifier: ^4.20240909.0
@@ -211,6 +218,9 @@ importers:
 
   packages/pipeline:
     dependencies:
+      '@polaris-email/hmac':
+        specifier: workspace:*
+        version: link:../hmac
       '@polaris-email/ids':
         specifier: workspace:*
         version: link:../ids
@@ -220,15 +230,6 @@ importers:
     devDependencies:
       '@cloudflare/workers-types':
         specifier: ^4.20240909.0
-        version: 4.20260511.1
-      typescript:
-        specifier: ^5.5.0
-        version: 5.9.3
-
-  packages/providers:
-    devDependencies:
-      '@cloudflare/workers-types':
-        specifier: ^4.20240502.0
         version: 4.20260511.1
       typescript:
         specifier: ^5.5.0
@@ -251,6 +252,9 @@ importers:
 
   packages/schema:
     dependencies:
+      '@polaris-email/mime':
+        specifier: workspace:*
+        version: link:../mime
       zod:
         specifier: ^3.23.0
         version: 3.25.76
@@ -314,9 +318,6 @@ importers:
       '@polaris-email/pipeline':
         specifier: workspace:*
         version: link:../../packages/pipeline
-      '@polaris-email/providers':
-        specifier: workspace:*
-        version: link:../../packages/providers
       '@polaris-email/revocation':
         specifier: workspace:*
         version: link:../../packages/revocation

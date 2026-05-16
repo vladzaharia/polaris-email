@@ -27,7 +27,7 @@ declare module 'hono' {
   }
 }
 
-const NONCE_TTL_SECONDS = 10 * 60; // 10 min
+export const NONCE_TTL_SECONDS = 10 * 60; // 10 min
 
 export function hmacAuth(direction: 'polaris-api'): MiddlewareHandler<{ Bindings: Env }> {
   return async (c, next) => {
@@ -63,9 +63,26 @@ export function hmacAuth(direction: 'polaris-api'): MiddlewareHandler<{ Bindings
       status: 'primary' | 'secondary' | 'revoked';
       revoked_at: number | null;
     };
+    // KV `get(..., 'json')` returns `unknown`; validate the cached payload
+    // before trusting its shape. A malformed cache entry (e.g. a leftover
+    // from a prior schema) falls back to the D1 cold path; a forged
+    // `status` would otherwise let a revoked key authenticate.
+    function isRowShape(v: unknown): v is RowShape {
+      if (typeof v !== 'object' || v === null) return false;
+      const r = v as Record<string, unknown>;
+      if (typeof r.id !== 'string') return false;
+      if (typeof r.secret_argon2id !== 'string') return false;
+      if (typeof r.scopes !== 'string') return false;
+      if (typeof r.rate_limit_per_min !== 'number') return false;
+      if (r.status !== 'primary' && r.status !== 'secondary' && r.status !== 'revoked') {
+        return false;
+      }
+      if (!Array.isArray(r.sender_scope_ids)) return false;
+      return true;
+    }
     let row: RowShape | null = null;
-    if (cached) {
-      row = cached as RowShape;
+    if (cached && isRowShape(cached)) {
+      row = cached;
     } else {
       // Three-query lookup so the in-memory mock D1 (which doesn't parse JOINs)
       // can satisfy this path. Production D1 sees the queries against the
@@ -149,24 +166,32 @@ export function hmacAuth(direction: 'polaris-api'): MiddlewareHandler<{ Bindings
     }
 
     // We have a hashed secret on disk and a candidate header signature. We can't HMAC-verify
-    // *without* the plaintext secret. So we MUST also stash plaintext for short windows in KV
-    // after issuance (`pending_plaintext`). That's done by /admin/api-keys issue/rotate
-    // handlers and the entry self-expires after 60 s.
+    // *without* the plaintext secret. The /admin/api-keys issue + rotate handlers stash the
+    // plaintext under `plain:<key_id>` in KV_KEY_CACHE so other colos can verify recent
+    // sigs without a DB hit.
+    //
+    // TTL: 1 hour (Phase 3c — was 1 year, which left the plaintext recoverable from a
+    // KV snapshot indefinitely). 1h matches the per-bridge plaintext convention
+    // (`bridge_plain:` in bridge-auth.ts) and is a deliberate trade-off:
+    //   * long enough to absorb a colo restart or client-side propagation hiccup;
+    //   * short enough that a leaked KV snapshot doesn't grant indefinite recovery
+    //     of the API-key plaintext.
+    // After expiry, this verifier returns `key_propagating` and the operator must
+    // re-rotate to repopulate the plaintext. This is the same pre-launch trade-off
+    // documented for the bridge cache.
     const plaintext = await env.KV_KEY_CACHE.get(`plain:${keyId}`);
     if (!plaintext) {
-      // After plaintext-cache TTL we cannot verify signatures without rehashing. This is
-      // intentional: keys must be cached locally by clients; the api just verifies. If a
-      // request comes in for a key whose plaintext we never had (race after restart of a CF
-      // colo), respond `key_propagating` so the client retries — within 60 s the new key
-      // will be considered missing entirely (`key_propagating`) and afterwards the secret
-      // must have been picked up by other colos via the `plain:` KV write.
       return buildError(c, 'key_propagating', 'key plaintext not yet propagated', {
         'retry-after': '2',
       });
     }
 
     const path = new URL(c.req.url).pathname;
-    const query = new URL(c.req.url).search;
+    // Phase 3b.2 — strip the leading `?` to match the convention used by
+    // bridge-auth.ts / messages.ts / messages-state.ts. canonicalQuery in
+    // @polaris-email/hmac normalises both forms identically; keeping every
+    // call-site on the same form removes the chance of a future divergence.
+    const query = new URL(c.req.url).search.slice(1);
     const result = await verify({
       direction,
       method: c.req.method,

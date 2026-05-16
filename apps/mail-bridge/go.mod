@@ -9,6 +9,7 @@ require (
 	github.com/oklog/ulid/v2 v2.1.1
 	github.com/polaris-email/polaris-sdk-go v0.0.0
 	golang.org/x/crypto v0.51.0
+	gopkg.in/natefinch/lumberjack.v2 v2.2.1
 	modernc.org/sqlite v1.33.1
 )
 

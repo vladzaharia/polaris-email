@@ -151,6 +151,25 @@ const cases: Array<Omit<Vector, 'expected_sig'> & { tamper?: (sig: string) => st
     body: '',
     must_verify: true,
   },
+  // 8g — cross-SDK interop vector: percent-encoded `|` (pipe / `%7C`) in a
+  // multi-key query plus a non-empty JSON body. This lights up two
+  // historical fault lines: (a) verifiers that decode the query before
+  // canonicalising (RFC 3986 reserves `|` as gen-delim only in some
+  // grammars, so libraries disagree) and (b) verifiers that hash the body
+  // separately from the canonical line vs. inline. sdk-node and sdk-go
+  // both pull this vector by name and must produce identical signatures.
+  {
+    name: 'interop/POST/query-pipe-encoded-with-body',
+    direction: 'polaris-api',
+    method: 'POST',
+    path: '/v1/messages',
+    query: 'filter=foo%7Cbar&order=created_at%7Cdesc',
+    ts: '1700000000000',
+    nonce: 'INTEROPPIPEXXXXX',
+    secret: SECRET,
+    body: '{"limit":50,"cursor":"01HXR000ABCDEFGHJKMNPQRSTV"}',
+    must_verify: true,
+  },
   // Nonce at the documented length boundary (16 chars — the minimum).
   {
     name: 'api/POST/nonce-min-length',

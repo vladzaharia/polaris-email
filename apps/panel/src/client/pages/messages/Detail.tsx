@@ -147,7 +147,7 @@ export function MessageDetail() {
         </Tabs>
 
         <section>
-          <h2 className="mb-2 text-sm font-semibold">Attachments</h2>
+          <h2 className="mb-2 text-xl font-medium">Attachments</h2>
           {(m.attachments ?? []).length === 0 ? (
             <p className="text-sm text-[var(--color-muted-foreground)]">None.</p>
           ) : (

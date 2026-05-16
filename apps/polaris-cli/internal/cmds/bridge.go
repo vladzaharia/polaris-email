@@ -141,7 +141,8 @@ func bridgeRotateCmd() *cobra.Command {
 }
 
 func bridgeDeregisterCmd() *cobra.Command {
-	return &cobra.Command{
+	var confirm string
+	c := &cobra.Command{
 		Use:   "deregister <name>",
 		Short: "Deregister a bridge and revoke its credentials",
 		Args:  cobra.ExactArgs(1),
@@ -149,6 +150,12 @@ func bridgeDeregisterCmd() *cobra.Command {
 			cl, err := MakeClient()
 			if err != nil {
 				return err
+			}
+			// Two-confirmation guard: the operator must echo the bridge name
+			// to prevent fat-finger deletes (parity with `domain delete`,
+			// which requires --confirm-domain).
+			if confirm != args[0] {
+				return fmt.Errorf("--confirm-name must equal the bridge name (%q)", args[0])
 			}
 			path := fmt.Sprintf("/v1/admin/bridges/%s", url.PathEscape(args[0]))
 			if err := cl.DoJSON(CtxBackground(), "DELETE", path, nil, nil, nil); err != nil {
@@ -158,4 +165,6 @@ func bridgeDeregisterCmd() *cobra.Command {
 			return nil
 		},
 	}
+	c.Flags().StringVar(&confirm, "confirm-name", "", "must equal the bridge name (guard against accidental deletion)")
+	return c
 }

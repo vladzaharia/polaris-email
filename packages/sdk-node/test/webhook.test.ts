@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { sign } from '@polaris-email/hmac';
 import { verifyWebhook } from '../src/webhook.js';
 import vectors from '../../test-vectors/vectors.json' with { type: 'json' };
 
@@ -41,6 +42,35 @@ describe('@polaris/sdk/webhook verifier against shared vectors', () => {
       }
     });
   }
+});
+
+// 8g — cross-SDK interop. The same vector is consumed by sdk-go's
+// TestCrossSDKInteropPipeQuery (packages/sdk-go/webhook_test.go). Both
+// SDKs must produce a byte-identical signature when given a query string
+// with percent-encoded `|` characters and a non-empty JSON body — the
+// exact divergence-prone shape that has bitten verifiers in other
+// projects. Verifying here AND in sdk-go locks the canonical form down
+// from both sides.
+describe('cross-SDK interop vector', () => {
+  it('sdk-node sign() matches the canonical expected_sig', async () => {
+    const v = (vectors.vectors as Vector[]).find(
+      (x) => x.name === 'interop/POST/query-pipe-encoded-with-body',
+    );
+    expect(v, 'interop vector missing — regenerate vectors.json').toBeTruthy();
+    const got = await sign(
+      {
+        direction: v!.direction,
+        method: v!.method,
+        path: v!.path,
+        query: v!.query,
+        ts: v!.ts,
+        nonce: v!.nonce,
+        body: v!.body,
+      },
+      v!.secret,
+    );
+    expect(got).toBe(v!.expected_sig);
+  });
 });
 
 describe('un-versioned signature header', () => {

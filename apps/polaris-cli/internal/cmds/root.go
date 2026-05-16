@@ -54,6 +54,7 @@ func NewRoot() *cobra.Command {
 	root.AddCommand(
 		newDomainCmd(),
 		newZoneCmd(),
+		newCFZoneCmd(),
 		newBridgeCmd(),
 		newRouteCmd(),
 		newCredCmd(),
@@ -68,6 +69,16 @@ func NewRoot() *cobra.Command {
 }
 
 // MakeClient constructs a *client.Client using globals + config file.
+//
+// Resolution order for both api-url and token (highest priority first):
+//
+//  1. CLI flag (`--api-url` / `--token`)
+//  2. Environment variable (`POLARIS_API_URL` / `POLARIS_TOKEN`)
+//  3. Profile in the config file
+//
+// The empty-check happens *after* the env fallback so a `POLARIS_TOKEN` set
+// in the shell is honored even when neither flag nor config file provides
+// one.
 func MakeClient() (*client.Client, error) {
 	path := G.ConfigPath
 	if path == "" {
@@ -77,34 +88,41 @@ func MakeClient() (*client.Client, error) {
 		}
 		path = p
 	}
+	// We try to load the config but don't hard-fail if it's missing — the
+	// env vars + flags may carry everything we need.
+	var prof config.Profile
 	f, err := config.Load(path)
-	if err != nil {
-		return nil, err
-	}
-	prof, err := f.Resolve(G.Profile)
-	if err != nil && (G.APIURL == "" || G.Token == "") {
-		return nil, err
+	if err == nil {
+		if p, perr := f.Resolve(G.Profile); perr == nil {
+			prof = p
+		}
 	}
 	apiURL := G.APIURL
+	if apiURL == "" {
+		apiURL = os.Getenv("POLARIS_API_URL")
+	}
 	if apiURL == "" {
 		apiURL = prof.APIURL
 	}
 	token := G.Token
 	if token == "" {
+		token = os.Getenv("POLARIS_TOKEN")
+	}
+	if token == "" {
 		token = prof.Token
 	}
 	keyID := G.KeyID
 	if keyID == "" {
+		keyID = os.Getenv("POLARIS_KEY_ID")
+	}
+	if keyID == "" {
 		keyID = prof.KeyID
 	}
 	if apiURL == "" {
-		return nil, fmt.Errorf("no api-url configured (set --api-url or write config file)")
+		return nil, fmt.Errorf("no api-url configured (set --api-url, $POLARIS_API_URL, or write config file)")
 	}
 	if token == "" {
 		return nil, fmt.Errorf("no token configured (set --token, $POLARIS_TOKEN, or write config file)")
-	}
-	if envTok := os.Getenv("POLARIS_TOKEN"); G.Token == "" && envTok != "" {
-		token = envTok
 	}
 	c := client.New(apiURL, keyID, token)
 	c.DryRun = G.DryRun

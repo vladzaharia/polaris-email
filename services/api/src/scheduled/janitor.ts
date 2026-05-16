@@ -20,27 +20,20 @@
 
 import type { Env } from '../env.js';
 
-interface MailboxRow {
-  id: string;
-}
-
 interface MessageRow {
   id: string;
   r2_key: string;
 }
 
 export async function janitor(env: Env): Promise<void> {
-  // Mailbox retention is not yet a column on `mailboxes`; this loop walks the
-  // table but no work is done today. A retention_days column is planned; the
-  // reference-counted delete below stays as-is once it lands.
-  const mailboxes = await env.DB.prepare(
-    `SELECT id FROM mailboxes WHERE disabled_at IS NULL`,
-  ).all<MailboxRow>();
-
-  let deletedMessages = 0;
-  for (const _m of mailboxes.results) {
-    // Placeholder for future per-mailbox retention sweep.
-  }
+  // TODO(retention): per-mailbox message retention is not yet implemented.
+  // The schema would need a `mailboxes.retention_days` column plus a sweep
+  // that walks `messages WHERE mailbox_id = ? AND created_at < cutoff`,
+  // batches the deletes (D1 row caps), and re-uses the reference-counted
+  // `purgeMessage()` below for R2. The previous implementation walked
+  // every mailbox row but did no work and logged a misleading
+  // `deletedMessages: 0` field; that has been removed so the log isn't
+  // claiming a feature that isn't shipping. Tracked for post-launch.
 
   // Sweep expired idempotency_keys.
   const nowIso = new Date().toISOString();
@@ -86,7 +79,7 @@ export async function janitor(env: Env): Promise<void> {
 
   // eslint-disable-next-line no-console
   console.log(
-    `janitor: deleted ${deletedMessages} messages, ${idemDeleted.meta.changes ?? 0} idempotency rows, expunged ${expungedRows} state rows`,
+    `janitor: deleted ${idemDeleted.meta.changes ?? 0} idempotency rows, expunged ${expungedRows} state rows`,
   );
 }
 

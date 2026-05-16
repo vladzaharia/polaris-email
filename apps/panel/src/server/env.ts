@@ -15,7 +15,21 @@ export interface Env {
   ADMIN_GROUP: string;
   COOKIE_PATH: string;
   COOKIE_DOMAIN?: string;
+  /**
+   * `DEV_MODE='1'` enables the /api/dev/login backdoor in routes/session.ts.
+   * MUST never be set in production. The startup check in src/server/index.ts
+   * refuses to serve traffic when this is set together with
+   * `ENVIRONMENT='production'`.
+   */
   DEV_MODE?: string;
+  /** Free-form environment tag; `'production'` is the only value that gates
+   *  the DEV_MODE refusal in src/server/index.ts. */
+  ENVIRONMENT?: string;
+  /**
+   * Body-size limit for admin-proxy POST/PATCH/PUT bodies, in bytes.
+   * Default 1 MiB. Phase 3e.2.
+   */
+  PANEL_BODY_LIMIT_BYTES?: string;
 
   // OIDC (Cloudflare Access default provider). Secrets in `wrangler secret put`.
   OIDC_ISSUER?: string;

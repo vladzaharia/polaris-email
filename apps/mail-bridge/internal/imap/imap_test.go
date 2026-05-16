@@ -1,6 +1,7 @@
 package imap
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -435,6 +436,256 @@ func TestE2E_LoginSelectFetchIdleLogout(t *testing.T) {
 	}
 }
 
+// ---------- Phase 2e regression tests ----------
+
+// TestE2E_Expunge_MultiMessageSequenceNumbers proves the EXPUNGE sequence
+// arithmetic in backend.go. Pre-2e the loop used `i+1` against the original
+// index walked in descending order, which produced wrong sequence numbers
+// when more than one message was deleted in a single EXPUNGE response.
+//
+// Setup: 5 live messages (UIDs 10..14), mark UIDs 11, 13, 14 \Deleted, then
+// EXPUNGE. The library client returns the emitted sequence numbers via
+// Expunge().Collect(); we verify the post-shrink-aware values.
+//
+//	original seq:  1  2  3  4  5
+//	UID:           10 11 12 13 14
+//	flags:         -  D  -  D  D
+//
+// Walk order: i=1 emits seq 2 (UID 11), i=3 emits seq 2 (UID 13 was at seq
+// 4, minus 2 because two prior deletes already shifted: wait — only one
+// prior delete (UID 11) when we reach UID 13, so i+1=4 minus 1 = 3),
+// i=4 emits seq 3 (UID 14 was at seq 5; two prior deletes ⇒ 5-2=3).
+//
+// Expected emitted sequence: [2, 3, 3].
+func TestE2E_Expunge_MultiMessageSequenceNumbers(t *testing.T) {
+	if testing.Short() {
+		t.Skip("e2e skipped in -short mode")
+	}
+	t.Parallel()
+	fx := newFixture(t)
+	ctx := context.Background()
+
+	// Reset the seeded mailbox-state to a known 5-row layout.
+	if _, err := fx.mirror.DB.ExecContext(ctx, `DELETE FROM mailbox_state WHERE mailbox_id = ?`, "mb-1"); err != nil {
+		t.Fatalf("clear: %v", err)
+	}
+	type row struct {
+		id    string
+		uid   int64
+		flags string
+	}
+	rows := []row{
+		{"m10", 10, `[]`},
+		{"m11", 11, `["\\Deleted"]`},
+		{"m12", 12, `[]`},
+		{"m13", 13, `["\\Deleted"]`},
+		{"m14", 14, `["\\Deleted"]`},
+	}
+	for _, r := range rows {
+		if err := fx.mirror.UpsertMessageMeta(ctx, store.MessageMeta{
+			ID: r.id, MailboxID: "mb-1", FromAddr: "x@x", Subject: r.id,
+			BodyBytes: 1, CreatedAt: "2026-05-13T00:00:00Z",
+		}); err != nil {
+			t.Fatalf("seed meta: %v", err)
+		}
+		if err := fx.mirror.UpsertState(ctx, store.MailboxState{
+			MailboxID: "mb-1", MessageID: r.id, UID: r.uid, UIDValidity: 1,
+			ChangeID: r.uid, Flags: r.flags,
+		}); err != nil {
+			t.Fatalf("seed state: %v", err)
+		}
+	}
+
+	srv := imapserver.New(&imapserver.Options{
+		NewSession: fx.backend.NewSession,
+		Caps: imap.CapSet{
+			imap.CapIMAP4rev1:     {},
+			imap.CapIMAP4rev2:     {},
+			imap.AuthCap("PLAIN"): {},
+		},
+		InsecureAuth: true,
+	})
+	sockPath := shortSockPath(t)
+	ln, err := net.Listen("unix", sockPath)
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	go func() { _ = srv.Serve(ln) }()
+	t.Cleanup(func() { _ = srv.Close(); _ = os.Remove(sockPath) })
+
+	conn, err := net.DialTimeout("unix", sockPath, 2*time.Second)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	c := imapclient.New(conn, nil)
+	defer c.Close()
+
+	if err := c.Login("alice", "good-password").Wait(); err != nil {
+		t.Fatalf("login: %v", err)
+	}
+	sel, err := c.Select("INBOX", nil).Wait()
+	if err != nil {
+		t.Fatalf("select: %v", err)
+	}
+	if sel.NumMessages != 5 {
+		t.Fatalf("NumMessages = %d, want 5", sel.NumMessages)
+	}
+
+	seqs, err := c.Expunge().Collect()
+	if err != nil {
+		t.Fatalf("expunge: %v", err)
+	}
+	want := []uint32{2, 3, 3}
+	if len(seqs) != len(want) {
+		t.Fatalf("emit count %d, want %d (got %v)", len(seqs), len(want), seqs)
+	}
+	for i, got := range seqs {
+		if got != want[i] {
+			t.Fatalf("emit[%d] = %d, want %d (full=%v)", i, got, want[i], seqs)
+		}
+	}
+	if got := fx.deleteCalls.Load(); got != 3 {
+		t.Fatalf("API delete calls = %d, want 3", got)
+	}
+}
+
+// TestStore_PersistsToMirror proves the flags_json column fix. Pre-2e the
+// UpdateFlags helper wrote to a non-existent `flags` column, the error was
+// swallowed, and the mirror silently retained the prior flag set. We
+// invoke STORE then read the row back via ListLiveMessageIDs and assert
+// the flags_json column actually changed.
+func TestStore_PersistsToMirror(t *testing.T) {
+	t.Parallel()
+	fx := newFixture(t)
+	ctx := context.Background()
+
+	s := fx.session()
+	if err := s.Login("alice", "good-password"); err != nil {
+		t.Fatalf("login: %v", err)
+	}
+	if _, err := s.Select("INBOX", nil); err != nil {
+		t.Fatalf("select: %v", err)
+	}
+
+	op := &imap.StoreFlags{
+		Op:     imap.StoreFlagsAdd,
+		Flags:  []imap.Flag{imap.FlagSeen, imap.FlagFlagged},
+		Silent: true,
+	}
+	if err := s.Store(nil, imap.UIDSetNum(1), op, nil); err != nil {
+		t.Fatalf("store: %v", err)
+	}
+
+	// Read the raw flags_json column back so we know the SQL UPDATE
+	// targeted the right column.
+	var raw string
+	if err := fx.mirror.DB.QueryRowContext(ctx,
+		`SELECT flags_json FROM mailbox_state WHERE mailbox_id = ? AND message_id = ?`,
+		"mb-1", "msg-1").Scan(&raw); err != nil {
+		t.Fatalf("scan flags_json: %v", err)
+	}
+	var stored []string
+	if err := json.Unmarshal([]byte(raw), &stored); err != nil {
+		t.Fatalf("flags_json not parseable: %v (raw=%q)", err, raw)
+	}
+	wantSet := map[string]bool{`\Seen`: true, `\Flagged`: true}
+	for _, f := range stored {
+		delete(wantSet, f)
+	}
+	if len(wantSet) > 0 {
+		t.Fatalf("expected flags %v not persisted (got %v)", wantSet, stored)
+	}
+}
+
+// TestFetchBody_RFC822Wrapper proves the BODY[] fetch returns a parseable
+// RFC822 blob when the message has no BodyURL. Pre-2e the handler returned
+// the bare Text bytes which lacked the CRLF-CRLF separator, so HEADER /
+// TEXT slicing returned nonsense.
+func TestFetchBody_RFC822Wrapper(t *testing.T) {
+	t.Parallel()
+	fx := newFixture(t)
+	ctx := context.Background()
+
+	s := fx.session()
+	if err := s.Login("alice", "good-password"); err != nil {
+		t.Fatalf("login: %v", err)
+	}
+	body, err := s.fetchBody(ctx, "msg-1", &store.MessageMeta{
+		ID: "msg-1", MailboxID: "mb-1",
+		FromAddr: "alice@example.com", Subject: "hello",
+		HeaderMessageID: "<m1@example.com>", BodyBytes: 12,
+		CreatedAt: "2026-05-13T00:00:00Z",
+	})
+	if err != nil {
+		t.Fatalf("fetchBody: %v", err)
+	}
+	idx := bytes.Index(body, []byte("\r\n\r\n"))
+	if idx < 0 {
+		t.Fatalf("RFC822 blob missing CRLF-CRLF separator: %q", body)
+	}
+	header := body[:idx]
+	for _, want := range []string{"Subject:", "From:", "MIME-Version:"} {
+		if !bytes.Contains(header, []byte(want)) {
+			t.Fatalf("missing %s header: %q", want, header)
+		}
+	}
+}
+
+// TestFetchBody_R2LimitReader proves the io.LimitReader cap defends against
+// an oversized R2 attachment fetch. We point Backend.HTTP at a stub that
+// streams more than the cap; the result must be truncated, not OOM.
+func TestFetchBody_R2LimitReader(t *testing.T) {
+	t.Parallel()
+
+	// Stream > 100 KiB; cap will be 64 KiB below.
+	bodySrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "message/rfc822")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(bytes.Repeat([]byte("X"), 200*1024))
+	}))
+	defer bodySrv.Close()
+
+	fx := newFixture(t)
+	// Replace the bulk-get handler so GetMessage returns a BodyURL pointing
+	// at our stream stub.
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/bridge/credentials/lookup", func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Query().Get("username") {
+		case "alice":
+			_ = json.NewEncoder(w).Encode(polarissdk.CredentialLookup{
+				ID: "c1", MailboxID: "mb-1", Protocol: "imap", AuthType: "password",
+				Username: "alice", BcryptHash: fx.hashedPassword,
+			})
+		default:
+			_ = json.NewEncoder(w).Encode(polarissdk.CredentialLookup{})
+		}
+	})
+	mux.HandleFunc("/v1/messages/get", func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(polarissdk.BulkGetResponse{
+			Data: []polarissdk.Message{{ID: "msg-1", MailboxID: "mb-1", Subject: "big", BodyURL: bodySrv.URL}},
+		})
+	})
+	apiSrv := httptest.NewServer(mux)
+	defer apiSrv.Close()
+	fx.sdk = polarissdk.NewClient(apiSrv.URL)
+	fx.sdk.BridgeID = "test-bridge"
+	fx.sdk.BridgeSecret = []byte("test-bridge-secret")
+	fx.backend.Client = fx.sdk
+	fx.backend.MaxBodyBytes = 64 * 1024
+
+	s := fx.session()
+	if err := s.Login("alice", "good-password"); err != nil {
+		t.Fatalf("login: %v", err)
+	}
+	body, err := s.fetchBody(context.Background(), "msg-1", nil)
+	if err != nil {
+		t.Fatalf("fetchBody: %v", err)
+	}
+	if int64(len(body)) != fx.backend.MaxBodyBytes {
+		t.Fatalf("body length %d, want %d (cap should truncate)", len(body), fx.backend.MaxBodyBytes)
+	}
+}
+
 func TestE2E_StoreAndExpunge(t *testing.T) {
 	if testing.Short() {
 		t.Skip("e2e skipped in -short mode")
@@ -491,5 +742,109 @@ func TestE2E_StoreAndExpunge(t *testing.T) {
 	}
 	if got := fx.deleteCalls.Load(); got != 1 {
 		t.Fatalf("deleteCalls = %d, want 1", got)
+	}
+}
+
+// TestSearch_AllReturnsAllUIDs proves Phase 4c.1: SEARCH ALL surfaces
+// every live UID via the local mirror (no upstream call). Pre-4c.1 the
+// session returned an empty SearchData for any criteria.
+func TestSearch_AllReturnsAllUIDs(t *testing.T) {
+	t.Parallel()
+	fx := newFixture(t)
+	s := fx.session()
+	if err := s.Login("alice", "good-password"); err != nil {
+		t.Fatalf("login: %v", err)
+	}
+	if _, err := s.Select("INBOX", nil); err != nil {
+		t.Fatalf("select: %v", err)
+	}
+	// Empty criteria (== ALL).
+	data, err := s.Search(imapserver.NumKindUID, &imap.SearchCriteria{}, nil)
+	if err != nil {
+		t.Fatalf("search ALL: %v", err)
+	}
+	uids, ok := data.All.(imap.UIDSet)
+	if !ok {
+		t.Fatalf("ALL set type %T, want UIDSet", data.All)
+	}
+	got, _ := uids.Nums()
+	wantSet := map[imap.UID]bool{1: true, 2: true}
+	if len(got) != len(wantSet) {
+		t.Fatalf("ALL UIDs = %v, want %v", got, wantSet)
+	}
+	for _, u := range got {
+		if !wantSet[u] {
+			t.Fatalf("unexpected UID %d in ALL result %v", u, got)
+		}
+	}
+}
+
+// TestSearch_UnseenExcludesSeen proves UNSEEN filters out rows whose
+// flags include "\Seen". The seed has UID 1 with empty flags and UID 2
+// with [\Deleted]; mark UID 1 \Seen and confirm only UID 2 comes back.
+func TestSearch_UnseenExcludesSeen(t *testing.T) {
+	t.Parallel()
+	fx := newFixture(t)
+	ctx := context.Background()
+
+	// Mark UID 1 \Seen directly in the mirror so we don't depend on the
+	// SDK round-trip; SEARCH reads from the mirror.
+	if err := fx.mirror.UpdateFlags(ctx, "mb-1", "msg-1", []string{`\Seen`}); err != nil {
+		t.Fatalf("seed seen: %v", err)
+	}
+
+	s := fx.session()
+	if err := s.Login("alice", "good-password"); err != nil {
+		t.Fatalf("login: %v", err)
+	}
+	if _, err := s.Select("INBOX", nil); err != nil {
+		t.Fatalf("select: %v", err)
+	}
+	criteria := &imap.SearchCriteria{NotFlag: []imap.Flag{imap.FlagSeen}}
+	data, err := s.Search(imapserver.NumKindUID, criteria, nil)
+	if err != nil {
+		t.Fatalf("search UNSEEN: %v", err)
+	}
+	uids, ok := data.All.(imap.UIDSet)
+	if !ok {
+		t.Fatalf("UNSEEN set type %T, want UIDSet", data.All)
+	}
+	got, _ := uids.Nums()
+	if len(got) != 1 || got[0] != imap.UID(2) {
+		t.Fatalf("UNSEEN UIDs = %v, want [2]", got)
+	}
+}
+
+// TestSearch_RequiresSelected proves SEARCH errors when called outside
+// the selected state.
+func TestSearch_RequiresSelected(t *testing.T) {
+	t.Parallel()
+	fx := newFixture(t)
+	s := fx.session()
+	if err := s.Login("alice", "good-password"); err != nil {
+		t.Fatalf("login: %v", err)
+	}
+	if _, err := s.Search(imapserver.NumKindUID, &imap.SearchCriteria{}, nil); err == nil {
+		t.Fatalf("expected error from SEARCH without SELECT")
+	}
+}
+
+// TestSubscribeUnsubscribe_NoOp proves Phase 4c.3: both methods accept
+// any folder name without error, since INBOX is the only real mailbox
+// and is implicitly always-subscribed.
+func TestSubscribeUnsubscribe_NoOp(t *testing.T) {
+	t.Parallel()
+	fx := newFixture(t)
+	s := fx.session()
+	if err := s.Login("alice", "good-password"); err != nil {
+		t.Fatalf("login: %v", err)
+	}
+	for _, name := range []string{"INBOX", "Trash", "Sent", ""} {
+		if err := s.Subscribe(name); err != nil {
+			t.Fatalf("Subscribe(%q): %v", name, err)
+		}
+		if err := s.Unsubscribe(name); err != nil {
+			t.Fatalf("Unsubscribe(%q): %v", name, err)
+		}
 	}
 }

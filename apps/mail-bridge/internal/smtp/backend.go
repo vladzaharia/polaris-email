@@ -27,6 +27,8 @@ type Backend struct {
 }
 
 // NewSession returns a new Session, minting a submission ID up front.
+// The underlying net.Conn is plumbed so the Session can apply per-DATA
+// read deadlines (Phase 4b.2 slow-loris defense).
 func (b *Backend) NewSession(c *gosmtp.Conn) (gosmtp.Session, error) {
 	host, _, _ := net.SplitHostPort(c.Conn().RemoteAddr().String())
 	return &Session{
@@ -34,5 +36,6 @@ func (b *Backend) NewSession(c *gosmtp.Conn) (gosmtp.Session, error) {
 		clientIP:     host,
 		submissionID: ulid.Make().String(),
 		ctx:          context.Background(),
+		conn:         c.Conn(),
 	}, nil
 }

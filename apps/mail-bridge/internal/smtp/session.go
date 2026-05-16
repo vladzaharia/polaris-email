@@ -6,9 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"time"
 
 	gosmtp "github.com/emersion/go-smtp"
+	"github.com/oklog/ulid/v2"
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/vladzaharia/polaris-email/apps/mail-bridge/internal/audit"
@@ -16,6 +18,16 @@ import (
 	"github.com/vladzaharia/polaris-email/apps/mail-bridge/internal/forwarder"
 	"github.com/vladzaharia/polaris-email/apps/mail-bridge/internal/mime"
 )
+
+// dataReadDeadline is the per-DATA wall-clock deadline. The previous
+// implementation used a single ReadTimeout on the whole connection, which a
+// slow-loris attacker could exhaust by streaming MaxMessageSize+1 bytes
+// across the entire window — holding the read buffer hostage for as long
+// as the timeout allowed. Wrapping each DATA block in its own deadline
+// upper-bounds the time spent buffering one message body and, combined
+// with the existing context.WithTimeout wrapping the forwarder call,
+// caps total memory residency for a single submission.
+const dataReadDeadline = 60 * time.Second
 
 // dummyBcryptHash is used to keep AuthPlain timing constant on credential miss.
 // Generated once at init with the same cost we expect bridge hashes to use (12).
@@ -35,6 +47,11 @@ type Session struct {
 	ctx          context.Context
 	clientIP     string
 	submissionID string
+	// conn is the underlying TCP connection; we use it to apply a per-DATA
+	// SetReadDeadline so a slow-loris attacker can't hold MaxMessageSize+1
+	// bytes of buffer in memory for the full ReadTimeout window. May be
+	// nil in unit tests that construct Session directly.
+	conn net.Conn
 
 	authedUser   string
 	authedCred   *credstore.Credential
@@ -126,6 +143,19 @@ func (s *Session) Data(r io.Reader) error {
 		return &gosmtp.SMTPError{Code: 503, Message: "RCPT required first"}
 	}
 
+	// Per-DATA deadline (Phase 4b.2). Without this an attacker streaming
+	// MaxMessageSize+1 bytes at a trickle holds memory for the full
+	// connection ReadTimeout. The deadline is best-effort: when conn is
+	// nil (unit tests) we skip — the LimitReader still bounds total bytes,
+	// which is the in-test concern.
+	if s.conn != nil {
+		_ = s.conn.SetReadDeadline(time.Now().Add(dataReadDeadline))
+		// Clear the deadline once DATA finishes (success or failure) so the
+		// next command on the same connection uses the server's default
+		// per-conn ReadTimeout again.
+		defer func() { _ = s.conn.SetReadDeadline(time.Time{}) }()
+	}
+
 	limited := io.LimitReader(r, s.deps.MaxMessageSize+1)
 	raw, err := io.ReadAll(limited)
 	if err != nil {
@@ -175,11 +205,19 @@ func (s *Session) Data(r io.Reader) error {
 	}
 }
 
-// Reset clears envelope state but keeps auth + submission ID.
+// Reset clears envelope state and mints a fresh submissionID.
+//
+// Per RFC 5321 §4.1.1.5, RSET marks the boundary between two distinct
+// mail transactions on a single TCP session. Reusing the same submissionID
+// across messages causes idempotency-key collisions on the upstream
+// forwarder (every transaction looks like a retry of the first), so a
+// new ULID is minted here. Auth state is preserved — the client doesn't
+// need to re-LOGIN.
 func (s *Session) Reset() {
 	s.envelopeFrom = ""
 	s.envelopeTo = nil
 	s.receivedAt = time.Time{}
+	s.submissionID = ulid.Make().String()
 }
 
 // Logout is a no-op.

@@ -30,6 +30,8 @@ import { StatusBadge } from '../../components/StatusBadge.js';
 import { useAdminMutation, useAdminQuery } from '../../hooks/useAdminApi.js';
 import { domainKeys } from '../../queryKeys.js';
 import { apiFetch } from '../../lib/api.js';
+import { ErrorText } from '../../components/ErrorText.js';
+import { EmptyState } from '../../components/EmptyState.js';
 
 interface DomainRow {
   id: string;
@@ -98,9 +100,7 @@ function AddDomainDialog() {
             <Switch id="dom-out" checked={outbound} onCheckedChange={setOutbound} />
             <Label htmlFor="dom-out">Enable outbound (allow this domain in From)</Label>
           </div>
-          {create.error ? (
-            <p className="text-sm text-[var(--color-destructive)]">{create.error.message}</p>
-          ) : null}
+          <ErrorText error={create.error} />
         </div>
         <DialogFooter>
           <Button
@@ -153,9 +153,12 @@ export function DomainsList() {
       {q.isLoading ? (
         <Skeleton className="h-32 w-full" />
       ) : q.error ? (
-        <p className="text-sm text-[var(--color-destructive)]">{q.error.message}</p>
+        <ErrorText error={q.error} />
       ) : rows.length === 0 ? (
-        <p className="text-sm text-[var(--color-muted-foreground)]">No domains registered.</p>
+        <EmptyState
+          title="No domains registered"
+          description="Register a sender or recipient domain before issuing senders or accepting inbound mail."
+        />
       ) : (
         <Table>
           <TableHeader>

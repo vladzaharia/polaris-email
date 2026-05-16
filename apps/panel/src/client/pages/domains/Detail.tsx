@@ -148,7 +148,7 @@ export function DomainDetail() {
         </div>
 
         <section>
-          <h2 className="mb-2 text-sm font-semibold">DNS checklist</h2>
+          <h2 className="mb-2 text-xl font-medium">DNS checklist</h2>
           {lastVerify ? (
             <Table>
               <TableHeader>

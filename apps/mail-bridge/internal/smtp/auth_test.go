@@ -172,6 +172,33 @@ func TestData_UpstreamErrorMapping(t *testing.T) {
 	}
 }
 
+// TestReset_MintsNewSubmissionID proves Phase 4b.3: RSET marks a new mail
+// transaction boundary, so the submissionID (used as the upstream
+// idempotency key) MUST change. Pre-4b.3 the same ID was reused, causing
+// the upstream forwarder to dedup the second message.
+func TestReset_MintsNewSubmissionID(t *testing.T) {
+	store := newStore(t)
+	sess := newTestSession(t, store, nil)
+	first := sess.submissionID
+	if first == "" {
+		t.Fatalf("expected non-empty submissionID")
+	}
+	sess.Reset()
+	second := sess.submissionID
+	if second == "" {
+		t.Fatalf("Reset must produce a non-empty submissionID")
+	}
+	if second == first {
+		t.Fatalf("Reset did not mint a new submissionID (still %q)", first)
+	}
+	// And again after a second RSET — every boundary must rotate.
+	sess.Reset()
+	third := sess.submissionID
+	if third == second {
+		t.Fatalf("second Reset did not rotate submissionID (still %q)", second)
+	}
+}
+
 func bytesReader(b []byte) *byteReader { return &byteReader{b: b} }
 
 type byteReader struct {

@@ -13,6 +13,7 @@ import {
 } from '../../components/ui/table.js';
 import { useAdminQuery } from '../../hooks/useAdminApi.js';
 import { auditKeys } from '../../queryKeys.js';
+import { formatDate, formatRelative } from '../../lib/format.js';
 
 interface Me {
   authenticated: boolean;
@@ -31,12 +32,19 @@ interface AuditEntry {
 
 export function Account() {
   const me = useAdminQuery<Me>(['me'] as const, '/api/me');
-  const audit = useAdminQuery<{ data: AuditEntry[] }>(auditKeys.chain(), '/api/admin/audit/chain');
+  // Phase 6d.7: cap the chain pull at 200 entries so the panel doesn't fetch
+  // an unbounded payload. Filtering happens client-side because services/api
+  // does not yet accept `?actor=`. TODO: when services/api adds an `actor`
+  // filter, request it here and remove the client-side filter.
+  const audit = useAdminQuery<{ data: AuditEntry[] }>(
+    auditKeys.chain(),
+    '/api/admin/audit/chain?limit=200',
+  );
   const myEntries = (audit.data?.data ?? []).filter((e) =>
     me.data?.email ? e.actor.includes(me.data.email) : false,
   );
   return (
-    <PageCard title="Account" description="OIDC identity + step-up state." decorative>
+    <PageCard title="Account" description="OIDC identity." decorative>
       {me.isLoading ? (
         <Skeleton className="h-16 w-full" />
       ) : !me.data?.authenticated ? (
@@ -59,7 +67,7 @@ export function Account() {
       )}
 
       <section className="mt-6">
-        <h2 className="mb-2 text-sm font-semibold">Recent audit entries</h2>
+        <h2 className="mb-2 text-xl font-medium">Recent audit entries</h2>
         {audit.isLoading ? (
           <Skeleton className="h-16 w-full" />
         ) : myEntries.length === 0 ? (
@@ -78,7 +86,9 @@ export function Account() {
             <TableBody>
               {myEntries.map((e) => (
                 <TableRow key={e.id}>
-                  <TableCell className="text-xs">{new Date(e.at).toISOString()}</TableCell>
+                  <TableCell className="text-xs" title={formatDate(e.at)}>
+                    {formatRelative(e.at)}
+                  </TableCell>
                   <TableCell>{e.action}</TableCell>
                   <TableCell className="font-mono text-xs">{e.target}</TableCell>
                 </TableRow>

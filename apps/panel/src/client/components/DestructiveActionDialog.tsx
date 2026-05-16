@@ -8,7 +8,7 @@
 // Used across every destructive action in the panel: credential revoke, DKIM
 // rotate, domain delete, bridge HMAC rotate, bridge deregister, DLQ drop,
 // mailbox sender/receiver/inbound disable, webhook subscription delete.
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { AlertTriangle } from 'lucide-react';
 import { Button } from './ui/button.js';
 import {
@@ -60,11 +60,24 @@ export function DestructiveActionDialog({
   isPending = false,
 }: DestructiveActionDialogProps) {
   const [typed, setTyped] = useState('');
+  const confirmInputRef = useRef<HTMLInputElement | null>(null);
 
   // Reset the typed-confirmation field whenever the dialog reopens, so a
   // previous attempt doesn't leak its confirmation text into the next one.
+  // Also focus the field on open so keyboard-first operators can start
+  // typing immediately. (Phase 6c.4)
   useEffect(() => {
-    if (open) setTyped('');
+    if (open) {
+      setTyped('');
+      // Defer focus until after Radix mounts the dialog content. A tick is
+      // enough; without it the ref is still null because Radix hasn't
+      // portalled the input into the DOM yet.
+      const t = setTimeout(() => {
+        confirmInputRef.current?.focus();
+      }, 0);
+      return () => clearTimeout(t);
+    }
+    return undefined;
   }, [open]);
 
   const typedOk = !typedConfirmation || typed === typedConfirmation;
@@ -110,13 +123,19 @@ export function DestructiveActionDialog({
               </Label>
               <Input
                 id="destructive-confirm"
+                ref={confirmInputRef}
                 value={typed}
                 onChange={(e) => setTyped(e.target.value)}
                 autoComplete="off"
                 autoCorrect="off"
                 spellCheck={false}
+                aria-invalid={!typedOk && typed.length > 0}
+                aria-describedby="destructive-confirm-hint"
                 className="mt-1 font-mono"
               />
+              <span id="destructive-confirm-hint" className="sr-only">
+                Confirm by typing the literal string {typedConfirmation}.
+              </span>
             </div>
           ) : null}
         </div>

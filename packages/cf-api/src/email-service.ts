@@ -78,10 +78,21 @@ export async function onboardSenderDomain(
     } catch (err) {
       // 404 / 405 / 501 from the API => endpoint not yet GA on this account.
       // Fall through to manual publish so onboarding still completes.
+      //
+      // 4a.11: log this fallback. Silent degradation hid endpoint URL
+      // changes / token-permission regressions for weeks at a time. The
+      // warning gives operators a single grep target ("email-service:
+      // onboarding endpoint unavailable") that surfaces in the logs of
+      // every degraded onboarding.
       const msg = err instanceof Error ? err.message : String(err);
       if (!/^4(0[45]|18)|^501/.test(msg)) {
         throw err;
       }
+      // eslint-disable-next-line no-console
+      console.warn(
+        'email-service: onboarding endpoint unavailable, falling back to manual publish',
+        { domain: opts.domain, error: msg },
+      );
     }
   }
 

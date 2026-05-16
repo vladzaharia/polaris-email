@@ -11,15 +11,48 @@
 // 'delivered' on the last successful webhook delivery. This worker only
 // handles received → sending → sent | bounced | failed.
 //
-// The per-domain binding name is derived from mail_domains.name by uppercasing
-// and substituting non-alphanumerics with `_`, prefixed with `EMAIL_`. E.g.
-// `plrs.im` → `EMAIL_PLRS_IM`. Operators must declare the matching
-// `send_email` binding in services/out/wrangler.local.jsonc.
+// The per-domain binding name is derived from mail_domains.name by
+// validating it as an FQDN, then uppercasing and substituting `.` with `_`,
+// prefixed with `EMAIL_`. E.g. `plrs.im` → `EMAIL_PLRS_IM`. Operators must
+// declare the matching `send_email` binding in services/out/wrangler.local.jsonc.
+//
+// Idempotency: the consumer is invoked at-least-once. Before calling the
+// binding's `send()` we transition the message to `sending`; on retry entry
+// we observe any non-`queued` status and ack without resending, so a Worker
+// crash mid-send can't double-send. The `sending`-stuck case is detected
+// and surfaced as `failed` so an operator can investigate.
 import { ulid } from '@polaris-email/ids';
 import type { Env, FanoutEvent, OutboundQueueMessage, SendEmailBinding } from './env.js';
 
+const MAX_DELIVERY_ATTEMPTS = 5; // matches the Workers Queues default; keep in sync with wrangler
+
+/**
+ * Strict FQDN check used to derive a binding identifier. We require:
+ *   - 1-253 chars total
+ *   - 2+ labels separated by single dots (no leading/trailing dot, no `..`)
+ *   - each label 1-63 chars, alphanumeric + `-`, no leading/trailing `-`
+ *
+ * The previous regex (`replace(/[^A-Z0-9]+/g, '_')`) silently collapsed
+ * consecutive separators, so `'sub..domain.com'` mapped to the same binding
+ * name as `'sub.domain.com'`. With the explicit validator a malformed
+ * domain row fails fast and we emit `message.failed` instead of routing to
+ * the wrong tenant binding.
+ */
+function isValidFqdn(name: string): boolean {
+  if (name.length < 1 || name.length > 253) return false;
+  if (name.startsWith('.') || name.endsWith('.')) return false;
+  if (name.includes('..')) return false;
+  const labels = name.split('.');
+  if (labels.length < 2) return false;
+  for (const label of labels) {
+    if (label.length < 1 || label.length > 63) return false;
+    if (!/^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?$/.test(label)) return false;
+  }
+  return true;
+}
+
 function bindingNameForDomain(name: string): string {
-  return 'EMAIL_' + name.toUpperCase().replace(/[^A-Z0-9]+/g, '_');
+  return 'EMAIL_' + name.toUpperCase().replace(/\./g, '_');
 }
 
 async function loadRawMime(env: Env, key: string): Promise<Uint8Array | null> {
@@ -41,9 +74,11 @@ async function setStatus(
       ? 'sending_at'
       : status === 'sent'
         ? 'sent_at'
-        : status === 'failed'
-          ? 'failed_at'
-          : null;
+        : status === 'bounced'
+          ? 'bounced_at'
+          : status === 'failed'
+            ? 'failed_at'
+            : null;
   if (tsCol) {
     await env.DB.prepare(
       `UPDATE messages SET status = ?, ${tsCol} = ?, last_error = ?, bounce_metadata = ? WHERE id = ?`,
@@ -63,6 +98,20 @@ async function fanout(env: Env, ev: FanoutEvent): Promise<void> {
   await env.FANOUT_QUEUE.send(ev);
 }
 
+/**
+ * Read the message's current status. Used as the idempotency check before
+ * `binding.send()`: if the row is no longer `queued`, this delivery has
+ * already been (at minimum) attempted. We then ack without re-sending —
+ * the alternative (a second send_email call to the upstream provider)
+ * would deliver the same message twice.
+ */
+async function loadStatus(env: Env, id: string): Promise<string | null> {
+  const row = await env.DB.prepare(`SELECT status FROM messages WHERE id = ?`)
+    .bind(id)
+    .first<{ status: string }>();
+  return row?.status ?? null;
+}
+
 interface DomainRow {
   id: string;
   name: string;
@@ -71,22 +120,96 @@ interface DomainRow {
 export default {
   async queue(batch: MessageBatch<OutboundQueueMessage>, env: Env): Promise<void> {
     for (const m of batch.messages) {
+      // CF Workers Queues exposes 1-based attempt counter as `m.attempts`.
+      // Older shapes / test stubs may omit it; default to 1 so first-attempt
+      // logic still applies.
+      const attempts = (m as unknown as { attempts?: number }).attempts ?? 1;
       try {
-        await handleOne(env, m.body);
+        await handleOne(env, m.body, attempts);
         m.ack();
       } catch (e) {
+        // P0 (#3): handleOne owns its own status writes. If an exception
+        // escapes anyway we still need to make sure the message doesn't
+        // stay stuck in `sending` forever — flip to `failed` so the row is
+        // reconcilable from the panel.
+        const err = e instanceof Error ? e.message : 'unknown';
         // eslint-disable-next-line no-console
-        console.error('out: error', m.body.messageId, e instanceof Error ? e.message : 'unknown');
+        console.error('out: error', m.body.messageId, err);
+        try {
+          const cur = await loadStatus(env, m.body.messageId);
+          if (cur === 'sending' || cur === 'queued') {
+            await setStatus(env, m.body.messageId, 'failed', {
+              last_error: `uncaught: ${err}`.slice(0, 256),
+            });
+          }
+        } catch (statusErr) {
+          // eslint-disable-next-line no-console
+          console.error(
+            'out: failed to recover status for',
+            m.body.messageId,
+            statusErr instanceof Error ? statusErr.message : 'unknown',
+          );
+        }
+        // Still surface to Workers Queues so the at-least-once retry budget
+        // (and DLQ on exhaustion) applies.
         m.retry();
       }
     }
   },
 };
 
-async function handleOne(env: Env, msg: OutboundQueueMessage): Promise<void> {
+async function handleOne(env: Env, msg: OutboundQueueMessage, attempts: number): Promise<void> {
+  // Idempotency claim (#4): if the row is no longer `queued`, an earlier
+  // attempt already passed `setStatus(sending)`. We don't know whether the
+  // upstream `binding.send()` succeeded on that attempt, but we DO know
+  // that re-sending would risk a duplicate. Ack without resending; the
+  // operator can investigate via the panel using the row's status +
+  // last_error.
+  const preStatus = await loadStatus(env, msg.messageId);
+  if (preStatus && preStatus !== 'queued') {
+    // eslint-disable-next-line no-console
+    console.warn(
+      'out: idempotent skip',
+      msg.messageId,
+      `status=${preStatus} attempts=${attempts}`,
+    );
+    return;
+  }
+
   const raw = await loadRawMime(env, msg.r2KeyOrInline);
   if (!raw) {
+    // P3 (#5): emit message.failed so panel + downstream consumers see the
+    // terminal transition; without this only the DB row reflects the
+    // failure.
     await setStatus(env, msg.messageId, 'failed', { last_error: 'r2_body_missing' });
+    await fanout(env, {
+      event_id: ulid(),
+      event: 'message.failed',
+      message_id: msg.messageId,
+      mailbox_id: msg.mailboxId,
+      domain_id: msg.domainId,
+      created_at: Date.now(),
+      data: { reason: 'r2_body_missing', r2_key: msg.r2KeyOrInline },
+    });
+    return;
+  }
+  // P3 (#7): validate the FQDN before deriving a binding name.
+  // `bindingNameForDomain` would otherwise normalise malformed inputs into a
+  // valid-looking binding name and either route to the wrong tenant or
+  // miss-bind entirely.
+  if (!isValidFqdn(msg.fromDomain)) {
+    await setStatus(env, msg.messageId, 'failed', {
+      last_error: `invalid_from_domain: ${msg.fromDomain}`.slice(0, 256),
+    });
+    await fanout(env, {
+      event_id: ulid(),
+      event: 'message.failed',
+      message_id: msg.messageId,
+      mailbox_id: msg.mailboxId,
+      domain_id: msg.domainId,
+      created_at: Date.now(),
+      data: { reason: 'invalid_from_domain', from_domain: msg.fromDomain },
+    });
     return;
   }
   const dom = await env.DB.prepare(`SELECT id, name FROM mail_domains WHERE name = ?`)
@@ -139,11 +262,28 @@ async function handleOne(env: Env, msg: OutboundQueueMessage): Promise<void> {
     return;
   }
 
+  // Determine envelope recipients. Prefer the explicit list threaded
+  // through the queue body; fall back to fromAddress so older queued
+  // messages still get a deliverable shape (this is the bug #1 fix — the
+  // previous code passed `to: msg.fromAddress` which mailed back to the
+  // sender). The CF binding accepts string or string[] — pass an array
+  // when we have multiple recipients so cc/bcc all get delivered.
+  const envelopeTo: string | string[] =
+    msg.envelopeTo && msg.envelopeTo.length > 0
+      ? msg.envelopeTo.length === 1
+        ? msg.envelopeTo[0]!
+        : msg.envelopeTo
+      : msg.fromAddress;
+
+  // Mark sending BEFORE the binding.send() call. Combined with the
+  // idempotency check at the top of handleOne, this serves as the
+  // in-flight claim: a second invocation will see status != 'queued' and
+  // skip re-sending.
   await setStatus(env, msg.messageId, 'sending');
   try {
     const result = await binding.send({
       from: msg.fromAddress,
-      to: msg.fromAddress, // recipients are encoded inside the RFC822 envelope
+      to: envelopeTo,
       raw: raw.buffer.slice(raw.byteOffset, raw.byteOffset + raw.byteLength) as ArrayBuffer,
     });
     if (result.permanent_bounces.length) {
@@ -174,7 +314,11 @@ async function handleOne(env: Env, msg: OutboundQueueMessage): Promise<void> {
     }
   } catch (e) {
     const err = e instanceof Error ? e.message : 'unknown';
-    if (msg.retries >= 4) {
+    // P0 (#2): rely on CF Workers Queues' native attempt counter rather
+    // than trusting the queue body. After MAX_DELIVERY_ATTEMPTS we mark
+    // the message as failed and emit message.failed; otherwise we throw
+    // and let Workers Queues retry per its configured backoff.
+    if (attempts >= MAX_DELIVERY_ATTEMPTS) {
       await setStatus(env, msg.messageId, 'failed', { last_error: err.slice(0, 256) });
       await fanout(env, {
         event_id: ulid(),
@@ -183,7 +327,7 @@ async function handleOne(env: Env, msg: OutboundQueueMessage): Promise<void> {
         mailbox_id: msg.mailboxId,
         domain_id: domainId,
         created_at: Date.now(),
-        data: { reason: err.slice(0, 256), retries: msg.retries },
+        data: { reason: err.slice(0, 256), attempts },
       });
     } else {
       throw e;

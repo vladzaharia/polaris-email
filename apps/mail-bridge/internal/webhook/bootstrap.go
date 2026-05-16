@@ -22,7 +22,10 @@ type Bootstrap struct {
 	Path      string
 }
 
-// Result is one entry returned from Bootstrap.Run.
+// Result is one entry returned from Bootstrap.Run. Secret is set only on
+// freshly-issued subscriptions — reused subscriptions do not re-leak the
+// secret (polaris only returns it at creation time). Bridges that lose
+// the secret must rotate via the admin API.
 type Result struct {
 	MailboxID string
 	SubID     string
@@ -75,4 +78,18 @@ func (b *Bootstrap) Run(ctx context.Context, mailboxes []string) ([]Result, erro
 		out = append(out, Result{MailboxID: mb, SubID: resp.ID, Secret: resp.Secret})
 	}
 	return out, nil
+}
+
+// FirstSecret returns the first non-empty secret from a slice of bootstrap
+// results, or nil if every result was either reused (no secret returned) or
+// empty. main.go uses this to seed the Handler's HMAC secret on bridges
+// that serve a single mailbox; multi-mailbox deployments will need a richer
+// per-subscription secret mapping (TODO when that case materializes).
+func FirstSecret(results []Result) []byte {
+	for _, r := range results {
+		if r.Secret != "" {
+			return []byte(r.Secret)
+		}
+	}
+	return nil
 }

@@ -87,7 +87,7 @@ type MessageListResponse struct {
 type CreateWebhookSubRequest struct {
 	MailboxID string   `json:"mailbox_id"`
 	URL       string   `json:"url"`
-	Kind      string   `json:"kind"` // "external" | "tailnet" | "polaris"
+	Kind      string   `json:"kind"` // "external" | "tailnet" (per openapi/polaris-email.yaml)
 	Events    []string `json:"events"`
 }
 
@@ -107,6 +107,31 @@ type WebhookSub struct {
 	PausedAt   string   `json:"paused_at,omitempty"`
 	CreatedAt  string   `json:"created_at"`
 	DisabledAt string   `json:"disabled_at,omitempty"`
+}
+
+// WebhookEnvelope is the JSON shape delivered to webhook subscribers. The
+// `occurred_at` field is an ISO-8601 timestamp string (the API converts the
+// internal unix-ms value to ISO before signing the body — see
+// `services/api/src/queue/fanout.ts`). Consumers that prefer a numeric
+// timestamp should `time.Parse(time.RFC3339Nano, env.OccurredAt)`.
+type WebhookEnvelope struct {
+	EventID    string  `json:"event_id"`
+	Event      string  `json:"event"`
+	OccurredAt string  `json:"occurred_at"`
+	Message    Message `json:"message"`
+}
+
+// ParseWebhookEnvelope decodes the body of a webhook delivery into a typed
+// WebhookEnvelope. Returns an error if the body is not a valid JSON envelope.
+//
+// The body MUST be the verified bytes — call VerifyWebhook first (or use
+// VerifyAndParseWebhook). Parsing without verification trusts the request.
+func ParseWebhookEnvelope(body []byte) (*WebhookEnvelope, error) {
+	var env WebhookEnvelope
+	if err := json.Unmarshal(body, &env); err != nil {
+		return nil, fmt.Errorf("polaris-sdk-go: parse webhook envelope: %w", err)
+	}
+	return &env, nil
 }
 
 // CredentialLookup is the (bridge-only) credential row used by the bridge.
@@ -176,13 +201,22 @@ func (c *Client) BulkGetMessages(ctx context.Context, ids []string) (*BulkGetRes
 
 // GetMessage retrieves a single message representation. Falls back to bulk-get
 // to avoid duplicating render logic.
+//
+// Returns *APIError{Code: "not_found", Status: 404} when the message is not in
+// the bulk response, so callers using `errors.As(&apiErr)` can distinguish a
+// 404 from other failures uniformly with the rest of the SDK.
 func (c *Client) GetMessage(ctx context.Context, id string) (*Message, error) {
 	r, err := c.BulkGetMessages(ctx, []string{id})
 	if err != nil {
 		return nil, err
 	}
 	if len(r.Data) == 0 {
-		return nil, fmt.Errorf("polaris-sdk-go: message %s not found", id)
+		return nil, &APIError{
+			Code:      "not_found",
+			Message:   fmt.Sprintf("message %s not found", id),
+			Status:    404,
+			Retryable: false,
+		}
 	}
 	return &r.Data[0], nil
 }

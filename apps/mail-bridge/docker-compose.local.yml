@@ -28,18 +28,38 @@ services:
     image: ghcr.io/vladzaharia/polaris-mail-bridge:latest
     container_name: polaris-mail-bridge
     # Bind the protocol ports directly on the host. Operator controls firewall.
+    #
+    # Port 8080 is the webhook receiver (BRIDGE_PUBLIC_URL must point at a
+    # routable address polaris can hit). Plain HTTP by default — operators
+    # that need TLS termination on the public webhook URL should put a
+    # reverse proxy (caddy / nginx / cloudflared) in front of :8080 and
+    # set BRIDGE_PUBLIC_URL to the proxy's HTTPS URL.
     ports:
       - '${BRIDGE_SMTPS_PORT:-465}:465'
       - '${BRIDGE_IMAP_PORT:-993}:993'
+      - '${BRIDGE_WEBHOOK_PORT:-8080}:8080'
     environment:
+      # Listener / TLS knobs. Local mode loads the PEM pair directly.
       BRIDGE_TLS_MODE: local
       BRIDGE_TLS_CERT_PATH: /etc/polaris-bridge/tls/fullchain.pem
       BRIDGE_TLS_KEY_PATH: /etc/polaris-bridge/tls/privkey.pem
+      # Bridge identity (consumed by config.Load).
+      BRIDGE_NAME: ${BRIDGE_NAME:-polaris-mail-local}
       BRIDGE_POLARIS_API_URL: ${POLARIS_API_URL:-https://api.polaris.example.com}
       BRIDGE_POLARIS_BRIDGE_ID_FILE: /run/secrets/bridge_id
       BRIDGE_POLARIS_HMAC_KEY_FILE: /run/secrets/hmac_key
+      # Cloudflare Access service-token pair fronting the polaris control
+      # plane.
+      BRIDGE_ACCESS_CLIENT_ID: ${ACCESS_CLIENT_ID:-}
+      BRIDGE_ACCESS_CLIENT_SECRET: ${ACCESS_CLIENT_SECRET:-}
+      # Public URL used by webhook bootstrap to compute target URLs (the
+      # operator's reverse-proxy hostname or the host's public address).
+      BRIDGE_PUBLIC_URL: ${BRIDGE_PUBLIC_URL:-https://${BRIDGE_FQDN:-mail.example.com}}
+      # Listener toggles (default on).
       BRIDGE_SMTPS_ENABLED: ${BRIDGE_SMTPS_ENABLED:-true}
       BRIDGE_IMAP_ENABLED: ${BRIDGE_IMAP_ENABLED:-true}
+      BRIDGE_WEBHOOK_ENABLED: ${BRIDGE_WEBHOOK_ENABLED:-true}
+      # On-disk paths.
       BRIDGE_CREDSTORE_PATH: /var/lib/polaris-bridge/credstore.db
       BRIDGE_MIRROR_PATH: /var/lib/polaris-bridge/mirror.db
       BRIDGE_LOGGING_FILE: /var/log/polaris-bridge/audit.jsonl

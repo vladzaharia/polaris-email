@@ -52,7 +52,7 @@ func routeListCmd() *cobra.Command {
 }
 
 func routeAddCmd() *cobra.Command {
-	var domain, pattern, action, urlFlag, fwd, tenant string
+	var domain, pattern, action, urlFlag, fwd, mailbox, tenantDeprecated string
 	c := &cobra.Command{
 		Use:   "add",
 		Short: "Add a route",
@@ -64,7 +64,12 @@ func routeAddCmd() *cobra.Command {
 			if domain == "" || pattern == "" || action == "" {
 				return fmt.Errorf("--domain, --pattern, and --action are required")
 			}
-			req := client.RouteCreateRequest{DomainName: domain, Pattern: pattern, Action: action, URL: urlFlag, ForwardTo: fwd, TenantName: tenant}
+			name := mailbox
+			if name == "" && tenantDeprecated != "" {
+				fmt.Fprintln(Errw, "warning: --tenant is deprecated; use --mailbox")
+				name = tenantDeprecated
+			}
+			req := client.RouteCreateRequest{DomainName: domain, Pattern: pattern, Action: action, URL: urlFlag, ForwardTo: fwd, TenantName: name}
 			var out client.Route
 			if err := cl.DoJSON(CtxBackground(), "POST", "/v1/admin/routing-rules", nil, req, &out); err != nil {
 				return err
@@ -77,7 +82,8 @@ func routeAddCmd() *cobra.Command {
 	c.Flags().StringVar(&action, "action", "", "webhook|forward|drop|alias (required)")
 	c.Flags().StringVar(&urlFlag, "url", "", "webhook URL (when --action=webhook)")
 	c.Flags().StringVar(&fwd, "forward-to", "", "forward target (when --action=forward)")
-	c.Flags().StringVar(&tenant, "tenant", "", "owning tenant (optional)")
+	c.Flags().StringVar(&mailbox, "mailbox", "", "owning mailbox (optional)")
+	c.Flags().StringVar(&tenantDeprecated, "tenant", "", "DEPRECATED alias for --mailbox")
 	return c
 }
 
@@ -113,10 +119,10 @@ func routeUpdateCmd() *cobra.Command {
 			return Emit(out)
 		},
 	}
-	c.Flags().StringVar(&pattern, "pattern", "", "")
-	c.Flags().StringVar(&action, "action", "", "")
-	c.Flags().StringVar(&urlFlag, "url", "", "")
-	c.Flags().StringVar(&fwd, "forward-to", "", "")
+	c.Flags().StringVar(&pattern, "pattern", "", "new address pattern (e.g. 'support@*')")
+	c.Flags().StringVar(&action, "action", "", "new action: webhook|forward|drop|alias")
+	c.Flags().StringVar(&urlFlag, "url", "", "new webhook URL (when action=webhook)")
+	c.Flags().StringVar(&fwd, "forward-to", "", "new forward target (when action=forward)")
 	return c
 }
 

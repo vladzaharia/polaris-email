@@ -4,6 +4,7 @@
 // types are gone; mailbox, sender, and receiver shapes replace them. See
 // `services/api/migrations/0001_init.sql` for the canonical D1 schema.
 import { z } from 'zod';
+import { TRANSPORT_FORBIDDEN_HEADERS } from '@polaris-email/mime';
 
 // ---------- primitives ----------
 
@@ -96,12 +97,19 @@ export type WebhookEventType = z.infer<typeof WebhookEventType>;
 // ---------- forbidden headers ----------
 //
 // Headers the submitter has no business setting on the JSON SendRequest path.
-// Mirrors `packages/mime/src/canonicalize.ts` FORBIDDEN_HEADERS plus the
-// "we generate this" set (Date / Message-ID / etc.). All lowercase.
-export const FORBIDDEN_HEADERS: ReadonlySet<string> = new Set([
+// The set is the union of:
+//   1. The transport-security set from `@polaris-email/mime`
+//      (`TRANSPORT_FORBIDDEN_HEADERS`) — Received, DKIM-Signature,
+//      Authentication-Results, ARC-*, Resent-*, Return-Path. These are
+//      relay/MTA-owned and the canonicalizer rejects them on raw RFC822 too.
+//   2. The "we generate this from a dedicated JSON field" set — Date,
+//      Message-ID, From, To, Cc, Bcc, Subject, Content-Type, MIME-Version.
+//      Setting these via the JSON `headers` map is meaningless because
+//      `composeFromJson()` always writes them from the structured fields.
+// All lowercase.
+const SCHEMA_GENERATED_HEADERS = [
   'date',
   'message-id',
-  'received',
   'from',
   'to',
   'cc',
@@ -109,19 +117,10 @@ export const FORBIDDEN_HEADERS: ReadonlySet<string> = new Set([
   'subject',
   'content-type',
   'mime-version',
-  'dkim-signature',
-  'authentication-results',
-  'return-path',
-  'arc-seal',
-  'arc-message-signature',
-  'arc-authentication-results',
-  'resent-date',
-  'resent-from',
-  'resent-sender',
-  'resent-to',
-  'resent-cc',
-  'resent-bcc',
-  'resent-message-id',
+] as const;
+export const FORBIDDEN_HEADERS: ReadonlySet<string> = new Set([
+  ...TRANSPORT_FORBIDDEN_HEADERS,
+  ...SCHEMA_GENERATED_HEADERS,
 ]);
 
 // ---------- mailbox plane ----------
@@ -646,6 +645,8 @@ export const AuditAction = z.enum([
   'message.expunged',
   // rate limiting
   'rate_limit.exceeded',
+  // CF zone discover + configure (cf-zones.ts)
+  'cf_zone.configure',
 ]);
 export type AuditAction = z.infer<typeof AuditAction>;
 

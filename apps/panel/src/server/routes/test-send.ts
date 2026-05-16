@@ -49,6 +49,19 @@ testSendRoutes.post('/api/test-send', async (c) => {
 // SSE lifecycle stream. Polls the upstream API at GET /v1/messages/:id every
 // 500ms and emits state transitions until we observe a terminal status (sent,
 // delivered, failed, bounced) or hit the 60s ceiling.
+//
+// Lifetime semantics (Phase 6d.1):
+//   The Worker stays alive as long as this Response's body stream is open —
+//   that's the standard CF Workers contract for streaming responses. We do
+//   NOT need `c.executionCtx.waitUntil`; that pattern is for fire-and-forget
+//   side effects AFTER the response is returned, but here the stream IS the
+//   response body.
+//
+//   The `start()` function is async, so the `await new Promise(setTimeout)`
+//   call yields the event loop and the runtime keeps the isolate hot until
+//   the stream closes (terminal status, error, or the 60s ceiling). The
+//   `controller.enqueue` calls flush immediately because no
+//   `highWaterMark` backpressure is set on the underlying source.
 testSendRoutes.get('/api/test-send/:id/stream', async (c) => {
   const id = c.req.param('id');
   const polaris = makePolaris(c.env);
@@ -65,22 +78,34 @@ testSendRoutes.get('/api/test-send/:id/stream', async (c) => {
       };
       let lastStatus = '';
       const started = Date.now();
-      while (Date.now() - started < MAX_MS) {
-        const r = await polaris.call<{ status?: string; id?: string }>('GET', `/v1/messages/${id}`);
-        if (r.status >= 400) {
-          send('error', { status: r.status, body: r.body });
-          break;
+      try {
+        while (Date.now() - started < MAX_MS) {
+          const r = await polaris.call<{ status?: string; id?: string }>(
+            'GET',
+            `/v1/messages/${id}`,
+          );
+          if (r.status >= 400) {
+            send('error', { status: r.status, body: r.body });
+            break;
+          }
+          const status = String((r.body as { status?: string }).status ?? '');
+          if (status && status !== lastStatus) {
+            send(status, { message_id: id, status, at: Date.now() });
+            lastStatus = status;
+          }
+          if (TERMINAL.has(status)) break;
+          await new Promise((res) => setTimeout(res, STEP_MS));
         }
-        const status = String((r.body as { status?: string }).status ?? '');
-        if (status && status !== lastStatus) {
-          send(status, { message_id: id, status, at: Date.now() });
-          lastStatus = status;
-        }
-        if (TERMINAL.has(status)) break;
-        await new Promise((res) => setTimeout(res, STEP_MS));
+        send('close', { message_id: id });
+      } catch (err) {
+        // Surface upstream failures as a final SSE error event so the
+        // client's named-event handler (Phase 6d.2) can react. Without
+        // this catch the controller would error and the client EventSource
+        // would silently reconnect.
+        send('error', { message: err instanceof Error ? err.message : String(err) });
+      } finally {
+        controller.close();
       }
-      send('close', { message_id: id });
-      controller.close();
     },
   });
 

@@ -81,8 +81,10 @@ Tune via `wrangler secret`:
 | `INLINE_ATTACHMENTS_BYTES_MAX` | 262144            | Attachments above this are URL-only (no inline b64) |
 | `R2_PUBLIC_HOST`               | `r2.mail.plrs.im` | The R2 custom domain hostname for URL building      |
 
-The `polaris-anchors` bucket stays **private** — audit anchors are not
-served on a public custom domain.
+Audit anchors are not stored in any Cloudflare R2 bucket — they live
+off-Cloudflare in **Backblaze B2** with Object Lock COMPLIANCE (~7-year
+retention), so a fully-compromised CF account cannot rewrite history. See
+[`SECURITY.md`](../SECURITY.md) for the threat-model rationale.
 
 ## Retrieval endpoints
 
@@ -114,7 +116,8 @@ one driving them, so there is no event to fan out).
 
 Soft-delete decrements the `r2_refs` count on the message's body/attachment
 objects; hard-expunge is what eventually frees R2 storage. The retention
-janitor (`services/cron`) tidies up nightly.
+janitor cron inside `services/api` tidies up nightly (the standalone
+`services/cron` Worker was folded into `services/api` in phase B1).
 
 ## Webhook v2 envelope
 
@@ -156,8 +159,10 @@ Events emitted:
 - `message.sent` — outbound message handed off successfully to the
   Cloudflare Email Service binding.
 - `message.delivered` — terminal success state, set once the last
-  subscribed webhook has confirmed delivery (`services/fanout` is the
-  only emitter; `services/out` never sets this directly).
+  subscribed webhook has confirmed delivery. Emitted by the webhook
+  consumer inside `services/api` (the old `services/fanout` Worker was
+  folded into `services/api` in phase B1). `services/out` never sets this
+  directly.
 - `message.bounced` — permanent remote-side delivery failure (mailbox
   rejected the message).
 - `message.failed` — permanent local-side failure (binding misconfigured,

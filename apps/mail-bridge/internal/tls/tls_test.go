@@ -7,6 +7,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"errors"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -68,6 +69,12 @@ func TestTailscaleModeStubError(t *testing.T) {
 	_, err := New(Config{Mode: ModeTailscale, TailscaleHostname: "x"})
 	if err == nil {
 		t.Fatal("expected tsnet mode to error in this slice")
+	}
+	// Phase 2d bug #4: callers must be able to identify the unsupported
+	// mode via errors.Is so main.go can fail-fast (preventing the silent
+	// degrade-to-plaintext path on :993).
+	if !errors.Is(err, ErrTailscaleUnsupported) {
+		t.Fatalf("err = %v, want errors.Is(ErrTailscaleUnsupported)", err)
 	}
 }
 

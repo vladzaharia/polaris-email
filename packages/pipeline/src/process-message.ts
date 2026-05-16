@@ -17,7 +17,9 @@
 //   6. Audit `message.submitted` (outbound) / `message.received` (inbound).
 
 import { ulid } from '@polaris-email/ids';
-import { extractAttachmentParts, summarizeMime } from '@polaris-email/mime';
+import { sha256Hex } from '@polaris-email/hmac';
+import { extractAttachmentParts, normalizeAddress, summarizeMime } from '@polaris-email/mime';
+import { audit } from './audit.js';
 
 export interface OutboundQueueMessage {
   messageId: string;
@@ -25,10 +27,19 @@ export interface OutboundQueueMessage {
   r2KeyOrInline: string;
   fromDomain: string;
   fromAddress: string;
+  /**
+   * Envelope recipients (RCPT TO). The CF `send_email` binding's `to` field
+   * is the envelope-to (NOT the From/Sender header), so we must thread the
+   * actual recipients through the queue. Populated by the pipeline from
+   * `args.envelopeTo`. Older queue messages may omit it; consumers fall
+   * back to `[fromAddress]` only as a last-ditch behaviour-preserving path.
+   */
+  envelopeTo?: string[];
   mailboxId: string;
   domainId: string | null;
   mode: 'live' | 'test';
-  retries: number;
+  // `retries` removed in Phase 2b — services/out reads CF Workers Queues'
+  // native `m.attempts` counter instead of trusting the queue body.
 }
 
 /**
@@ -85,36 +96,27 @@ export class ProcessMessageError extends Error {
   }
 }
 
-async function sha256Hex(data: Uint8Array): Promise<string> {
-  const buf = new ArrayBuffer(data.byteLength);
-  new Uint8Array(buf).set(data);
-  const digest = await crypto.subtle.digest('SHA-256', buf);
-  const bytes = new Uint8Array(digest);
-  let out = '';
-  for (const b of bytes) out += b.toString(16).padStart(2, '0');
-  return out;
-}
-
-async function audit(
-  env: PipelineEnv,
-  args: { actor: string; action: string; target?: string | null; meta?: Record<string, unknown> },
-): Promise<void> {
-  const at = Date.now();
-  const meta = JSON.stringify(args.meta ?? {});
-  const prev = await env.DB.prepare(`SELECT row_hash FROM audit_log ORDER BY id DESC LIMIT 1`)
-    .first<{ row_hash: string }>()
-    .catch(() => null);
-  const prevHash = prev?.row_hash ?? '0'.repeat(64);
-  const canonical = [args.actor, args.action, args.target ?? '', meta, prevHash, String(at)].join(
-    '\n',
-  );
-  const rowHash = await sha256Hex(new TextEncoder().encode(canonical));
-  await env.DB.prepare(
-    `INSERT INTO audit_log (actor, action, target, meta, prev_hash, row_hash, at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-  )
-    .bind(args.actor, args.action, args.target ?? null, meta, prevHash, rowHash, at)
-    .run();
+/**
+ * 4a.9: sanitize an attachment filename for inclusion in an R2 key.
+ *
+ * R2 keys end up in URLs served by the public custom domain
+ * `r2.mail.plrs.im`; an unsafe filename can smuggle path traversal
+ * (`..`), NUL, control chars, or whitespace. We collapse anything that
+ * isn't a conservative ASCII shortlist to `_`, and explicitly reject the
+ * dot/double-dot sentinels. SHA-256 in the key prefix already makes the
+ * object content-addressed, so the filename component is purely cosmetic
+ * (it influences the `Content-Disposition` filename when served).
+ */
+export function sanitizeAttachmentFilename(name: string): string {
+  if (!name) return 'attachment';
+  // Strip any directory separators / CR / LF / NUL / control bytes by
+  // collapsing the entire filename through a conservative whitelist.
+  let safe = name.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 255);
+  // `.` and `..` would resolve relative to the SHA-prefix and let the
+  // object key shape be reinterpreted by some HTTP clients. Replace them
+  // outright.
+  if (safe === '.' || safe === '..' || safe === '') safe = 'attachment';
+  return safe;
 }
 
 interface IdemClaim {
@@ -155,55 +157,105 @@ async function tryClaim(
  * Mirrors `services/api/src/lib/state.ts#ensureMailboxState`. Inlined here so
  * the pipeline package stays self-contained and the API + Email Routing
  * Workers both pick up state allocation through `processMessage()`.
+ *
+ * 4a.3: counter allocation is **atomic per statement**. The previous
+ * SELECT-then-UPDATE pair raced under CF re-delivery — two concurrent
+ * pipeline invocations could read the same `next_uid` and assign duplicate
+ * UIDs, which breaks IMAP UID FETCH. We now use the `RETURNING` clause on
+ * a CAS-ish UPDATE to read+increment in one round-trip, and an INSERT OR
+ * IGNORE bootstrap path for the cold counter. SQLite serialises writers,
+ * so on D1 the UPDATE is the canonical winner.
  */
+async function allocateUid(
+  env: PipelineEnv,
+  mailboxId: string,
+): Promise<{ uid: number; uidValidity: number }> {
+  // First try the hot path: atomic increment via UPDATE ... RETURNING.
+  // Returns the *new* `next_uid`; the allocated UID is the value we just
+  // bumped past, so we subtract 1.
+  const updated = await env.DB.prepare(
+    `UPDATE mailbox_uid_counter
+       SET next_uid = next_uid + 1
+     WHERE mailbox_id = ?1
+     RETURNING next_uid AS next_uid, uid_validity`,
+  )
+    .bind(mailboxId)
+    .first<{ next_uid: number; uid_validity: number }>()
+    .catch(() => null);
+  if (updated) {
+    return { uid: updated.next_uid - 1, uidValidity: updated.uid_validity };
+  }
+  // Cold path: row doesn't exist yet. INSERT OR IGNORE so concurrent
+  // first-touchers don't both insert; the loser falls through to a retry
+  // on the UPDATE branch.
+  const uidValidity = Math.floor(Date.now() / 1000);
+  const inserted = await env.DB.prepare(
+    `INSERT OR IGNORE INTO mailbox_uid_counter (mailbox_id, next_uid, uid_validity)
+     VALUES (?1, 2, ?2)
+     RETURNING uid_validity`,
+  )
+    .bind(mailboxId, uidValidity)
+    .first<{ uid_validity: number }>()
+    .catch(() => null);
+  if (inserted) {
+    return { uid: 1, uidValidity: inserted.uid_validity };
+  }
+  // INSERT lost the race; the row exists now. Retry the UPDATE.
+  const retry = await env.DB.prepare(
+    `UPDATE mailbox_uid_counter
+       SET next_uid = next_uid + 1
+     WHERE mailbox_id = ?1
+     RETURNING next_uid AS next_uid, uid_validity`,
+  )
+    .bind(mailboxId)
+    .first<{ next_uid: number; uid_validity: number }>();
+  if (!retry) {
+    // Defensive: should be unreachable. Throw so the caller's outer
+    // try/catch logs and short-circuits state allocation.
+    throw new Error('uid allocation lost both insert and update races');
+  }
+  return { uid: retry.next_uid - 1, uidValidity: retry.uid_validity };
+}
+
+async function allocateChangeId(env: PipelineEnv, mailboxId: string): Promise<number> {
+  const updated = await env.DB.prepare(
+    `UPDATE mailbox_change_counter
+       SET next_change_id = next_change_id + 1
+     WHERE mailbox_id = ?1
+     RETURNING next_change_id AS next_change_id`,
+  )
+    .bind(mailboxId)
+    .first<{ next_change_id: number }>()
+    .catch(() => null);
+  if (updated) return updated.next_change_id - 1;
+  const inserted = await env.DB.prepare(
+    `INSERT OR IGNORE INTO mailbox_change_counter (mailbox_id, next_change_id)
+     VALUES (?1, 2)
+     RETURNING next_change_id`,
+  )
+    .bind(mailboxId)
+    .first<{ next_change_id: number }>()
+    .catch(() => null);
+  if (inserted) return 1;
+  const retry = await env.DB.prepare(
+    `UPDATE mailbox_change_counter
+       SET next_change_id = next_change_id + 1
+     WHERE mailbox_id = ?1
+     RETURNING next_change_id AS next_change_id`,
+  )
+    .bind(mailboxId)
+    .first<{ next_change_id: number }>();
+  if (!retry) throw new Error('change_id allocation lost both insert and update races');
+  return retry.next_change_id - 1;
+}
+
 async function allocateInboundState(
   env: PipelineEnv,
   mailboxId: string,
   messageId: string,
 ): Promise<void> {
-  const uidRow = await env.DB.prepare(
-    `SELECT next_uid, uid_validity FROM mailbox_uid_counter WHERE mailbox_id = ?1`,
-  )
-    .bind(mailboxId)
-    .first<{ next_uid: number; uid_validity: number }>();
-  let uid: number;
-  let uidValidity: number;
-  if (!uidRow) {
-    uid = 1;
-    uidValidity = Math.floor(Date.now() / 1000);
-    await env.DB.prepare(
-      `INSERT INTO mailbox_uid_counter (mailbox_id, next_uid, uid_validity) VALUES (?1, ?2, ?3)`,
-    )
-      .bind(mailboxId, uid + 1, uidValidity)
-      .run();
-  } else {
-    uid = uidRow.next_uid;
-    uidValidity = uidRow.uid_validity;
-    await env.DB.prepare(`UPDATE mailbox_uid_counter SET next_uid = ?1 WHERE mailbox_id = ?2`)
-      .bind(uid + 1, mailboxId)
-      .run();
-  }
-  const counter = await env.DB.prepare(
-    `SELECT next_change_id FROM mailbox_change_counter WHERE mailbox_id = ?1`,
-  )
-    .bind(mailboxId)
-    .first<{ next_change_id: number }>();
-  let changeId: number;
-  if (!counter) {
-    changeId = 1;
-    await env.DB.prepare(
-      `INSERT INTO mailbox_change_counter (mailbox_id, next_change_id) VALUES (?1, ?2)`,
-    )
-      .bind(mailboxId, changeId + 1)
-      .run();
-  } else {
-    changeId = counter.next_change_id;
-    await env.DB.prepare(
-      `UPDATE mailbox_change_counter SET next_change_id = ?1 WHERE mailbox_id = ?2`,
-    )
-      .bind(changeId + 1, mailboxId)
-      .run();
-  }
+  const { uid, uidValidity } = await allocateUid(env, mailboxId);
+  const changeId = await allocateChangeId(env, mailboxId);
   await env.DB.prepare(
     `INSERT INTO mailbox_messages_state
       (message_id, mailbox_id, read_at, expunged_at, flags_json, uid, uid_validity, change_id)
@@ -260,13 +312,24 @@ async function computeThreadId(
       .trim()
       .toLowerCase();
     if (normalized) {
+      // 4a.5: the from_addr_normalized generated column is `LOWER(from_addr)`.
+      // Callers now pass an IDNA-normalized fromAddr (see processMessage), so
+      // the .toLowerCase() here is the right comparison shape; we
+      // belt-and-braces re-normalize so a non-canonical caller still hits
+      // the index.
+      let lookup: string;
+      try {
+        lookup = fromAddr ? normalizeAddress(fromAddr).full : '';
+      } catch {
+        lookup = fromAddr.toLowerCase();
+      }
       const sevenDaysAgo = new Date(Date.now() - 7 * 86400_000).toISOString();
       const row = await env.DB.prepare(
         `SELECT thread_id FROM messages
          WHERE mailbox_id = ?1 AND from_addr_normalized = ?2 AND created_at > ?3
          ORDER BY created_at DESC LIMIT 1`,
       )
-        .bind(mailboxId, fromAddr.toLowerCase(), sevenDaysAgo)
+        .bind(mailboxId, lookup, sevenDaysAgo)
         .first<{ thread_id: string | null }>()
         .catch(() => null);
       if (row?.thread_id) return row.thread_id;
@@ -349,34 +412,54 @@ export async function processMessage(
   // these directly so that the `url` on each attachment in API/webhook
   // responses is fetchable without HMAC or signed URLs. SHA-256 in the key
   // is the unguessability anchor.
-  try {
-    const attachmentParts = extractAttachmentParts(args.rawMime);
-    for (const part of attachmentParts) {
-      const attSha = await sha256Hex(part.bytes);
-      const safeName = part.filename.replace(/[/\\]/g, '_').slice(0, 255) || 'attachment';
-      const attKey = `att/${attSha}/${safeName}`;
-      const attHead = await env.R2.head(attKey).catch(() => null);
-      if (!attHead) {
+  //
+  // 4a.1: attachment R2 writes are REQUIRED, not best-effort. The pipeline
+  // is content-addressed for dedup: identical attachments will not be
+  // re-ingested on retry, so a swallowed failure here would result in a
+  // permanent 404 on the public URL embedded in webhooks/API responses.
+  // We throw so services/in returns setReject (CF retries the whole
+  // delivery) and services/api returns 5xx (caller retries).
+  const attachmentParts = extractAttachmentParts(args.rawMime);
+  for (const part of attachmentParts) {
+    const attSha = await sha256Hex(part.bytes);
+    const safeName = sanitizeAttachmentFilename(part.filename);
+    const attKey = `att/${attSha}/${safeName}`;
+    const attHead = await env.R2.head(attKey).catch(() => null);
+    if (!attHead) {
+      try {
         await env.R2.put(attKey, part.bytes, {
           httpMetadata: { contentType: part.content_type || 'application/octet-stream' },
           customMetadata: { sha256: attSha, contentLength: String(part.bytes.length) },
         });
+      } catch (e) {
+        throw new ProcessMessageError(
+          `attachment R2 write failed: ${e instanceof Error ? e.message : 'unknown'}`,
+          502,
+          'attachment_r2_write_failed',
+        );
       }
     }
-  } catch (e) {
-    // Attachment R2 writes are best-effort — the body is the source of
-    // truth and read-time URL derivation re-hashes from the body, so a
-    // transient failure here just means a 404 on the public URL until the
-    // next ingest. Log and proceed.
-    // eslint-disable-next-line no-console
-    console.warn(
-      'pipeline: attachment R2 write failed',
-      e instanceof Error ? e.message : 'unknown',
-    );
   }
 
   const messageId = ulid();
-  const fromAddr = summary.from || (args.direction === 'in' ? (args.recipientAddress ?? '') : '');
+  // 4a.4: when summary.from is empty (malformed inbound, no From header),
+  // fall back to the RFC 5321 null-sender form (`''`) rather than writing
+  // the recipient address into `from_addr`. Outbound rows with an empty
+  // From should never occur in practice (sender-policy enforcement happens
+  // before the pipeline), but the fallback is symmetric.
+  const rawFromAddr = summary.from || '';
+  // 4a.5: normalize via IDNA before storing or thread-grouping. The
+  // `from_addr_normalized` generated column is `LOWER(from_addr)`, so
+  // storing the canonical (Punycode) form means both reads and the index
+  // see the same shape — IDN senders no longer miss the thread lookup.
+  // Fall back to the raw lowercased value when normalization fails (e.g.
+  // empty/malformed senders, where AddressError is expected).
+  let fromAddr: string;
+  try {
+    fromAddr = rawFromAddr ? normalizeAddress(rawFromAddr).full : '';
+  } catch {
+    fromAddr = rawFromAddr.toLowerCase();
+  }
   const subject = summary.subject ?? '';
   const headerMessageId = summary.headerMessageId ?? null;
   const threadId = await computeThreadId(
@@ -475,10 +558,15 @@ export async function processMessage(
       r2KeyOrInline: r2Key,
       fromDomain,
       fromAddress: fromAddr,
+      // Forward envelope recipients verbatim. summary.to is the parsed
+      // To header (advisory); the JSON SendRequest path supplies the true
+      // RCPT TO list via args.envelopeTo. Fall back to summary.to so the
+      // RFC822 / bridge path keeps a sensible default until each header
+      // gets parsed.
+      envelopeTo: args.envelopeTo ?? summary.to,
       mailboxId: args.mailboxId,
       domainId: domainRow?.id ?? null,
       mode: 'live',
-      retries: 0,
     });
     await env.DB.prepare(
       `UPDATE messages SET status = 'queued', send_attempt_id = ?, queued_at = ? WHERE id = ?`,

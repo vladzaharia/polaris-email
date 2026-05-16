@@ -15,24 +15,26 @@
 
 import { Hono, type Context } from 'hono';
 import { MessageFlag, type Message } from '@polaris-email/schema';
-import { verify } from '@polaris-email/hmac';
+import { verify, sha256Hex } from '@polaris-email/hmac';
 import {
   extractAttachmentParts,
   mimeToMessage,
   type UnifiedMessage,
-  type MessageRowMeta,
 } from '@polaris-email/mime';
 import type { Env } from '../env.js';
 import { buildError } from '../errors.js';
 import { audit } from '../audit.js';
 import { allocChangeId, ensureMailboxState, purgeMessageRow } from '../lib/state.js';
 import { r2PublicUrl, attachmentR2Key } from '../lib/r2-public-url.js';
+import { lookupBridgeSecret } from '../bridge-auth.js';
+import { revocationCheck } from '@polaris-email/revocation';
+import { NONCE_TTL_SECONDS } from '../auth.js';
+import { MessageRow, rowMeta } from '../lib/message-row.js';
+import { loadR2Bytes } from '../lib/r2-helpers.js';
 
 export const messagesState = new Hono<{ Bindings: Env }>();
 
 const DEFAULT_INLINE_BODY_BYTES = 65536;
-const DEFAULT_BRIDGE_EXPUNGE_GRACE_DAYS = 7;
-void DEFAULT_BRIDGE_EXPUNGE_GRACE_DAYS;
 
 function inlineBodyMax(env: Env): number {
   const v = env.INLINE_BODY_BYTES_MAX
@@ -64,8 +66,17 @@ async function authenticateCaller(
     if (!/^[0-9A-HJKMNP-TV-Z]{26}$/.test(bridgeId)) {
       return buildError(c, 'unauthorized', 'invalid bridge_id format');
     }
-    if (!env.BRIDGE_HMAC_KEY) {
-      return buildError(c, 'unauthorized', 'bridge auth not configured');
+    const lookup = await lookupBridgeSecret(env, bridgeId);
+    if (!lookup.ok) {
+      if (lookup.code === 'key_propagating') {
+        return buildError(
+          c,
+          'key_propagating',
+          'bridge plaintext not in cache; rotate to repopulate',
+          { 'retry-after': '2' },
+        );
+      }
+      return buildError(c, 'unauthorized', `bridge: ${lookup.code}`);
     }
     const url = new URL(c.req.url);
     const result = await verify({
@@ -75,7 +86,7 @@ async function authenticateCaller(
       query: url.search.slice(1),
       headers: { get: (n: string) => c.req.header(n) ?? null },
       body: bodyBytes,
-      secret: env.BRIDGE_HMAC_KEY,
+      secret: lookup.secret,
     });
     if (!result.ok) return buildError(c, 'unauthorized', `bridge HMAC: ${result.code}`);
     return {
@@ -119,6 +130,13 @@ async function authenticateCaller(
   if (!principal || principal.disabled_at) {
     return buildError(c, 'key_revoked', 'principal disabled');
   }
+  // Per-principal revocation check BEFORE HMAC verify. Phase 3b.1 — see
+  // the matching block in `auth.ts` and `routes/messages.ts` for rationale.
+  // KV_REVOCATIONS is the authoritative signal; KV_KEY_CACHE may still
+  // surface a stale `primary` row for a few seconds after revoke.
+  if (await revocationCheck(env, keyRow.principal_id).catch(() => false)) {
+    return buildError(c, 'key_revoked', 'principal revoked');
+  }
   const plaintext = await env.KV_KEY_CACHE.get(`plain:${keyId}`);
   if (!plaintext) {
     return buildError(c, 'key_propagating', 'key plaintext not yet propagated', {
@@ -144,7 +162,7 @@ async function authenticateCaller(
   const nonceKey = `nonce:${keyId}:${result.nonce}`;
   const seen = await env.KV_NONCE.get(nonceKey);
   if (seen) return buildError(c, 'nonce_replay', 'nonce already used for this key');
-  c.executionCtx.waitUntil(env.KV_NONCE.put(nonceKey, '1', { expirationTtl: 10 * 60 }));
+  c.executionCtx.waitUntil(env.KV_NONCE.put(nonceKey, '1', { expirationTtl: NONCE_TTL_SECONDS }));
 
   let parsedScopes: string[] = [];
   try {
@@ -172,80 +190,6 @@ function hasReadScope(caller: AuthenticatedCaller): boolean {
 
 function hasMutateScope(caller: AuthenticatedCaller): boolean {
   return caller.scopes.includes('messages:read') || caller.scopes.includes('imap_bridge:read');
-}
-
-type MessageRow = {
-  id: string;
-  mailbox_id: string;
-  principal_id: string | null;
-  direction: 'in' | 'out';
-  status: string;
-  from_addr: string;
-  to_addrs: string | null;
-  subject: string | null;
-  r2_key: string;
-  body_bytes: number | null;
-  attachments_total_bytes: number | null;
-  thread_id: string | null;
-  header_message_id: string | null;
-  auth_spf: string | null;
-  auth_dkim: string | null;
-  auth_dmarc: string | null;
-  auth_remote_ip: string | null;
-  received_at_bridge: string | null;
-  received_at_api: string | null;
-  queued_at: string | null;
-  sending_at: string | null;
-  sent_at: string | null;
-  delivered_at: string | null;
-  failed_at: string | null;
-  bounce_metadata: string | null;
-  last_error: string | null;
-  created_at: string;
-};
-
-function rowMeta(row: MessageRow): MessageRowMeta {
-  return {
-    id: row.id,
-    mailbox_id: row.mailbox_id,
-    direction: row.direction,
-    status: row.status,
-    thread_id: row.thread_id,
-    header_message_id: row.header_message_id,
-    auth_spf: row.auth_spf,
-    auth_dkim: row.auth_dkim,
-    auth_dmarc: row.auth_dmarc,
-    auth_remote_ip: row.auth_remote_ip,
-    body_bytes: row.body_bytes,
-    attachments_total_bytes: row.attachments_total_bytes,
-    received_at_bridge: row.received_at_bridge,
-    received_at_api: row.received_at_api,
-    queued_at: row.queued_at,
-    sending_at: row.sending_at,
-    sent_at: row.sent_at,
-    delivered_at: row.delivered_at,
-    failed_at: row.failed_at,
-    bounce_metadata: row.bounce_metadata,
-    last_error: row.last_error,
-    created_at: row.created_at,
-  };
-}
-
-async function loadR2Bytes(env: Env, key: string): Promise<Uint8Array | null> {
-  const obj = await env.R2.get(key);
-  if (!obj) return null;
-  const buf = await (obj as unknown as { arrayBuffer(): Promise<ArrayBuffer> }).arrayBuffer();
-  return new Uint8Array(buf);
-}
-
-async function sha256Hex(data: Uint8Array): Promise<string> {
-  const buf = new ArrayBuffer(data.byteLength);
-  new Uint8Array(buf).set(data);
-  const digest = await crypto.subtle.digest('SHA-256', buf);
-  const bytes = new Uint8Array(digest);
-  let out = '';
-  for (const b of bytes) out += b.toString(16).padStart(2, '0');
-  return out;
 }
 
 async function renderMessage(
@@ -472,7 +416,7 @@ messagesState.post('/v1/mailboxes/:id/expunge', async (c) => {
       .first<{ id: string; r2_key: string }>();
     if (!msgRow) continue;
     const { r2_deleted } = await purgeMessageRow(
-      { DB: c.env.DB, R2: c.env.R2 as unknown as { delete(k: string): Promise<unknown> } },
+      { DB: c.env.DB, R2: c.env.R2 },
       msgRow,
     );
     if (r2_deleted) r2Freed += 1;

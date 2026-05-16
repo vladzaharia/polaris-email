@@ -136,7 +136,10 @@ export class Polaris {
     extra?: { idempotencyKey?: string },
   ): Promise<PolarisResponse<SendResponse>> {
     const extraHeaders: Record<string, string> = {};
-    if (extra?.idempotencyKey) extraHeaders['idempotency-key'] = extra.idempotencyKey;
+    if (extra?.idempotencyKey) {
+      assertIdempotencyKey(extra.idempotencyKey);
+      extraHeaders['idempotency-key'] = extra.idempotencyKey;
+    }
     return this.call<SendResponse>('POST', '/v1/messages', { body: req, extraHeaders });
   }
 
@@ -144,6 +147,13 @@ export class Polaris {
     bytes: Uint8Array,
     extraHeaders: Record<string, string>,
   ): Promise<PolarisResponse<SendResponse>> {
+    // The caller hands the headers in directly here, so look up the key
+    // case-insensitively and validate it before the network call.
+    const idemKey =
+      extraHeaders['idempotency-key'] ??
+      extraHeaders['Idempotency-Key'] ??
+      extraHeaders['IDEMPOTENCY-KEY'];
+    if (idemKey != null) assertIdempotencyKey(idemKey);
     return this.call<SendResponse>('POST', '/v1/messages', {
       body: bytes,
       contentType: 'message/rfc822',
@@ -153,6 +163,29 @@ export class Polaris {
 
   async listMessages(query?: string): Promise<PolarisResponse<MessageList>> {
     return this.call<MessageList>('GET', '/v1/messages', { query });
+  }
+
+  /**
+   * AsyncIterable wrapper over `listMessages` that follows `next_offset`
+   * until the API reports it is null. Yields individual `Message` rows for
+   * the simple `for-await` consumer pattern; if you need to inspect the page
+   * boundary (e.g. to checkpoint progress) call `listMessages` directly.
+   *
+   * The query string may already include `offset=...`; this method overwrites
+   * `offset` for every page after the first, so the initial offset is honored
+   * but each subsequent page uses `next_offset` from the prior response.
+   */
+  async *listAllMessages(query?: string): AsyncIterable<Message> {
+    let nextQuery = query;
+    while (true) {
+      const page = await this.listMessages(nextQuery);
+      for (const m of page.body.data) {
+        yield m;
+      }
+      const nextOffset = page.body.next_offset;
+      if (nextOffset == null) return;
+      nextQuery = withOffset(query, nextOffset);
+    }
   }
 
   async getMessage(id: string): Promise<PolarisResponse<Message>> {
@@ -167,3 +200,32 @@ export class Polaris {
 export { verifyWebhook } from './webhook.js';
 export type { VerifyResult, VerifyWebhookInput } from './webhook.js';
 export { PolarisError, isPolarisError, isRetryable, parsePolarisError } from './errors.js';
+
+// ---------- helpers ----------
+
+const IDEMPOTENCY_KEY_RE = /^[A-Za-z0-9_-]{8,128}$/;
+
+/**
+ * Throws if the key fails the server-side idempotency-key contract:
+ * 8–128 chars of `[A-Za-z0-9_-]`. Failing client-side gives the caller a
+ * fast, actionable error before the request hits the wire.
+ */
+export function assertIdempotencyKey(key: string): void {
+  if (typeof key !== 'string' || !IDEMPOTENCY_KEY_RE.test(key)) {
+    throw new TypeError(
+      `idempotency-key must match /^[A-Za-z0-9_-]{8,128}$/ (got ${JSON.stringify(key).slice(0, 80)})`,
+    );
+  }
+}
+
+/**
+ * Replace (or append) `offset=<n>` in a raw query string, preserving every
+ * other key. Used by `listAllMessages` to walk pages.
+ */
+function withOffset(query: string | undefined, offset: number): string {
+  // URLSearchParams handles repeated keys + escaping; the leading `?` is
+  // tolerated by the SDK (the `call` site strips it).
+  const params = new URLSearchParams(query ?? '');
+  params.set('offset', String(offset));
+  return params.toString();
+}

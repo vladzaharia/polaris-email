@@ -1,0 +1,15 @@
+-- Drop the panel's `step_ups` table.
+--
+-- The self-elevation step-up flow has been removed. Destructive panel
+-- actions (credential rotate/revoke, bridge HMAC rotate, DKIM rotate,
+-- mailbox sender/receiver disable, webhook DLQ drop, …) are now exclusively
+-- gated on the two-person `withApproval()` flow backed by the `approvals`
+-- table.
+--
+-- Wrangler runs panel migrations independently of `services/api`'s migration
+-- chain, even though both Workers bind to the same `polaris-email` D1 — the
+-- panel directory is declared in `apps/panel/wrangler.jsonc:migrations_dir`.
+-- The original CREATE TABLE for `step_ups` was authored in
+-- `services/api/migrations/0001_init.sql`; that file is left untouched
+-- because it represents an immutable historical migration.
+DROP TABLE IF EXISTS step_ups;

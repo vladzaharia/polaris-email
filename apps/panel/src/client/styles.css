@@ -94,7 +94,9 @@
   --color-sidebar-ring: oklch(0.7 0.16 230);
 }
 
-/* Smooth theme switches (color-only — no layout). */
+/* Smooth theme switches (color-only — no layout). Wrapped in
+ * `prefers-reduced-motion: no-preference` so users who opted out of motion
+ * see an instant theme change instead of the 180ms fade. (Phase 6c.5) */
 @keyframes theme-fade {
   from {
     opacity: 0.92;
@@ -103,9 +105,11 @@
     opacity: 1;
   }
 }
-:root,
-.dark {
-  animation: theme-fade 180ms ease-out;
+@media (prefers-reduced-motion: no-preference) {
+  :root,
+  .dark {
+    animation: theme-fade 180ms ease-out;
+  }
 }
 
 * {

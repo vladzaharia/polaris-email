@@ -24,28 +24,17 @@ export interface MailboxStateRow {
   change_id: number;
 }
 
-interface DbLike {
-  prepare(sql: string): {
-    bind(...args: unknown[]): {
-      run(): Promise<{ meta?: { changes?: number } }>;
-      first<T = unknown>(): Promise<T | null>;
-      all<T = unknown>(): Promise<{ results: T[] }>;
-    };
-  };
-}
-
 /**
  * Ensure a `mailbox_messages_state` row exists for (mailboxId, messageId).
  * Allocates uid + change_id from the sidecar counter tables on first sight.
  * Returns the row. Idempotent.
  */
 export async function ensureMailboxState(
-  db: DbLike | D1Database,
+  db: D1Database,
   mailboxId: string,
   messageId: string,
 ): Promise<MailboxStateRow> {
-  const _db = db as DbLike;
-  const existing = await _db
+  const existing = await db
     .prepare(
       `SELECT message_id, mailbox_id, read_at, expunged_at, flags_json, uid, uid_validity, change_id
        FROM mailbox_messages_state
@@ -55,36 +44,60 @@ export async function ensureMailboxState(
     .first<MailboxStateRow>();
   if (existing) return existing;
 
-  // Allocate UID.
-  const uidRow = await _db
-    .prepare(`SELECT next_uid, uid_validity FROM mailbox_uid_counter WHERE mailbox_id = ?1`)
-    .bind(mailboxId)
-    .first<{ next_uid: number; uid_validity: number }>();
+  // 4a.3: atomic UID allocation. UPDATE ... RETURNING in one round-trip
+  // avoids the SELECT-then-UPDATE race that previously assigned duplicate
+  // UIDs under concurrent message arrivals.
   let uid: number;
   let uidValidity: number;
-  if (!uidRow) {
-    uid = 1;
-    uidValidity = Math.floor(Date.now() / 1000);
-    await _db
-      .prepare(
-        `INSERT INTO mailbox_uid_counter (mailbox_id, next_uid, uid_validity)
-         VALUES (?1, ?2, ?3)`,
-      )
-      .bind(mailboxId, uid + 1, uidValidity)
-      .run();
+  const updated = await db
+    .prepare(
+      `UPDATE mailbox_uid_counter
+         SET next_uid = next_uid + 1
+       WHERE mailbox_id = ?1
+       RETURNING next_uid AS next_uid, uid_validity`,
+    )
+    .bind(mailboxId)
+    .first<{ next_uid: number; uid_validity: number }>()
+    .catch(() => null);
+  if (updated) {
+    uid = updated.next_uid - 1;
+    uidValidity = updated.uid_validity;
   } else {
-    uid = uidRow.next_uid;
-    uidValidity = uidRow.uid_validity;
-    await _db
-      .prepare(`UPDATE mailbox_uid_counter SET next_uid = ?1 WHERE mailbox_id = ?2`)
-      .bind(uid + 1, mailboxId)
-      .run();
+    // Cold path: bootstrap. INSERT OR IGNORE so two concurrent first-touchers
+    // don't both insert; the loser retries the UPDATE.
+    const seedValidity = Math.floor(Date.now() / 1000);
+    const inserted = await db
+      .prepare(
+        `INSERT OR IGNORE INTO mailbox_uid_counter (mailbox_id, next_uid, uid_validity)
+         VALUES (?1, 2, ?2)
+         RETURNING uid_validity`,
+      )
+      .bind(mailboxId, seedValidity)
+      .first<{ uid_validity: number }>()
+      .catch(() => null);
+    if (inserted) {
+      uid = 1;
+      uidValidity = inserted.uid_validity;
+    } else {
+      const retry = await db
+        .prepare(
+          `UPDATE mailbox_uid_counter
+             SET next_uid = next_uid + 1
+           WHERE mailbox_id = ?1
+           RETURNING next_uid AS next_uid, uid_validity`,
+        )
+        .bind(mailboxId)
+        .first<{ next_uid: number; uid_validity: number }>();
+      if (!retry) throw new Error('uid allocation lost both insert and update races');
+      uid = retry.next_uid - 1;
+      uidValidity = retry.uid_validity;
+    }
   }
 
-  // Allocate change_id.
-  const changeId = await allocChangeId(_db, mailboxId);
+  // Allocate change_id (also atomic via the helper below).
+  const changeId = await allocChangeId(db, mailboxId);
 
-  await _db
+  await db
     .prepare(
       `INSERT INTO mailbox_messages_state
         (message_id, mailbox_id, read_at, expunged_at, flags_json, uid, uid_validity, change_id)
@@ -108,28 +121,44 @@ export async function ensureMailboxState(
 /**
  * Allocate and return the next mailbox change_id. Bumps the counter row.
  * Callers stamp the returned value onto the affected state row.
+ *
+ * 4a.3: atomic via UPDATE ... RETURNING (was SELECT-then-UPDATE which
+ * raced with concurrent state mutations).
  */
-export async function allocChangeId(db: DbLike | D1Database, mailboxId: string): Promise<number> {
-  const _db = db as DbLike;
-  const counter = await _db
-    .prepare(`SELECT next_change_id FROM mailbox_change_counter WHERE mailbox_id = ?1`)
+export async function allocChangeId(db: D1Database, mailboxId: string): Promise<number> {
+  const updated = await db
+    .prepare(
+      `UPDATE mailbox_change_counter
+         SET next_change_id = next_change_id + 1
+       WHERE mailbox_id = ?1
+       RETURNING next_change_id AS next_change_id`,
+    )
+    .bind(mailboxId)
+    .first<{ next_change_id: number }>()
+    .catch(() => null);
+  if (updated) return updated.next_change_id - 1;
+  // Cold path: bootstrap.
+  const inserted = await db
+    .prepare(
+      `INSERT OR IGNORE INTO mailbox_change_counter (mailbox_id, next_change_id)
+       VALUES (?1, 2)
+       RETURNING next_change_id`,
+    )
+    .bind(mailboxId)
+    .first<{ next_change_id: number }>()
+    .catch(() => null);
+  if (inserted) return 1;
+  const retry = await db
+    .prepare(
+      `UPDATE mailbox_change_counter
+         SET next_change_id = next_change_id + 1
+       WHERE mailbox_id = ?1
+       RETURNING next_change_id AS next_change_id`,
+    )
     .bind(mailboxId)
     .first<{ next_change_id: number }>();
-  let changeId: number;
-  if (!counter) {
-    changeId = 1;
-    await _db
-      .prepare(`INSERT INTO mailbox_change_counter (mailbox_id, next_change_id) VALUES (?1, ?2)`)
-      .bind(mailboxId, changeId + 1)
-      .run();
-  } else {
-    changeId = counter.next_change_id;
-    await _db
-      .prepare(`UPDATE mailbox_change_counter SET next_change_id = ?1 WHERE mailbox_id = ?2`)
-      .bind(changeId + 1, mailboxId)
-      .run();
-  }
-  return changeId;
+  if (!retry) throw new Error('change_id allocation lost both insert and update races');
+  return retry.next_change_id - 1;
 }
 
 /**
@@ -141,11 +170,10 @@ export async function allocChangeId(db: DbLike | D1Database, mailboxId: string):
  * because another message still points at it.
  */
 export async function purgeMessageRow(
-  env: { DB: DbLike | D1Database; R2: { delete: (key: string) => Promise<unknown> } },
+  env: { DB: D1Database; R2: { delete: (key: string) => Promise<unknown> } },
   row: { id: string; r2_key: string },
 ): Promise<{ r2_deleted: boolean }> {
-  const _db = env.DB as DbLike;
-  const other = await _db
+  const other = await env.DB
     .prepare(`SELECT 1 AS one FROM messages WHERE r2_key = ?1 AND id <> ?2 LIMIT 1`)
     .bind(row.r2_key, row.id)
     .first<{ one: number }>()
@@ -159,6 +187,6 @@ export async function purgeMessageRow(
       // R2 already gone; proceed.
     }
   }
-  await _db.prepare(`DELETE FROM messages WHERE id = ?1`).bind(row.id).run();
+  await env.DB.prepare(`DELETE FROM messages WHERE id = ?1`).bind(row.id).run();
   return { r2_deleted: r2Deleted };
 }

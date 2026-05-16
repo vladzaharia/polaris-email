@@ -100,9 +100,7 @@ export function useAdminMutation<T, V = unknown>(
       // Prefer the typed code for nicer messages on well-known errors.
       let message = err.message || 'Something went wrong';
       if (err instanceof ApiError) {
-        if (err.code === 'step_up_required') {
-          message = 'Re-authenticate to continue. Sign out and sign back in via OIDC.';
-        } else if (err.code === 'approval_required') {
+        if (err.code === 'approval_required') {
           message = 'Another admin must approve this action.';
         }
       }

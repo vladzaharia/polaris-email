@@ -37,5 +37,16 @@
     // (panel.polaris.example.com + api.polaris.example.com), override locally:
     //   COOKIE_DOMAIN=".polaris.example.com"
     "COOKIE_PATH": "/panel",
+    // Phase 3e.3 — DEV_MODE / ENVIRONMENT contract:
+    //   * `DEV_MODE=1` enables the /api/dev/login backdoor in
+    //     routes/session.ts. MUST never be set in production.
+    //   * `ENVIRONMENT=production` together with DEV_MODE=1 trips the
+    //     runtime refusal in src/server/index.ts (returns 500 on every
+    //     request and logs FATAL). The check runs on every fetch entry
+    //     so it survives env-var drift after deploy.
+    //   * Production deployments should set ENVIRONMENT="production"
+    //     here (uncomment) so the assertion fires if DEV_MODE is ever
+    //     accidentally set via `wrangler secret put` later.
+    // "ENVIRONMENT": "production",
   },
 }

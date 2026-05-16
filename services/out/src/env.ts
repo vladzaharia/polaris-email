@@ -14,10 +14,24 @@ export interface OutboundQueueMessage {
   r2KeyOrInline: string;
   fromDomain: string;
   fromAddress: string;
+  /**
+   * Envelope recipients (RCPT TO). The CF `send_email` binding's `to` field
+   * is the envelope-to (NOT the From/Sender header), so we must thread the
+   * actual recipients through the queue. Producer is
+   * `services/api/src/routes/messages.ts` (POST /v1/messages JSON path),
+   * which builds this from the SendRequest's `to` + `cc` + `bcc`.
+   *
+   * For backward-compat with already-enqueued messages from older deploys,
+   * the consumer falls back to `[fromAddress]` when this is missing.
+   */
+  envelopeTo?: string[];
   mailboxId: string;
   domainId: string | null;
   mode: 'live' | 'test';
-  retries: number;
+  // NOTE: `retries` was removed in favour of CF Workers Queues' native
+  // `m.attempts` counter. Trusting the queue body for retry count let a
+  // malicious / replayed enqueue claim retries=999 and skip straight to
+  // failed; the platform-provided counter is the source of truth.
 }
 
 export interface FanoutEvent {

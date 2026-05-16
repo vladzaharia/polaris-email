@@ -28,6 +28,16 @@ class FakeStmt {
       const row = this.db.messages.find((m) => m['id'] === id);
       return (row ?? null) as T | null;
     }
+    // 4a.2: atomic UPDATE...RETURNING attempts increment.
+    if (/UPDATE message_deliveries[\s\S]+SET attempts = attempts \+ 1[\s\S]+RETURNING attempts/i.test(s)) {
+      const [_lastErr, _code, mid, wid] = this.params;
+      const r = this.db.deliveries.find(
+        (d) => d['message_id'] === mid && d['webhook_sub_id'] === wid,
+      );
+      if (!r) return null;
+      r['attempts'] = (Number(r['attempts'] ?? 0) || 0) + 1;
+      return { attempts: r['attempts'] } as T;
+    }
     if (/FROM message_deliveries WHERE message_id = \? AND webhook_sub_id = \?/i.test(s)) {
       const mid = this.params[0] as string;
       const wid = this.params[1] as string;
@@ -48,11 +58,22 @@ class FakeStmt {
     const s = this.sql;
     if (/FROM webhook_subs[\s\S]+WHERE id = \?1/i.test(s)) {
       const id = this.params[0] as string;
-      return { results: this.db.subs.filter((x) => x['id'] === id) as T[] };
+      // Mirror production WHERE clause: paused_at IS NULL AND disabled_at IS NULL.
+      return {
+        results: this.db.subs.filter(
+          (x) =>
+            x['id'] === id && x['paused_at'] == null && x['disabled_at'] == null,
+        ) as T[],
+      };
     }
     if (/FROM webhook_subs[\s\S]+WHERE mailbox_id = \?1/i.test(s)) {
       const mid = this.params[0] as string;
-      return { results: this.db.subs.filter((x) => x['mailbox_id'] === mid) as T[] };
+      return {
+        results: this.db.subs.filter(
+          (x) =>
+            x['mailbox_id'] === mid && x['paused_at'] == null && x['disabled_at'] == null,
+        ) as T[],
+      };
     }
     return { results: [] };
   }
@@ -75,12 +96,24 @@ class FakeStmt {
       );
       if (r) r['status'] = 'succeeded';
     } else if (/UPDATE messages\s+SET status = 'delivered'/i.test(s)) {
+      // 4a.2: tightened CAS — only flip when status IN ('sent','sending','received').
+      // Mirror that here so two concurrent test calls observe at most one
+      // delivered transition.
       const [ts, mid] = this.params;
       const r = this.db.messages.find((m) => m['id'] === mid);
-      if (r) {
+      if (r && (r['status'] === 'sent' || r['status'] === 'sending' || r['status'] === 'received')) {
         r['status'] = 'delivered';
         r['delivered_at'] = ts;
+        return { meta: { changes: 1 }, results: [] };
       }
+      return { meta: { changes: 0 }, results: [] };
+    } else if (/UPDATE message_deliveries\s+SET status = \?, next_attempt_at = \?/i.test(s)) {
+      // 4a.2: terminal status update split out from the attempts increment.
+      const [status, _next, mid, wid] = this.params;
+      const r = this.db.deliveries.find(
+        (d) => d['message_id'] === mid && d['webhook_sub_id'] === wid,
+      );
+      if (r) r['status'] = status;
     }
     return { meta: { changes: 1 }, results: [] };
   }
@@ -255,5 +288,214 @@ describe('fanout envelope + delivered transition', () => {
     const msg = db.messages.find((m) => m['id'] === 'M2')!;
     expect(msg.status).toBe('delivered');
     expect(msg.delivered_at).toBeTruthy();
+  });
+
+  it('4a.2: concurrent maybeMarkDelivered calls flip messages.status exactly once', async () => {
+    // Two batches, both for the same message + same sub. The first run
+    // succeeds and flips status='delivered'; the second run sees the
+    // already-delivered row and the CAS update returns changes=0. We
+    // assert delivered_at is the *first* timestamp (CAS guarantees the
+    // second flip is a no-op).
+    const db = new FakeDB();
+    db.messages.push({
+      id: 'M_RACE',
+      mailbox_id: 'MB1',
+      direction: 'out',
+      status: 'sent',
+      r2_key: 'mime/aa/bb/race',
+      created_at: '2026-01-01T00:00:00Z',
+    });
+    db.subs.push({
+      id: 'WS_R',
+      mailbox_id: 'MB1',
+      url: 'https://hook.example/h',
+      kind: 'external',
+      secret: 's',
+      secret_prev: null,
+      events: JSON.stringify(['message.sent']),
+      paused_at: null,
+    });
+    const r2 = new FakeR2();
+    r2.store.set('mime/aa/bb/race', rfc822());
+    const env = {
+      DB: db as unknown as D1Database,
+      R2: r2 as unknown as R2Bucket,
+      R2_PUBLIC_HOST: 'r2.mail.plrs.im',
+    } as unknown as Env;
+    await fanoutQueueConsumer(
+      mkBatch({
+        event_id: 'EV_R1',
+        event: 'message.sent',
+        message_id: 'M_RACE',
+        mailbox_id: 'MB1',
+        created_at: 1_700_000_000_000,
+      }),
+      env,
+    );
+    const firstDelivered = db.messages[0]!.delivered_at;
+    expect(firstDelivered).toBeTruthy();
+    expect(db.messages[0]!.status).toBe('delivered');
+    // Second run — same message_id + same sub. The deliveries row is
+    // already 'succeeded' so maybeMarkDelivered re-evaluates true, but
+    // the CAS WHERE clause now matches no rows (status='delivered').
+    await fanoutQueueConsumer(
+      mkBatch({
+        event_id: 'EV_R2',
+        event: 'message.sent',
+        message_id: 'M_RACE',
+        mailbox_id: 'MB1',
+        created_at: 1_700_000_001_000,
+      }),
+      env,
+    );
+    expect(db.messages[0]!.status).toBe('delivered');
+    expect(db.messages[0]!.delivered_at).toBe(firstDelivered);
+  });
+
+  it('8d: paused webhook sub is skipped (no delivery attempt)', async () => {
+    // The production SELECT filters `paused_at IS NULL`. We mirror that in
+    // the FakeStmt loader so the consumer never sees the paused row.
+    const db = new FakeDB();
+    db.messages.push({
+      id: 'M_PAUSE',
+      mailbox_id: 'MB1',
+      direction: 'in',
+      status: 'received',
+      r2_key: 'mime/aa/bb/pause',
+      created_at: '2026-01-01T00:00:00Z',
+    });
+    db.subs.push({
+      id: 'WS_P',
+      mailbox_id: 'MB1',
+      url: 'https://hook.example/h',
+      kind: 'external',
+      secret: 's',
+      secret_prev: null,
+      events: JSON.stringify(['message.received']),
+      paused_at: '2026-01-01T00:00:00Z',
+      disabled_at: null,
+    });
+    const r2 = new FakeR2();
+    r2.store.set('mime/aa/bb/pause', rfc822());
+    const env = {
+      DB: db as unknown as D1Database,
+      R2: r2 as unknown as R2Bucket,
+      R2_PUBLIC_HOST: 'r2.mail.plrs.im',
+    } as unknown as Env;
+    await fanoutQueueConsumer(
+      mkBatch({
+        event_id: 'EV_P',
+        event: 'message.received',
+        message_id: 'M_PAUSE',
+        mailbox_id: 'MB1',
+        webhook_sub_id: 'WS_P',
+        created_at: 1_700_000_000_000,
+      }),
+      env,
+    );
+    expect(captured).toBeUndefined();
+    expect(db.deliveries.length).toBe(0);
+  });
+
+  it('8d: disabled webhook sub is dropped (no delivery, no row)', async () => {
+    // Same shape as paused but disabled_at is set. Both columns are matched
+    // by the same WHERE clause so the consumer treats them identically.
+    const db = new FakeDB();
+    db.messages.push({
+      id: 'M_DIS',
+      mailbox_id: 'MB1',
+      direction: 'in',
+      status: 'received',
+      r2_key: 'mime/aa/bb/dis',
+      created_at: '2026-01-01T00:00:00Z',
+    });
+    db.subs.push({
+      id: 'WS_D',
+      mailbox_id: 'MB1',
+      url: 'https://hook.example/h',
+      kind: 'external',
+      secret: 's',
+      secret_prev: null,
+      events: JSON.stringify(['message.received']),
+      paused_at: null,
+      disabled_at: '2026-01-01T00:00:00Z',
+    });
+    const r2 = new FakeR2();
+    r2.store.set('mime/aa/bb/dis', rfc822());
+    const env = {
+      DB: db as unknown as D1Database,
+      R2: r2 as unknown as R2Bucket,
+      R2_PUBLIC_HOST: 'r2.mail.plrs.im',
+    } as unknown as Env;
+    await fanoutQueueConsumer(
+      mkBatch({
+        event_id: 'EV_D',
+        event: 'message.received',
+        message_id: 'M_DIS',
+        mailbox_id: 'MB1',
+        webhook_sub_id: 'WS_D',
+        created_at: 1_700_000_000_000,
+      }),
+      env,
+    );
+    expect(captured).toBeUndefined();
+    expect(db.deliveries.length).toBe(0);
+  });
+
+  it('4a.2: failed delivery attempts are atomically incremented (not racing reads)', async () => {
+    const db = new FakeDB();
+    db.messages.push({
+      id: 'M_FAIL',
+      mailbox_id: 'MB1',
+      direction: 'out',
+      status: 'sent',
+      r2_key: 'mime/aa/bb/fail',
+      created_at: '2026-01-01T00:00:00Z',
+    });
+    db.subs.push({
+      id: 'WS_F',
+      mailbox_id: 'MB1',
+      url: 'https://hook.example/h',
+      kind: 'external',
+      secret: 's',
+      secret_prev: null,
+      events: JSON.stringify(['message.sent']),
+      paused_at: null,
+    });
+    const r2 = new FakeR2();
+    r2.store.set('mime/aa/bb/fail', rfc822());
+    mode = 'fail';
+    const env = {
+      DB: db as unknown as D1Database,
+      R2: r2 as unknown as R2Bucket,
+      R2_PUBLIC_HOST: 'r2.mail.plrs.im',
+    } as unknown as Env;
+    // Two failures in sequence; attempts must be 1 then 2.
+    await expect(
+      fanoutQueueConsumer(
+        mkBatch({
+          event_id: 'EV_F1',
+          event: 'message.sent',
+          message_id: 'M_FAIL',
+          mailbox_id: 'MB1',
+          created_at: 1_700_000_000_000,
+        }),
+        env,
+      ),
+    ).resolves.toBeUndefined();
+    expect(db.deliveries[0]!.attempts).toBe(1);
+    await expect(
+      fanoutQueueConsumer(
+        mkBatch({
+          event_id: 'EV_F2',
+          event: 'message.sent',
+          message_id: 'M_FAIL',
+          mailbox_id: 'MB1',
+          created_at: 1_700_000_001_000,
+        }),
+        env,
+      ),
+    ).resolves.toBeUndefined();
+    expect(db.deliveries[0]!.attempts).toBe(2);
   });
 });

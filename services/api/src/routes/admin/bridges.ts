@@ -13,6 +13,7 @@ import { buildError } from '../../errors.js';
 import { ulid } from '@polaris-email/ids';
 import { generateSecret } from '@polaris-email/hmac';
 import { hashSecret } from '../../hashing.js';
+import { bridgePlainKvKey, BRIDGE_PLAIN_KV_TTL_SECONDS } from '../../bridge-auth.js';
 
 export const bridges = new Hono<{ Bindings: Env }>();
 
@@ -63,6 +64,11 @@ bridges.post('/v1/admin/bridges', requireScope('admin:rotate'), async (c) => {
     if (String(e).includes('UNIQUE')) return buildError(c, 'conflict', 'bridge name taken');
     throw e;
   }
+  // Cache plaintext for HMAC verify lookups. The stored hash is one-way; on
+  // KV miss the bridge has to be rotated to repopulate (Phase 2h).
+  await c.env.KV_KEY_CACHE.put(bridgePlainKvKey(id), secret, {
+    expirationTtl: BRIDGE_PLAIN_KV_TTL_SECONDS,
+  });
   await audit(c.env, {
     actor: `key:${key.key_id}`,
     action: 'bridge.register',
@@ -113,6 +119,11 @@ bridges.post('/v1/admin/bridges/:id/rotate', requireScope('admin:rotate'), async
   await c.env.DB.prepare(`UPDATE bridges SET hmac_key_secret_name = ? WHERE id = ?`)
     .bind(hashed, id)
     .run();
+  // Repopulate the plaintext cache so verify lookups resolve immediately
+  // after rotate (Phase 2h).
+  await c.env.KV_KEY_CACHE.put(bridgePlainKvKey(id), secret, {
+    expirationTtl: BRIDGE_PLAIN_KV_TTL_SECONDS,
+  });
   await audit(c.env, {
     actor: `key:${key.key_id}`,
     action: 'bridge.rotate',
@@ -132,6 +143,9 @@ bridges.delete('/v1/admin/bridges/:id', requireScope('admin:rotate'), async (c) 
     .bind(nowIso, id)
     .run();
   if (r.meta.changes === 0) return buildError(c, 'not_found', 'not found or already disabled');
+  // Drop the plaintext cache so any further verify with this id 401s
+  // immediately rather than waiting on the TTL.
+  await c.env.KV_KEY_CACHE.delete(bridgePlainKvKey(id));
   await audit(c.env, {
     actor: `key:${key.key_id}`,
     action: 'bridge.deregister',

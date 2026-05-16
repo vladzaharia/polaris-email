@@ -133,36 +133,45 @@ export function MessagesList() {
         <p className="text-sm text-[var(--color-muted-foreground)]">No messages found.</p>
       ) : (
         <>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>ID</TableHead>
-                <TableHead>Direction</TableHead>
-                <TableHead>From</TableHead>
-                <TableHead>To</TableHead>
-                <TableHead>Subject</TableHead>
-                <TableHead>Status</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {(query.data?.data ?? []).map((m) => (
-                <TableRow key={m.id}>
-                  <TableCell className="font-mono text-xs">
-                    <Link to="/messages/$id" params={{ id: m.id }} className="underline">
-                      {m.id.slice(0, 10)}…
-                    </Link>
-                  </TableCell>
-                  <TableCell>{m.direction}</TableCell>
-                  <TableCell className="font-mono text-xs">{m.from}</TableCell>
-                  <TableCell className="font-mono text-xs">{m.to?.join(', ')}</TableCell>
-                  <TableCell>{m.subject ?? '(no subject)'}</TableCell>
-                  <TableCell>
-                    <StatusBadge kind="message" value={m.status} />
-                  </TableCell>
+          {/* The messages list scrolls horizontally on narrow viewports
+              because the Subject column is unbounded. The first column (ID)
+              gets `sticky left-0` so the row identity stays visible while
+              the operator scrolls right. (Phase 6b.5) */}
+          <div className="overflow-x-auto">
+            <Table>
+              <caption className="sr-only">
+                Inbound and outbound messages with status, addresses and subject.
+              </caption>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="sticky left-0 z-10 bg-[var(--color-card)]">ID</TableHead>
+                  <TableHead>Direction</TableHead>
+                  <TableHead>From</TableHead>
+                  <TableHead>To</TableHead>
+                  <TableHead>Subject</TableHead>
+                  <TableHead>Status</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {(query.data?.data ?? []).map((m) => (
+                  <TableRow key={m.id}>
+                    <TableCell className="sticky left-0 z-10 bg-[var(--color-card)] font-mono text-xs">
+                      <Link to="/messages/$id" params={{ id: m.id }} className="underline">
+                        {m.id.slice(0, 10)}…
+                      </Link>
+                    </TableCell>
+                    <TableCell>{m.direction}</TableCell>
+                    <TableCell className="font-mono text-xs">{m.from}</TableCell>
+                    <TableCell className="font-mono text-xs">{m.to?.join(', ')}</TableCell>
+                    <TableCell>{m.subject ?? '(no subject)'}</TableCell>
+                    <TableCell>
+                      <StatusBadge kind="message" value={m.status} />
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
           <div className="mt-4 flex items-center justify-between">
             <Button
               variant="outline"

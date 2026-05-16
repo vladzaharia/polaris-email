@@ -109,7 +109,7 @@ export function CredentialDetail() {
         </div>
 
         <section>
-          <h2 className="mb-2 text-sm font-semibold">Usage (24h)</h2>
+          <h2 className="mb-2 text-xl font-medium">Usage (24h)</h2>
           {stats.isLoading ? (
             <p className="text-sm text-[var(--color-muted-foreground)]">Loading…</p>
           ) : stats.error ? (
@@ -133,7 +133,7 @@ export function CredentialDetail() {
         </section>
 
         <section>
-          <h2 className="mb-2 text-sm font-semibold">Code samples</h2>
+          <h2 className="mb-2 text-xl font-medium">Code samples</h2>
           <Tabs defaultValue="curl">
             <TabsList>
               <TabsTrigger value="curl">curl</TabsTrigger>

@@ -96,6 +96,15 @@ func ParseStrict(input []byte) (*ParsedMime, error) {
 	}
 
 	bodyStart := crlfBoundary + 2
+	// Defensive bounds check (Phase 4b.9). The detection loop above
+	// guarantees crlfBoundary <= len(input)-2 (we only assign it when
+	// `i+2 < len(input)`), so bodyStart <= len(input). But a future
+	// refactor that loosens that invariant could let bodyStart exceed
+	// len(input) and panic in the slice expression below. The explicit
+	// check turns that into a clean "no_boundary" rejection.
+	if bodyStart > len(input) {
+		return nil, newErr("no_boundary", "no header/body boundary (CRLF CRLF) found")
+	}
 	body := make([]byte, len(input)-bodyStart)
 	copy(body, input[bodyStart:])
 	for _, b := range body {

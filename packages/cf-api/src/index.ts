@@ -11,12 +11,29 @@ export {
   enableEmailRouting,
   disableEmailRouting,
   getEmailRoutingSettings,
+  getEmailRoutingDnsState,
   listEmailRoutingRules,
   createEmailRoutingRule,
   updateEmailRoutingRule,
   deleteEmailRoutingRule,
+  getCatchAllRule,
   setCatchAllRule,
 } from './email-routing.js';
+
+export {
+  inspectAllZones,
+  inspectZone,
+  computeDiff,
+  applyDiff,
+  type NamedRouteRule,
+  type ZoneDomainStatus,
+  type ZoneConfigureOp,
+  type ZoneConfigureOpKind,
+  type ZoneConfigureDiff,
+  type InspectorEnv,
+  type ApplyEnv,
+  type ApplyResult,
+} from './discovery.js';
 
 export {
   onboardSenderDomain,
@@ -39,7 +56,14 @@ export { findZoneByName, getZone, listZones } from './zones.js';
 
 export { DohDnsVerifier, type VerifyStep, type DnsVerifier } from './dns-verify.js';
 
-export type { ExpectedRecord, Zone, EmailRoutingRule } from './types.js';
+export type {
+  ExpectedRecord,
+  Zone,
+  EmailRoutingRule,
+  EmailRoutingSettings,
+  EmailRoutingDnsRecord,
+  EmailRoutingDnsState,
+} from './types.js';
 
 // Cloudflare API helpers used by services/api admin routes.
 // Implementations live alongside the rest of the package and follow the same

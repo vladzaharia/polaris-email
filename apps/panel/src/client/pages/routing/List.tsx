@@ -7,15 +7,7 @@
 import { useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import { PageCard } from '../../layouts/PageCard.js';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '../../components/ui/table.js';
-import { Skeleton } from '../../components/ui/skeleton.js';
+import { PaginatedTable } from '../../components/PaginatedTable.js';
 import { Label } from '../../components/ui/label.js';
 import {
   Select,
@@ -74,39 +66,35 @@ export function RoutingList() {
         <p className="text-sm text-[var(--color-muted-foreground)]">
           Pick a mailbox to view its receiver chain.
         </p>
-      ) : detail.isLoading ? (
-        <Skeleton className="h-32 w-full" />
-      ) : (detail.data?.receivers ?? []).length === 0 ? (
-        <p className="text-sm text-[var(--color-muted-foreground)]">No receivers configured.</p>
       ) : (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Priority</TableHead>
-              <TableHead>Pattern</TableHead>
-              <TableHead>Action</TableHead>
-              <TableHead>Target</TableHead>
-              <TableHead>Enabled</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {(detail.data?.receivers ?? []).map((r) => (
-              <TableRow key={r.id}>
-                <TableCell>{r.priority}</TableCell>
-                <TableCell className="font-mono text-xs">
-                  <Link to="/routing/$id" params={{ id: r.id }} className="underline">
-                    {r.address_pattern}
-                  </Link>
-                </TableCell>
-                <TableCell>{r.action}</TableCell>
-                <TableCell className="font-mono text-xs">
-                  {r.webhook_sub_id ?? r.forward_to ?? '—'}
-                </TableCell>
-                <TableCell>{r.enabled ? 'yes' : 'no'}</TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+        <PaginatedTable<ReceiverRow>
+          caption="Receiver chain for the selected mailbox."
+          loading={detail.isLoading}
+          rows={detail.data?.receivers ?? []}
+          empty="No receivers configured."
+          rowKey={(r) => r.id}
+          columns={[
+            { key: 'priority', header: 'Priority', cell: (r) => r.priority },
+            {
+              key: 'address_pattern',
+              header: 'Pattern',
+              className: 'font-mono text-xs',
+              cell: (r) => (
+                <Link to="/mailboxes/$id" params={{ id: mailboxId }} className="underline">
+                  {r.address_pattern}
+                </Link>
+              ),
+            },
+            { key: 'action', header: 'Action', cell: (r) => r.action },
+            {
+              key: 'target',
+              header: 'Target',
+              className: 'font-mono text-xs',
+              cell: (r) => r.webhook_sub_id ?? r.forward_to ?? '—',
+            },
+            { key: 'enabled', header: 'Enabled', cell: (r) => (r.enabled ? 'yes' : 'no') },
+          ]}
+        />
       )}
     </PageCard>
   );

@@ -83,7 +83,7 @@ export function PageCard({
               <Breadcrumbs items={breadcrumbs} />
             </div>
           ) : null}
-          {title ? <h1 className="text-lg font-semibold tracking-tight">{title}</h1> : null}
+          {title ? <h1 className="text-2xl font-semibold tracking-tight">{title}</h1> : null}
           {description ? (
             <p className="mt-1 text-sm text-[var(--color-muted-foreground)]">{description}</p>
           ) : null}

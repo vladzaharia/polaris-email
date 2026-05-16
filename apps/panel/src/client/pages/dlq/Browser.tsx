@@ -20,6 +20,9 @@ import { Badge } from '../../components/ui/badge.js';
 import { DestructiveActionDialog } from '../../components/DestructiveActionDialog.js';
 import { useAdminMutation, useAdminQuery } from '../../hooks/useAdminApi.js';
 import { dlqKeys } from '../../queryKeys.js';
+import { formatDate, formatRelative } from '../../lib/format.js';
+import { ErrorText } from '../../components/ErrorText.js';
+import { EmptyState } from '../../components/EmptyState.js';
 
 interface DlqRow {
   id: string;
@@ -57,14 +60,23 @@ export function DlqBrowser() {
       {q.isLoading ? (
         <Skeleton className="h-32 w-full" />
       ) : q.error ? (
-        <p className="text-sm text-[var(--color-destructive)]">{q.error.message}</p>
+        <ErrorText error={q.error} />
       ) : rows.length === 0 ? (
-        <p className="text-sm text-[var(--color-muted-foreground)]">DLQ is empty.</p>
+        <EmptyState
+          title="DLQ is empty"
+          description="No webhook deliveries have failed enough to be dead-lettered."
+        />
       ) : (
+        // First column gets `sticky left-0` so the DLQ id stays visible as
+        // the row scrolls horizontally on narrow viewports. (Phase 6b.5)
+        <div className="overflow-x-auto">
         <Table>
+          <caption className="sr-only">
+            Failed webhook deliveries with retry counters and per-row Replay or Drop actions.
+          </caption>
           <TableHeader>
             <TableRow>
-              <TableHead>DLQ id</TableHead>
+              <TableHead className="sticky left-0 z-10 bg-[var(--color-card)]">DLQ id</TableHead>
               <TableHead>Webhook sub</TableHead>
               <TableHead>Attempts</TableHead>
               <TableHead>Last status</TableHead>
@@ -76,7 +88,7 @@ export function DlqBrowser() {
           <TableBody>
             {rows.map((r) => (
               <TableRow key={r.id}>
-                <TableCell className="font-mono text-xs">{r.id}</TableCell>
+                <TableCell className="sticky left-0 z-10 bg-[var(--color-card)] font-mono text-xs">{r.id}</TableCell>
                 <TableCell className="font-mono text-xs">{r.webhook_sub_id}</TableCell>
                 <TableCell>{r.attempts}</TableCell>
                 <TableCell>
@@ -86,7 +98,9 @@ export function DlqBrowser() {
                     '—'
                   )}
                 </TableCell>
-                <TableCell className="text-xs">{r.dlq_at}</TableCell>
+                <TableCell className="text-xs" title={formatDate(r.dlq_at)}>
+                  {formatRelative(r.dlq_at)}
+                </TableCell>
                 <TableCell className="font-mono text-xs">
                   {r.message_id ? (
                     <Link to="/messages/$id" params={{ id: r.message_id }} className="underline">
@@ -120,6 +134,7 @@ export function DlqBrowser() {
             ))}
           </TableBody>
         </Table>
+        </div>
       )}
 
       <DestructiveActionDialog

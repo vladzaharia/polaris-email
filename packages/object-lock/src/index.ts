@@ -37,27 +37,15 @@ export interface ObjectLockEnv {
   ANCHOR_RETENTION_DAYS?: string;
 }
 
+import { sha256Hex as sha256HexBytes, toHex } from '@polaris-email/hmac';
+
 const SERVICE = 's3';
 const ALGORITHM = 'AWS4-HMAC-SHA256';
 const DEFAULT_RETENTION_DAYS = 2555;
 
-const HEX_TABLE = (() => {
-  const t = new Array<string>(256);
-  for (let i = 0; i < 256; i++) t[i] = i.toString(16).padStart(2, '0');
-  return t;
-})();
-
-function toHex(bytes: Uint8Array): string {
-  let s = '';
-  for (const b of bytes) s += HEX_TABLE[b];
-  return s;
-}
-
 async function sha256Hex(input: Uint8Array | string): Promise<string> {
   const data = typeof input === 'string' ? new TextEncoder().encode(input) : input;
-  const buf = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
-  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', buf as ArrayBuffer));
-  return toHex(digest);
+  return sha256HexBytes(data);
 }
 
 async function hmac(key: Uint8Array, data: string): Promise<Uint8Array> {

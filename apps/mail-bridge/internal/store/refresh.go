@@ -66,6 +66,7 @@ func (r *Refresher) RefreshMailbox(ctx context.Context, mailboxID string) error 
 		return err
 	}
 	return r.Mirror.ApplyChanges(ctx, mailboxID, Changes{
+		Added:   ch.Added,
 		Updated: ch.Updated,
 		Deleted: ch.Deleted,
 		State:   ch.State,

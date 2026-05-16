@@ -242,10 +242,20 @@ func domainBulkOnboardCmd() *cobra.Command {
 				OutboundEnabled:    outbound,
 				WildcardSubdomains: wildcard,
 			}
+			fmt.Fprintf(Errw, "bulk-onboard: provisioning under zone %s pattern %s ...\n", zone, pattern)
 			var out []client.Domain
 			if err := cl.DoJSON(CtxBackground(), "POST", "/v1/admin/domains/bulk-onboard", nil, req, &out); err != nil {
 				return err
 			}
+			// The endpoint is synchronous and returns the full list on
+			// completion. Stream a per-row progress line so an operator
+			// running this on 100+ domains can see what landed; the table
+			// summary follows.
+			total := len(out)
+			for i, d := range out {
+				fmt.Fprintf(Errw, "  [%d/%d] %s -> %s\n", i+1, total, d.Name, d.Status)
+			}
+			fmt.Fprintf(Errw, "bulk-onboard: %d domain(s) processed\n", total)
 			t := &output.Table{Headers: []string{"NAME", "STATUS"}}
 			for _, d := range out {
 				t.Rows = append(t.Rows, []string{d.Name, d.Status})

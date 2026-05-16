@@ -20,6 +20,7 @@ import { Button } from '../../components/ui/button.js';
 import { Input } from '../../components/ui/input.js';
 import { Label } from '../../components/ui/label.js';
 import { Switch } from '../../components/ui/switch.js';
+import { Checkbox } from '../../components/ui/checkbox.js';
 import {
   Dialog,
   DialogContent,
@@ -40,6 +41,8 @@ import { StatusBadge } from '../../components/StatusBadge.js';
 import { SecretRevealDialog } from '../../components/SecretRevealDialog.js';
 import { useAdminMutation, useAdminQuery } from '../../hooks/useAdminApi.js';
 import { mailboxKeys, webhookKeys } from '../../queryKeys.js';
+import { ErrorText } from '../../components/ErrorText.js';
+import { EmptyState } from '../../components/EmptyState.js';
 
 interface MailboxRow {
   id: string;
@@ -143,17 +146,19 @@ function CreateWebhookSubDialog({ mailboxes }: { mailboxes: MailboxRow[] }) {
               <div className="mt-1 grid grid-cols-2 gap-2">
                 {EVENT_OPTIONS.map((ev) => {
                   const checked = selectedEvents.includes(ev);
+                  const id = `wh-evt-${ev}`;
                   return (
                     <label
                       key={ev}
+                      htmlFor={id}
                       className="flex items-center gap-2 rounded-md border border-[var(--color-border)] px-3 py-1.5 text-sm"
                     >
-                      <input
-                        type="checkbox"
+                      <Checkbox
+                        id={id}
                         checked={checked}
-                        onChange={(e) =>
+                        onCheckedChange={(c) =>
                           setSelectedEvents((prev) =>
-                            e.target.checked ? [...prev, ev] : prev.filter((x) => x !== ev),
+                            c === true ? [...prev, ev] : prev.filter((x) => x !== ev),
                           )
                         }
                       />
@@ -163,9 +168,7 @@ function CreateWebhookSubDialog({ mailboxes }: { mailboxes: MailboxRow[] }) {
                 })}
               </div>
             </div>
-            {create.error ? (
-              <p className="text-sm text-[var(--color-destructive)]">{create.error.message}</p>
-            ) : null}
+            <ErrorText error={create.error} />
           </div>
           <DialogFooter>
             <Button
@@ -244,9 +247,12 @@ export function WebhookSubsList() {
       {q.isLoading ? (
         <Skeleton className="h-32 w-full" />
       ) : q.error ? (
-        <p className="text-sm text-[var(--color-destructive)]">{q.error.message}</p>
+        <ErrorText error={q.error} />
       ) : (q.data?.data ?? []).length === 0 ? (
-        <p className="text-sm text-[var(--color-muted-foreground)]">No webhook subscriptions.</p>
+        <EmptyState
+          title="No webhook subscriptions"
+          description="Subscribe to message lifecycle events for the selected mailbox using the button above."
+        />
       ) : (
         <Table>
           <TableHeader>

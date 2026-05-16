@@ -20,8 +20,10 @@ ENV_VARS=(
   CF_ACCOUNT_ID POLARIS_API_HOSTNAME
   CF_API_TOKEN CF_ZONE_ID
   SYNTHETIC_MONITOR_DOMAIN ALERT_WEBHOOK SYNTHETIC_FROM SYNTHETIC_TO
-  OIDC_ISSUER OIDC_CLIENT_ID
+  OIDC_ISSUER OIDC_CLIENT_ID OIDC_CLIENT_SECRET
   ANCHOR_S3_ENDPOINT ANCHOR_S3_BUCKET ANCHOR_S3_REGION
+  ANCHOR_S3_ACCESS_KEY_ID ANCHOR_S3_SECRET_ACCESS_KEY
+  R2_PUBLIC_HOST BRIDGE_HOST
 )
 
 # Atomically rewrite .env.deploy from the current shell environment.
@@ -96,15 +98,28 @@ ask SYNTHETIC_FROM        "Synthetic monitor from-address (optional)" "${SYNTHET
 ask SYNTHETIC_TO          "Synthetic monitor to-address (optional)"   "${SYNTHETIC_TO:-${SYNTHETIC_MONITOR_DOMAIN:+synthetic@in.${SYNTHETIC_MONITOR_DOMAIN}}}"
 
 # Panel OIDC — optional, consumed by better-auth when the panel is fronted.
+# OIDC_CLIENT_SECRET is seeded as a Worker secret by bootstrap.sh.
 ask OIDC_ISSUER           "Panel OIDC issuer URL (optional)"
 ask OIDC_CLIENT_ID        "Panel OIDC client ID (optional)"
+ask OIDC_CLIENT_SECRET    "Panel OIDC client secret (optional, hidden)" "" 1
 
 # External Object-Lock target for audit anchors (Phase O1). Backblaze B2 is
-# the default vendor; the access-key id + secret are pushed separately via
-# `wrangler secret put ANCHOR_S3_*`. See infra/terraform/README.md.
-ask ANCHOR_S3_ENDPOINT    "Anchor S3 endpoint URL"                                 "${ANCHOR_S3_ENDPOINT:-https://s3.us-west-005.backblazeb2.com}"
-ask ANCHOR_S3_BUCKET      "Anchor S3 bucket (Object Lock COMPLIANCE)"              "${ANCHOR_S3_BUCKET:-polaris-anchors}"
-ask ANCHOR_S3_REGION      "Anchor S3 region (e.g. us-west-005)"                    "${ANCHOR_S3_REGION:-us-west-005}"
+# the default vendor; the access-key id + secret are pushed by bootstrap.sh
+# via `wrangler secret put ANCHOR_S3_*`. See infra/terraform/README.md for
+# B2 bucket + Application Key setup.
+ask ANCHOR_S3_ENDPOINT          "Anchor S3 endpoint URL"                                 "${ANCHOR_S3_ENDPOINT:-https://s3.us-west-005.backblazeb2.com}"
+ask ANCHOR_S3_BUCKET            "Anchor S3 bucket (Object Lock COMPLIANCE)"              "${ANCHOR_S3_BUCKET:-polaris-anchors}"
+ask ANCHOR_S3_REGION            "Anchor S3 region (e.g. us-west-005)"                    "${ANCHOR_S3_REGION:-us-west-005}"
+ask ANCHOR_S3_ACCESS_KEY_ID     "Anchor S3 application key ID (optional, hidden)" "" 1
+ask ANCHOR_S3_SECRET_ACCESS_KEY "Anchor S3 application key secret (optional, hidden)" "" 1
+
+# Public R2 custom domain serving message bodies + attachments (B5). The R2
+# bucket `polaris-email` is fronted by this hostname; clients fetch by
+# content-addressed (SHA-256) URL. See infra/terraform for DNS + bucket attach.
+ask R2_PUBLIC_HOST        "R2 public custom domain (e.g. r2.mail.example.com)"
+# Bridge public hostname (used to construct webhook subscription URLs that
+# polaris will POST back to). Only required when running the on-prem bridge.
+ask BRIDGE_HOST           "Mail-bridge public hostname (optional, e.g. bridge.example.com)"
 
 echo
 echo "wrote $ENV_FILE"

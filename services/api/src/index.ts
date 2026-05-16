@@ -10,6 +10,7 @@
 //                   `fanout` Worker in phase B1. Bounded concurrency keeps
 //                   webhook POST latency out of the HTTP request path.
 import { Hono } from 'hono';
+import { secureHeaders } from 'hono/secure-headers';
 import { admin } from './routes/admin.js';
 import { bootstrap } from './routes/bootstrap.js';
 import type { Env } from './env.js';
@@ -21,6 +22,12 @@ import { scheduled } from './scheduled/index.js';
 import { fanoutQueueConsumer, type FanoutEvent } from './queue/fanout.js';
 
 const app = new Hono<{ Bindings: Env }>();
+
+// Phase 3d — apply secure-headers middleware before any route. This is a
+// JSON-only API surface so we don't set a CSP (no HTML render path); the
+// defaults give us X-Content-Type-Options, X-Frame-Options, Referrer-Policy,
+// HSTS, and friends with no per-route configuration.
+app.use('*', secureHeaders());
 
 app.use('*', async (c, next) => {
   c.set('requestId', requestId());

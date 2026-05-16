@@ -24,9 +24,13 @@
 
 4. **Panel session → admin endpoints** — adversary has a stolen panel session.
    Mitigated by: better-auth with OIDC group gating (`polaris-admins`, default IdP
-   is Cloudflare Access), step-up auth for destructive ops (DKIM rotation, mass
-   revoke, anchor key rotation), every mutation audited with hash chain. Sessions
-   are stored in D1.
+   is Cloudflare Access), the two-person `withApproval(action)` middleware in
+   `apps/panel/src/server/auth/approvals.ts` for destructive ops (DKIM
+   rotation, mass revoke, anchor key rotation, bridge deregister, mailbox-
+   credential rotate), every mutation audited with hash chain. Sessions are
+   stored in D1. The earlier WebAuthn step-up flow was removed in pre-launch
+   hardening — destructive operations now require a second admin's approval,
+   not a self-elevating token, so a single compromised session cannot escalate.
 
 5. **`services/out` ↔ `services/api`** — `send_email` bindings are
    CF-account-scoped. `services/out` is invoked from `services/api` only
@@ -76,6 +80,96 @@ of R2 or move bodies behind an authenticated proxy.
 Audit anchors are **not** stored in R2 at all — they live in an external
 Backblaze B2 bucket (see the "Audit anchors" section below). No
 polaris-email R2 bucket carries audit material.
+
+## Cloudflare API token scope (CF_API_TOKEN)
+
+The control plane stores a single `CF_API_TOKEN` secret in `services/api`'s
+Worker secrets. It is used by:
+
+- The DKIM rotation cron (DNS record edits + Email Service `/sender-domains`).
+- The new **CF zone discover + configure** flow
+  (`services/api/src/routes/admin/cf-zones.ts`), which lists every zone in
+  the operator's account and inspects each one's Email Routing + sender
+  state. Apply path enables Email Routing, sets the catch-all to
+  `polaris-email-in`, onboards the sender domain, and creates the D1
+  `mail_domains` row.
+
+Required scopes (broader than the original "Email Routing on a specific
+zone" model — the discover view needs to enumerate all zones):
+
+- Account → **Email Routing** → Edit
+- Account → **Workers Email Sending** → Edit
+- Account → **Zone** → Read (account-wide)
+- Zone → Zone → Edit
+- Zone → DNS → Edit
+
+The token is **per-account**. Use a dedicated CF account for polaris-email
+so the token's blast radius is confined to that account's zones. Rotation:
+mint a new token, push via `wrangler secret put CF_API_TOKEN` on
+`polaris-email-api`, then revoke the old token in the Cloudflare dashboard.
+The CF zone configure path is idempotent so a brief inflight window with
+both tokens valid is safe.
+
+Note that polaris-email **never modifies operator-defined named-address
+routing rules**. The discover view surfaces them as warnings (e.g. "3 named
+rules will intercept mail before reaching polaris-email-in") but the
+configure flow never deletes them — those rules belong to the operator.
+
+## Bridge cross-mailbox read (v1 scope)
+
+Mail bridges authenticate to the control plane with a **per-bridge HMAC
+key** (the global `BRIDGE_HMAC_KEY` was retired in pre-launch hardening so
+that a single leaked key no longer compromises every bridge). The
+per-bridge key still grants **cross-mailbox read** within the deployment:
+a bridge can fetch credentials and message state for any mailbox it serves.
+
+This is intentional v1 scope. The bridge is the IMAP / SMTPS client surface
+for every mailbox-credential it mirrors, so it must be able to look those
+up by username on demand. Narrowing the scope to per-mailbox would require
+either a per-mailbox bridge identity (operationally painful) or an
+authenticated mailbox-claim handshake (deferred). v1.1 will narrow this:
+the bridge will present the resolving mailbox-credential's bcrypt hash as
+proof-of-possession before getting back any non-credential mailbox state.
+
+Per-bridge HMAC isolation prevents the **global-key blast radius** failure
+mode (one leaked key everywhere); the v1 trust model accepts the residual
+cross-mailbox-read inside one bridge.
+
+## Anchor signing key rotation
+
+The anchor signing key (`ANCHOR_SIGNING_KEY`) signs each hourly audit
+anchor before it is pushed to Backblaze B2. Rotation is intentionally
+manual and gated:
+
+1. Mint a new signing key out-of-band (`openssl rand -hex 32`) and stash
+   it in the operator's password vault.
+2. With a second admin present (`withApproval('anchor.rotate')`), set the
+   new key as `ANCHOR_SIGNING_KEY_NEXT` via `wrangler secret put` on
+   `services/api`. The cron picks it up on the next anchor write and
+   signs the new anchor with both keys (overlap window).
+3. Confirm the next anchor lands in B2 with both signatures (`polaris-email
+   audit anchors --verify`).
+4. Promote: rename `ANCHOR_SIGNING_KEY_NEXT` → `ANCHOR_SIGNING_KEY`,
+   delete the old `ANCHOR_SIGNING_KEY` secret. The next anchor is signed
+   only with the new key.
+5. Audit-log the rotation with the new key's fingerprint.
+
+External verifiers must keep both old + new public keys until every
+in-retention anchor has been verified; the public-key roster is published
+alongside `bin/audit-verify.sh`.
+
+## `DEV_MODE` operator gate
+
+`DEV_MODE` is a local-development-only flag. It must **never** be set in
+production. The panel's `/api/dev/login` backdoor short-circuits OIDC and
+hands out a session for any local user; the route is **fail-closed when
+`ENVIRONMENT=production`** (added in pre-launch hardening, phase 3e) — the
+endpoint refuses to serve and logs an error regardless of `DEV_MODE`.
+
+The two values are checked together: `ENVIRONMENT=production` OR `DEV_MODE`
+unset → backdoor refuses. To run the panel locally with the dev login
+enabled: `DEV_MODE=1` and leave `ENVIRONMENT` unset (or set it to
+`development`).
 
 ## Read-once secrets (A11/B6)
 

@@ -69,9 +69,9 @@ variable "dmarc_rua" {
 }
 
 variable "inbound_worker_name" {
-  description = "Name of the deployed `workers/in` Worker that handles the catch-all rule. Wrangler deploys the Worker; this module just references it by name. TODO(operator): keep this in sync with `apps/in/wrangler.jsonc`'s `name` field."
+  description = "Name of the deployed `services/in` Worker that handles the catch-all rule. Wrangler deploys the Worker; this module just references it by name. Keep this in sync with `services/in/wrangler.jsonc`'s `name` field."
   type        = string
-  default     = "polaris-in"
+  default     = "polaris-email-in"
 }
 
 variable "enable_email_routing" {

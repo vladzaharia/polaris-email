@@ -25,3 +25,5 @@ export * from './tabs.js';
 export * from './accordion.js';
 export * from './form.js';
 export * from './sonner.js';
+export * from './alert.js';
+export * from './textarea.js';

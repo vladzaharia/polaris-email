@@ -5,6 +5,7 @@ import { useState } from 'react';
 import { PageCard } from '../../layouts/PageCard.js';
 import { Button } from '../../components/ui/button.js';
 import { Input } from '../../components/ui/input.js';
+import { Textarea } from '../../components/ui/textarea.js';
 import { Label } from '../../components/ui/label.js';
 import {
   Select,
@@ -130,12 +131,12 @@ export function TestSendForm() {
         </div>
         <div>
           <Label htmlFor="text">Text body</Label>
-          <textarea
+          <Textarea
             id="text"
             value={text}
             onChange={(e) => setText(e.target.value)}
             rows={5}
-            className="mt-1 block w-full rounded-md border bg-transparent px-3 py-2 text-sm font-mono"
+            className="mt-1 font-mono"
           />
         </div>
         <Button onClick={submit} disabled={submitting || !from || !to}>
@@ -145,7 +146,7 @@ export function TestSendForm() {
 
         {messageId ? (
           <section className="mt-6">
-            <h2 className="mb-3 text-sm font-semibold">Lifecycle</h2>
+            <h2 className="mb-3 text-xl font-medium">Lifecycle</h2>
             <p className="mb-3 text-xs text-[var(--color-muted-foreground)]">
               message_id: <code>{messageId}</code>
             </p>

@@ -76,7 +76,7 @@ provider "cloudflare" {
 #     outbound = true
 #   }
 #
-#   inbound_worker_name = "polaris-in"
+#   inbound_worker_name = "polaris-email-in"
 #
 #   spf_record   = "v=spf1 include:_spf.mx.cloudflare.net ~all"
 #   dmarc_policy = "none"

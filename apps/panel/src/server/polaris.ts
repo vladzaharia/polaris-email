@@ -5,6 +5,12 @@
 // implementation; when service-bound there's no HMAC needed (the bindings
 // authenticate platform-side), but we keep the auth builder available for the
 // fallback path where the panel calls a different host over plain HTTPS.
+//
+// Phase 6d.4 — memoized via WeakMap<Env, PolarisClient>. Workers reuse the
+// same `env` reference across requests within a single isolate, so caching
+// per-env saves the SDK construction (closure allocation, HMAC builder
+// resolution) on every request. WeakMap means a stale Env reference is
+// garbage-collected whenever the isolate recycles it.
 import { Polaris, type PolarisRequest } from '@polaris/sdk';
 import { sign, generateNonce } from '@polaris-email/hmac';
 import type { Env } from './env.js';
@@ -19,7 +25,12 @@ export interface PolarisClient {
   ): Promise<{ status: number; body: T }>;
 }
 
+const cache = new WeakMap<Env, PolarisClient>();
+
 export function makePolaris(env: Env): PolarisClient {
+  const cached = cache.get(env);
+  if (cached) return cached;
+
   const hasHmac = Boolean(env.PANEL_ADMIN_KEY_ID && env.PANEL_ADMIN_KEY_SECRET);
   const sdk = new Polaris({
     // baseUrl is ignored when fetch is the service binding (the binding
@@ -55,7 +66,7 @@ export function makePolaris(env: Env): PolarisClient {
       : {}),
   });
 
-  return {
+  const client: PolarisClient = {
     async call(method, path, body, query, extraHeaders) {
       const res = await sdk.call(method, path, {
         body: body ?? undefined,
@@ -65,4 +76,6 @@ export function makePolaris(env: Env): PolarisClient {
       return { status: res.status, body: res.body as never };
     },
   };
+  cache.set(env, client);
+  return client;
 }

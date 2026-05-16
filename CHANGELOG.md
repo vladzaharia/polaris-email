@@ -4,6 +4,100 @@ This file tracks notable architectural changes. For operator-visible
 behavior, see [`CONSUMER-CONTRACT.md`](CONSUMER-CONTRACT.md); for cutover
 runbooks, see [`docs/deploy.md`](docs/deploy.md).
 
+## 2026-05-15 — Pre-launch hardening pass
+
+Eight-phase hardening sweep before first non-synthetic consumer. Operator-
+and consumer-visible highlights:
+
+- **Cold-start path repaired.** `bin/bootstrap.sh` + `bin/render-wrangler-local.sh`
+  now drive a clean clone → green smoke without manual hand-edits; the
+  Backblaze B2 anchor target is a documented prerequisite (see
+  `infra/terraform/README.md`); previously-missing wrangler secrets
+  (`OIDC_CLIENT_SECRET`, `ANCHOR_S3_*`) are prompted at `make configure`
+  time.
+- **Production correctness P0s fixed.** Audit-chain CAS unified;
+  `services/out` no longer routes to the wrong recipient on retries;
+  `services/in` enqueue failures are no longer swallowed; IMAP STORE /
+  EXPUNGE / `BODY[]` paths fixed in the bridge; bridge webhook handler
+  rejects nil HMAC and replays; panel step-up flow removed (replaced by
+  the two-person `withApproval` middleware in
+  `apps/panel/src/server/auth/approvals.ts`); per-bridge HMAC migration
+  retires the global `BRIDGE_HMAC_KEY`.
+- **P1 trust hardening.** SSRF allowlist hardened (RFC 1918 + CGNAT + DNS
+  pinning); auth path consolidated; KV TTL bug fixed; CSP + security
+  headers added panel-side; inbound `Authentication-Results` extracted
+  into the `Message.auth` shape; revocation cache now atomically busts
+  `KV_KEY_CACHE` alongside the `KV_REVOCATIONS` write.
+- **Pipeline correctness.** Attachment R2 writes are now required (no
+  silent drop); UID + change-counter advance atomically; anchor write
+  happens **after** D1 commit; MIME walker enforces a depth limit;
+  attachment filenames are sanitised before they hit R2 keys.
+- **SDK + CLI polish.** sdk-go gained typed `*APIError` sub-types,
+  `WebhookEnvelope` + `ParseWebhookEnvelope` + `VerifyAndParseWebhook`;
+  sdk-node gained `listAllMessages` AsyncIterable + `assertIdempotencyKey`;
+  both SDKs ship README + LICENSE; `polaris-email` CLI gained
+  `--mailbox` (with deprecated `--tenant` alias warning), `auth verify`,
+  `bridge deregister --confirm-name <name>`, and a fixed
+  `POLARIS_TOKEN` env-priority bug.
+- **Panel polish.** `PaginatedTable` adopted across listings; theme
+  toggle + accessibility baseline; shared `EmptyState` /
+  `ErrorText` / `Alert` / `ActionBar` primitives; heading hierarchy
+  fixed; sidebar IA cleanup; route loaders + `pendingComponent` +
+  Vite `manualChunks` for faster nav.
+- **Documentation reconciliation.** Docs now match the post-B1 (3 control-
+  plane Workers + panel) world, the post-B3 un-versioned HMAC, the
+  post-B4 `bridge` terminology, and the post-O1 single-account topology
+  with Backblaze B2 anchors.
+
+## 2026-05-15 — Pre-launch hardening (Phase 5)
+
+### Code consolidation + dead code (Phase 5)
+
+- **`@polaris-email/providers` package removed.** The `Provider`,
+  `CloudflareProvider`, and `StaticProviderRegistry` abstractions had no
+  consumer: `services/out` selects the outbound binding inline (it has
+  exactly one provider — Cloudflare Email Service — and routes by binding
+  name, not via a registry indirection). Reintroducing a registry layer is
+  cheap if a second provider is ever wired up; carrying the unused code
+  across launch was not. The package's local tests covered only the
+  registry shape and were dead with the package.
+- **SHA-256 helpers consolidated** to `sha256Hex` exported from
+  `@polaris-email/hmac`. Replaced inline copies in
+  `services/api/src/{routes/messages.ts, routes/messages-state.ts, queue/fanout.ts, hashing.ts}`,
+  `packages/pipeline/src/process-message.ts`, and
+  `packages/object-lock/src/index.ts`.
+- **`MessageRow` + `rowMeta()`** extracted to
+  `services/api/src/lib/message-row.ts`; **`loadR2Bytes()`** to
+  `services/api/src/lib/r2-helpers.ts`. Both were duplicated verbatim
+  across `routes/messages.ts` and `routes/messages-state.ts`.
+- **`NONCE_TTL_SECONDS`** exported from `services/api/src/auth.ts`;
+  inline `10 * 60` literals replaced.
+- **MIME walker dedup**: `walkPartsWithHeaders` and
+  `walkExtractAttachments` in `packages/mime/src/json.ts` now delegate to
+  a single `walkParts(body, ct, xfer, visitor)` helper. Boundary-splitting
+  + recursion-cap logic lives in one place; the two outer functions are
+  visitor adapters.
+- **`FORBIDDEN_HEADERS` partial consolidation**: `packages/mime` exports
+  `TRANSPORT_FORBIDDEN_HEADERS` (the relay/MTA-owned set);
+  `packages/schema` builds its broader JSON-API set as the union of the
+  transport set + the "we generate this from JSON" set. The two serve
+  different purposes (transport-security on raw RFC822 vs. dedicated-field
+  collisions on JSON SendRequest) and are documented as such.
+- **Type-safety escape hatches removed** in `services/api/src/lib/state.ts`
+  (`DbLike` interface eliminated; helpers accept `D1Database` directly),
+  `services/in/src/index.ts` (`Env extends PipelineEnv` rather than casting),
+  `apps/panel/src/server/polaris.ts` (`as never` replaced with a generic
+  `T` parameter), and `services/api/src/auth.ts` (KV-cached row now
+  validated via `isRowShape` runtime guard before trusting `status`). The
+  `obj as unknown as { arrayBuffer(): ... }` casts in the new
+  `loadR2Bytes` helper are dropped — `R2Object` from
+  `@cloudflare/workers-types` already declares the method.
+- **Janitor misleading `deletedMessages` counter removed**
+  (`services/api/src/scheduled/janitor.ts`). The empty for-loop and
+  always-zero counter are gone; the gap is documented inline as
+  `TODO(retention)` (proper fix needs a `mailboxes.retention_days` column
+  + per-mailbox sweep — out of scope for hardening).
+
 ## 2026-05-14 — Cleanup plan implementation (Phases M, N, O)
 
 Comprehensive cleanup driven by a 16-specialist code review. ~290 files
@@ -59,9 +153,13 @@ changed; net -3380 LOC.
   WebSocket, EventSource, blob endpoints, bearer-token model). Bridge
   is now SMTPS + IMAP only; `mailbox_credentials.bearer_token` column
   dropped.
-- **IMAP migration to `emersion/go-imap` v2 (O2)** — **pending**; this
-  cleanup wave kept the hand-rolled handler in tree. The on-the-wire
-  protocol does not change. Tracked separately.
+- **IMAP migration to `emersion/go-imap` v2 (O2)** — **done**; the
+  hand-rolled handler was replaced in Phase O. The bridge IMAP listener
+  now runs on `github.com/emersion/go-imap/v2` (currently v2.0.0-beta.8)
+  via the library's `imapserver.Backend` + `imapserver.Session`
+  interfaces, wired in `apps/mail-bridge/cmd/polaris-bridge/main.go`
+  and implemented in `apps/mail-bridge/internal/imap/backend.go`. The
+  on-the-wire protocol did not change.
 - **Read-once secrets schema (A11/B6)** — no plaintext columns on
   `principals`, `mailbox_credentials`, or `bridges`; secrets shown
   exactly once at creation/rotation; panel `SecretRevealDialog`

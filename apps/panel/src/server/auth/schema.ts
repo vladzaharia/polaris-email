@@ -2,12 +2,16 @@
 //
 // Better-auth's `drizzleAdapter` requires Drizzle table definitions; these
 // match the shape better-auth expects for its core (user/session/account) plus
-// the SSO plugin (sso_provider). The panel-specific `step_ups` and
-// `approvals` tables live alongside.
+// the SSO plugin (sso_provider). The panel-specific `approvals` table lives
+// alongside.
 //
 // All tables live in the same `polaris-email` D1 as services/api. Better-auth
 // owns the user/session/account/verification/sso_provider tables; the panel
-// owns step_ups + approvals.
+// owns the `approvals` table for the two-person sensitive-action flow.
+//
+// The `step_ups` table that previously backed a self-elevation flow has been
+// dropped — destructive actions are now exclusively gated on two-person
+// approvals. See `migrations/0001_drop_step_ups.sql` for the D1 drop.
 import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core';
 
 export const user = sqliteTable('user', {
@@ -74,16 +78,6 @@ export const ssoProvider = sqliteTable('sso_provider', {
   organizationId: text('organization_id'),
   createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
   updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull(),
-});
-
-// Panel-specific: step-up tokens. A row exists for each successful step-up
-// (fresh re-auth / WebAuthn) and grants elevated access until `expires_at`.
-export const stepUps = sqliteTable('step_ups', {
-  id: text('id').primaryKey(),
-  userId: text('user_id').notNull(),
-  reason: text('reason').notNull(),
-  createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
-  expiresAt: integer('expires_at', { mode: 'timestamp_ms' }).notNull(),
 });
 
 // Panel-specific: two-person approvals.

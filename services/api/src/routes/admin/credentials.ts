@@ -101,14 +101,14 @@ credentials.post('/v1/admin/credentials/:id/revoke', requireScope('admin:rotate'
   const resolved = await resolveCredential(c, id);
   if (!resolved) return buildError(c, 'not_found', 'credential not found');
   const nowIso = new Date().toISOString();
+  const cacheKeysToBust: string[] = [];
   if (resolved.kind === 'api_key') {
     await c.env.DB.prepare(
       `UPDATE api_keys SET status = 'revoked', revoked_at = ? WHERE id = ? AND status <> 'revoked'`,
     )
       .bind(nowIso, id)
       .run();
-    await c.env.KV_KEY_CACHE.delete(`plain:${id}`);
-    await c.env.KV_KEY_CACHE.delete(`key:${id}`);
+    cacheKeysToBust.push(`plain:${id}`, `key:${id}`);
   } else {
     await c.env.DB.prepare(
       `UPDATE submission_credentials SET disabled_at = ? WHERE id = ? AND disabled_at IS NULL`,
@@ -116,10 +116,11 @@ credentials.post('/v1/admin/credentials/:id/revoke', requireScope('admin:rotate'
       .bind(nowIso, id)
       .run();
   }
-  // Stamp KV_REVOCATIONS so the next POST /v1/messages (RFC822) and
-  // generic HMAC auth both reject immediately, regardless of the kind
-  // (api key vs submission cred) — both authenticate via principal_id.
-  await revoke(c.env, resolved.principal_id);
+  // Phase 3g — `revoke()` now owns the KV_KEY_CACHE bust too. Stamps
+  // KV_REVOCATIONS so the next POST /v1/messages (RFC822) and generic
+  // HMAC auth both reject immediately, regardless of the kind (api key vs
+  // submission cred) — both authenticate via principal_id.
+  await revoke(c.env, resolved.principal_id, cacheKeysToBust);
   await audit(c.env, {
     actor: `key:${key.key_id}`,
     action: resolved.kind === 'api_key' ? 'api_key.revoke' : 'smtp_credential.disable',

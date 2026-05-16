@@ -44,12 +44,3 @@ export async function hashSecret(plain: string, pepper: string | undefined): Pro
   const out = await pbkdf2(peppered, salt, KDF_ITERATIONS, KDF_OUTLEN);
   return `$${KDF_ID}$i=${KDF_ITERATIONS}$${b64enc(salt)}$${b64enc(out)}`;
 }
-
-export async function sha256Hex(s: string | Uint8Array): Promise<string> {
-  const data = typeof s === 'string' ? new TextEncoder().encode(s) : s;
-  const digest = await crypto.subtle.digest('SHA-256', asBuf(data));
-  const bytes = new Uint8Array(digest);
-  let out = '';
-  for (const b of bytes) out += b.toString(16).padStart(2, '0');
-  return out;
-}

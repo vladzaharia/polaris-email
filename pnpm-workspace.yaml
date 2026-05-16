@@ -2,4 +2,3 @@ packages:
   - 'packages/*'
   - 'services/*'
   - 'apps/*'
-  - 'apps/panel'

@@ -7,12 +7,14 @@
 // Flow:
 //   1. Bootstrap; create mailbox, verified domain, sender, smtp-credential
 //      (so the `submission_credentials` row exists for the bridge path).
-//   2. POST /v1/messages twice with:
+//   2. Register a bridge to mint a per-bridge HMAC secret (Phase 2h —
+//      no global BRIDGE_HMAC_KEY anymore; each bridge has its own).
+//   3. POST /v1/messages twice with:
 //        Content-Type: message/rfc822
 //        Idempotency-Key: <same value>
-//        Bridge HMAC signed with env.BRIDGE_HMAC_KEY
-//   3. Both responses MUST return the same message_id.
-//   4. OUTBOUND_QUEUE must have exactly ONE enqueue (the second call is a
+//        Bridge HMAC signed with the bridge's per-bridge secret
+//   4. Both responses MUST return the same message_id.
+//   5. OUTBOUND_QUEUE must have exactly ONE enqueue (the second call is a
 //      pure idempotency replay; no fresh send).
 
 import { describe, expect, it } from 'vitest';
@@ -28,12 +30,11 @@ import {
   tinyRfc822,
 } from './setup.js';
 
-const BRIDGE_HMAC_KEY = 'test-bridge-hmac-key-must-be-32-bytes-long-please';
-
 async function postRfc822(
   env: Parameters<typeof app.fetch>[1],
   args: {
     bridgeId: string;
+    bridgeSecret: string;
     submissionId: string;
     smtpUsername: string;
     body: Uint8Array;
@@ -44,7 +45,8 @@ async function postRfc822(
   const u = new URL(url);
   const ts = String(Date.now());
   const nonce = generateNonce();
-  // Bridge HMAC is computed over the canonical request shape.
+  // Bridge HMAC is computed over the canonical request shape using the
+  // per-bridge secret minted at registration.
   const sig = await sign(
     {
       direction: 'polaris-api',
@@ -55,7 +57,7 @@ async function postRfc822(
       nonce,
       body: args.body,
     },
-    BRIDGE_HMAC_KEY,
+    args.bridgeSecret,
   );
   const req = new Request(url, {
     method: 'POST',
@@ -80,7 +82,7 @@ interface MockQueueLike {
 
 describe('A12: SMTPS idempotency dedup', () => {
   it('two POSTs with identical Idempotency-Key → same message_id, single enqueue', async () => {
-    const { env, admin } = await bootstrapEnv({ BRIDGE_HMAC_KEY });
+    const { env, admin } = await bootstrapEnv();
 
     // 1) Mailbox + verified domain + sender + smtp-credential.
     const mbId = await createMailbox(env, admin, 'smtps-mb');
@@ -134,7 +136,8 @@ describe('A12: SMTPS idempotency dedup', () => {
     expect(credRes.status).toBe(201);
     const cred = (await credRes.json()) as { username: string };
 
-    // 2) Register a bridge (only the row needs to exist; HMAC is global).
+    // 2) Register a bridge — captures the per-bridge HMAC secret returned
+    //    once at registration. There is no longer a shared global key.
     const bridgeRes = await app.fetch(
       await signedRequest(
         'https://x/v1/admin/bridges',
@@ -147,7 +150,8 @@ describe('A12: SMTPS idempotency dedup', () => {
       ctx,
     );
     expect(bridgeRes.status).toBe(201);
-    const bridge = (await bridgeRes.json()) as { id: string };
+    const bridge = (await bridgeRes.json()) as { id: string; hmac_key: string };
+    expect(bridge.hmac_key.length).toBeGreaterThan(20);
 
     // 3) Identical Idempotency-Key, two POSTs, same RFC822.
     const idempotencyKey = '<msg-' + ulid() + '@example.com>';
@@ -163,6 +167,7 @@ describe('A12: SMTPS idempotency dedup', () => {
     const sub2 = ulid();
     const r1 = await postRfc822(env, {
       bridgeId: bridge.id,
+      bridgeSecret: bridge.hmac_key,
       submissionId: sub1,
       smtpUsername: cred.username,
       body,
@@ -174,6 +179,7 @@ describe('A12: SMTPS idempotency dedup', () => {
 
     const r2 = await postRfc822(env, {
       bridgeId: bridge.id,
+      bridgeSecret: bridge.hmac_key,
       submissionId: sub2,
       smtpUsername: cred.username,
       body,

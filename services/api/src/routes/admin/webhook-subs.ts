@@ -8,6 +8,7 @@ import { audit } from '../../audit.js';
 import { bodyText, requireScope } from '../../auth.js';
 import type { Env } from '../../env.js';
 import { buildError } from '../../errors.js';
+import { validateWebhookUrl, type WebhookKind } from '../../lib/webhook-url.js';
 
 export const webhookSubs = new Hono<{ Bindings: Env }>();
 
@@ -63,6 +64,19 @@ webhookSubs.patch('/v1/admin/webhook-subs/:id', requireScope('admin:rotate'), as
   const sets: string[] = [];
   const binds: unknown[] = [];
   if (body.url !== undefined) {
+    // PATCH must re-run the same SSRF allowlist that POST applied at create
+    // time. Without this, a row created with a benign URL could be flipped to
+    // an http:// or non-.ts.net target via PATCH and would then bypass the
+    // create-time gate entirely. The runtime `safeFetch` defence catches the
+    // worst cases at fanout time, but failing fast at admin write time keeps
+    // misconfigured rows from ever reaching the queue.
+    const existing = await c.env.DB.prepare(`SELECT kind FROM webhook_subs WHERE id = ?`)
+      .bind(id)
+      .first<{ kind: string }>();
+    if (!existing) return buildError(c, 'not_found', 'webhook_sub not found');
+    const kind = existing.kind as WebhookKind;
+    const urlErr = validateWebhookUrl(body.url, kind);
+    if (urlErr) return buildError(c, 'bad_request', urlErr);
     sets.push('url = ?');
     binds.push(body.url);
   }

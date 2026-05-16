@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import app from '../src/index.js';
 import { mkEnv } from './mocks.js';
 import { sign, generateNonce } from '@polaris-email/hmac';
+import { ulid } from '@polaris-email/ids';
 
 // Use an execution context that captures waitUntil promises so KV writes complete
 const ctx = {
@@ -1130,5 +1131,243 @@ describe('admin: mailbox_credentials lifecycle', () => {
     const db = env.DB as unknown as MockDb;
     const row = (db.tables.get('mailbox_credentials') ?? []).find((r) => r['id'] === target.id);
     expect(row?.['disabled_at']).toBeTruthy();
+  });
+});
+
+// ===========================================================================
+// Phase 2h: per-bridge HMAC isolation. The bridges table stores an argon2
+// hash of the per-bridge secret; the plaintext is cached in KV under
+// `bridge_plain:<id>`. Cross-bridge impersonation (signing with bridge A's
+// secret while presenting bridge B's id) MUST fail at the verify path.
+// ===========================================================================
+describe('bridge HMAC: per-bridge secret isolation', () => {
+  it('rejects a request signed with bridge A but presenting bridge B id', async () => {
+    const { env, admin } = await bootstrapEnv();
+    // Set up the rest of the bridge submission path (sender +
+    // smtp-credential) so the only thing under test is the HMAC identity
+    // check, not downstream validation.
+    const mbId = await createMailbox(env, admin, 'isolation-mb');
+    const isoNow = new Date().toISOString();
+    await env.DB.prepare(
+      `INSERT INTO mail_domains (id, zone_id, name, status, verified_at, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    )
+      .bind(
+        '01HX00DOMAIN0000000ISO0001',
+        '01HX00ZONE000000000ISO0001',
+        'iso.example.com',
+        'verified',
+        isoNow,
+        isoNow,
+        isoNow,
+      )
+      .run();
+    const domLookup = (await (
+      await app.fetch(
+        await signedRequest(
+          'https://x/v1/admin/domains/lookup?name=iso.example.com',
+          '',
+          'GET',
+          admin.admin_key_secret,
+          admin.admin_key_id,
+        ),
+        env,
+        ctx,
+      )
+    ).json()) as { id: string };
+    const sender = (await (
+      await app.fetch(
+        await signedRequest(
+          `https://x/v1/admin/domains/${domLookup.id}/senders`,
+          JSON.stringify({
+            mailbox_id: mbId,
+            local_part: 'noreply',
+            default_for_mailbox: true,
+          }),
+          'POST',
+          admin.admin_key_secret,
+          admin.admin_key_id,
+        ),
+        env,
+        ctx,
+      )
+    ).json()) as { id: string; address: string };
+    const cred = (await (
+      await app.fetch(
+        await signedRequest(
+          `https://x/v1/admin/senders/${sender.id}/smtp-credentials`,
+          JSON.stringify({ label: 'iso-test' }),
+          'POST',
+          admin.admin_key_secret,
+          admin.admin_key_id,
+        ),
+        env,
+        ctx,
+      )
+    ).json()) as { username: string };
+
+    // Register two bridges; capture each one-time plaintext secret.
+    const bA = (await (
+      await app.fetch(
+        await signedRequest(
+          'https://x/v1/admin/bridges',
+          JSON.stringify({ name: 'bridge-A' }),
+          'POST',
+          admin.admin_key_secret,
+          admin.admin_key_id,
+        ),
+        env,
+        ctx,
+      )
+    ).json()) as { id: string; hmac_key: string };
+    const bB = (await (
+      await app.fetch(
+        await signedRequest(
+          'https://x/v1/admin/bridges',
+          JSON.stringify({ name: 'bridge-B' }),
+          'POST',
+          admin.admin_key_secret,
+          admin.admin_key_id,
+        ),
+        env,
+        ctx,
+      )
+    ).json()) as { id: string; hmac_key: string };
+    expect(bA.hmac_key).not.toBe(bB.hmac_key);
+
+    // Build a tiny RFC822 we can submit twice with different ids.
+    const rfc822 =
+      `From: noreply@iso.example.com\r\nTo: x@iso.example.com\r\n` +
+      `Subject: iso\r\nDate: Mon, 1 Jan 2024 00:00:00 +0000\r\n` +
+      `Message-ID: <iso-${Date.now()}@iso.example.com>\r\n` +
+      `Content-Type: text/plain; charset=utf-8\r\n\r\nbody\r\n`;
+    const body = new TextEncoder().encode(rfc822);
+
+    async function signedBridgePost(args: {
+      bridgeId: string;
+      bridgeSecret: string;
+      submissionId: string;
+    }): Promise<Response> {
+      const url = 'https://x/v1/messages';
+      const u = new URL(url);
+      const ts = String(Date.now());
+      const nonce = generateNonce();
+      const sig = await sign(
+        {
+          direction: 'polaris-api',
+          method: 'POST',
+          path: u.pathname,
+          query: u.search,
+          ts,
+          nonce,
+          body,
+        },
+        args.bridgeSecret,
+      );
+      const req = new Request(url, {
+        method: 'POST',
+        headers: {
+          'content-type': 'message/rfc822',
+          'x-polaris-bridge-id': args.bridgeId,
+          'x-polaris-submission-id': args.submissionId,
+          'x-polaris-smtp-username': cred.username,
+          'x-polaris-ts': ts,
+          'x-polaris-nonce': nonce,
+          'x-polaris-sig': sig,
+          'idempotency-key': '<happy-' + args.submissionId + '@iso>',
+        },
+        body,
+      });
+      return app.fetch(req, env, ctx);
+    }
+
+    // Signing with bridge A's secret + bridge A's id → 202.
+    const okRes = await signedBridgePost({
+      bridgeId: bA.id,
+      bridgeSecret: bA.hmac_key,
+      submissionId: ulid(),
+    });
+    expect(okRes.status).toBe(202);
+
+    // Signing with bridge A's secret but presenting bridge B's id → 401.
+    const badRes = await signedBridgePost({
+      bridgeId: bB.id,
+      bridgeSecret: bA.hmac_key,
+      submissionId: ulid(),
+    });
+    expect(badRes.status).toBe(401);
+    const badJ = (await badRes.json()) as { error?: { message?: string } };
+    // Confirm the rejection came from the HMAC verify (signature mismatch
+    // against bridge B's actual secret), not from a missing-bridge or
+    // disabled-bridge code path.
+    expect(badJ.error?.message ?? '').toMatch(/HMAC/);
+
+    // And vice versa: bridge B's secret + bridge B's id → 202.
+    const okRes2 = await signedBridgePost({
+      bridgeId: bB.id,
+      bridgeSecret: bB.hmac_key,
+      submissionId: ulid(),
+    });
+    expect(okRes2.status).toBe(202);
+  });
+
+  it('returns key_propagating when KV cache is missing the plaintext', async () => {
+    // Mirrors the hardening tradeoff: the stored argon2 hash is one-way, so
+    // a global KV flush forces an operator rotation rather than transparent
+    // recovery. This regression-locks that behaviour.
+    const { env, admin } = await bootstrapEnv();
+    const bridgeRes = await app.fetch(
+      await signedRequest(
+        'https://x/v1/admin/bridges',
+        JSON.stringify({ name: 'kv-flush-bridge' }),
+        'POST',
+        admin.admin_key_secret,
+        admin.admin_key_id,
+      ),
+      env,
+      ctx,
+    );
+    const bridge = (await bridgeRes.json()) as { id: string; hmac_key: string };
+
+    // Simulate a KV cache flush (eviction / migration) by deleting just the
+    // plaintext entry for this bridge.
+    await env.KV_KEY_CACHE.delete(`bridge_plain:${bridge.id}`);
+
+    const url = 'https://x/v1/messages';
+    const u = new URL(url);
+    const ts = String(Date.now());
+    const nonce = generateNonce();
+    const body = new TextEncoder().encode(
+      `From: a@b.com\r\nTo: c@d.com\r\nSubject: x\r\n\r\nhi\r\n`,
+    );
+    const sig = await sign(
+      {
+        direction: 'polaris-api',
+        method: 'POST',
+        path: u.pathname,
+        query: u.search,
+        ts,
+        nonce,
+        body,
+      },
+      bridge.hmac_key,
+    );
+    const req = new Request(url, {
+      method: 'POST',
+      headers: {
+        'content-type': 'message/rfc822',
+        'x-polaris-bridge-id': bridge.id,
+        'x-polaris-submission-id': ulid(),
+        'x-polaris-smtp-username': 'unused@unused',
+        'x-polaris-ts': ts,
+        'x-polaris-nonce': nonce,
+        'x-polaris-sig': sig,
+      },
+      body,
+    });
+    const res = await app.fetch(req, env, ctx);
+    expect(res.status).toBe(401);
+    const j = (await res.json()) as { error?: { code?: string } };
+    expect(j.error?.code).toBe('key_propagating');
   });
 });

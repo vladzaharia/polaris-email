@@ -53,7 +53,7 @@ func (m *Mirror) MailboxState(ctx context.Context, mailboxID string) (*MailboxSt
 // (1-indexed by uid ascending). lo/hi=-1 means "max" / open-ended.
 func (m *Mirror) ListMessages(ctx context.Context, mailboxID string, byUID bool, set [][2]int) ([]MirrorRow, error) {
 	rows, err := m.DB.QueryContext(ctx, `
-		SELECT s.uid, s.message_id, s.flags,
+		SELECT s.uid, s.message_id, s.flags_json,
 		       COALESCE(mm.body_bytes,0), COALESCE(mm.created_at,''),
 		       COALESCE(mm.subject,''), COALESCE(mm.from_addr,''),
 		       COALESCE(mm.header_message_id,'')
@@ -116,12 +116,18 @@ func matchSet(set [][2]int, r MirrorRow, byUID bool, total int) bool {
 }
 
 // UpdateFlags rewrites the flags JSON for one row.
+//
+// IMPORTANT: the column is `flags_json` per schema.go; the prior `flags`
+// reference was a silent no-op (UPDATE on an unknown column raises in
+// SQLite, but the error was swallowed by the caller in
+// imap.bridgeSession.Store), so STORE acked the client without persisting.
+// The Phase 2e mirror_test below exercises the read-back path.
 func (m *Mirror) UpdateFlags(ctx context.Context, mailboxID, messageID string, flags []string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	flagsJSON, _ := json.Marshal(flags)
 	_, err := m.DB.ExecContext(ctx,
-		`UPDATE mailbox_state SET flags = ? WHERE mailbox_id = ? AND message_id = ?`,
+		`UPDATE mailbox_state SET flags_json = ? WHERE mailbox_id = ? AND message_id = ?`,
 		string(flagsJSON), mailboxID, messageID)
 	return err
 }

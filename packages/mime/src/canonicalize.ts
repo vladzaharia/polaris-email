@@ -31,9 +31,14 @@ const SINGLETON_HEADERS = new Set([
   'content-transfer-encoding',
 ]);
 
-// Headers the submitter has no business setting; we strip on input. A relay
-// downstream may add its own; that's fine.
-const FORBIDDEN_HEADERS = new Set([
+// Transport-security headers the submitter has no business setting; we strip
+// on input. A relay downstream may add its own; that's fine.
+//
+// Exported as `TRANSPORT_FORBIDDEN_HEADERS` so the schema package can build
+// its own (broader) JSON-API forbid-list on top — schema's set adds the
+// "we generate this from JSON fields" headers (`from`/`to`/`subject`/etc.)
+// that are nonsensical to set via the JSON `headers` map.
+export const TRANSPORT_FORBIDDEN_HEADERS: ReadonlySet<string> = new Set([
   'received',
   'return-path',
   'dkim-signature',
@@ -159,7 +164,7 @@ function parseHeaders(bytes: Uint8Array): Header[] {
 function enforceHeaderPolicy(headers: Header[]): void {
   const seen = new Set<string>();
   for (const h of headers) {
-    if (FORBIDDEN_HEADERS.has(h.nameLc)) {
+    if (TRANSPORT_FORBIDDEN_HEADERS.has(h.nameLc)) {
       throw new MimeError(`forbidden submitter header: ${h.name}`, 'forbidden_header');
     }
     if (SINGLETON_HEADERS.has(h.nameLc)) {

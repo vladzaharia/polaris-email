@@ -54,14 +54,39 @@ export async function revocationCheck(env: RevocationEnv, principalId: string): 
  * `revocationCheck` calls in this isolate see the revocation immediately
  * (other isolates pay one KV read per 60 s).
  *
- * Callers are responsible for invalidating any matching entries in
- * `KV_KEY_CACHE` (e.g. `key:${keyId}` / `plain:${keyId}`) because the
- * mapping principal_id → key_id(s) is not stored in this package.
+ * Phase 3g — `keysToInvalidate` lets the caller hand back the matching
+ * KV_KEY_CACHE entries (`key:<id>` / `plain:<id>` for api keys,
+ * `bridge_plain:<id>` for bridges, etc.) and have them deleted in the
+ * same call. The mapping `principal_id → key_id(s)` is not stored in this
+ * package so the caller must compute the list, but routing every
+ * cache-bust through `revoke()` removes the easy-to-forget second step.
+ * Failures of individual cache deletes are swallowed (logged at warn) —
+ * the KV_REVOCATIONS write is the authoritative signal and revoking with
+ * a stale cache entry is a soft failure (the next revocationCheck
+ * within 60 s catches it).
  */
-export async function revoke(env: RevocationEnv, principalId: string): Promise<void> {
+export async function revoke(
+  env: RevocationEnv,
+  principalId: string,
+  keysToInvalidate?: string[],
+): Promise<void> {
   const ts = Date.now();
   await env.KV_REVOCATIONS.put(principalId, String(ts));
   cache.set(principalId, { value: true, expiresAt: ts + CACHE_TTL_MS });
+  if (keysToInvalidate && keysToInvalidate.length > 0) {
+    for (const k of keysToInvalidate) {
+      try {
+        await env.KV_KEY_CACHE.delete(k);
+      } catch (e) {
+        // eslint-disable-next-line no-console
+        console.warn(
+          'revoke: KV_KEY_CACHE.delete failed',
+          k,
+          e instanceof Error ? e.message : 'unknown',
+        );
+      }
+    }
+  }
 }
 
 /**

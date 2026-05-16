@@ -37,7 +37,7 @@ JS/TS/JSON files. See `lefthook.yml`.
 ## Pull requests
 
 - CI must be green: `lint`, `fmt-check`, `typecheck`, `test`, `go-test`,
-  `python-test`, `openapi-validate`, `sql-validate`.
+  `mail-bridge-test`, `openapi-validate`, `sql-validate`.
 - Keep PRs scoped; foundation phases (schema, services pipeline, panel UI) each
   ship as their own commit per the architecture plan.
 - Do not add `eslint`, `prettier`, or other rival tooling — the project uses

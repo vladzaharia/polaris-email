@@ -229,8 +229,15 @@ export const defaultResolver: DnsResolver = async (hostname) => {
       if (!r.ok) continue;
       const j = (await r.json()) as { Answer?: { data: string; type: number }[] };
       for (const a of j.Answer ?? []) {
-        // type 1 = A, type 28 = AAAA. We pass through whatever Cloudflare gives.
-        if (typeof a.data === 'string') out.push(a.data);
+        // Filter to literal IPv4/IPv6 only. type 1 = A, type 28 = AAAA.
+        // Cloudflare DoH may return CNAME (5), TXT (16), MX (15), etc; their
+        // `data` is a hostname or text value that would not literally collide
+        // with `ipDenied()` checks but would also never be a usable peer IP.
+        // Keeping the deny-list IP-only avoids passing string data through
+        // `ipDenied` where a missing case could later be misinterpreted.
+        if (typeof a.data !== 'string') continue;
+        if (a.type !== 1 && a.type !== 28) continue;
+        out.push(a.data);
       }
     } catch {
       // ignore — caller treats empty list as "could not resolve" and fails

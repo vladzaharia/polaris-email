@@ -20,9 +20,10 @@ export KV_NONCE_ID="$(state_get '.kv["polaris-email-nonce"].id')"
 export KV_IDEMPOTENCY_ID="$(state_get '.kv["polaris-email-idempotency"].id')"
 export KV_RATE_LIMIT_ID="$(state_get '.kv["polaris-email-rate-limit"].id')"
 export KV_KEY_CACHE_ID="$(state_get '.kv["polaris-email-key-cache"].id')"
+export KV_REVOCATIONS_ID="$(state_get '.kv["polaris-email-revocations"].id')"
 
 missing=()
-for v in CF_ACCOUNT_ID D1_ID KV_NONCE_ID KV_IDEMPOTENCY_ID KV_RATE_LIMIT_ID KV_KEY_CACHE_ID; do
+for v in CF_ACCOUNT_ID D1_ID KV_NONCE_ID KV_IDEMPOTENCY_ID KV_RATE_LIMIT_ID KV_KEY_CACHE_ID KV_REVOCATIONS_ID; do
   if [[ -z "${!v:-}" ]]; then missing+=("$v"); fi
 done
 if [[ ${#missing[@]} -gt 0 ]]; then
@@ -31,14 +32,15 @@ fi
 
 # Variables we will substitute. Anything not listed is left intact (a literal $VAR
 # in the template will become empty if undeclared — that's why we require above).
-VARS='${CF_ACCOUNT_ID} ${D1_ID} ${KV_NONCE_ID} ${KV_IDEMPOTENCY_ID} ${KV_RATE_LIMIT_ID} ${KV_KEY_CACHE_ID} ${KV_REVOCATIONS_ID} ${POLARIS_API_HOSTNAME} ${BRIDGE_HOST} ${R2_PUBLIC_HOST} ${ALERT_WEBHOOK} ${SYNTHETIC_FROM} ${SYNTHETIC_TO} ${SYNTHETIC_MONITOR_DOMAIN} ${ANCHOR_S3_ENDPOINT} ${ANCHOR_S3_BUCKET} ${ANCHOR_S3_REGION}'
+VARS='${CF_ACCOUNT_ID} ${D1_ID} ${KV_NONCE_ID} ${KV_IDEMPOTENCY_ID} ${KV_RATE_LIMIT_ID} ${KV_KEY_CACHE_ID} ${KV_REVOCATIONS_ID} ${POLARIS_API_HOSTNAME} ${BRIDGE_HOST} ${R2_PUBLIC_HOST} ${ALERT_WEBHOOK} ${SYNTHETIC_FROM} ${SYNTHETIC_TO} ${SYNTHETIC_MONITOR_DOMAIN} ${ANCHOR_S3_ENDPOINT} ${ANCHOR_S3_BUCKET} ${ANCHOR_S3_REGION} ${OIDC_ISSUER} ${OIDC_CLIENT_ID}'
 
 rendered=0
 for svc in "${POLARIS_SERVICES[@]}"; do
-  tpl="services/$svc/wrangler.local.template.jsonc"
-  out="services/$svc/wrangler.local.jsonc"
+  base="$(polaris_service_path "$svc")"
+  tpl="$base/wrangler.local.template.jsonc"
+  out="$base/wrangler.local.jsonc"
   if [[ ! -f "$tpl" ]]; then
-    warn "no template for services/$svc — skipping"
+    warn "no template for $base — skipping"
     continue
   fi
   # envsubst with explicit VARS list to avoid eating literal $ that might appear elsewhere.

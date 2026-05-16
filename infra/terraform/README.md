@@ -176,8 +176,8 @@ and/or depend on Cloudflare API surface that's still in flux as of writing:
    because the B2 vendor relationship is intentionally separate from the
    CF account credentials and lifecycle.
 7. **Worker handler reference** (`inbound_worker_name`) — defaults to
-   `polaris-in`. Confirm the actual deployed name in `services/in/wrangler.jsonc`
-   and update the module call if it differs.
+   `polaris-email-in` (matches `services/in/wrangler.jsonc`). Override only
+   if you renamed the deployed Worker.
 8. **Initial zone import** — if the operator already has zones with
    hand-rolled DNS records, run `terraform import cloudflare_record.<name>
 <zone_id>/<record_id>` for each before the first apply, or terraform

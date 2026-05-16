@@ -4,7 +4,7 @@
 // All HMAC-auth + `admin:*` scope.
 import { Hono } from 'hono';
 import { CreateWebhookSubRequest, IssueApiKeyRequest, RotateRequest } from '@polaris-email/schema';
-import { audit } from '../audit.js';
+import { audit, buildAuditInsert } from '../audit.js';
 import { bodyText, hmacAuth, requireScope } from '../auth.js';
 import type { Env } from '../env.js';
 import { buildError } from '../errors.js';
@@ -12,11 +12,13 @@ import { hashSecret } from '../hashing.js';
 import { ulid } from '@polaris-email/ids';
 import { generateSecret } from '@polaris-email/hmac';
 import { revoke } from '@polaris-email/revocation';
+import { validateWebhookUrl } from '../lib/webhook-url.js';
 import { auditRoutes } from './admin/audit.js';
 import { credentials } from './admin/credentials.js';
 import { credentialsMailbox } from './admin/credentials-mailbox.js';
 import { bridgeCredentialLookup } from './bridge/credential-lookup.js';
 import { bridges } from './admin/bridges.js';
+import { cfZones } from './admin/cf-zones.js';
 import { domains } from './admin/domains.js';
 import { mailboxes as mailboxesRoutes } from './admin/mailboxes.js';
 import { senders as sendersRoutes } from './admin/senders.js';
@@ -42,6 +44,7 @@ admin.route('/', mailboxesRoutes);
 admin.route('/', domains);
 admin.route('/', sendersRoutes);
 admin.route('/', zones);
+admin.route('/', cfZones);
 admin.route('/', bridges);
 admin.route('/', credentials);
 admin.route('/', credentialsMailbox);
@@ -78,22 +81,37 @@ admin.post('/v1/admin/api-keys', requireScope('admin:rotate'), async (c) => {
   const hashed = await hashSecret(secret, c.env.ARGON2_PEPPER);
   const now = Date.now();
   const nowIso = new Date(now).toISOString();
-  // 1) Create principal row (kind='api_key').
-  await c.env.DB.prepare(
-    `INSERT INTO principals (id, mailbox_id, kind, display_name, created_at)
-     VALUES (?, ?, 'api_key', ?, ?)`,
-  )
-    .bind(principalId, mailboxId, body.display_name ?? null, nowIso)
-    .run();
-  // 2) Create the api_key row pointing at the principal. No sender_scopes JSON
-  //    column — scoping is via the api_key_sender_scopes junction (below).
-  await c.env.DB.prepare(
-    `INSERT INTO api_keys
-       (id, principal_id, prefix, secret_argon2id, scopes,
-        rate_limit_per_min, status, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, 'primary', ?)`,
-  )
-    .bind(
+  const senderIds = body.sender_ids ?? [];
+  // Fold every D1 mutation for this issuance into one batch:
+  //   1) principals INSERT
+  //   2) api_keys INSERT (the primary mutation)
+  //   3) api_key_sender_scopes INSERTs (one per scope)
+  //   4) audit_log INSERT (CAS)
+  // CF Workers may evict between awaits; if the api_keys INSERT lands but
+  // the audit row doesn't, the chain has a hole the issuance can never
+  // re-fill. Batching makes them atomic at the D1 layer.
+  const auditInsert = await buildAuditInsert(c.env, {
+    actor: `key:${key.key_id}`,
+    action: 'api_key.issue',
+    target: id,
+    meta: {
+      mailbox_id: mailboxId,
+      principal_id: principalId,
+      scopes: body.scopes,
+      sender_scope_count: senderIds.length,
+    },
+  });
+  const stmts = [
+    c.env.DB.prepare(
+      `INSERT INTO principals (id, mailbox_id, kind, display_name, created_at)
+       VALUES (?, ?, 'api_key', ?, ?)`,
+    ).bind(principalId, mailboxId, body.display_name ?? null, nowIso),
+    c.env.DB.prepare(
+      `INSERT INTO api_keys
+         (id, principal_id, prefix, secret_argon2id, scopes,
+          rate_limit_per_min, status, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, 'primary', ?)`,
+    ).bind(
       id,
       principalId,
       'pk_live_',
@@ -101,20 +119,26 @@ admin.post('/v1/admin/api-keys', requireScope('admin:rotate'), async (c) => {
       JSON.stringify(body.scopes),
       body.rate_limit_per_min,
       nowIso,
-    )
-    .run();
-  // 3) Optional sender-scope restrictions. Empty/omitted = unrestricted.
-  const senderIds = body.sender_ids ?? [];
+    ),
+  ];
   for (const senderId of senderIds) {
-    await c.env.DB.prepare(
-      `INSERT INTO api_key_sender_scopes (api_key_id, sender_id, created_at)
-       VALUES (?, ?, ?)`,
-    )
-      .bind(id, senderId, nowIso)
-      .run();
+    stmts.push(
+      c.env.DB.prepare(
+        `INSERT INTO api_key_sender_scopes (api_key_id, sender_id, created_at)
+         VALUES (?, ?, ?)`,
+      ).bind(id, senderId, nowIso),
+    );
   }
-  // Cache plaintext for 60s so other colos can verify recent sigs without a DB hit.
-  await c.env.KV_KEY_CACHE.put(`plain:${id}`, secret, { expirationTtl: 60 * 60 * 24 * 365 });
+  stmts.push(auditInsert.statement);
+  await c.env.DB.batch(stmts);
+  // Phase 3c — cache plaintext for 1h. The api_keys row stores only an
+  // argon2 hash; we can't re-derive the plaintext, so the operator's
+  // window to install the secret is bounded by this TTL. 1h matches the
+  // bridge plaintext convention (`bridge_plain:` in bridge-auth.ts) and
+  // is a deliberate trade-off: long enough to absorb client-side
+  // propagation hiccups, short enough that a leaked KV snapshot doesn't
+  // grant indefinite key-recovery.
+  await c.env.KV_KEY_CACHE.put(`plain:${id}`, secret, { expirationTtl: 60 * 60 });
   // Cache the row for warm lookups too.
   await c.env.KV_KEY_CACHE.put(
     `key:${id}`,
@@ -131,17 +155,6 @@ admin.post('/v1/admin/api-keys', requireScope('admin:rotate'), async (c) => {
     }),
     { expirationTtl: 60 },
   );
-  await audit(c.env, {
-    actor: `key:${key.key_id}`,
-    action: 'api_key.issue',
-    target: id,
-    meta: {
-      mailbox_id: mailboxId,
-      principal_id: principalId,
-      scopes: body.scopes,
-      sender_scope_count: senderIds.length,
-    },
-  });
   return c.json({ key_id: id, key_secret: secret, prefix: 'pk_live_', created_at: now }, 201);
 });
 
@@ -230,13 +243,36 @@ admin.post('/v1/admin/api-keys/:id/rotate', requireScope('admin:rotate'), async 
       prefix: string;
     }>();
   if (!fullOld) return buildError(c, 'not_found', 'race: api key vanished');
-  await c.env.DB.prepare(
-    `INSERT INTO api_keys
-       (id, principal_id, prefix, secret_argon2id, scopes,
-        rate_limit_per_min, status, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, 'primary', ?)`,
+  // Pre-fetch sender-scope junction rows so we can fold them into the batch.
+  const oldScopes = await c.env.DB.prepare(
+    `SELECT sender_id FROM api_key_sender_scopes WHERE api_key_id = ?`,
   )
-    .bind(
+    .bind(id)
+    .all<{ sender_id: string }>()
+    .catch(() => ({ results: [] as { sender_id: string }[] }));
+  // Build the audit insert before the batch; CAS guard runs inside the batch.
+  const auditInsert = await buildAuditInsert(c.env, {
+    actor: `key:${key.key_id}`,
+    action: body.mode === 'planned' ? 'api_key.rotate' : 'api_key.rotate.emergency',
+    target: id,
+    meta:
+      body.mode === 'planned'
+        ? { new_id: newId, mode: 'planned', reason: body.reason ?? null }
+        : { new_id: newId, reason: body.reason ?? null },
+  });
+  // Fold every D1 mutation for this rotation into one batch:
+  //   1) api_keys INSERT for the new primary
+  //   2) api_key_sender_scopes INSERTs (inherit restrictions)
+  //   3) api_keys UPDATE on the old key (status flip — this is the
+  //      irreversible state transition we MUST chain to the audit row)
+  //   4) audit_log INSERT (CAS)
+  const stmts = [
+    c.env.DB.prepare(
+      `INSERT INTO api_keys
+         (id, principal_id, prefix, secret_argon2id, scopes,
+          rate_limit_per_min, status, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, 'primary', ?)`,
+    ).bind(
       newId,
       fullOld.principal_id,
       fullOld.prefix,
@@ -244,46 +280,35 @@ admin.post('/v1/admin/api-keys/:id/rotate', requireScope('admin:rotate'), async 
       fullOld.scopes,
       fullOld.rate_limit_per_min,
       nowIso,
-    )
-    .run();
-  // Copy sender-scope junction rows so the rotated key inherits restrictions.
-  const oldScopes = await c.env.DB.prepare(
-    `SELECT sender_id FROM api_key_sender_scopes WHERE api_key_id = ?`,
-  )
-    .bind(id)
-    .all<{ sender_id: string }>()
-    .catch(() => ({ results: [] as { sender_id: string }[] }));
+    ),
+  ];
   for (const s of oldScopes.results ?? []) {
-    await c.env.DB.prepare(
-      `INSERT INTO api_key_sender_scopes (api_key_id, sender_id, created_at)
-       VALUES (?, ?, ?)`,
-    )
-      .bind(newId, s.sender_id, nowIso)
-      .run();
+    stmts.push(
+      c.env.DB.prepare(
+        `INSERT INTO api_key_sender_scopes (api_key_id, sender_id, created_at)
+         VALUES (?, ?, ?)`,
+      ).bind(newId, s.sender_id, nowIso),
+    );
   }
-  await c.env.KV_KEY_CACHE.put(`plain:${newId}`, newSecret, {
-    expirationTtl: 60 * 60 * 24 * 365,
-  });
   if (body.mode === 'planned') {
-    await c.env.DB.prepare(`UPDATE api_keys SET status = 'secondary' WHERE id = ?`).bind(id).run();
-    await audit(c.env, {
-      actor: `key:${key.key_id}`,
-      action: 'api_key.rotate',
-      target: id,
-      meta: { new_id: newId, mode: 'planned', reason: body.reason ?? null },
-    });
+    stmts.push(
+      c.env.DB.prepare(`UPDATE api_keys SET status = 'secondary' WHERE id = ?`).bind(id),
+    );
   } else {
-    await c.env.DB.prepare(`UPDATE api_keys SET status = 'revoked', revoked_at = ? WHERE id = ?`)
-      .bind(nowIso, id)
-      .run();
+    stmts.push(
+      c.env.DB.prepare(
+        `UPDATE api_keys SET status = 'revoked', revoked_at = ? WHERE id = ?`,
+      ).bind(nowIso, id),
+    );
+  }
+  stmts.push(auditInsert.statement);
+  await c.env.DB.batch(stmts);
+  await c.env.KV_KEY_CACHE.put(`plain:${newId}`, newSecret, {
+    expirationTtl: 60 * 60,
+  });
+  if (body.mode !== 'planned') {
     await c.env.KV_KEY_CACHE.delete(`plain:${id}`);
     await c.env.KV_KEY_CACHE.delete(`key:${id}`);
-    await audit(c.env, {
-      actor: `key:${key.key_id}`,
-      action: 'api_key.rotate.emergency',
-      target: id,
-      meta: { new_id: newId, reason: body.reason ?? null },
-    });
   }
   if (idemHeader) {
     await c.env.KV_IDEMPOTENCY.put(`idem-rot:${key.key_id}:${idemHeader}`, String(now), {
@@ -318,27 +343,43 @@ admin.post('/v1/admin/api-keys/:id/revoke', requireScope('admin:rotate'), async 
   const keyRow = await c.env.DB.prepare(`SELECT principal_id FROM api_keys WHERE id = ?`)
     .bind(id)
     .first<{ principal_id: string }>();
-  const r = await c.env.DB.prepare(
-    `UPDATE api_keys SET status = 'revoked', revoked_at = ? WHERE id = ? AND status <> 'revoked'`,
+  // Pre-flight: confirm the key isn't already revoked. The CAS in the batch
+  // below also enforces this (`status <> 'revoked'` ⇒ changes=0 on replay),
+  // but we surface the 404 separately since the audit row should not be
+  // emitted for a no-op.
+  const preflight = await c.env.DB.prepare(
+    `SELECT id FROM api_keys WHERE id = ? AND status <> 'revoked'`,
   )
-    .bind(nowIso, id)
-    .run();
-  if (r.meta.changes === 0)
-    return buildError(c, 'not_found', 'api key not found or already revoked');
-  await c.env.KV_KEY_CACHE.delete(`plain:${id}`);
-  await c.env.KV_KEY_CACHE.delete(`key:${id}`);
-  if (keyRow?.principal_id) {
-    // Stamp KV_REVOCATIONS so generic HMAC auth (auth.ts) and the
-    // RFC822 send path both see the revocation immediately, even if
-    // KV_KEY_CACHE entries linger in another colo.
-    await revoke(c.env, keyRow.principal_id);
-  }
-  await audit(c.env, {
+    .bind(id)
+    .first<{ id: string }>();
+  if (!preflight) return buildError(c, 'not_found', 'api key not found or already revoked');
+  // Fold the api_keys UPDATE + audit_log INSERT into one batch so a Worker
+  // eviction between them can't leave a revoked key without an audit row.
+  const auditInsert = await buildAuditInsert(c.env, {
     actor: `key:${key.key_id}`,
     action: body.mode === 'emergency' ? 'api_key.revoke.emergency' : 'api_key.revoke',
     target: id,
     meta: { reason: body.reason ?? null, principal_id: keyRow?.principal_id ?? null },
   });
+  await c.env.DB.batch([
+    c.env.DB.prepare(
+      `UPDATE api_keys SET status = 'revoked', revoked_at = ? WHERE id = ? AND status <> 'revoked'`,
+    ).bind(nowIso, id),
+    auditInsert.statement,
+  ]);
+  if (keyRow?.principal_id) {
+    // Phase 3g — KV_KEY_CACHE busting is now bundled into `revoke()` so
+    // these two writes can't drift out of sync (forgetting either side
+    // leaves a 60s window where a "revoked" key still authenticates).
+    // Stamps KV_REVOCATIONS so generic HMAC auth (auth.ts) and the
+    // RFC822 send path both see the revocation immediately, even if
+    // KV_KEY_CACHE entries linger in another colo.
+    await revoke(c.env, keyRow.principal_id, [`plain:${id}`, `key:${id}`]);
+  } else {
+    // No principal — fall back to deleting the cache entries directly.
+    await c.env.KV_KEY_CACHE.delete(`plain:${id}`);
+    await c.env.KV_KEY_CACHE.delete(`key:${id}`);
+  }
   return c.json({ revoked_at: now });
 });
 
@@ -355,18 +396,8 @@ admin.post('/v1/admin/webhook-subs', requireScope('admin:rotate'), async (c) => 
   if (!body.mailbox_id) {
     return buildError(c, 'bad_request', 'mailbox_id required');
   }
-  // Validate URL host
-  try {
-    const url = new URL(body.url);
-    if (body.kind === 'external' && url.protocol !== 'https:') {
-      return buildError(c, 'bad_request', 'external webhooks require https');
-    }
-    if (body.kind === 'tailnet' && !url.hostname.endsWith('.ts.net')) {
-      return buildError(c, 'bad_request', 'tailnet webhook must target *.ts.net');
-    }
-  } catch {
-    return buildError(c, 'bad_request', 'invalid url');
-  }
+  const urlErr = validateWebhookUrl(body.url, body.kind);
+  if (urlErr) return buildError(c, 'bad_request', urlErr);
   const id = ulid();
   const secret = generateSecret();
   const nowIso = new Date().toISOString();

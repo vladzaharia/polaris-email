@@ -338,7 +338,7 @@ export function MailboxDetail() {
       <div className="space-y-8">
         <section>
           <header className="mb-2 flex items-center justify-between">
-            <h2 className="text-sm font-semibold">Senders</h2>
+            <h2 className="text-xl font-medium">Senders</h2>
             <AddSenderDialog mailboxId={id} />
           </header>
           <Table>
@@ -393,7 +393,7 @@ export function MailboxDetail() {
 
         <section>
           <header className="mb-2 flex items-center justify-between">
-            <h2 className="text-sm font-semibold">Receivers</h2>
+            <h2 className="text-xl font-medium">Receivers</h2>
             <AddReceiverDialog mailboxId={id} />
           </header>
           <Table>
@@ -444,7 +444,7 @@ export function MailboxDetail() {
         <Separator />
 
         <section>
-          <h2 className="mb-2 text-sm font-semibold">Credentials</h2>
+          <h2 className="mb-2 text-xl font-medium">Credentials</h2>
           <p className="text-sm text-[var(--color-muted-foreground)]">
             {d.principals.length} principal(s). Manage from the Credentials page.
           </p>
@@ -453,7 +453,7 @@ export function MailboxDetail() {
         <Separator />
 
         <section>
-          <h2 className="mb-2 text-sm font-semibold">Webhook subscriptions</h2>
+          <h2 className="mb-2 text-xl font-medium">Webhook subscriptions</h2>
           <Table>
             <TableHeader>
               <TableRow>
@@ -527,7 +527,7 @@ export function MailboxDetail() {
         />
 
         <section>
-          <h2 className="mb-2 text-sm font-semibold">Recent messages</h2>
+          <h2 className="mb-2 text-xl font-medium">Recent messages</h2>
           {recent.isLoading ? (
             <Skeleton className="h-16 w-full" />
           ) : (recent.data?.data ?? []).length === 0 ? (

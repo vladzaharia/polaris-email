@@ -12,20 +12,21 @@ See [`docs/architecture.md`](docs/architecture.md) for the system view,
 
 ## Architecture
 
-Cloudflare Workers (control plane):
+Cloudflare Workers (control plane — three Workers + the panel):
 
-- `services/api` — REST surface, admin API, audit chain, idempotency, key auth, hosts
-  the revocation Durable Object.
-- `services/out` — outbound queue consumer that drives the chosen Provider (Cloudflare
-  `send_email` per-domain bindings — see `packages/providers`).
-- `services/in` — Email Routing handler that parses inbound MIME via the unified
-  `processMessage` pipeline and dispatches to fanout.
-- `services/fanout` — signed webhook delivery (external, tailnet, retry/DLQ). Uses
-  the **v2 envelope** (`{event_id, event, occurred_at, message}` inlined; signed with
-  `X-Polaris-Sig: v2=…`).
-- `services/cron` — one Worker with four cron triggers: hourly audit anchor, weekly
-  control-plane secret staleness check, per-minute `/healthz` synthetic, nightly
-  retention janitor.
+- `services/api` — REST surface, admin API, audit chain, idempotency, key auth.
+  **Also** hosts the webhook fan-out queue consumer (signed webhook delivery —
+  external + tailnet, retry + DLQ; v2 envelope inlines the full `Message`,
+  signed with the un-versioned `X-Polaris-Sig: <hex>`) and the cron triggers
+  (hourly audit anchor, weekly secret staleness check, per-minute `/healthz`
+  synthetic, nightly retention janitor). Phase B1 folded the previous
+  separate `services/fanout` and `services/cron` Workers in here.
+  Credential revocation is backed by the `KV_REVOCATIONS` namespace
+  (≤60 s propagation); the previous Durable Object was retired.
+- `services/out` — outbound queue consumer that drives Cloudflare Email
+  Service `send_email` per-domain bindings.
+- `services/in` — Email Routing handler that parses inbound MIME via the
+  unified `processMessage` pipeline and persists.
 
 On-prem (per host):
 
@@ -58,7 +59,6 @@ Shared packages:
   `services/in` and `services/api`.
 - `packages/ids` — ULID + request-id generator (shared between services).
 - `packages/mime` — canonicalisation + sender-policy + IDNA address normalisation.
-- `packages/providers` — Provider interface + Cloudflare adapter.
 - `packages/cf-api` — Cloudflare API wrapper (zones, DNS, Email Routing/Service, DKIM).
 - `packages/revocation` — KV-backed credential revocation primitive (≤60s propagation).
 

@@ -6,21 +6,62 @@
 //   /healthz          — liveness
 //   everything else   — falls through to the Workers Assets binding (the Vite SPA bundle)
 import { Hono } from 'hono';
+import { secureHeaders } from 'hono/secure-headers';
 import type { Env } from './env.js';
 import { makeAuth } from './auth/index.js';
-import { sessionMiddleware, requireAdmin } from './auth/step-up.js';
+import { sessionMiddleware, requireAdmin } from './auth/middleware.js';
 import { approvalsRoutes } from './auth/approvals.js';
 import { sessionRoutes } from './routes/session.js';
-import { tenantsRoutes } from './routes/tenants.js';
 import { apiKeysRoutes } from './routes/api-keys.js';
 import { webhooksRoutes } from './routes/webhooks.js';
-import { routingRoutes } from './routes/routing.js';
 import { auditRoutes } from './routes/audit.js';
 import { diagnosticsRoutes } from './routes/diagnostics.js';
 import { adminProxyRoutes } from './routes/admin-proxy.js';
 import { testSendRoutes } from './routes/test-send.js';
 
 const app = new Hono<{ Bindings: Env }>();
+
+// Phase 3d — secure-headers middleware applied before any route. CSP is
+// configured for the panel SPA: scripts only from self, styles allow inline
+// (Tailwind v4 + shadcn requires inline style attributes for runtime CSS
+// variables), images allow data: URIs (icons/QR codes), and connect-src is
+// limited to self so the React client can only call back to the panel
+// origin (which proxies to services/api). frame-ancestors 'none' blocks
+// clickjacking; object-src 'none' blocks legacy plugin embedding.
+//
+// The middleware emits the Content-Security-Policy header on every response;
+// browsers ignore it on JSON responses so applying it globally is safe.
+app.use(
+  '*',
+  secureHeaders({
+    contentSecurityPolicy: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", 'data:'],
+      connectSrc: ["'self'"],
+      fontSrc: ["'self'"],
+      frameAncestors: ["'none'"],
+      objectSrc: ["'none'"],
+      baseUri: ["'self'"],
+    },
+  }),
+);
+
+// Phase 3e.3 — DEV_MODE assertion. The /api/dev/login backdoor in
+// routes/session.ts is gated on env.DEV_MODE === '1'. If a Worker is
+// deployed to an environment with ENVIRONMENT='production' AND DEV_MODE
+// is set, refuse to serve traffic — this is a misconfiguration that would
+// expose the dev backdoor. The check runs once per request (cheap string
+// compare) so the check is durable across redeploys.
+app.use('*', async (c, next) => {
+  if (c.env.DEV_MODE === '1' && c.env.ENVIRONMENT === 'production') {
+    // eslint-disable-next-line no-console
+    console.error('FATAL: DEV_MODE=1 in production environment; refusing to serve');
+    return c.json({ error: 'misconfigured' }, 500);
+  }
+  await next();
+});
 
 app.get('/healthz', (c) => c.json({ ok: true }));
 
@@ -34,15 +75,16 @@ app.all('/api/auth/*', (c) => {
 
 app.use('/api/*', sessionMiddleware());
 app.route('/', sessionRoutes);
-app.route('/', approvalsRoutes);
 
-// Admin-only surface.
+// Admin-only surface. Phase 6d.3: approvalsRoutes mounted INSIDE `guarded`
+// so non-admin sessions can't list pending or self-elevate by spamming
+// POST /api/approvals (the per-handler admin checks remain as defence in
+// depth, but the gate now happens once at the routing boundary).
 const guarded = new Hono<{ Bindings: Env }>();
 guarded.use('*', requireAdmin());
-guarded.route('/', tenantsRoutes);
+guarded.route('/', approvalsRoutes);
 guarded.route('/', apiKeysRoutes);
 guarded.route('/', webhooksRoutes);
-guarded.route('/', routingRoutes);
 guarded.route('/', auditRoutes);
 guarded.route('/', diagnosticsRoutes);
 guarded.route('/', adminProxyRoutes);

@@ -1,7 +1,6 @@
 package cmds
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/url"
 	"strings"
@@ -21,7 +20,7 @@ func newCredCmd() *cobra.Command {
 }
 
 func credIssueCmd() *cobra.Command {
-	var fromFile, tenant, ctype, sendersFlag string
+	var fromFile, mailbox, tenantDeprecated, ctype, sendersFlag string
 	var createSenders bool
 	c := &cobra.Command{
 		Use:   "issue",
@@ -31,6 +30,13 @@ func credIssueCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			// Accept the deprecated --tenant alias for one release with a
+			// warning to keep CI pipelines that still pass --tenant working.
+			name := mailbox
+			if name == "" && tenantDeprecated != "" {
+				fmt.Fprintln(Errw, "warning: --tenant is deprecated; use --mailbox (the schema is mailbox-centric)")
+				name = tenantDeprecated
+			}
 			var in *wizards.CredIssueInput
 			if fromFile != "" {
 				in, err = wizards.LoadCredIssueFile(fromFile)
@@ -39,7 +45,7 @@ func credIssueCmd() *cobra.Command {
 				}
 			} else {
 				seed := &wizards.CredIssueInput{
-					TenantName:    tenant,
+					TenantName:    name,
 					Type:          ctype,
 					CreateSenders: createSenders,
 				}
@@ -68,15 +74,35 @@ func credIssueCmd() *cobra.Command {
 				return err
 			}
 			if r != nil {
-				out, _ := json.MarshalIndent(r, "", "  ")
-				fmt.Fprintln(Out, string(out))
+				// Respect the user's --output choice (table|json|yaml). The
+				// secret is a single row so the table form prints headers
+				// + one row; pipe-friendly callers should use -o json.
+				if Format() == output.FormatTable {
+					t := &output.Table{
+						Headers: []string{"ID", "MAILBOX", "TYPE", "USERNAME", "SENDERS"},
+						Rows: [][]string{{
+							r.Credential.ID,
+							r.Credential.TenantName,
+							r.Credential.Type,
+							r.Credential.Username,
+							strings.Join(r.Credential.Senders, ","),
+						}},
+					}
+					if err := t.Render(Out); err != nil {
+						return err
+					}
+					fmt.Fprintf(Out, "\nsecret=%s\n", r.Secret)
+				} else if err := Emit(r); err != nil {
+					return err
+				}
 				fmt.Fprintln(Errw, "==> store this secret NOW; it will not be shown again.")
 			}
 			return nil
 		},
 	}
 	c.Flags().StringVar(&fromFile, "from-file", "", "non-interactive YAML/JSON input")
-	c.Flags().StringVar(&tenant, "tenant", "", "tenant name")
+	c.Flags().StringVar(&mailbox, "mailbox", "", "mailbox name or id (the schema is mailbox-centric; see docs/operator.md)")
+	c.Flags().StringVar(&tenantDeprecated, "tenant", "", "DEPRECATED alias for --mailbox; prints a warning and will be removed")
 	c.Flags().StringVar(&ctype, "type", "smtp", "credential type: smtp|api")
 	c.Flags().StringVar(&sendersFlag, "senders", "", "comma-separated local@domain list")
 	c.Flags().BoolVar(&createSenders, "create-senders", false, "auto-create missing email_senders rows")
@@ -84,7 +110,7 @@ func credIssueCmd() *cobra.Command {
 }
 
 func credListCmd() *cobra.Command {
-	var tenant, ctype string
+	var mailbox, tenantDeprecated, ctype string
 	c := &cobra.Command{
 		Use:   "list",
 		Short: "List credentials",
@@ -93,9 +119,16 @@ func credListCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			name := mailbox
+			if name == "" && tenantDeprecated != "" {
+				fmt.Fprintln(Errw, "warning: --tenant is deprecated; use --mailbox")
+				name = tenantDeprecated
+			}
 			q := url.Values{}
-			if tenant != "" {
-				q.Set("tenant", tenant)
+			if name != "" {
+				// API still uses the `tenant` query param under the hood;
+				// renaming the flag is a CLI ergonomics change.
+				q.Set("tenant", name)
 			}
 			if ctype != "" {
 				q.Set("type", ctype)
@@ -104,7 +137,7 @@ func credListCmd() *cobra.Command {
 			if err := cl.DoJSON(CtxBackground(), "GET", "/v1/admin/credentials", q, nil, &out); err != nil {
 				return err
 			}
-			t := &output.Table{Headers: []string{"ID", "TENANT", "TYPE", "USER", "SENDERS", "LAST_USED"}}
+			t := &output.Table{Headers: []string{"ID", "MAILBOX", "TYPE", "USER", "SENDERS", "LAST_USED"}}
 			for _, c := range out {
 				lu := "-"
 				if c.LastUsedAt != nil {
@@ -115,7 +148,8 @@ func credListCmd() *cobra.Command {
 			return EmitTable(t, out)
 		},
 	}
-	c.Flags().StringVar(&tenant, "tenant", "", "filter by tenant")
+	c.Flags().StringVar(&mailbox, "mailbox", "", "filter by mailbox name or id")
+	c.Flags().StringVar(&tenantDeprecated, "tenant", "", "DEPRECATED alias for --mailbox")
 	c.Flags().StringVar(&ctype, "type", "", "filter by type: smtp|api")
 	return c
 }

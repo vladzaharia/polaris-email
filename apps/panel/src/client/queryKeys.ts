@@ -63,12 +63,6 @@ export const messageKeys = {
   detail: (id: string) => [...messageKeys.all, 'detail', id] as const,
 };
 
-export const routingKeys = {
-  all: ['routing'] as const,
-  list: () => [...routingKeys.all, 'list'] as const,
-  detail: (id: string) => [...routingKeys.all, 'detail', id] as const,
-};
-
 export const statsKeys = {
   all: ['stats'] as const,
   overview: (window: string) => [...statsKeys.all, 'overview', window] as const,
@@ -81,4 +75,12 @@ export const diagnosticsKeys = {
   queues: () => [...diagnosticsKeys.all, 'queues'] as const,
   recentFailures: () => [...diagnosticsKeys.all, 'recent-failures'] as const,
   auditAnchor: () => [...diagnosticsKeys.all, 'audit-anchor'] as const,
+};
+
+// Cloudflare-zone discover-and-configure (Phase 2 of CF zone feature).
+// Backed by `/api/admin/cf-zones` proxy → `/v1/admin/cf-zones`.
+export const cfZoneKeys = {
+  all: ['cf-zones'] as const,
+  list: () => [...cfZoneKeys.all, 'list'] as const,
+  detail: (name: string) => [...cfZoneKeys.all, 'detail', name] as const,
 };

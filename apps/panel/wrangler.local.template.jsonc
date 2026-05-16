@@ -1,0 +1,18 @@
+// Template merged on top of apps/panel/wrangler.jsonc by bin/deploy.sh.
+// Placeholders are substituted by bin/render-wrangler-local.sh from
+// .deploy-state.json + .env.deploy. Do NOT hand-edit the materialized
+// wrangler.local.jsonc — re-run `make configure` instead.
+{
+  "account_id": "${CF_ACCOUNT_ID}",
+  // Panel binds to the same `polaris-email` D1 as services/api so better-auth
+  // can read the auth + sessions tables alongside the mailbox-centric schema.
+  "d1_databases": [
+    { "binding": "DB", "database_name": "polaris-email", "database_id": "${D1_ID}" },
+  ],
+  "vars": {
+    // Public hostnames threaded into OIDC redirect URLs and cookie config.
+    "POLARIS_API_HOSTNAME": "${POLARIS_API_HOSTNAME}",
+    "OIDC_ISSUER": "${OIDC_ISSUER}",
+    "OIDC_CLIENT_ID": "${OIDC_CLIENT_ID}",
+  },
+}
