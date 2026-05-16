@@ -51,7 +51,21 @@ export interface Env {
   /** Grace window (days) for the janitor's expunged_at sweep. */
   BRIDGE_EXPUNGE_GRACE_DAYS?: string;
 
+  /**
+   * Default TLS-RPT aggregation address (mailto: scheme) written to
+   * `mail_domains.tlsrpt_rua` when a domain is onboarded. Falls back to
+   * `mailto:tlsrpt@plrs.im` if unset. Phase C.
+   */
+  TLSRPT_DEFAULT_RUA?: string;
+
   // Secrets via `wrangler secret put`:
+  /**
+   * Cloudflare API token + account id used for DNS / Email Routing /
+   * Workers Routes provisioning. Required for the domain-verify path and
+   * all MTA-STS / TLS-RPT admin endpoints (Phase C). Wrangler-secret pair.
+   */
+  CF_API_TOKEN?: string;
+  CF_ACCOUNT_ID?: string;
   POLARIS_SECRET_A?: string;
   POLARIS_SECRET_B?: string;
   ARGON2_PEPPER?: string;
