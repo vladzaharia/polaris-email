@@ -152,13 +152,34 @@ export async function retireOldKey(
   return { retired: true };
 }
 
+/**
+ * W10 — Derive the next selector under our additive `polaris{YYYY}` namespace.
+ *
+ * Format: `polaris<YYYY>-<seq>`. Starts at `polaris<currentYear>-1` for a
+ * fresh domain. When the existing key uses the legacy `s<YYYY>-<seq>` shape
+ * (pre-W10), we bump it inside the legacy namespace so a deployed domain
+ * doesn't change selector families mid-rotation. The legacy `cf*` selectors
+ * (e.g. cf2024-1) are CF-managed and must never appear here.
+ */
 function deriveNextSelector(current?: string): string {
   const year = new Date().getUTCFullYear();
-  if (!current) return `s${year}-1`;
-  const m = current.match(/^s(\d{4})-(\d+)$/);
-  if (!m) return `s${year}-1`;
-  const seq = Number(m[2]) + 1;
-  return `s${year}-${seq}`;
+  if (!current || current === 'cf' || /^cf\d{4}-?\d*$/.test(current)) {
+    // Fresh rotation OR currently using CF's primary selector — we start a
+    // new ADDITIVE polaris-namespace selector. Per CLAUDE.md we never touch
+    // the cf* names.
+    return `polaris${year}-1`;
+  }
+  const polaris = current.match(/^polaris(\d{4})-(\d+)$/);
+  if (polaris) {
+    const seq = Number(polaris[2]) + 1;
+    return `polaris${year}-${seq}`;
+  }
+  const legacy = current.match(/^s(\d{4})-(\d+)$/);
+  if (legacy) {
+    const seq = Number(legacy[2]) + 1;
+    return `s${year}-${seq}`;
+  }
+  return `polaris${year}-1`;
 }
 
 function dkimTxtRecord(algo: DkimAlgo, publicKey: string): string {
@@ -166,16 +187,51 @@ function dkimTxtRecord(algo: DkimAlgo, publicKey: string): string {
   return `v=DKIM1; k=${k}; p=${publicKey}`;
 }
 
-async function generateKeyMaterial(
+/**
+ * W10 — Real DKIM keypair generation via Web Crypto.
+ *
+ * Both `ed25519` (RFC 8463 / DKIM v2) and `rsa2048` (legacy DKIM v1) are
+ * supported. Returns base64-encoded SPKI public key + base64-encoded PKCS#8
+ * private key — the same `p=<base64>` shape DNS TXT publishers expect.
+ *
+ * IMPORTANT (CLAUDE.md): this key publishes under a `polaris{YYYY}` selector
+ * via the caller's planRotation flow, NEVER under CF's primary
+ * `cf2024-1._domainkey.*` selector. Cloudflare auto-publishes its own
+ * primary DKIM CNAME during Email Routing onboarding; W10 ships an
+ * ADDITIVE secondary selector so DKIM verifiers that prefer ed25519 can
+ * find a key on the domain without competing with CF's record.
+ */
+export async function generateKeyMaterial(
   algo: DkimAlgo,
 ): Promise<{ publicKey: string; privateKey: string }> {
-  // Stub — real generation happens server-side (CF Email Service onboarding
-  // returns the public key) or via a dedicated key-management Worker. For
-  // tests we accept generated material via the `generated` option above.
-  void algo;
-  throw new Error(
-    'generateKeyMaterial: pass `generated: { publicKey, privateKey }` or wire to onboardSenderDomain()',
-  );
+  // The Web Crypto naming for ed25519 differs between runtimes: workerd
+  // accepts the literal 'Ed25519'; some browser builds expect
+  // { name: 'Ed25519' }. Try the object form first (most portable).
+  const keyAlgo =
+    algo === 'ed25519'
+      ? ({ name: 'Ed25519' } as AlgorithmIdentifier)
+      : ({
+          name: 'RSASSA-PKCS1-v1_5',
+          modulusLength: 2048,
+          publicExponent: new Uint8Array([0x01, 0x00, 0x01]),
+          hash: 'SHA-256',
+        } as RsaHashedKeyGenParams);
+  const pair = await crypto.subtle.generateKey(keyAlgo, true, ['sign', 'verify']);
+  if (!('publicKey' in pair) || !('privateKey' in pair)) {
+    throw new Error('generateKeyMaterial: expected a CryptoKeyPair from generateKey');
+  }
+  const spki = await crypto.subtle.exportKey('spki', pair.publicKey);
+  const pkcs8 = await crypto.subtle.exportKey('pkcs8', pair.privateKey);
+  return {
+    publicKey: base64Encode(new Uint8Array(spki)),
+    privateKey: base64Encode(new Uint8Array(pkcs8)),
+  };
+}
+
+function base64Encode(bytes: Uint8Array): string {
+  let bin = '';
+  for (const b of bytes) bin += String.fromCharCode(b);
+  return btoa(bin);
 }
 
 // re-export the input shape so consumers don't need to dig into ./dns.

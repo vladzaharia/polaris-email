@@ -53,7 +53,9 @@ describe('planRotation', () => {
     });
     expect(plan.pendingKey.algo).toBe('ed25519');
     expect(plan.pendingKey.expectedRecord.type).toBe('TXT');
-    expect(plan.pendingKey.expectedRecord.name).toMatch(/^s\d{4}-1\._domainkey\.acme\.com$/);
+    // W10 — fresh rotation now starts in the additive polaris{YYYY} namespace
+    // (CLAUDE.md: never compete with CF's `cf*` primary).
+    expect(plan.pendingKey.expectedRecord.name).toMatch(/^polaris\d{4}-1\._domainkey\.acme\.com$/);
     expect(plan.pendingKey.expectedRecord.content).toContain('v=DKIM1; k=ed25519; p=abc==');
   });
 
