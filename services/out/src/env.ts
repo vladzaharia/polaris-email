@@ -41,7 +41,11 @@ export interface FanoutEvent {
     | 'message.bounced'
     | 'message.sent'
     | 'message.delivered'
-    | 'message.failed';
+    | 'message.failed'
+    // W1 — emitted when suppression enforcement drops one or more
+    // recipients (`message.suppressed`) or the entire send (`message.sender_suppressed`).
+    | 'message.suppressed'
+    | 'message.sender_suppressed';
   message_id: string;
   mailbox_id: string | null;
   domain_id: string | null;

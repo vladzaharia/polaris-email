@@ -16,6 +16,7 @@ import {
   Route,
   ServerCog,
   Settings,
+  ShieldOff,
   Stethoscope,
   Sun,
   Webhook,
@@ -51,6 +52,7 @@ const CONFIGURATION: NavItem[] = [
   { to: '/webhook-subs', label: 'Webhook subs', icon: Webhook },
   { to: '/routing', label: 'Routing', icon: Route },
   { to: '/bridges', label: 'Bridges', icon: ServerCog },
+  { to: '/suppressions', label: 'Suppressions', icon: ShieldOff },
 ];
 
 const DIAGNOSTICS: NavItem[] = [

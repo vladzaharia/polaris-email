@@ -23,6 +23,7 @@
 // and surfaced as `failed` so an operator can investigate.
 import { ulid } from '@polaris-email/ids';
 import { MAX_MESSAGE_SIZE_VERIFIED } from '@polaris-email/mime';
+import { checkRecipientSuppression, checkSenderSuppression } from '@polaris-email/suppressions/d1';
 import type { Env, FanoutEvent, OutboundQueueMessage, SendEmailBinding } from './env.js';
 
 const MAX_DELIVERY_ATTEMPTS = 5; // matches the Workers Queues default; keep in sync with wrangler
@@ -169,11 +170,7 @@ async function handleOne(env: Env, msg: OutboundQueueMessage, attempts: number):
   const preStatus = await loadStatus(env, msg.messageId);
   if (preStatus && preStatus !== 'queued') {
     // eslint-disable-next-line no-console
-    console.warn(
-      'out: idempotent skip',
-      msg.messageId,
-      `status=${preStatus} attempts=${attempts}`,
-    );
+    console.warn('out: idempotent skip', msg.messageId, `status=${preStatus} attempts=${attempts}`);
     return;
   }
 
@@ -295,12 +292,106 @@ async function handleOne(env: Env, msg: OutboundQueueMessage, attempts: number):
   // previous code passed `to: msg.fromAddress` which mailed back to the
   // sender). The CF binding accepts string or string[] — pass an array
   // when we have multiple recipients so cc/bcc all get delivered.
+  const rawRecipients: string[] =
+    msg.envelopeTo && msg.envelopeTo.length > 0 ? msg.envelopeTo : [msg.fromAddress];
+
+  // W1 — Suppression enforcement. Two-stage check, sender-first:
+  //   1. If the sender (mailbox/domain/sender_address/global) is suppressed,
+  //      fail the entire send closed with `message.sender_suppressed`. No
+  //      partial delivery — a sender flagged for abuse must not leak any
+  //      mail at all until ops clears the suppression.
+  //   2. Per recipient, drop suppressed addresses; remaining recipients
+  //      proceed. If every recipient is suppressed, treat the message as
+  //      bounced (no upstream call at all).
+  const enforcementCtx = {
+    senderAddress: msg.fromAddress,
+    mailboxId: msg.mailboxId,
+    domainId: domainId,
+  };
+  const senderHit = await checkSenderSuppression(
+    env.DB as unknown as Parameters<typeof checkSenderSuppression>[0],
+    enforcementCtx,
+  );
+  if (senderHit) {
+    await setStatus(env, msg.messageId, 'failed', {
+      last_error: `sender_suppressed:${senderHit.reason}`,
+      bounce_metadata: JSON.stringify({
+        suppressed_sender: {
+          suppression_id: senderHit.id,
+          reason: senderHit.reason,
+          severity: senderHit.severity,
+          scope: senderHit.scope,
+          scope_target: senderHit.scope_target,
+        },
+      }),
+    });
+    await fanout(env, {
+      event_id: ulid(),
+      event: 'message.sender_suppressed',
+      message_id: msg.messageId,
+      mailbox_id: msg.mailboxId,
+      domain_id: domainId,
+      created_at: Date.now(),
+      data: {
+        suppression_id: senderHit.id,
+        reason: senderHit.reason,
+        severity: senderHit.severity,
+        scope: senderHit.scope,
+      },
+    });
+    return;
+  }
+
+  const droppedRecipients: { address: string; reason: string; suppression_id: string }[] = [];
+  const survivingRecipients: string[] = [];
+  for (const r of rawRecipients) {
+    const hit = await checkRecipientSuppression(
+      env.DB as unknown as Parameters<typeof checkRecipientSuppression>[0],
+      r,
+      enforcementCtx,
+    );
+    if (hit) {
+      droppedRecipients.push({ address: r, reason: hit.reason, suppression_id: hit.id });
+    } else {
+      survivingRecipients.push(r);
+    }
+  }
+  if (droppedRecipients.length > 0) {
+    // Emit one fanout event documenting every drop. The panel surfaces this
+    // on the message detail page so operators can see why a recipient
+    // didn't receive mail.
+    await fanout(env, {
+      event_id: ulid(),
+      event: 'message.suppressed',
+      message_id: msg.messageId,
+      mailbox_id: msg.mailboxId,
+      domain_id: domainId,
+      created_at: Date.now(),
+      data: { dropped: droppedRecipients, kept: survivingRecipients },
+    });
+  }
+  if (survivingRecipients.length === 0) {
+    // All recipients suppressed → terminal `bounced` status. Distinct from a
+    // sender suppression because the sender is healthy — only the audience
+    // was unreachable. Mirror the same bounce_metadata shape the
+    // permanent_bounces path uses so the panel can show one consistent view.
+    await setStatus(env, msg.messageId, 'bounced', {
+      last_error: 'all_recipients_suppressed',
+      bounce_metadata: JSON.stringify({ suppressed_recipients: droppedRecipients }),
+    });
+    await fanout(env, {
+      event_id: ulid(),
+      event: 'message.bounced',
+      message_id: msg.messageId,
+      mailbox_id: msg.mailboxId,
+      domain_id: domainId,
+      created_at: Date.now(),
+      data: { reason: 'all_recipients_suppressed', dropped: droppedRecipients },
+    });
+    return;
+  }
   const envelopeTo: string | string[] =
-    msg.envelopeTo && msg.envelopeTo.length > 0
-      ? msg.envelopeTo.length === 1
-        ? msg.envelopeTo[0]!
-        : msg.envelopeTo
-      : msg.fromAddress;
+    survivingRecipients.length === 1 ? survivingRecipients[0]! : survivingRecipients;
 
   // Mark sending BEFORE the binding.send() call. Combined with the
   // idempotency check at the top of handleOne, this serves as the

@@ -75,10 +75,7 @@ adminProxyRoutes.use('*', bodyLimitGuard());
 // should join the allowlist below.)
 const FORWARD_HEADERS = ['x-request-id'] as const;
 
-async function forward(
-  c: Context<{ Bindings: Env }>,
-  upstream: string,
-): Promise<Response> {
+async function forward(c: Context<{ Bindings: Env }>, upstream: string): Promise<Response> {
   const url = new URL(c.req.url);
   const query = url.searchParams.toString();
   const method = c.req.method.toUpperCase();
@@ -116,15 +113,11 @@ adminProxyRoutes.delete('/api/admin/bridges/:id', withApproval('bridge.deregiste
 );
 
 // Credentials
-adminProxyRoutes.post(
-  '/api/admin/credentials/:id/rotate',
-  withApproval('credential.rotate'),
-  (c) => forward(c, `/v1/admin/credentials/${c.req.param('id')}/rotate`),
+adminProxyRoutes.post('/api/admin/credentials/:id/rotate', withApproval('credential.rotate'), (c) =>
+  forward(c, `/v1/admin/credentials/${c.req.param('id')}/rotate`),
 );
-adminProxyRoutes.post(
-  '/api/admin/credentials/:id/revoke',
-  withApproval('credential.revoke'),
-  (c) => forward(c, `/v1/admin/credentials/${c.req.param('id')}/revoke`),
+adminProxyRoutes.post('/api/admin/credentials/:id/revoke', withApproval('credential.revoke'), (c) =>
+  forward(c, `/v1/admin/credentials/${c.req.param('id')}/revoke`),
 );
 
 // Domains
@@ -148,37 +141,40 @@ adminProxyRoutes.delete('/api/admin/domains/:id', withApproval('domain.delete'),
 adminProxyRoutes.delete(
   '/api/admin/mailboxes/:id/senders/:senderId',
   withApproval('mailbox.sender.disable'),
-  (c) =>
-    forward(
-      c,
-      `/v1/admin/mailboxes/${c.req.param('id')}/senders/${c.req.param('senderId')}`,
-    ),
+  (c) => forward(c, `/v1/admin/mailboxes/${c.req.param('id')}/senders/${c.req.param('senderId')}`),
 );
 adminProxyRoutes.delete(
   '/api/admin/mailboxes/:id/receivers/:receiverId',
   withApproval('mailbox.receiver.disable'),
   (c) =>
-    forward(
-      c,
-      `/v1/admin/mailboxes/${c.req.param('id')}/receivers/${c.req.param('receiverId')}`,
-    ),
+    forward(c, `/v1/admin/mailboxes/${c.req.param('id')}/receivers/${c.req.param('receiverId')}`),
 );
 
 // Webhook subscription delete + DLQ drop
 adminProxyRoutes.delete('/api/admin/webhook-subs/:id', withApproval('webhook_sub.delete'), (c) =>
   forward(c, `/v1/admin/webhook-subs/${c.req.param('id')}`),
 );
-adminProxyRoutes.post(
-  '/api/admin/webhook-dlq/:id/drop',
-  withApproval('webhook_dlq.drop'),
-  (c) => forward(c, `/v1/admin/webhook-dlq/${c.req.param('id')}/drop`),
+adminProxyRoutes.post('/api/admin/webhook-dlq/:id/drop', withApproval('webhook_dlq.drop'), (c) =>
+  forward(c, `/v1/admin/webhook-dlq/${c.req.param('id')}/drop`),
+);
+
+// W1 — Suppressions. Manual add + manual disable both require dual-admin
+// approval (the worst-case blast radius of a wrong sender suppression is a
+// pause on every outbound message for that principal; a wrong recipient
+// unsuppress could resume delivery to a real spam-trap address).
+adminProxyRoutes.post('/api/admin/suppressions', withApproval('suppression.create'), (c) =>
+  forward(c, '/v1/admin/suppressions'),
+);
+adminProxyRoutes.delete('/api/admin/suppressions/:id', withApproval('suppression.disable'), (c) =>
+  forward(
+    c,
+    `/v1/admin/suppressions/${c.req.param('id')}${c.req.query() ? '?' + new URLSearchParams(c.req.query()).toString() : ''}`,
+  ),
 );
 
 // Tenant quarantine — emergency revoke for the bulk path.
-adminProxyRoutes.post(
-  '/api/admin/bulk/revoke-tenant',
-  withApproval('tenant.quarantine'),
-  (c) => forward(c, '/v1/admin/bulk/revoke-tenant'),
+adminProxyRoutes.post('/api/admin/bulk/revoke-tenant', withApproval('tenant.quarantine'), (c) =>
+  forward(c, '/v1/admin/bulk/revoke-tenant'),
 );
 
 // CF-zone configure — gated only for non-dry-run requests. Dry-run is the

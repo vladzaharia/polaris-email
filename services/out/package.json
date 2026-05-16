@@ -12,7 +12,8 @@
   "dependencies": {
     "@polaris-email/ids": "workspace:*",
     "@polaris-email/mime": "workspace:*",
-    "@polaris-email/schema": "workspace:*"
+    "@polaris-email/schema": "workspace:*",
+    "@polaris-email/suppressions": "workspace:*"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20240909.0",

@@ -865,12 +865,22 @@ export const AuditAction = z.enum([
   'cf_zone.configure',
   // MTA-STS + TLS-RPT (Phase C). Lifecycle audit hits for the dedicated
   // policy-management endpoints; mirrors the additions to the audit_log
-  // CHECK constraint in services/api/migrations/0007_mta_sts.sql.
+  // CHECK constraint in services/api/migrations/0009_mta_sts.sql.
   'mta_sts.enable',
   'mta_sts.disable',
   'mta_sts.promote',
   'tls_rpt.enable',
   'tls_rpt.disable',
+  // Suppressions (W1 — migration 0010_suppressions.sql).
+  // `suppression.create` and `suppression.disable` cover admin/CLI/panel
+  // toggles; `suppression.import` is bulk loads from CSV / legacy systems;
+  // `message.suppressed` and `message.sender_suppressed` are emitted by
+  // the outbound enforcement path so the audit log records every drop.
+  'suppression.create',
+  'suppression.disable',
+  'suppression.import',
+  'message.suppressed',
+  'message.sender_suppressed',
 ]);
 export type AuditAction = z.infer<typeof AuditAction>;
 
@@ -1051,3 +1061,80 @@ export const MailboxMessageState = z.object({
   change_id: z.number().int().nonnegative(),
 });
 export type MailboxMessageState = z.infer<typeof MailboxMessageState>;
+
+// ---------- Suppressions (W1) ----------
+//
+// Mirrors the CHECK enums on `suppressions` in
+// `services/api/migrations/0010_suppressions.sql`.
+export const SuppressionEntityType = z.enum(['recipient', 'sender']);
+export type SuppressionEntityType = z.infer<typeof SuppressionEntityType>;
+
+export const SuppressionScope = z.enum(['global', 'domain', 'mailbox', 'sender_address']);
+export type SuppressionScope = z.infer<typeof SuppressionScope>;
+
+export const SuppressionReason = z.enum([
+  'hard_bounce',
+  'spam_complaint',
+  'unsubscribe',
+  'manual',
+  'arf_complaint',
+  'phishing_report',
+  'sender_abuse_threshold',
+  'role_account',
+  'invalid',
+]);
+export type SuppressionReason = z.infer<typeof SuppressionReason>;
+
+export const SuppressionSource = z.enum([
+  'cf_email_service',
+  'arf_inbox',
+  'one_click',
+  'cli',
+  'panel',
+  'import',
+  'sender_threshold_cron',
+  'llm_triage',
+]);
+export type SuppressionSource = z.infer<typeof SuppressionSource>;
+
+export const SuppressionSeverity = z.enum(['info', 'warn', 'critical']);
+export type SuppressionSeverity = z.infer<typeof SuppressionSeverity>;
+
+export const SuppressionRow = z.object({
+  id: Ulid,
+  entity_type: SuppressionEntityType,
+  address_normalized: z.string(),
+  address_local: z.string().nullable(),
+  address_domain: z.string().nullable(),
+  scope: SuppressionScope,
+  scope_target: z.string().nullable(),
+  reason: SuppressionReason,
+  source: SuppressionSource,
+  source_ref: z.string().nullable(),
+  severity: SuppressionSeverity,
+  created_at: z.string(),
+  expires_at: z.string().nullable(),
+  disabled_at: z.string().nullable(),
+  disabled_reason: z.string().nullable(),
+  notes: z.string().nullable(),
+});
+export type SuppressionRow = z.infer<typeof SuppressionRow>;
+
+export const CreateSuppressionRequest = z.object({
+  entity_type: SuppressionEntityType,
+  address: z.string().min(3).max(320),
+  scope: SuppressionScope.default('global'),
+  scope_target: z.string().max(64).nullable().optional(),
+  reason: SuppressionReason,
+  source: SuppressionSource.default('panel'),
+  severity: SuppressionSeverity.default('warn'),
+  expires_at: z.string().datetime().nullable().optional(),
+  notes: z.string().max(2000).nullable().optional(),
+});
+export type CreateSuppressionRequest = z.infer<typeof CreateSuppressionRequest>;
+
+export const UpdateSuppressionRequest = z.object({
+  notes: z.string().max(2000).nullable().optional(),
+  expires_at: z.string().datetime().nullable().optional(),
+});
+export type UpdateSuppressionRequest = z.infer<typeof UpdateSuppressionRequest>;

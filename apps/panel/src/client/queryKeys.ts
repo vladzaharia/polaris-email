@@ -84,3 +84,14 @@ export const cfZoneKeys = {
   list: () => [...cfZoneKeys.all, 'list'] as const,
   detail: (name: string) => [...cfZoneKeys.all, 'detail', name] as const,
 };
+
+// Suppressions (W1) — bi-directional do-not-send list. Two tabs in the panel
+// (Recipients / Senders), each filterable; detail page shows the source
+// evidence + lifetime stats.
+export const suppressionKeys = {
+  all: ['suppressions'] as const,
+  list: (filters?: Record<string, string | undefined>) =>
+    [...suppressionKeys.all, 'list', filters ?? {}] as const,
+  detail: (id: string) => [...suppressionKeys.all, 'detail', id] as const,
+  check: (address: string) => [...suppressionKeys.all, 'check', address] as const,
+};

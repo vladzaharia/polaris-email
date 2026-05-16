@@ -25,6 +25,7 @@ import { mailboxes as mailboxesRoutes } from './admin/mailboxes.js';
 import { senders as sendersRoutes } from './admin/senders.js';
 import { stats } from './admin/stats.js';
 import { status } from './admin/status.js';
+import { suppressions } from './admin/suppressions.js';
 import { webhookDlq } from './admin/webhook-dlq.js';
 import { webhookSubs } from './admin/webhook-subs.js';
 import { zones } from './admin/zones.js';
@@ -56,6 +57,7 @@ admin.route('/', webhookSubs);
 admin.route('/', auditRoutes);
 admin.route('/', status);
 admin.route('/', stats);
+admin.route('/', suppressions);
 
 // ---------- api keys ----------
 
@@ -293,14 +295,13 @@ admin.post('/v1/admin/api-keys/:id/rotate', requireScope('admin:rotate'), async 
     );
   }
   if (body.mode === 'planned') {
-    stmts.push(
-      c.env.DB.prepare(`UPDATE api_keys SET status = 'secondary' WHERE id = ?`).bind(id),
-    );
+    stmts.push(c.env.DB.prepare(`UPDATE api_keys SET status = 'secondary' WHERE id = ?`).bind(id));
   } else {
     stmts.push(
-      c.env.DB.prepare(
-        `UPDATE api_keys SET status = 'revoked', revoked_at = ? WHERE id = ?`,
-      ).bind(nowIso, id),
+      c.env.DB.prepare(`UPDATE api_keys SET status = 'revoked', revoked_at = ? WHERE id = ?`).bind(
+        nowIso,
+        id,
+      ),
     );
   }
   stmts.push(auditInsert.statement);
