@@ -2,6 +2,7 @@
 // All HMAC-signed (admin middleware applied at the parent `admin` Hono instance).
 import { Hono } from 'hono';
 import { CreateMailDomainRequest, UpdateMailDomainRequest } from '@polaris-email/schema';
+import { generatePolicyId, verifyMtaSts, verifyTlsRpt } from '@polaris-email/cf-api';
 import { audit } from '../../audit.js';
 import { bodyText, requireScope } from '../../auth.js';
 import type { Env } from '../../env.js';
@@ -47,6 +48,24 @@ async function ensureZone(c: { env: Env }, cfZoneId: string | null, name: string
 }
 
 // ---------- create ----------
+//
+// MTA-STS / TLS-RPT defaults (Phase C.11):
+//
+// We persist the *intent* to run MTA-STS in testing mode and TLS-RPT to the
+// configured aggregation address on every fresh domain row, but this does NOT
+// touch DNS. Unlike DKIM / SPF / DMARC — which Cloudflare auto-publishes when
+// Email Routing onboards the zone — MTA-STS records (the `_mta-sts.{domain}`
+// TXT plus the `mta-sts.{domain}` Worker custom domain) require an explicit
+// operator action via `POST /v1/admin/domains/:id/mta-sts/enable`.
+//
+// The verify endpoint (Phase C.12) compares this stored intent against what's
+// actually published and surfaces an operator-action hint when they diverge,
+// pointing the operator at the lifecycle endpoint they need to call.
+//
+// Operators who want to opt out at create time can PATCH `mta_sts_mode='none'`
+// and `tlsrpt_enabled=false` immediately afterwards, or simply never call
+// /mta-sts/enable — the intent column has no on-disk side effects until that
+// happens.
 domains.post('/v1/admin/domains', requireScope('admin:rotate'), async (c) => {
   const key = c.get('apiKey');
   let body;
@@ -60,6 +79,12 @@ domains.post('/v1/admin/domains', requireScope('admin:rotate'), async (c) => {
   const selector = body.dkim_selector ?? 'cf';
   const policy = body.dmarc_policy ?? 'none';
   const rua = body.dmarc_rua ?? `mailto:postmaster@${body.name}`;
+  // MTA-STS / TLS-RPT intent defaults — see comment block above.
+  const mtaStsMode = 'testing';
+  const mtaStsPolicyId = generatePolicyId();
+  const mtaStsMaxAge = 86_400;
+  const tlsrptEnabled = 1;
+  const tlsrptRua = c.env.TLSRPT_DEFAULT_RUA ?? 'mailto:tlsrpt@plrs.im';
   let zoneId: string;
   try {
     zoneId = await ensureZone(c, null, body.name);
@@ -72,10 +97,26 @@ domains.post('/v1/admin/domains', requireScope('admin:rotate'), async (c) => {
       `INSERT INTO mail_domains
          (id, zone_id, name, status, wildcard_subdomains, dmarc_policy,
           dmarc_rua, inbound_enabled, outbound_enabled, provider, dkim_selector,
+          mta_sts_mode, mta_sts_policy_id, mta_sts_max_age,
+          tlsrpt_enabled, tlsrpt_rua,
           created_at, updated_at)
-       VALUES (?, ?, ?, 'pending', 1, ?, ?, 0, 1, 'cloudflare', ?, ?, ?)`,
+       VALUES (?, ?, ?, 'pending', 1, ?, ?, 0, 1, 'cloudflare', ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
-      .bind(id, zoneId, body.name, policy, rua, selector, nowIso, nowIso)
+      .bind(
+        id,
+        zoneId,
+        body.name,
+        policy,
+        rua,
+        selector,
+        mtaStsMode,
+        mtaStsPolicyId,
+        mtaStsMaxAge,
+        tlsrptEnabled,
+        tlsrptRua,
+        nowIso,
+        nowIso,
+      )
       .run();
   } catch (e) {
     if (String(e).includes('UNIQUE')) return buildError(c, 'conflict', 'domain already registered');
@@ -85,7 +126,13 @@ domains.post('/v1/admin/domains', requireScope('admin:rotate'), async (c) => {
     actor: `key:${key.key_id}`,
     action: 'domain.create',
     target: id,
-    meta: { name: body.name, selector },
+    meta: {
+      name: body.name,
+      selector,
+      mta_sts_mode: mtaStsMode,
+      mta_sts_policy_id: mtaStsPolicyId,
+      tlsrpt_enabled: tlsrptEnabled,
+    },
   });
   return c.json(
     {
@@ -93,8 +140,17 @@ domains.post('/v1/admin/domains', requireScope('admin:rotate'), async (c) => {
       name: body.name,
       dkim_selector: selector,
       status: 'pending',
+      mta_sts_mode: mtaStsMode,
+      mta_sts_policy_id: mtaStsPolicyId,
+      mta_sts_max_age: mtaStsMaxAge,
+      tlsrpt_enabled: tlsrptEnabled,
+      tlsrpt_rua: tlsrptRua,
       // Convenience hint at the CNAME target the operator can pre-create.
       dkim_cname_hint: `${selector}._domainkey.${body.name}. CNAME ${selector}._domainkey.<zone>.cf-email-routing.com.`,
+      // Intent columns are persisted, but DNS records require an explicit
+      // POST /v1/admin/domains/:id/mta-sts/enable call to be published.
+      mta_sts_provisioning_hint: `MTA-STS intent recorded. Call POST /v1/admin/domains/${id}/mta-sts/enable to publish DNS records.`,
+      tlsrpt_provisioning_hint: `TLS-RPT intent recorded. Call POST /v1/admin/domains/${id}/tls-rpt/enable to publish DNS records.`,
       created_at: Date.now(),
     },
     201,
@@ -140,29 +196,52 @@ domains.post('/v1/admin/domains/bulk-onboard', requireScope('admin:rotate'), asy
   }
   const results: { name: string; id?: string; error?: string }[] = [];
   const nowIso = new Date().toISOString();
+  // Same MTA-STS / TLS-RPT intent defaults as the single-create handler
+  // (Phase C.11). Each row gets its own minted policy_id so bumping one
+  // tenant doesn't bust caches across the entire bulk-onboarded batch.
+  const tlsrptRuaDefault = c.env.TLSRPT_DEFAULT_RUA ?? 'mailto:tlsrpt@plrs.im';
   for (const name of body.names) {
     if (typeof name !== 'string' || name.length < 3 || !name.includes('.')) {
       results.push({ name, error: 'invalid name' });
       continue;
     }
     const id = ulid();
+    const mtaStsPolicyId = generatePolicyId();
     try {
       const zoneId = await ensureZone(c, null, name);
       await c.env.DB.prepare(
         `INSERT INTO mail_domains
            (id, zone_id, name, status, wildcard_subdomains, dmarc_policy,
             dmarc_rua, inbound_enabled, outbound_enabled, provider, dkim_selector,
+            mta_sts_mode, mta_sts_policy_id, mta_sts_max_age,
+            tlsrpt_enabled, tlsrpt_rua,
             created_at, updated_at)
-         VALUES (?, ?, ?, 'pending', 1, 'none', ?, 0, 1, 'cloudflare', 'cf', ?, ?)`,
+         VALUES (?, ?, ?, 'pending', 1, 'none', ?, 0, 1, 'cloudflare', 'cf',
+                 'testing', ?, 86400, 1, ?, ?, ?)`,
       )
-        .bind(id, zoneId, name, `mailto:postmaster@${name}`, nowIso, nowIso)
+        .bind(
+          id,
+          zoneId,
+          name,
+          `mailto:postmaster@${name}`,
+          mtaStsPolicyId,
+          tlsrptRuaDefault,
+          nowIso,
+          nowIso,
+        )
         .run();
       results.push({ name, id });
       await audit(c.env, {
         actor: `key:${key.key_id}`,
         action: 'domain.create',
         target: id,
-        meta: { name, via: 'bulk_onboard' },
+        meta: {
+          name,
+          via: 'bulk_onboard',
+          mta_sts_mode: 'testing',
+          mta_sts_policy_id: mtaStsPolicyId,
+          tlsrpt_enabled: 1,
+        },
       });
     } catch (e) {
       const msg = String(e);
@@ -342,14 +421,27 @@ async function fetchExpectedRoutingDns(
   return j.result;
 }
 
+interface VerifyDomainRow {
+  id: string;
+  name: string;
+  status: string;
+  cf_zone_id: string | null;
+  mta_sts_mode: string;
+  mta_sts_policy_id: string | null;
+  tlsrpt_enabled: number;
+  tlsrpt_rua: string | null;
+}
+
 domains.post('/v1/admin/domains/:id/verify', requireScope('admin:rotate'), async (c) => {
   const key = c.get('apiKey');
   const id = c.req.param('id');
   const row = await c.env.DB.prepare(
-    `SELECT id, name, status, cf_zone_id FROM mail_domains WHERE id = ?`,
+    `SELECT id, name, status, cf_zone_id,
+            mta_sts_mode, mta_sts_policy_id, tlsrpt_enabled, tlsrpt_rua
+     FROM mail_domains WHERE id = ?`,
   )
     .bind(id)
-    .first<{ id: string; name: string; status: string; cf_zone_id: string | null }>();
+    .first<VerifyDomainRow>();
   if (!row) return buildError(c, 'not_found', 'mail_domain not found');
 
   const env = c.env as unknown as { CF_API_TOKEN?: string; CF_ACCOUNT_ID?: string };
@@ -427,14 +519,85 @@ domains.post('/v1/admin/domains/:id/verify', requireScope('admin:rotate'), async
     actual: haveMxSet.join(',') || '(empty)',
   });
 
+  // ---------- MTA-STS sub-block (Phase C.12) ----------
+  //
+  // Only runs when intent is non-`none`. The verifier calls DoH for the TXT
+  // and HTTPS for the policy file; we surface its raw checks AND append an
+  // operator-action hint when any check fails, since these records require
+  // an explicit `POST /v1/admin/domains/:id/mta-sts/enable` to (re-)publish.
+  //
+  // Three distinct failure flavours all collapse to the same hint:
+  //   - Never provisioned: TXT NXDOMAIN, mta-sts.{tenant} not reachable.
+  //   - Drifted: TXT present but its id differs from `mta_sts_policy_id`
+  //     (e.g. after a /promote that bumped the column but DNS hasn't been
+  //     re-published yet).
+  //   - Worker custom domain unreachable: HTTPS GET returns non-200 or a
+  //     non-`text/plain` content-type.
+  //
+  // In all three cases the fix is the same: re-run the /mta-sts/enable
+  // endpoint, which is idempotent.
+  let mtaStsRanAndAllPassed = false;
+  if (row.mta_sts_mode !== 'none') {
+    const mtaSts = await verifyMtaSts(row.name, row.mta_sts_policy_id);
+    checks.push(...mtaSts.checks);
+    const someFailed = mtaSts.checks.some((ch) => !ch.ok);
+    if (someFailed) {
+      checks.push({
+        name: `mta-sts:operator-action:${row.name}`,
+        ok: false,
+        expected: `mode=${row.mta_sts_mode}, policy_id=${row.mta_sts_policy_id ?? '(unset)'}`,
+        actual: `MTA-STS records require manual re-provisioning. Call POST /v1/admin/domains/${row.id}/mta-sts/enable to publish.`,
+      });
+    } else {
+      mtaStsRanAndAllPassed = true;
+    }
+  }
+
+  // ---------- TLS-RPT sub-block (Phase C.12) ----------
+  let tlsRptRanAndAllPassed = false;
+  if (row.tlsrpt_enabled === 1) {
+    const tlsrpt = await verifyTlsRpt(row.name, row.tlsrpt_rua ?? null);
+    checks.push(...tlsrpt.checks);
+    const someFailed = tlsrpt.checks.some((ch) => !ch.ok);
+    if (someFailed) {
+      checks.push({
+        name: `tls-rpt:operator-action:${row.name}`,
+        ok: false,
+        expected: `rua=${row.tlsrpt_rua ?? '(unset)'}`,
+        actual: `TLS-RPT records require manual re-provisioning. Call POST /v1/admin/domains/${row.id}/tls-rpt/enable to publish.`,
+      });
+    } else {
+      tlsRptRanAndAllPassed = true;
+    }
+  }
+
   const allOk = checks.length > 0 && checks.every((ch) => ch.ok);
   const nowIso = new Date().toISOString();
 
+  // Persist sub-block `*_verified_at` timestamps independently of the
+  // overall verify outcome. This lets the operator see "TLS-RPT verified
+  // 2026-05-15" even when an unrelated MX glitch makes overall verify fail.
+  const subUpdates: string[] = [];
+  const subBinds: unknown[] = [];
+  if (mtaStsRanAndAllPassed) {
+    subUpdates.push('mta_sts_verified_at = ?');
+    subBinds.push(nowIso);
+  }
+  if (tlsRptRanAndAllPassed) {
+    subUpdates.push('tlsrpt_verified_at = ?');
+    subBinds.push(nowIso);
+  }
+
   if (allOk) {
-    await c.env.DB.prepare(
-      `UPDATE mail_domains SET status = 'verified', verified_at = ?, last_verify_check_at = ?, updated_at = ? WHERE id = ?`,
-    )
-      .bind(nowIso, nowIso, nowIso, id)
+    const fullSet = ['status = ?', 'verified_at = ?', 'last_verify_check_at = ?', 'updated_at = ?'];
+    const fullBinds: unknown[] = ['verified', nowIso, nowIso, nowIso];
+    if (subUpdates.length) {
+      fullSet.push(...subUpdates);
+      fullBinds.push(...subBinds);
+    }
+    fullBinds.push(id);
+    await c.env.DB.prepare(`UPDATE mail_domains SET ${fullSet.join(', ')} WHERE id = ?`)
+      .bind(...fullBinds)
       .run();
     await audit(c.env, {
       actor: `key:${key.key_id}`,
@@ -443,6 +606,17 @@ domains.post('/v1/admin/domains/:id/verify', requireScope('admin:rotate'), async
       meta: { name: row.name, checks: checks.map((c2) => c2.name) },
     });
     return c.json({ id, status: 'verified', verified_at: Date.now(), checks });
+  }
+
+  // Even when overall verify failed, persist any sub-block that did pass so
+  // the panel can render a partial-green status. The main `verified_at` and
+  // `status='verified'` only flip when ALL checks pass (existing semantics).
+  if (subUpdates.length) {
+    await c.env.DB.prepare(
+      `UPDATE mail_domains SET ${subUpdates.join(', ')}, updated_at = ? WHERE id = ?`,
+    )
+      .bind(...subBinds, nowIso, id)
+      .run();
   }
 
   await audit(c.env, {
