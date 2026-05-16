@@ -209,6 +209,18 @@ const suppressionDetail = createRoute({
   ),
   errorComponent: RouteError,
 });
+const policyModeration = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/policy/moderation',
+  component: lazyRouteComponent(() => import('./pages/policy/Moderation.js'), 'PolicyModeration'),
+  errorComponent: RouteError,
+});
+const policyDecisions = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/policy/decisions',
+  component: lazyRouteComponent(() => import('./pages/policy/Decisions.js'), 'PolicyDecisions'),
+  errorComponent: RouteError,
+});
 
 const routeTree = rootRoute.addChildren([
   loginRoute,
@@ -239,6 +251,8 @@ const routeTree = rootRoute.addChildren([
   adminAlertsList,
   senderAbuseList,
   dmarcPromotionList,
+  policyModeration,
+  policyDecisions,
 ]);
 
 // Phase 6d.8 — `defaultPendingComponent` swaps in PageSkeleton on every

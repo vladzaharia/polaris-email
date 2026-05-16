@@ -43,6 +43,8 @@ interface NavItem {
 const OPERATIONS: NavItem[] = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard },
   { to: '/messages', label: 'Messages', icon: Mail },
+  { to: '/policy/moderation', label: 'Moderation queue', icon: AlertOctagon },
+  { to: '/policy/decisions', label: 'Policy decisions', icon: BarChart3 },
   { to: '/dlq', label: 'DLQ browser', icon: BarChart3 },
   { to: '/reports/abuse', label: 'Abuse reports', icon: AlertTriangle },
   { to: '/reports/triage', label: 'LLM triage', icon: AlertOctagon },

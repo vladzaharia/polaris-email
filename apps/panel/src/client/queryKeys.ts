@@ -158,3 +158,14 @@ export const suppressionKeys = {
   detail: (id: string) => [...suppressionKeys.all, 'detail', id] as const,
   check: (address: string) => [...suppressionKeys.all, 'check', address] as const,
 };
+
+// Policy engine (0019) — heuristic + LLM verdicts on every message.
+export const policyKeys = {
+  all: ['policy'] as const,
+  decisions: (filters?: Record<string, string | undefined>) =>
+    [...policyKeys.all, 'decisions', filters ?? {}] as const,
+  decision: (id: string) => [...policyKeys.all, 'decision', id] as const,
+  held: (filters?: Record<string, string | undefined>) =>
+    [...policyKeys.all, 'held', filters ?? {}] as const,
+  heldDetail: (id: string) => [...policyKeys.all, 'held', 'detail', id] as const,
+};
