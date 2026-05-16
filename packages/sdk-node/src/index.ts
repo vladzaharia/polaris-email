@@ -107,10 +107,21 @@ export class Polaris {
     }
     const url =
       this.baseUrl + path + (options.query ? '?' + options.query.replace(/^\?/, '') : '');
+    // Cast `Uint8Array<ArrayBufferLike>` to a BodyInit-compatible ArrayBuffer
+    // view. Strict consumers (e.g. apps/panel with @cloudflare/workers-types)
+    // reject the parametrized Uint8Array form; slicing the underlying buffer
+    // produces an ArrayBuffer that satisfies all fetch overloads.
+    const requestBody =
+      method === 'GET' || method === 'HEAD' || !bodyBytes
+        ? undefined
+        : (bodyBytes.buffer.slice(
+            bodyBytes.byteOffset,
+            bodyBytes.byteOffset + bodyBytes.byteLength,
+          ) as ArrayBuffer);
     const res = await this.fetchImpl(url, {
       method,
       headers,
-      body: method === 'GET' || method === 'HEAD' ? undefined : (bodyBytes ?? undefined),
+      body: requestBody,
     });
     const text = await res.text();
     let parsed: unknown = text;

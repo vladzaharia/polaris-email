@@ -3,28 +3,16 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
   "exports": {
-    ".": {
-      "import": "./dist/index.js",
-      "types": "./dist/index.d.ts"
-    },
-    "./webhook": {
-      "import": "./dist/webhook.js",
-      "types": "./dist/webhook.d.ts"
-    },
-    "./node": {
-      "import": "./dist/node.js",
-      "types": "./dist/node.d.ts"
-    },
-    "./react": {
-      "import": "./dist/react.js",
-      "types": "./dist/react.d.ts"
-    }
+    ".": "./src/index.ts",
+    "./webhook": "./src/webhook.ts",
+    "./node": "./src/node.ts",
+    "./react": "./src/react.ts"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json --noEmit",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "lint": "oxlint ."
