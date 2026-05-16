@@ -85,6 +85,15 @@ export const cfZoneKeys = {
   detail: (name: string) => [...cfZoneKeys.all, 'detail', name] as const,
 };
 
+// TLS-RPT reports (W5) — ingested per-domain TLS report ledger + rollup.
+export const tlsRptKeys = {
+  all: ['tls-rpt-reports'] as const,
+  list: (filters?: Record<string, string | undefined>) =>
+    [...tlsRptKeys.all, 'list', filters ?? {}] as const,
+  detail: (id: string) => [...tlsRptKeys.all, 'detail', id] as const,
+  summary: (domain: string) => [...tlsRptKeys.all, 'summary', domain] as const,
+};
+
 // Sender abuse profiles (W2c) — per-principal tier + lifetime counters.
 export const senderAbuseKeys = {
   all: ['sender-abuse'] as const,

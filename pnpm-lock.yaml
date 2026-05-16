@@ -319,6 +319,15 @@ importers:
         specifier: ^4.1.0
         version: 4.1.6(@types/node@22.19.18)(vite@8.0.12(@types/node@22.19.18)(esbuild@0.27.7)(jiti@2.7.0)(tsx@4.21.0))
 
+  packages/tlsrpt-parser:
+    devDependencies:
+      typescript:
+        specifier: ^5.5.0
+        version: 5.9.3
+      vitest:
+        specifier: ^4.1.0
+        version: 4.1.6(@types/node@22.19.18)(vite@8.0.12(@types/node@22.19.18)(esbuild@0.27.7)(jiti@2.7.0)(tsx@4.21.0))
+
   services/api:
     dependencies:
       '@polaris-email/cf-api':
@@ -391,6 +400,9 @@ importers:
       '@polaris-email/suppressions':
         specifier: workspace:*
         version: link:../../packages/suppressions
+      '@polaris-email/tlsrpt-parser':
+        specifier: workspace:*
+        version: link:../../packages/tlsrpt-parser
     devDependencies:
       '@cloudflare/workers-types':
         specifier: ^4.20240909.0

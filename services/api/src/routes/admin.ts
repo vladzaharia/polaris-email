@@ -29,6 +29,7 @@ import { abuseEvents } from './admin/abuse-events.js';
 import { alerts as adminAlerts } from './admin/alerts.js';
 import { senderAbuse } from './admin/sender-abuse.js';
 import { suppressions } from './admin/suppressions.js';
+import { tlsRptReports } from './admin/tls-rpt-reports.js';
 import { webhookDlq } from './admin/webhook-dlq.js';
 import { webhookSubs } from './admin/webhook-subs.js';
 import { zones } from './admin/zones.js';
@@ -64,6 +65,7 @@ admin.route('/', suppressions);
 admin.route('/', abuseEvents);
 admin.route('/', adminAlerts);
 admin.route('/', senderAbuse);
+admin.route('/', tlsRptReports);
 
 // ---------- api keys ----------
 

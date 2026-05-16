@@ -15,7 +15,8 @@
     "@polaris-email/ids": "workspace:*",
     "@polaris-email/mime": "workspace:*",
     "@polaris-email/pipeline": "workspace:*",
-    "@polaris-email/suppressions": "workspace:*"
+    "@polaris-email/suppressions": "workspace:*",
+    "@polaris-email/tlsrpt-parser": "workspace:*"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20240909.0",

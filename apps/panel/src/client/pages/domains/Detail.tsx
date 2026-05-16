@@ -22,7 +22,84 @@ import {
 import { DestructiveActionDialog } from '../../components/DestructiveActionDialog.js';
 import { useAdminMutation, useAdminQuery } from '../../hooks/useAdminApi.js';
 import { formatRelative } from '../../lib/format.js';
-import { domainKeys } from '../../queryKeys.js';
+import { domainKeys, tlsRptKeys } from '../../queryKeys.js';
+
+// W5 — TLS report summary subsection embedded in the Inbound TLS hardening
+// section. Pulls the W5 admin summary endpoint and renders the 7/30-day
+// success/failure totals + top failure-reason breakdown for this domain.
+interface TlsReportSummaryPayload {
+  domain: string;
+  last_7d: { reports: number; success: number; failure: number; latest_at: string | null };
+  last_30d: { reports: number; success: number; failure: number; latest_at: string | null };
+  top_failures_7d: Array<{ result_type: string; failed: number }>;
+}
+
+function TlsReportSummary({ domainName }: { domainName: string }) {
+  const q = useAdminQuery<TlsReportSummaryPayload>(
+    tlsRptKeys.summary(domainName),
+    `/api/admin/tls-rpt-reports/summary?domain=${encodeURIComponent(domainName)}`,
+  );
+  if (q.isLoading) return null; // section is non-critical; skip skeleton flicker
+  if (q.error || !q.data) return null; // empty / no reports yet — silent
+  const d = q.data;
+  const noData = d.last_30d.reports === 0;
+  return (
+    <div className="mt-6 rounded-md border border-[var(--color-border)] p-4">
+      <h3 className="mb-2 text-sm font-semibold uppercase tracking-wider text-[var(--color-muted-foreground)]">
+        TLS report summary
+      </h3>
+      {noData ? (
+        <p className="text-sm text-[var(--color-muted-foreground)]">
+          No TLS-RPT reports received yet for this domain.{' '}
+          {d.last_7d.latest_at
+            ? null
+            : 'Once senders start delivering reports they will appear here.'}
+        </p>
+      ) : (
+        <>
+          <div className="mb-3 grid grid-cols-2 gap-x-6 gap-y-1 text-sm md:grid-cols-4">
+            <span className="font-medium">7d reports</span>
+            <span>{d.last_7d.reports}</span>
+            <span className="font-medium">30d reports</span>
+            <span>{d.last_30d.reports}</span>
+            <span className="font-medium">7d success</span>
+            <span>{d.last_7d.success.toLocaleString()}</span>
+            <span className="font-medium">7d failures</span>
+            <span>
+              {d.last_7d.failure > 0 ? (
+                <Badge variant="destructive">{d.last_7d.failure.toLocaleString()}</Badge>
+              ) : (
+                d.last_7d.failure.toLocaleString()
+              )}
+            </span>
+            <span className="font-medium">Last report</span>
+            <span className="md:col-span-3" title={d.last_30d.latest_at ?? ''}>
+              {d.last_30d.latest_at ? formatRelative(d.last_30d.latest_at) : '—'}
+            </span>
+          </div>
+          {d.top_failures_7d.length > 0 && (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Failure type (7d)</TableHead>
+                  <TableHead>Failed sessions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {d.top_failures_7d.map((f) => (
+                  <TableRow key={f.result_type}>
+                    <TableCell className="font-mono text-xs">{f.result_type}</TableCell>
+                    <TableCell>{f.failed.toLocaleString()}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
 
 interface DomainPayload {
   id: string;
@@ -197,7 +274,11 @@ export function DomainDetail() {
                   const isTlsRptAction = ch.name.startsWith('tls-rpt:operator-action:');
                   const isOperatorAction = isMtaStsAction || isTlsRptAction;
                   const inlineFix = isMtaStsAction
-                    ? { label: 'Re-publish MTA-STS', run: () => enableMtaSts.mutate(undefined), pending: enableMtaSts.isPending }
+                    ? {
+                        label: 'Re-publish MTA-STS',
+                        run: () => enableMtaSts.mutate(undefined),
+                        pending: enableMtaSts.isPending,
+                      }
                     : isTlsRptAction
                       ? {
                           label: 'Re-publish TLS-RPT',
@@ -360,6 +441,10 @@ export function DomainDetail() {
               </Button>
             )}
           </div>
+
+          {/* W5 — TLS report summary subsection. Renders 7d/30d aggregates
+              and the top failure types from inbound TLS-RPT reports. */}
+          <TlsReportSummary domainName={d.name} />
         </section>
       </div>
 

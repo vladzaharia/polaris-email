@@ -9,6 +9,7 @@ import { ulid } from '@polaris-email/ids';
 import { MAX_MESSAGE_SIZE_VERIFIED, parseAuthResults } from '@polaris-email/mime';
 import { processMessage, type PipelineEnv } from '@polaris-email/pipeline';
 import { handleComplaint, PLATFORM_COMPLAINTS_MAILBOX_ID } from './complaint-ingest.js';
+import { handleTlsRptReport, PLATFORM_TLS_REPORTS_MAILBOX_ID } from './tlsrpt-ingest.js';
 import { handleUnsubMailto } from './unsub-ingest.js';
 
 // Inbound-edge sentinel for the message-size cap. We use the CF verified-
@@ -210,6 +211,31 @@ export default {
     // migration 0011), parse the message as ARF/DSN and write into
     // abuse_events + suppressions instead of running the normal pipeline.
     // Unstructured complaints are flagged for W2b LLM triage.
+    if (match.mailbox_id === PLATFORM_TLS_REPORTS_MAILBOX_ID) {
+      // W5 — TLS-RPT report mailbox.
+      try {
+        const result = await handleTlsRptReport(
+          env.DB as unknown as Parameters<typeof handleTlsRptReport>[0],
+          raw,
+          null,
+        );
+        // eslint-disable-next-line no-console
+        console.log(
+          'in: tls-rpt ingested',
+          `domain=${result.domain ?? 'unknown'}`,
+          `failures=${result.totalFailureCount}`,
+          `report_row=${result.reportRowId}`,
+        );
+      } catch (e) {
+        // eslint-disable-next-line no-console
+        console.error(
+          'in: tls-rpt ingest error',
+          envelopeTo,
+          e instanceof Error ? e.message : 'unknown',
+        );
+      }
+      return;
+    }
     if (match.mailbox_id === PLATFORM_COMPLAINTS_MAILBOX_ID) {
       try {
         const result = await handleComplaint(

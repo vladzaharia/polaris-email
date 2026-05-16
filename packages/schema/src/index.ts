@@ -910,6 +910,8 @@ export const AuditAction = z.enum([
   // W2c — Sender abuse profile + escalating suppression (migration 0013).
   'sender_abuse_profile.tier_advance',
   'sender.suppress_auto',
+  // W5 — TLS-RPT receiver (migration 0014).
+  'tls_rpt_report.ingest',
 ]);
 export type AuditAction = z.infer<typeof AuditAction>;
 
