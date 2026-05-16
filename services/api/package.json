@@ -17,6 +17,7 @@
     "@polaris-email/mime": "workspace:*",
     "@polaris-email/object-lock": "workspace:*",
     "@polaris-email/pipeline": "workspace:*",
+    "@polaris-email/policy-engine": "workspace:*",
     "@polaris-email/revocation": "workspace:*",
     "@polaris-email/schema": "workspace:*",
     "@polaris-email/suppressions": "workspace:*",

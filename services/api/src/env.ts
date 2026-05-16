@@ -77,6 +77,21 @@ export interface Env {
   DMARC_RUA_PLATFORM_ALIAS?: string;
   /** Synthetic probe upper-bound latency, milliseconds, as a string. */
   MAX_LATENCY_MS?: string;
+
+  // -- Policy engine (0019 / hybrid heuristics + LLM tiebreaker) -------------
+  /** Daily Workers AI budget for the inbound policy tiebreaker. Default 5000. */
+  POLICY_AI_DAILY_BUDGET?: string;
+  /** Override the policy LLM model id. Default @cf/meta/llama-3.1-8b-instruct. */
+  POLICY_MODEL?: string;
+  /** Hard timeout on the policy LLM call, milliseconds. Default 10000. */
+  POLICY_AI_TIMEOUT_MS?: string;
+  /** Few-shot window size the daily moderation-feedback cron writes to KV.
+   *  Default 20. Cap recommended ≤50 to keep prompt budget in check. */
+  MODERATION_FEEDBACK_WINDOW_SIZE?: string;
+  /** Soak-mode flag for the outbound gate. When `'false'`, block + hold
+   *  verdicts downgrade to pass_warn (decisions are still recorded). Flip
+   *  to `'true'` after the 7-day soak in P2. */
+  POLICY_ENGINE_OUTBOUND_FULL?: string;
   /** Grace window (days) for the janitor's expunged_at sweep. */
   BRIDGE_EXPUNGE_GRACE_DAYS?: string;
 

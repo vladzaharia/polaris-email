@@ -16,6 +16,7 @@ import { senderAbuseThresholdRun } from './sender-abuse-threshold.js';
 import { dmarcPromoteRun } from './dmarc-promote.js';
 import { mtaStsContinuityRun } from './mta-sts-continuity.js';
 import { dkimSelfVerifyRun } from './dkim-self-verify.js';
+import { feedbackWindowRefresh } from './feedback-window-refresh.js';
 import type { Env } from '../env.js';
 
 export async function scheduled(event: ScheduledEvent, env: Env): Promise<void> {
@@ -65,6 +66,14 @@ export async function scheduled(event: ScheduledEvent, env: Env): Promise<void> 
         'dkim-self-verify cron:',
         `candidates=${r.candidates} ok=${r.ok} failed=${r.failed}`,
       );
+      return;
+    }
+    case '0 5 * * *': {
+      // 0019 — daily refresh of the moderation_feedback few-shot window
+      // the inbound policy engine LLM reads. Offset 1h from DMARC promote.
+      const r = await feedbackWindowRefresh(env);
+      // eslint-disable-next-line no-console
+      console.log('feedback-window-refresh cron:', `written=${r.written}`);
       return;
     }
     default:
