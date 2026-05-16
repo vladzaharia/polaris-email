@@ -32,7 +32,22 @@ interface Env extends PipelineEnv {
   DB: D1Database;
   R2: R2Bucket;
   KV_RATE_LIMIT: KVNamespace;
+  KV_IDEMPOTENCY?: KVNamespace;
   FANOUT_QUEUE: Queue<FanoutInbound>;
+  /** W2b — Workers AI binding for LLM-assisted complaint triage. */
+  AI?: {
+    run(
+      model: string,
+      args: {
+        prompt: string;
+        response_format?: { type: string; json_schema?: unknown };
+        max_tokens?: number;
+        temperature?: number;
+      },
+    ): Promise<{ response?: string }>;
+  };
+  TRIAGE_DAILY_BUDGET?: string;
+  TRIAGE_MODEL?: string;
   /** W4 — secret shared with services/api for verifying inbound RFC 8058
    *  unsubscribe tokens. */
   UNSUB_HMAC_SECRET?: string;
@@ -268,6 +283,9 @@ export default {
           env.DB as unknown as Parameters<typeof handleComplaint>[0],
           raw,
           envelopeFrom || null,
+          // W2b — pass the AI binding when configured so unstructured
+          // complaints get LLM-triaged rather than just logged.
+          env.AI ? (env as unknown as Parameters<typeof handleComplaint>[3]) : undefined,
         );
         // eslint-disable-next-line no-console
         console.log(

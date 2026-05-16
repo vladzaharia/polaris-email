@@ -173,6 +173,12 @@ const abuseReportsList = createRoute({
   component: lazyRouteComponent(() => import('./pages/reports/Abuse.js'), 'AbuseReportsList'),
   errorComponent: RouteError,
 });
+const triageReportsList = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/reports/triage',
+  component: lazyRouteComponent(() => import('./pages/reports/Triage.js'), 'TriageReportsList'),
+  errorComponent: RouteError,
+});
 const adminAlertsList = createRoute({
   getParentRoute: () => rootRoute,
   path: '/admin-alerts',
@@ -229,6 +235,7 @@ const routeTree = rootRoute.addChildren([
   suppressionsList,
   suppressionDetail,
   abuseReportsList,
+  triageReportsList,
   adminAlertsList,
   senderAbuseList,
   dmarcPromotionList,

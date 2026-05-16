@@ -45,6 +45,7 @@ const OPERATIONS: NavItem[] = [
   { to: '/messages', label: 'Messages', icon: Mail },
   { to: '/dlq', label: 'DLQ browser', icon: BarChart3 },
   { to: '/reports/abuse', label: 'Abuse reports', icon: AlertTriangle },
+  { to: '/reports/triage', label: 'LLM triage', icon: AlertOctagon },
   { to: '/admin-alerts', label: 'Admin alerts', icon: AlertOctagon },
   { to: '/sender-abuse', label: 'Sender abuse', icon: AlertTriangle },
   { to: '/dmarc-promotion', label: 'DMARC promotion', icon: Settings },

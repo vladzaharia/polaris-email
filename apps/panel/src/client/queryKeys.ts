@@ -91,6 +91,14 @@ export const syntheticKeys = {
   summary: () => [...syntheticKeys.all, 'summary'] as const,
 };
 
+// LLM triage events (W2b) — Workers AI classifications of unstructured mail.
+export const triageKeys = {
+  all: ['triage-events'] as const,
+  list: (filters?: Record<string, string | undefined>) =>
+    [...triageKeys.all, 'list', filters ?? {}] as const,
+  detail: (id: string) => [...triageKeys.all, 'detail', id] as const,
+};
+
 // DMARC promotion (W8) — fleet view of the auto-promotion state machine.
 export const dmarcPromotionKeys = {
   all: ['dmarc-promotion'] as const,

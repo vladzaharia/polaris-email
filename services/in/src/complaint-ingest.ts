@@ -15,6 +15,7 @@ import {
 } from '@polaris-email/arf-parser';
 import { normalizeAddress } from '@polaris-email/suppressions';
 import { ulid } from '@polaris-email/ids';
+import { triageUnstructuredComplaint, type TriageEnv } from './triage.js';
 
 export const PLATFORM_COMPLAINTS_MAILBOX_ID = '01HXPLATFORMCOMPLAINTS0000';
 
@@ -179,11 +180,17 @@ async function writeAbuseAndSuppression(
 /**
  * Top-level handler invoked from services/in/src/index.ts when an inbound
  * message resolves to the platform complaints mailbox.
+ *
+ * When `triageEnv` is provided, unstructured complaints fan out to W2b
+ * Workers-AI triage *in addition* to the bare abuse_events log. Callers
+ * without an AI binding (CI, smoke scripts) may pass undefined; the
+ * unstructured-complaint path still records the sparse abuse_events row.
  */
 export async function handleComplaint(
   db: D1,
   rawMime: Uint8Array,
   reporterAddress: string | null,
+  triageEnv?: TriageEnv,
 ): Promise<ComplaintIngestResult> {
   const raw = new TextDecoder('utf-8', { fatal: false, ignoreBOM: true }).decode(rawMime);
   const complaint = parseComplaint(raw);
@@ -204,11 +211,28 @@ export async function handleComplaint(
       source: 'arf_inbox',
       weight: 0,
     });
+    // W2b — Workers AI triage when the env was wired. The LLM may flip an
+    // unstructured complaint into a real suppression when confidence is high
+    // enough; otherwise it just logs into triage_events for human review.
+    let triagedSuppressionId: string | null = null;
+    if (triageEnv) {
+      try {
+        const tri = await triageUnstructuredComplaint(triageEnv, {
+          rawHeaders: raw.slice(0, Math.min(raw.length, 8000)),
+          bodyPreview: complaint.bodyPreview,
+          inboundAlias: reporterAddress,
+          sourceMessageId: null,
+        });
+        triagedSuppressionId = tri.appliedSuppressionId;
+      } catch {
+        // W2b is best-effort — never block W2 ingest on its failure.
+      }
+    }
     return {
       classification: 'unstructured',
       abuseEventId: result.abuseEventId,
-      suppressionId: null,
-      needsLlmTriage: true,
+      suppressionId: triagedSuppressionId,
+      needsLlmTriage: !triageEnv || !triagedSuppressionId,
     };
   }
 

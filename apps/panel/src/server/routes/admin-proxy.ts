@@ -158,6 +158,14 @@ adminProxyRoutes.post('/api/admin/webhook-dlq/:id/drop', withApproval('webhook_d
   forward(c, `/v1/admin/webhook-dlq/${c.req.param('id')}/drop`),
 );
 
+// W2b — Operator override on a triage event records dissent + can flip an
+// auto-applied suppression. Approval-gated.
+adminProxyRoutes.post(
+  '/api/admin/triage-events/:id/override',
+  withApproval('triage.operator_override'),
+  (c) => forward(c, `/v1/admin/triage-events/${c.req.param('id')}/override`),
+);
+
 // W8 — DMARC promotion mutations all touch live state (pause/resume the
 // auto-promotion cron, claim DNS management, run the cron immediately).
 // Approval-gate them all.

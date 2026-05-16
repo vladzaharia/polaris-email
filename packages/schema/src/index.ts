@@ -924,6 +924,9 @@ export const AuditAction = z.enum([
   'dmarc.pause',
   'dmarc.rollback',
   'dmarc.claim_management',
+  // W2b — LLM-assisted triage (migration 0018).
+  'triage.classify',
+  'triage.operator_override',
 ]);
 export type AuditAction = z.infer<typeof AuditAction>;
 
