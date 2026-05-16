@@ -8,6 +8,8 @@ import {
   unprovisionMtaSts,
   provisionTlsRpt,
   unprovisionTlsRpt,
+  verifyMtaSts,
+  verifyTlsRpt,
 } from '../src/mta-sts.js';
 
 interface RecordedCall {
@@ -382,5 +384,173 @@ describe('unprovisionTlsRpt', () => {
     });
     await unprovisionTlsRpt(client, { zoneId: 'zone-1', domain: 'acme.com' });
     expect(calls.filter((c) => c.method === 'DELETE')).toHaveLength(0);
+  });
+});
+
+// ---------- C.5 verifiers ----------
+
+function dohAnswer(records: string[]): Response {
+  return new Response(JSON.stringify({ Answer: records.map((data) => ({ type: 16, data })) }), {
+    headers: { 'content-type': 'application/dns-json' },
+  });
+}
+
+function policyBody(mode: string, mx: string[] = ['mx1.acme.com']): string {
+  const lines = ['version: STSv1', `mode: ${mode}`, ...mx.map((m) => `mx: ${m}`), 'max_age: 86400'];
+  return lines.join('\n') + '\n';
+}
+
+function makeFetch(routes: Record<string, () => Response>) {
+  const calls: string[] = [];
+  const fn = async (input: RequestInfo | URL, _init?: RequestInit) => {
+    const url = typeof input === 'string' ? input : (input as URL).toString();
+    calls.push(url);
+    for (const key of Object.keys(routes)) {
+      if (url.startsWith(key)) return routes[key]();
+    }
+    throw new Error(`unexpected fetch ${url}`);
+  };
+  return { fn: fn as typeof fetch, calls };
+}
+
+describe('verifyMtaSts', () => {
+  it('happy path: TXT matches id and policy file is served as text/plain', async () => {
+    const { fn } = makeFetch({
+      'https://1.1.1.1/dns-query': () => dohAnswer([`"v=STSv1; id=20260515T120000Z"`]),
+      'https://mta-sts.acme.com/.well-known/mta-sts.txt': () =>
+        new Response(policyBody('enforce'), {
+          status: 200,
+          headers: { 'content-type': 'text/plain; charset=utf-8' },
+        }),
+    });
+
+    const result = await verifyMtaSts('acme.com', '20260515T120000Z', { fetchImpl: fn });
+    expect(result.ok).toBe(true);
+    expect(result.observedMode).toBe('enforce');
+    // every check should be ok
+    expect(result.checks.every((c) => c.ok)).toBe(true);
+  });
+
+  it('fail: TXT id mismatch', async () => {
+    const { fn } = makeFetch({
+      'https://1.1.1.1/dns-query': () => dohAnswer([`"v=STSv1; id=OLD"`]),
+      'https://mta-sts.acme.com/.well-known/mta-sts.txt': () =>
+        new Response(policyBody('enforce'), {
+          status: 200,
+          headers: { 'content-type': 'text/plain' },
+        }),
+    });
+
+    const result = await verifyMtaSts('acme.com', 'NEW', { fetchImpl: fn });
+    expect(result.ok).toBe(false);
+    const idCheck = result.checks.find((c) => c.name.includes('id'));
+    expect(idCheck).toBeDefined();
+    expect(idCheck!.ok).toBe(false);
+    expect(idCheck!.actual).toContain('OLD');
+    expect(idCheck!.expected).toContain('NEW');
+  });
+
+  it('fail: HTTPS returns 301 redirect (must NOT follow)', async () => {
+    const { fn } = makeFetch({
+      'https://1.1.1.1/dns-query': () => dohAnswer([`"v=STSv1; id=20260515T120000Z"`]),
+      'https://mta-sts.acme.com/.well-known/mta-sts.txt': () =>
+        new Response(null, { status: 301, headers: { location: 'https://elsewhere/' } }),
+    });
+
+    const result = await verifyMtaSts('acme.com', '20260515T120000Z', { fetchImpl: fn });
+    expect(result.ok).toBe(false);
+    const httpCheck = result.checks.find((c) => c.name.includes('https'));
+    expect(httpCheck!.ok).toBe(false);
+    expect(httpCheck!.actual).toContain('301');
+  });
+
+  it('fail: HTTPS returns non-text/plain Content-Type', async () => {
+    const { fn } = makeFetch({
+      'https://1.1.1.1/dns-query': () => dohAnswer([`"v=STSv1; id=20260515T120000Z"`]),
+      'https://mta-sts.acme.com/.well-known/mta-sts.txt': () =>
+        new Response(policyBody('enforce'), {
+          status: 200,
+          headers: { 'content-type': 'text/html' },
+        }),
+    });
+
+    const result = await verifyMtaSts('acme.com', '20260515T120000Z', { fetchImpl: fn });
+    expect(result.ok).toBe(false);
+    const ctCheck = result.checks.find((c) => c.name.includes('content-type'));
+    expect(ctCheck).toBeDefined();
+    expect(ctCheck!.ok).toBe(false);
+    expect(ctCheck!.actual).toContain('text/html');
+  });
+
+  it('accepts any non-empty id when expectedPolicyId is null', async () => {
+    const { fn } = makeFetch({
+      'https://1.1.1.1/dns-query': () => dohAnswer([`"v=STSv1; id=anything"`]),
+      'https://mta-sts.acme.com/.well-known/mta-sts.txt': () =>
+        new Response(policyBody('testing'), {
+          status: 200,
+          headers: { 'content-type': 'text/plain' },
+        }),
+    });
+    const result = await verifyMtaSts('acme.com', null, { fetchImpl: fn });
+    expect(result.ok).toBe(true);
+    expect(result.observedMode).toBe('testing');
+  });
+
+  it('uses redirect: manual on the HTTPS fetch', async () => {
+    const seenInits: RequestInit[] = [];
+    const fn = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : (input as URL).toString();
+      if (init) seenInits.push(init);
+      if (url.startsWith('https://1.1.1.1')) {
+        return dohAnswer([`"v=STSv1; id=X"`]);
+      }
+      return new Response(policyBody('enforce'), {
+        status: 200,
+        headers: { 'content-type': 'text/plain' },
+      });
+    }) as typeof fetch;
+
+    await verifyMtaSts('acme.com', null, { fetchImpl: fn });
+    const httpsInit = seenInits.find((i) => (i as { redirect?: string }).redirect !== undefined);
+    expect(httpsInit).toBeDefined();
+    expect((httpsInit as { redirect?: string }).redirect).toBe('manual');
+  });
+});
+
+describe('verifyTlsRpt', () => {
+  it('happy path: TXT contains rua matching expected', async () => {
+    const { fn } = makeFetch({
+      'https://1.1.1.1/dns-query': () => dohAnswer([`"v=TLSRPTv1; rua=mailto:tlsrpt@acme.com"`]),
+    });
+    const result = await verifyTlsRpt('acme.com', 'mailto:tlsrpt@acme.com', { fetchImpl: fn });
+    expect(result.ok).toBe(true);
+  });
+
+  it('fail: TXT rua does not match expected', async () => {
+    const { fn } = makeFetch({
+      'https://1.1.1.1/dns-query': () =>
+        dohAnswer([`"v=TLSRPTv1; rua=mailto:other@elsewhere.com"`]),
+    });
+    const result = await verifyTlsRpt('acme.com', 'mailto:tlsrpt@acme.com', { fetchImpl: fn });
+    expect(result.ok).toBe(false);
+    const ruaCheck = result.checks.find((c) => c.name.includes('rua'));
+    expect(ruaCheck!.ok).toBe(false);
+    expect(ruaCheck!.actual).toContain('other@elsewhere.com');
+  });
+
+  it('accepts any rua when expectedRua is null and list is non-empty', async () => {
+    const { fn } = makeFetch({
+      'https://1.1.1.1/dns-query': () => dohAnswer([`"v=TLSRPTv1; rua=mailto:whoever@x"`]),
+    });
+    const result = await verifyTlsRpt('acme.com', null, { fetchImpl: fn });
+    expect(result.ok).toBe(true);
+  });
+
+  it('fail when DoH returns no records', async () => {
+    const { fn } = makeFetch({
+      'https://1.1.1.1/dns-query': () => new Response(JSON.stringify({})),
+    });
+    const result = await verifyTlsRpt('acme.com', null, { fetchImpl: fn });
+    expect(result.ok).toBe(false);
   });
 });
