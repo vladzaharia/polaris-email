@@ -28,6 +28,51 @@ interface MailDomainRow {
 }
 
 /**
+ * W2 — Well-known ID of the platform-owned complaints mailbox.
+ * Seeded by migration 0011_complaint_routing.sql.
+ */
+const PLATFORM_COMPLAINTS_MAILBOX_ID = '01HXPLATFORMCOMPLAINTS0000';
+
+/** W2 — RFC 2142 receivers we auto-provision on every domain.
+ *  Patterns are full address-with-wildcard so the services/in matcher
+ *  (which compares against envelope-to) matches `postmaster@anydomain.tld`. */
+const COMPLAINT_RECEIVER_PATTERNS = ['postmaster@*', 'abuse@*', 'webmaster@*'] as const;
+
+/**
+ * W2 — Ensure the three RFC 2142 complaint receivers exist for a domain.
+ * Each receiver routes to the platform-owned complaints mailbox. Idempotent:
+ * skips patterns that already have a row.
+ *
+ * Action='webhook' is used as a sentinel here; the inbound handler in
+ * services/in special-cases the platform mailbox and dispatches into the
+ * W2 ARF/DSN parser instead of fanning out to webhook subscribers.
+ */
+async function ensureComplaintReceivers(env: Env, domainId: string): Promise<void> {
+  const existing = await env.DB.prepare(
+    `SELECT address_pattern FROM mailbox_receivers WHERE domain_id = ? AND mailbox_id = ?`,
+  )
+    .bind(domainId, PLATFORM_COMPLAINTS_MAILBOX_ID)
+    .all<{ address_pattern: string }>();
+  const have = new Set((existing.results ?? []).map((r) => r.address_pattern));
+  const now = new Date().toISOString();
+  const stmts = [];
+  for (const pattern of COMPLAINT_RECEIVER_PATTERNS) {
+    if (have.has(pattern)) continue;
+    stmts.push(
+      env.DB.prepare(
+        `INSERT INTO mailbox_receivers
+           (id, mailbox_id, domain_id, priority, address_pattern, action,
+            webhook_sub_id, forward_to, enabled, created_at, disabled_at)
+         VALUES (?, ?, ?, 10, ?, 'webhook', NULL, NULL, 1, ?, NULL)`,
+      ).bind(ulid(), PLATFORM_COMPLAINTS_MAILBOX_ID, domainId, pattern, now),
+    );
+  }
+  if (stmts.length > 0) {
+    await env.DB.batch(stmts);
+  }
+}
+
+/**
  * Ensure a `zones` row exists for the given cf_zone_id (or a synthesised
  * placeholder for tests where the operator hasn't pre-provisioned one).
  * Returns the canonical zones.id.
@@ -122,6 +167,19 @@ domains.post('/v1/admin/domains', requireScope('admin:rotate'), async (c) => {
     if (String(e).includes('UNIQUE')) return buildError(c, 'conflict', 'domain already registered');
     throw e;
   }
+  // W2 — auto-provision RFC 2142 complaint receivers (postmaster, abuse,
+  // webmaster). All three point at the platform `polaris-platform-complaints`
+  // mailbox so inbound mail to them lands in one place for ARF/DSN parsing.
+  // Idempotent: receivers are skipped if already present (e.g. the backfill
+  // script created them before the operator re-onboarded the domain).
+  try {
+    await ensureComplaintReceivers(c.env, id);
+  } catch (e) {
+    // Don't fail the domain create if the receivers can't be provisioned;
+    // the backfill script can pick them up later. Just log.
+    // eslint-disable-next-line no-console
+    console.warn('domain.create: failed to provision complaint receivers', e);
+  }
   await audit(c.env, {
     actor: `key:${key.key_id}`,
     action: 'domain.create',
@@ -132,6 +190,7 @@ domains.post('/v1/admin/domains', requireScope('admin:rotate'), async (c) => {
       mta_sts_mode: mtaStsMode,
       mta_sts_policy_id: mtaStsPolicyId,
       tlsrpt_enabled: tlsrptEnabled,
+      complaint_receivers: 'auto_provisioned',
     },
   });
   return c.json(
@@ -230,6 +289,12 @@ domains.post('/v1/admin/domains/bulk-onboard', requireScope('admin:rotate'), asy
           nowIso,
         )
         .run();
+      // W2 — auto-provision RFC 2142 complaint receivers for this domain too.
+      try {
+        await ensureComplaintReceivers(c.env, id);
+      } catch {
+        // tolerated, same as single create path
+      }
       results.push({ name, id });
       await audit(c.env, {
         actor: `key:${key.key_id}`,
@@ -241,6 +306,7 @@ domains.post('/v1/admin/domains/bulk-onboard', requireScope('admin:rotate'), asy
           mta_sts_mode: 'testing',
           mta_sts_policy_id: mtaStsPolicyId,
           tlsrpt_enabled: 1,
+          complaint_receivers: 'auto_provisioned',
         },
       });
     } catch (e) {

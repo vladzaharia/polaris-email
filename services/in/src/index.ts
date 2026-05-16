@@ -8,6 +8,7 @@
 import { ulid } from '@polaris-email/ids';
 import { MAX_MESSAGE_SIZE_VERIFIED, parseAuthResults } from '@polaris-email/mime';
 import { processMessage, type PipelineEnv } from '@polaris-email/pipeline';
+import { handleComplaint, PLATFORM_COMPLAINTS_MAILBOX_ID } from './complaint-ingest.js';
 
 // Inbound-edge sentinel for the message-size cap. We use the CF verified-
 // domain ceiling (25 MiB) — inbound is only accepted on already-verified
@@ -172,6 +173,41 @@ export default {
       // Hand off to CF Email Routing's forward primitive. No D1 / R2 / fanout
       // write — the forward target owns the message lifecycle from here.
       await message.forward(match.forward_to);
+      return;
+    }
+
+    // W2 — Complaint mailbox dispatch. When the resolved receiver routes to
+    // the platform-owned `polaris-platform-complaints` mailbox (seeded by
+    // migration 0011), parse the message as ARF/DSN and write into
+    // abuse_events + suppressions instead of running the normal pipeline.
+    // Unstructured complaints are flagged for W2b LLM triage.
+    if (match.mailbox_id === PLATFORM_COMPLAINTS_MAILBOX_ID) {
+      try {
+        const result = await handleComplaint(
+          env.DB as unknown as Parameters<typeof handleComplaint>[0],
+          raw,
+          envelopeFrom || null,
+        );
+        // eslint-disable-next-line no-console
+        console.log(
+          'in: complaint ingested',
+          `pattern=${match.address_pattern}`,
+          `classification=${result.classification}`,
+          `abuse_event=${result.abuseEventId}`,
+          `suppression=${result.suppressionId ?? 'none'}`,
+          `needs_triage=${result.needsLlmTriage}`,
+        );
+      } catch (e) {
+        // eslint-disable-next-line no-console
+        console.error(
+          'in: complaint ingest error',
+          envelopeTo,
+          e instanceof Error ? e.message : 'unknown',
+        );
+        // Don't reject — accepting the complaint message even when our
+        // parser fails is the safer behaviour (CF Email Routing won't
+        // retry; losing the report silently is worse than a noisy log).
+      }
       return;
     }
 

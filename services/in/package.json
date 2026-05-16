@@ -10,10 +10,12 @@
     "lint": "oxlint ."
   },
   "dependencies": {
+    "@polaris-email/arf-parser": "workspace:*",
     "@polaris-email/hmac": "workspace:*",
     "@polaris-email/ids": "workspace:*",
     "@polaris-email/mime": "workspace:*",
-    "@polaris-email/pipeline": "workspace:*"
+    "@polaris-email/pipeline": "workspace:*",
+    "@polaris-email/suppressions": "workspace:*"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20240909.0",

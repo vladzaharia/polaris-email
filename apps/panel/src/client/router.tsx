@@ -167,6 +167,12 @@ const suppressionsList = createRoute({
   component: lazyRouteComponent(() => import('./pages/suppressions/List.js'), 'SuppressionsList'),
   errorComponent: RouteError,
 });
+const abuseReportsList = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/reports/abuse',
+  component: lazyRouteComponent(() => import('./pages/reports/Abuse.js'), 'AbuseReportsList'),
+  errorComponent: RouteError,
+});
 const suppressionDetail = createRoute({
   getParentRoute: () => rootRoute,
   path: '/suppressions/$id',
@@ -201,6 +207,7 @@ const routeTree = rootRoute.addChildren([
   cfZoneDetail,
   suppressionsList,
   suppressionDetail,
+  abuseReportsList,
 ]);
 
 // Phase 6d.8 — `defaultPendingComponent` swaps in PageSkeleton on every

@@ -85,6 +85,15 @@ export const cfZoneKeys = {
   detail: (name: string) => [...cfZoneKeys.all, 'detail', name] as const,
 };
 
+// Abuse events (W2) — append-only ledger of complaint events.
+export const abuseEventKeys = {
+  all: ['abuse-events'] as const,
+  list: (filters?: Record<string, string | undefined>) =>
+    [...abuseEventKeys.all, 'list', filters ?? {}] as const,
+  detail: (id: string) => [...abuseEventKeys.all, 'detail', id] as const,
+  summary: (sender: string) => [...abuseEventKeys.all, 'summary', sender] as const,
+};
+
 // Suppressions (W1) — bi-directional do-not-send list. Two tabs in the panel
 // (Recipients / Senders), each filterable; detail page shows the source
 // evidence + lifetime stats.
