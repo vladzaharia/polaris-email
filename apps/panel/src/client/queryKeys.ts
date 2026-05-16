@@ -85,6 +85,14 @@ export const cfZoneKeys = {
   detail: (name: string) => [...cfZoneKeys.all, 'detail', name] as const,
 };
 
+// Admin alerts (W2d) — operator-facing alert history.
+export const adminAlertKeys = {
+  all: ['admin-alerts'] as const,
+  list: (filters?: Record<string, string | undefined>) =>
+    [...adminAlertKeys.all, 'list', filters ?? {}] as const,
+  detail: (id: string) => [...adminAlertKeys.all, 'detail', id] as const,
+};
+
 // Abuse events (W2) — append-only ledger of complaint events.
 export const abuseEventKeys = {
   all: ['abuse-events'] as const,

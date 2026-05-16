@@ -44,8 +44,19 @@ export interface Env {
   ANCHOR_S3_SECRET_ACCESS_KEY?: string;
   /** Per-object retain-until offset, days. Default 2555 (7y). */
   ANCHOR_RETENTION_DAYS?: string;
-  /** Webhook URL hit by `staleness` + `synthetic` cron alerts. */
+  /** Webhook URL hit by `staleness` + `synthetic` cron alerts AND the W2d
+   *  admin alert pipeline (services/api/src/lib/admin-alert.ts). */
   ALERT_WEBHOOK?: string;
+  /** Comma-separated list of admin recipients to surface in alert payloads
+   *  (the webhook channel echoes them so an email-adapter on the receiving
+   *  end can route correctly). Defaults to hey@vlad.gg. */
+  ADMIN_ALERT_RECIPIENTS?: string;
+  /** Dedup TTL in seconds for admin alerts (W2d). Default 3600. */
+  ADMIN_ALERT_DEDUP_TTL_SECONDS?: string;
+  /** KV namespace used by W2d for dedupe lookups. Optional — when absent,
+   *  every alert fires every time (the admin_alerts table itself still
+   *  records every call). */
+  KV_ADMIN_ALERTS?: KVNamespace;
   /** Synthetic probe upper-bound latency, milliseconds, as a string. */
   MAX_LATENCY_MS?: string;
   /** Grace window (days) for the janitor's expunged_at sweep. */

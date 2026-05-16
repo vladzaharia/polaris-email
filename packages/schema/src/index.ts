@@ -881,6 +881,10 @@ export const AuditAction = z.enum([
   'suppression.import',
   'message.suppressed',
   'message.sender_suppressed',
+  // W2 — Postmaster/abuse/webmaster auto-receivers (migration 0011).
+  'abuse_event.record',
+  // W2d — Admin alert pipeline (migration 0012).
+  'admin.alert.sent',
 ]);
 export type AuditAction = z.infer<typeof AuditAction>;
 

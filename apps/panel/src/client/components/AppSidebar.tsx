@@ -4,6 +4,7 @@
 import { Link, useRouterState } from '@tanstack/react-router';
 import {
   Activity,
+  AlertOctagon,
   AlertTriangle,
   AtSign,
   BarChart3,
@@ -44,6 +45,7 @@ const OPERATIONS: NavItem[] = [
   { to: '/messages', label: 'Messages', icon: Mail },
   { to: '/dlq', label: 'DLQ browser', icon: BarChart3 },
   { to: '/reports/abuse', label: 'Abuse reports', icon: AlertTriangle },
+  { to: '/admin-alerts', label: 'Admin alerts', icon: AlertOctagon },
 ];
 
 const CONFIGURATION: NavItem[] = [

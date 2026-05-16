@@ -158,6 +158,12 @@ adminProxyRoutes.post('/api/admin/webhook-dlq/:id/drop', withApproval('webhook_d
   forward(c, `/v1/admin/webhook-dlq/${c.req.param('id')}/drop`),
 );
 
+// W2d — Test-alert button is approval-gated; the read-only listing falls
+// through to the catchall.
+adminProxyRoutes.post('/api/admin/alerts/test', withApproval('admin.alert.test'), (c) =>
+  forward(c, '/v1/admin/alerts/test'),
+);
+
 // W1 — Suppressions. Manual add + manual disable both require dual-admin
 // approval (the worst-case blast radius of a wrong sender suppression is a
 // pause on every outbound message for that principal; a wrong recipient
