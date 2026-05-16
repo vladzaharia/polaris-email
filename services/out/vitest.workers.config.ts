@@ -9,6 +9,10 @@ export default defineProject({
   test: {
     name: 'out-workers',
     include: [path.resolve(here, 'test/integration/*.workers.test.ts')],
+    // Read D1 migrations in Node (workerd can't evaluate the
+    // `@cloudflare/vitest-pool-workers` package directly); the result is
+    // exposed to tests via `inject('migrations')`.
+    globalSetup: [path.resolve(here, 'test/integration/global-setup.ts')],
   },
   plugins: [
     cloudflareTest({
