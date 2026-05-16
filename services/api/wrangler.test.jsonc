@@ -44,5 +44,6 @@
     "ANCHOR_S3_REGION": "us-test-1",
     "ALERT_WEBHOOK": "https://alerts.test.local/polaris-email",
     "MAX_LATENCY_MS": "300000",
+    "TLSRPT_DEFAULT_RUA": "mailto:tlsrpt@test.local",
   },
 }
