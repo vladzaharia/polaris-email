@@ -682,6 +682,11 @@ export const SendRequest = z
     idempotency_key: z.string().optional(),
     /** W4 — Stream classification. See StreamType for header-injection rules. */
     stream_type: StreamType.default('transactional'),
+    /** W9 — Threading helpers. When provided, the API server auto-synthesizes
+     *  the In-Reply-To + References headers from the parent message's
+     *  header_message_id. Callers do NOT need to manage Message-ID arithmetic. */
+    in_reply_to_message_id: Ulid.optional(),
+    thread_id: z.string().min(1).max(120).optional(),
   })
   // Phase A: enforce CF Email Service caps. Each issue's `message` is
   // shaped as `"<error_code>:<detail>"` so the API layer can extract the

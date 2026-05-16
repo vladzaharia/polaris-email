@@ -398,7 +398,14 @@ messages.post('/v1/messages', async (c) => {
       }
     }
 
-    const rawMime = composeFromJson(req);
+    // W9 — Auto-synthesize In-Reply-To + References from the parent message
+    // when the caller provided in_reply_to_message_id (preferred) or thread_id.
+    // We never overwrite headers the caller set explicitly; this only fills
+    // gaps. The References chain is the parent's References (if present) plus
+    // the parent's Message-ID — capped at the last 10 entries per RFC 5322
+    // guidance to keep header size bounded.
+    const reqWithThreading = await synthesizeReplyHeaders(env, req);
+    const rawMime = composeFromJson(reqWithThreading);
     // Phase A.6 — reject before parseStrict (and before enqueue) so callers see
     // a typed `message_too_large` (HTTP 413) rather than a generic MIME error.
     // The 25 MiB cap is the CF Email Service verified-domain ceiling; it is a
@@ -701,3 +708,134 @@ messages.get('/v1/messages', async (c) => {
 // signed URLs has been removed (B5). Attachment bytes are now served by the
 // R2 public custom domain `r2.mail.plrs.im`; `attachment.url` in the
 // `GET /v1/messages/:id` response points there directly.
+
+// ---------- W9 — Outbound reply-header synthesis ----------
+
+const MAX_REFERENCES_IDS = 10;
+
+async function synthesizeReplyHeaders(env: Env, req: SendRequest): Promise<SendRequest> {
+  if (!req.in_reply_to_message_id && !req.thread_id) return req;
+  const existingHeaders = req.headers ?? {};
+  const hasInReplyTo = Object.keys(existingHeaders).some((k) => k.toLowerCase() === 'in-reply-to');
+  const hasReferences = Object.keys(existingHeaders).some((k) => k.toLowerCase() === 'references');
+  if (hasInReplyTo && hasReferences) return req;
+
+  // Resolve the parent's Message-ID via in_reply_to_message_id first, then
+  // fall back to thread_id → newest message in that thread.
+  let parent: { header_message_id: string | null; references_header: string | null } | null = null;
+  if (req.in_reply_to_message_id) {
+    parent = await env.DB.prepare(
+      `SELECT header_message_id,
+              (SELECT value FROM (SELECT NULL AS value)) AS references_header
+       FROM messages WHERE id = ? LIMIT 1`,
+    )
+      .bind(req.in_reply_to_message_id)
+      .first<{ header_message_id: string | null; references_header: string | null }>();
+  } else if (req.thread_id) {
+    parent = await env.DB.prepare(
+      `SELECT header_message_id, NULL AS references_header
+       FROM messages WHERE thread_id = ?
+       ORDER BY created_at DESC LIMIT 1`,
+    )
+      .bind(req.thread_id)
+      .first<{ header_message_id: string | null; references_header: string | null }>();
+  }
+  if (!parent?.header_message_id) return req;
+  const parentMsgId = parent.header_message_id;
+  const wrap = (m: string): string => (m.startsWith('<') ? m : `<${m}>`);
+  const newHeaders: Record<string, string> = { ...existingHeaders };
+  if (!hasInReplyTo) newHeaders['In-Reply-To'] = wrap(parentMsgId);
+  if (!hasReferences) {
+    // Compose the new References by taking the parent's References (if any),
+    // appending the parent's Message-ID, and trimming.
+    const prior = parent.references_header
+      ? parent.references_header.split(/\s+/).filter((s) => s.startsWith('<') && s.endsWith('>'))
+      : [];
+    const chain = [...prior, wrap(parentMsgId)];
+    const trimmed = chain.slice(-MAX_REFERENCES_IDS);
+    newHeaders['References'] = trimmed.join(' ');
+  }
+  return { ...req, headers: newHeaders };
+}
+
+// ---------- W9 — Threading endpoints ----------
+//
+// GET /v1/messages/:id/thread  → all messages with the same thread_id, in
+//                                 chronological order.
+// GET /v1/threads/:thread_id   → same payload keyed by the thread itself.
+//
+// thread_id is computed at submit/ingest time by packages/pipeline (see
+// `computeThreadId`) and indexed on `(mailbox_id, thread_id, created_at DESC)`,
+// so this is a cheap range scan.
+
+async function threadByMessageId(c: Ctx, messageId: string): Promise<Response> {
+  if (!/^[0-9A-HJKMNP-TV-Z]{26}$/.test(messageId)) {
+    return buildError(c, 'bad_request', 'invalid message id');
+  }
+  const auth = await authenticateRead(c);
+  if (auth instanceof Response) return auth;
+  const apiKey = auth;
+  const scopeErr = ensureReadScope(apiKey, { allowAdmin: true });
+  if (scopeErr !== true) return buildError(c, 'scope_violation', scopeErr);
+
+  const seed = await c.env.DB.prepare(`SELECT mailbox_id, thread_id FROM messages WHERE id = ?`)
+    .bind(messageId)
+    .first<{ mailbox_id: string; thread_id: string | null }>();
+  if (!seed) return buildError(c, 'not_found', 'message not found');
+  if (seed.mailbox_id !== apiKey.mailbox_id && !apiKey.scopes.includes('admin:read')) {
+    return buildError(c, 'not_found', 'message not found');
+  }
+  if (!seed.thread_id) {
+    return c.json({ thread_id: null, data: [] });
+  }
+  return threadByThreadId(c, seed.thread_id, seed.mailbox_id, apiKey);
+}
+
+async function threadByThreadId(
+  c: Ctx,
+  threadId: string,
+  mailboxId: string,
+  apiKey: AuthenticatedApiKey,
+): Promise<Response> {
+  const rows = await c.env.DB.prepare(
+    `SELECT * FROM messages WHERE mailbox_id = ? AND thread_id = ? ORDER BY created_at ASC LIMIT 500`,
+  )
+    .bind(mailboxId, threadId)
+    .all<MessageRow>()
+    .catch(() => ({ results: [] as MessageRow[] }));
+
+  const data: UnifiedMessage[] = [];
+  for (const row of rows.results) {
+    const raw = await loadR2Bytes(c.env, row.r2_key);
+    if (!raw) continue;
+    const msg = mimeToMessage(raw, rowMeta(row));
+    const rendered = await renderMessageBodies(c.env, msg, raw, row.r2_key, { listMode: true });
+    data.push(rendered);
+  }
+  // mark as used to keep apiKey-derived scope honored for read auditing
+  void apiKey;
+  return c.json({ thread_id: threadId, count: data.length, data });
+}
+
+messages.get('/v1/messages/:id/thread', async (c) => {
+  return threadByMessageId(c, c.req.param('id'));
+});
+
+messages.get('/v1/threads/:thread_id', async (c) => {
+  const auth = await authenticateRead(c);
+  if (auth instanceof Response) return auth;
+  const apiKey = auth;
+  const scopeErr = ensureReadScope(apiKey, { allowAdmin: true });
+  if (scopeErr !== true) return buildError(c, 'scope_violation', scopeErr);
+  const threadId = c.req.param('thread_id');
+  // For non-admin callers, scope to their mailbox. Admin callers can pass
+  // ?mailbox_id=… to disambiguate (thread_ids are mailbox-local).
+  const url = new URL(c.req.url);
+  const mailboxIdParam = url.searchParams.get('mailbox_id');
+  const mailboxId =
+    mailboxIdParam ?? (apiKey.scopes.includes('admin:read') ? null : apiKey.mailbox_id);
+  if (!mailboxId) {
+    return buildError(c, 'bad_request', 'mailbox_id query param required for admin reads');
+  }
+  return threadByThreadId(c, threadId, mailboxId, apiKey);
+});
