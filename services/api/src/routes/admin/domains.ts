@@ -123,7 +123,12 @@ domains.post('/v1/admin/domains', requireScope('admin:rotate'), async (c) => {
   const nowIso = new Date().toISOString();
   const selector = body.dkim_selector ?? 'cf';
   const policy = body.dmarc_policy ?? 'none';
-  const rua = body.dmarc_rua ?? `mailto:postmaster@${body.name}`;
+  // W6 — DMARC RUA default. Adds the platform aggregator alongside the
+  // postmaster mailbox so reports land where W6's parser can rollup them
+  // even if the operator hasn't wired their own postmaster routing. DMARC
+  // allows multiple URIs (comma-separated, RFC 7489 §6.3).
+  const platformDmarcRua = c.env.DMARC_RUA_PLATFORM_ALIAS ?? 'mailto:dmarc-rua@plrs.im';
+  const rua = body.dmarc_rua ?? `mailto:postmaster@${body.name},${platformDmarcRua}`;
   // MTA-STS / TLS-RPT intent defaults — see comment block above.
   const mtaStsMode = 'testing';
   const mtaStsPolicyId = generatePolicyId();

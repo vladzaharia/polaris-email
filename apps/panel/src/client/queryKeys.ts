@@ -85,6 +85,15 @@ export const cfZoneKeys = {
   detail: (name: string) => [...cfZoneKeys.all, 'detail', name] as const,
 };
 
+// DMARC aggregate reports (W6) — per-domain alignment ledger + rollup.
+export const dmarcKeys = {
+  all: ['dmarc-reports'] as const,
+  list: (filters?: Record<string, string | undefined>) =>
+    [...dmarcKeys.all, 'list', filters ?? {}] as const,
+  detail: (id: string) => [...dmarcKeys.all, 'detail', id] as const,
+  summary: (domain: string) => [...dmarcKeys.all, 'summary', domain] as const,
+};
+
 // TLS-RPT reports (W5) — ingested per-domain TLS report ledger + rollup.
 export const tlsRptKeys = {
   all: ['tls-rpt-reports'] as const,

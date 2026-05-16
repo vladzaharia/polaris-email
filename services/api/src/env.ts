@@ -70,6 +70,11 @@ export interface Env {
   /** W4 — Mailto domain used for the mailto: form of List-Unsubscribe.
    *  Defaults to `plrs.im`. */
   UNSUB_MAILTO_HOST?: string;
+  /** W6 — Platform DMARC RUA alias appended to the default dmarc_rua list.
+   *  Customers' DMARC TXT records will then deliver aggregate reports to
+   *  this alias, which routes to the W6 ingest pipeline. Defaults to
+   *  `mailto:dmarc-rua@plrs.im`. */
+  DMARC_RUA_PLATFORM_ALIAS?: string;
   /** Synthetic probe upper-bound latency, milliseconds, as a string. */
   MAX_LATENCY_MS?: string;
   /** Grace window (days) for the janitor's expunged_at sweep. */

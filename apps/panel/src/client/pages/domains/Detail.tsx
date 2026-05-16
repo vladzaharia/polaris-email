@@ -22,7 +22,92 @@ import {
 import { DestructiveActionDialog } from '../../components/DestructiveActionDialog.js';
 import { useAdminMutation, useAdminQuery } from '../../hooks/useAdminApi.js';
 import { formatRelative } from '../../lib/format.js';
-import { domainKeys, tlsRptKeys } from '../../queryKeys.js';
+import { dmarcKeys, domainKeys, tlsRptKeys } from '../../queryKeys.js';
+
+// W6 — DMARC alignment subsection. Embedded in the Inbound TLS hardening
+// section as a sibling block; pulls the 7/14/30-day alignment rollup.
+interface DmarcSummaryPayload {
+  domain: string;
+  today: string;
+  last_7d: {
+    reports: number;
+    total: number;
+    dmarc_pass_pct: number;
+    dkim_pass_pct: number;
+    spf_pass_pct: number;
+    last_seen_at: string | null;
+  };
+  last_14d: {
+    reports: number;
+    total: number;
+    dmarc_pass_pct: number;
+    dkim_pass_pct: number;
+    spf_pass_pct: number;
+    last_seen_at: string | null;
+  };
+  last_30d: {
+    reports: number;
+    total: number;
+    dmarc_pass_pct: number;
+    dkim_pass_pct: number;
+    spf_pass_pct: number;
+    last_seen_at: string | null;
+  };
+}
+
+function DmarcAlignmentSummary({ domainName }: { domainName: string }) {
+  const q = useAdminQuery<DmarcSummaryPayload>(
+    dmarcKeys.summary(domainName),
+    `/api/admin/dmarc-reports/summary?domain=${encodeURIComponent(domainName)}`,
+  );
+  if (q.isLoading || q.error || !q.data) return null;
+  const d = q.data;
+  const noData = d.last_30d.reports === 0;
+  return (
+    <div className="mt-6 rounded-md border border-[var(--color-border)] p-4">
+      <h3 className="mb-2 text-sm font-semibold uppercase tracking-wider text-[var(--color-muted-foreground)]">
+        DMARC alignment
+      </h3>
+      {noData ? (
+        <p className="text-sm text-[var(--color-muted-foreground)]">
+          No DMARC aggregate reports yet. Ensure the domain's `_dmarc` record's `rua=` field
+          includes <code>mailto:dmarc-rua@plrs.im</code>.
+        </p>
+      ) : (
+        <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-sm md:grid-cols-4">
+          <span className="font-medium">7d DMARC pass</span>
+          <span>
+            <Badge
+              variant={
+                d.last_7d.dmarc_pass_pct >= 99
+                  ? 'success'
+                  : d.last_7d.dmarc_pass_pct >= 90
+                    ? 'secondary'
+                    : 'destructive'
+              }
+            >
+              {d.last_7d.dmarc_pass_pct}%
+            </Badge>
+          </span>
+          <span className="font-medium">7d DKIM pass</span>
+          <span>{d.last_7d.dkim_pass_pct}%</span>
+          <span className="font-medium">7d SPF pass</span>
+          <span>{d.last_7d.spf_pass_pct}%</span>
+          <span className="font-medium">7d volume</span>
+          <span>{d.last_7d.total.toLocaleString()}</span>
+          <span className="font-medium">30d DMARC pass</span>
+          <span>{d.last_30d.dmarc_pass_pct}%</span>
+          <span className="font-medium">30d volume</span>
+          <span>{d.last_30d.total.toLocaleString()}</span>
+          <span className="font-medium">Last report</span>
+          <span className="md:col-span-3" title={d.last_30d.last_seen_at ?? ''}>
+            {d.last_30d.last_seen_at ? formatRelative(d.last_30d.last_seen_at) : '—'}
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
 
 // W5 — TLS report summary subsection embedded in the Inbound TLS hardening
 // section. Pulls the W5 admin summary endpoint and renders the 7/30-day
@@ -445,6 +530,10 @@ export function DomainDetail() {
           {/* W5 — TLS report summary subsection. Renders 7d/30d aggregates
               and the top failure types from inbound TLS-RPT reports. */}
           <TlsReportSummary domainName={d.name} />
+
+          {/* W6 — DMARC alignment subsection. 7/14/30d pass-rate snapshot
+              that the W8 promotion cron also reads to decide policy moves. */}
+          <DmarcAlignmentSummary domainName={d.name} />
         </section>
       </div>
 

@@ -912,6 +912,8 @@ export const AuditAction = z.enum([
   'sender.suppress_auto',
   // W5 — TLS-RPT receiver (migration 0014).
   'tls_rpt_report.ingest',
+  // W6 — DMARC RUA receiver (migration 0015).
+  'dmarc_aggregate_report.ingest',
 ]);
 export type AuditAction = z.infer<typeof AuditAction>;
 
