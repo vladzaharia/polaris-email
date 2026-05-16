@@ -647,6 +647,26 @@ const SendRequestAttachment = z.object({
   content_base64: z.string(),
 });
 
+/**
+ * W4 — Stream type. Controls whether the outbound MIME builder injects
+ * List-Unsubscribe headers (RFC 8058 one-click). Defaults to 'transactional'
+ * so accidental classification doesn't let recipients unsubscribe from
+ * password resets.
+ *
+ *   transactional — operator-to-user mail (receipts, password resets,
+ *                   delivery notifications). NO List-Unsubscribe injected
+ *                   (Gmail/Yahoo explicitly exempt; injecting them lets a
+ *                   recipient accidentally unsubscribe from critical mail).
+ *   marketing     — bulk operator-to-list mail. Auto-injects
+ *                   List-Unsubscribe (mailto + https) + List-Unsubscribe-Post.
+ *                   Gmail/Yahoo 2026 require this for bulk senders.
+ *   agent         — AI-agent reply / conversational mail. NO injection
+ *                   (each message is a reply in an active conversation;
+ *                   the recipient already opted in to talking to the agent).
+ */
+export const StreamType = z.enum(['transactional', 'marketing', 'agent']);
+export type StreamType = z.infer<typeof StreamType>;
+
 export const SendRequest = z
   .object({
     from: z.string(),
@@ -660,6 +680,8 @@ export const SendRequest = z
     attachments: z.array(SendRequestAttachment).optional(),
     reply_to: z.string().optional(),
     idempotency_key: z.string().optional(),
+    /** W4 — Stream classification. See StreamType for header-injection rules. */
+    stream_type: StreamType.default('transactional'),
   })
   // Phase A: enforce CF Email Service caps. Each issue's `message` is
   // shaped as `"<error_code>:<detail>"` so the API layer can extract the

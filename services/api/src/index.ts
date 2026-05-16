@@ -18,6 +18,7 @@ import { messages } from './routes/messages.js';
 import { messagesState } from './routes/messages-state.js';
 import { internalCfEvents } from './routes/internal-cf-events.js';
 import { mtaStsPolicy } from './routes/mta-sts.js';
+import { unsub } from './routes/unsub.js';
 import { requestId } from '@polaris-email/ids';
 import { buildError } from './errors.js';
 import { scheduled } from './scheduled/index.js';
@@ -50,6 +51,7 @@ app.route('/', mtaStsPolicy);
 app.route('/', messages);
 app.route('/', messagesState);
 app.route('/', internalCfEvents);
+app.route('/', unsub);
 app.route('/', admin);
 app.route('/', bootstrap);
 

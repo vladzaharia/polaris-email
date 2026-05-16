@@ -9,6 +9,7 @@ import { ulid } from '@polaris-email/ids';
 import { MAX_MESSAGE_SIZE_VERIFIED, parseAuthResults } from '@polaris-email/mime';
 import { processMessage, type PipelineEnv } from '@polaris-email/pipeline';
 import { handleComplaint, PLATFORM_COMPLAINTS_MAILBOX_ID } from './complaint-ingest.js';
+import { handleUnsubMailto } from './unsub-ingest.js';
 
 // Inbound-edge sentinel for the message-size cap. We use the CF verified-
 // domain ceiling (25 MiB) — inbound is only accepted on already-verified
@@ -30,6 +31,9 @@ interface Env extends PipelineEnv {
   R2: R2Bucket;
   KV_RATE_LIMIT: KVNamespace;
   FANOUT_QUEUE: Queue<FanoutInbound>;
+  /** W4 — secret shared with services/api for verifying inbound RFC 8058
+   *  unsubscribe tokens. */
+  UNSUB_HMAC_SECRET?: string;
 }
 
 interface FanoutInbound {
@@ -128,6 +132,31 @@ export default {
     const envelopeFrom = (message.from ?? '').toLowerCase();
     void envelopeFrom;
     const domainPart = envelopeTo.split('@')[1] ?? '';
+
+    // W4 — RFC 8058 mailto unsubscribe path. Marketing messages set
+    // `List-Unsubscribe: <mailto:unsub+<token>@<UNSUB_MAILTO_HOST>>`, so a
+    // reply to that address arrives here. We bypass the normal pipeline +
+    // mail_domains lookup (the address belongs to the platform, not to a
+    // customer domain) and parse the token directly.
+    const localPart = envelopeTo.split('@')[0] ?? '';
+    if (localPart.startsWith('unsub+')) {
+      const token = localPart.slice('unsub+'.length);
+      try {
+        await handleUnsubMailto(
+          env.DB as unknown as Parameters<typeof handleUnsubMailto>[0],
+          env.UNSUB_HMAC_SECRET ?? '',
+          token,
+        );
+      } catch (e) {
+        // eslint-disable-next-line no-console
+        console.error(
+          'in: unsub-mailto error',
+          envelopeTo,
+          e instanceof Error ? e.message : 'unknown',
+        );
+      }
+      return;
+    }
 
     const domainRow = await env.DB.prepare(
       `SELECT id FROM mail_domains WHERE name = ? AND disabled_at IS NULL LIMIT 1`,

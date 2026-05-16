@@ -60,6 +60,16 @@ export interface Env {
   /** W3 — HMAC secret CF Email Service uses to sign bounce webhook events.
    *  Rotated independently from operator admin keys. */
   CF_EVENT_HMAC?: string;
+  /** W4 — HMAC secret used to sign RFC 8058 one-click unsubscribe tokens.
+   *  Rotated independently from operator admin keys; receiving MUAs use the
+   *  token as a bearer credential. */
+  UNSUB_HMAC_SECRET?: string;
+  /** W4 — Public base URL used as the https form of List-Unsubscribe.
+   *  Defaults to API_BASE_URL when unset. */
+  UNSUB_PUBLIC_BASE_URL?: string;
+  /** W4 — Mailto domain used for the mailto: form of List-Unsubscribe.
+   *  Defaults to `plrs.im`. */
+  UNSUB_MAILTO_HOST?: string;
   /** Synthetic probe upper-bound latency, milliseconds, as a string. */
   MAX_LATENCY_MS?: string;
   /** Grace window (days) for the janitor's expunged_at sweep. */
