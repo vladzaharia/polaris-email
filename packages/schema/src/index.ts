@@ -220,6 +220,13 @@ export type MailDomainStatus = z.infer<typeof MailDomainStatus>;
 
 export const DmarcPolicy = z.enum(['none', 'quarantine', 'reject']);
 
+// Phase C (MTA-STS + TLS-RPT) extension — mirrors columns added by migration
+// 0007. The flat shape is sufficient: there is no per-mode required-field
+// asymmetry (every field is independently nullable / defaulted), so a
+// discriminated union on `mta_sts_mode` would only add ceremony without
+// catching extra invalid rows. The verify flow distinguishes
+// missing / drift / verified states via free-form hint text on
+// `VerifyCheck.actual` (see VerifyCheck below).
 export const MailDomain = z.object({
   id: Ulid,
   zone_id: Ulid,
@@ -239,6 +246,19 @@ export const MailDomain = z.object({
   verified_at: z.string().nullable(),
   last_verify_check_at: z.string().nullable(),
   disabled_at: z.string().nullable(),
+  // Phase C — MTA-STS (RFC 8461) + TLS-RPT (RFC 8460). See
+  // services/api/migrations/0007_mta_sts.sql for the canonical D1 column
+  // definitions. `tlsrpt_enabled` is stored as an INTEGER 0/1 to match the
+  // existing inbound_enabled / outbound_enabled / default_for_mailbox pattern
+  // (SQLite has no native boolean). The PATCH /v1/admin/domains/:id surface
+  // accepts a boolean for this field; the route layer coerces it.
+  mta_sts_mode: z.enum(['none', 'testing', 'enforce']),
+  mta_sts_policy_id: z.string().nullable(),
+  mta_sts_max_age: z.number().int().nonnegative(),
+  mta_sts_verified_at: z.string().nullable(),
+  tlsrpt_enabled: z.number().int().min(0).max(1),
+  tlsrpt_rua: z.string().nullable(),
+  tlsrpt_verified_at: z.string().nullable(),
 });
 export type MailDomain = z.infer<typeof MailDomain>;
 
@@ -255,7 +275,55 @@ export const UpdateMailDomainRequest = z.object({
   dmarc_policy: DmarcPolicy.optional(),
   dmarc_rua: z.string().max(320).optional(),
   dkim_selector: z.string().min(1).max(63).optional(),
+  // Phase C — MTA-STS + TLS-RPT toggles. `tlsrpt_enabled` is a boolean in
+  // the request body but is persisted as INTEGER 0/1 in `mail_domains`; the
+  // route layer (C.10) performs the coercion. Switching MTA-STS mode itself
+  // is normally routed through the dedicated lifecycle endpoints
+  // (`POST .../mta-sts/enable|disable|promote`) so they can also publish
+  // the policy file / KV record; accepting it here keeps the generic PATCH
+  // surface usable for bulk operator scripts.
+  mta_sts_mode: z.enum(['none', 'testing', 'enforce']).optional(),
+  mta_sts_max_age: z.number().int().nonnegative().optional(),
+  tlsrpt_enabled: z.boolean().optional(),
+  tlsrpt_rua: z.string().optional(),
 });
+
+// ---------- domain verify ----------
+//
+// Canonical shape for the per-check rows emitted by
+// `POST /v1/admin/domains/:id/verify` (and the matching cf-api MTA-STS
+// verifier). Extracted to the schema package so the API route, cf-api helpers,
+// and panel client can share the same `VerifyCheck[]` type without each
+// re-declaring it.
+//
+// `actual` carries free-form hint text in addition to the observed value so
+// the verify flow can express three failure flavours uniformly:
+//   - "missing"     — record/policy hasn't been provisioned yet
+//                     (e.g. "not provisioned — call POST .../mta-sts/enable")
+//   - "drift"       — provisioned but DNS / KV / DB are out of sync
+//                     (e.g. "mode=testing (drift: published policy differs)")
+//   - "unreachable" — DoH / HTTPS fetch failed entirely
+// Per the user note for MTA-STS specifically: records require MANUAL
+// provisioning via the dedicated admin endpoints (Phase C.10), unlike DKIM /
+// SPF / DMARC which CF auto-publishes during Email Routing onboarding. The
+// flat string-actual encoding keeps the panel rendering simple while still
+// expressing this distinction.
+export const VerifyCheck = z.object({
+  name: z.string(),
+  ok: z.boolean(),
+  expected: z.string(),
+  actual: z.string(),
+});
+export type VerifyCheck = z.infer<typeof VerifyCheck>;
+
+export const VerifyResponse = z.object({
+  id: Ulid,
+  status: MailDomainStatus,
+  checks: z.array(VerifyCheck),
+  message: z.string().optional(),
+  verified_at: z.number().int().optional(),
+});
+export type VerifyResponse = z.infer<typeof VerifyResponse>;
 
 // ---------- credential plane ----------
 
@@ -757,6 +825,14 @@ export const AuditAction = z.enum([
   'message.expunged',
   // rate limiting
   'rate_limit.exceeded',
+  // MTA-STS + TLS-RPT (Phase C). Lifecycle audit hits for the dedicated
+  // policy-management endpoints; mirrors the additions to the audit_log
+  // CHECK constraint in services/api/migrations/0007_mta_sts.sql.
+  'mta_sts.enable',
+  'mta_sts.disable',
+  'mta_sts.promote',
+  'tls_rpt.enable',
+  'tls_rpt.disable',
 ]);
 export type AuditAction = z.infer<typeof AuditAction>;
 

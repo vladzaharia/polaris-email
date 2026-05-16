@@ -26,3 +26,30 @@ describe('openapi error-code enum sync', () => {
     expect(missing).toEqual([]);
   });
 });
+
+// Phase C drift-guard. The runtime `MailDomain` schema gained MTA-STS +
+// TLS-RPT columns from migration 0007; the spec MUST surface them so SDK
+// generators and panel consumers see the same shape. Plain substring search
+// against the YAML — same pattern as the ErrorCode guard above.
+describe('openapi MailDomain MTA-STS / TLS-RPT sync', () => {
+  const mtaStsFields = [
+    'mta_sts_mode',
+    'mta_sts_policy_id',
+    'mta_sts_max_age',
+    'mta_sts_verified_at',
+    'tlsrpt_enabled',
+    'tlsrpt_rua',
+    'tlsrpt_verified_at',
+  ];
+  it.each(mtaStsFields)('declares MailDomain.%s', (field) => {
+    expect(openapiText).toContain(`${field}:`);
+  });
+
+  it('declares VerifyCheck schema', () => {
+    expect(openapiText).toMatch(/^\s+VerifyCheck:/m);
+  });
+
+  it('declares VerifyResponse schema', () => {
+    expect(openapiText).toMatch(/^\s+VerifyResponse:/m);
+  });
+});

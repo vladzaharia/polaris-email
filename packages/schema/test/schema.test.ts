@@ -1,15 +1,20 @@
 import { describe, expect, it } from 'vitest';
 import {
   Address,
+  AuditAction,
   CreateRoutingRuleRequest,
   CreateWebhookSubRequest,
   ErrorCode,
   IssueApiKeyRequest,
+  MailDomain,
   RotateRequest,
   SendRequest,
   SenderScope,
   ServiceSlug,
   Ulid,
+  UpdateMailDomainRequest,
+  VerifyCheck,
+  VerifyResponse,
   validateHeaderAllowed,
 } from '../src/index.js';
 
@@ -330,6 +335,244 @@ describe('Phase A — CF compliance', () => {
         headers,
       });
       expect(result.success).toBe(true);
+    });
+  });
+});
+
+describe('Phase C — MTA-STS + TLS-RPT schema', () => {
+  // Canonical row sample. ULIDs are valid; timestamps are ISO-ish strings as
+  // the D1 layer produces. Mirrors a `SELECT * FROM mail_domains` shape after
+  // migration 0007 is applied to a freshly-onboarded domain.
+  const baseDomainRow = {
+    id: '01HXR0000000000000000000A8',
+    zone_id: '01HXR0000000000000000000B9',
+    parent_domain_id: null,
+    name: 'acme.example',
+    status: 'verified' as const,
+    wildcard_subdomains: 0,
+    dmarc_policy: 'quarantine',
+    dmarc_rua: 'mailto:dmarc@acme.example',
+    inbound_enabled: 1,
+    outbound_enabled: 1,
+    provider: 'cloudflare',
+    cf_zone_id: 'cfzone123',
+    dkim_selector: 'pol1',
+    created_at: '2026-05-01T12:00:00.000Z',
+    updated_at: '2026-05-01T12:00:00.000Z',
+    verified_at: '2026-05-01T12:05:00.000Z',
+    last_verify_check_at: '2026-05-01T12:05:00.000Z',
+    disabled_at: null,
+  };
+
+  describe('MailDomain', () => {
+    it('parses a row with all MTA-STS + TLS-RPT fields populated', () => {
+      const row = {
+        ...baseDomainRow,
+        mta_sts_mode: 'enforce' as const,
+        mta_sts_policy_id: 'abc123def456',
+        mta_sts_max_age: 86400,
+        mta_sts_verified_at: '2026-05-01T12:10:00.000Z',
+        tlsrpt_enabled: 1,
+        tlsrpt_rua: 'mailto:tlsrpt@acme.example',
+        tlsrpt_verified_at: '2026-05-01T12:10:00.000Z',
+      };
+      const parsed = MailDomain.parse(row);
+      expect(parsed.mta_sts_mode).toBe('enforce');
+      expect(parsed.mta_sts_policy_id).toBe('abc123def456');
+      expect(parsed.mta_sts_max_age).toBe(86400);
+      expect(parsed.tlsrpt_enabled).toBe(1);
+      expect(parsed.tlsrpt_rua).toBe('mailto:tlsrpt@acme.example');
+    });
+
+    it('parses a row where MTA-STS fields are at migration defaults', () => {
+      const row = {
+        ...baseDomainRow,
+        mta_sts_mode: 'none' as const,
+        mta_sts_policy_id: null,
+        mta_sts_max_age: 86400,
+        mta_sts_verified_at: null,
+        tlsrpt_enabled: 0,
+        tlsrpt_rua: null,
+        tlsrpt_verified_at: null,
+      };
+      const parsed = MailDomain.parse(row);
+      expect(parsed.mta_sts_mode).toBe('none');
+      expect(parsed.mta_sts_policy_id).toBeNull();
+      expect(parsed.tlsrpt_enabled).toBe(0);
+      expect(parsed.tlsrpt_rua).toBeNull();
+      expect(parsed.tlsrpt_verified_at).toBeNull();
+    });
+
+    it('rejects invalid mta_sts_mode value', () => {
+      const row = {
+        ...baseDomainRow,
+        mta_sts_mode: 'invalid',
+        mta_sts_policy_id: null,
+        mta_sts_max_age: 86400,
+        mta_sts_verified_at: null,
+        tlsrpt_enabled: 0,
+        tlsrpt_rua: null,
+        tlsrpt_verified_at: null,
+      };
+      expect(() => MailDomain.parse(row)).toThrow();
+    });
+
+    it('rejects negative mta_sts_max_age', () => {
+      const row = {
+        ...baseDomainRow,
+        mta_sts_mode: 'none' as const,
+        mta_sts_policy_id: null,
+        mta_sts_max_age: -1,
+        mta_sts_verified_at: null,
+        tlsrpt_enabled: 0,
+        tlsrpt_rua: null,
+        tlsrpt_verified_at: null,
+      };
+      expect(() => MailDomain.parse(row)).toThrow();
+    });
+
+    it('rejects tlsrpt_enabled outside 0..1', () => {
+      const row = {
+        ...baseDomainRow,
+        mta_sts_mode: 'none' as const,
+        mta_sts_policy_id: null,
+        mta_sts_max_age: 86400,
+        mta_sts_verified_at: null,
+        tlsrpt_enabled: 2,
+        tlsrpt_rua: null,
+        tlsrpt_verified_at: null,
+      };
+      expect(() => MailDomain.parse(row)).toThrow();
+    });
+  });
+
+  describe('UpdateMailDomainRequest', () => {
+    it('accepts mta_sts_mode=testing', () => {
+      expect(UpdateMailDomainRequest.parse({ mta_sts_mode: 'testing' })).toEqual({
+        mta_sts_mode: 'testing',
+      });
+    });
+
+    it('accepts mta_sts_mode=enforce + mta_sts_max_age', () => {
+      expect(
+        UpdateMailDomainRequest.parse({ mta_sts_mode: 'enforce', mta_sts_max_age: 604800 }),
+      ).toEqual({ mta_sts_mode: 'enforce', mta_sts_max_age: 604800 });
+    });
+
+    it('accepts tlsrpt_enabled=true (boolean in request, route converts to int)', () => {
+      expect(UpdateMailDomainRequest.parse({ tlsrpt_enabled: true })).toEqual({
+        tlsrpt_enabled: true,
+      });
+    });
+
+    it('accepts tlsrpt_rua', () => {
+      expect(UpdateMailDomainRequest.parse({ tlsrpt_rua: 'mailto:tlsrpt@acme.example' })).toEqual({
+        tlsrpt_rua: 'mailto:tlsrpt@acme.example',
+      });
+    });
+
+    it('rejects unknown mta_sts_mode', () => {
+      expect(() => UpdateMailDomainRequest.parse({ mta_sts_mode: 'pending' })).toThrow();
+    });
+
+    it('rejects negative mta_sts_max_age', () => {
+      expect(() => UpdateMailDomainRequest.parse({ mta_sts_max_age: -10 })).toThrow();
+    });
+
+    it('still accepts the empty body (all fields optional)', () => {
+      expect(UpdateMailDomainRequest.parse({})).toEqual({});
+    });
+  });
+
+  describe('AuditAction — Phase C additions', () => {
+    const phaseCActions = [
+      'mta_sts.enable',
+      'mta_sts.disable',
+      'mta_sts.promote',
+      'tls_rpt.enable',
+      'tls_rpt.disable',
+    ] as const;
+
+    for (const action of phaseCActions) {
+      it(`accepts ${action}`, () => {
+        expect(AuditAction.parse(action)).toBe(action);
+      });
+    }
+
+    it('exposes all five Phase C actions in the enum options', () => {
+      for (const action of phaseCActions) {
+        expect(AuditAction.options).toContain(action);
+      }
+    });
+  });
+
+  describe('VerifyCheck + VerifyResponse', () => {
+    it('VerifyCheck parses a passing CNAME check', () => {
+      expect(
+        VerifyCheck.parse({
+          name: 'cname:_mta-sts.acme.example',
+          ok: true,
+          expected: 'mta-sts.acme.example.',
+          actual: 'mta-sts.acme.example.',
+        }),
+      ).toBeDefined();
+    });
+
+    it('VerifyCheck parses a failing check with drift hint in actual', () => {
+      const drift = VerifyCheck.parse({
+        name: 'mta-sts:policy-https:mta-sts.acme.example',
+        ok: false,
+        expected: 'mode=enforce',
+        actual: 'mode=testing (drift: published policy mode differs from DB)',
+      });
+      expect(drift.ok).toBe(false);
+      expect(drift.actual).toContain('drift');
+    });
+
+    it('VerifyCheck parses a "not provisioned yet" hint', () => {
+      // C.7 design note: the verify flow uses VerifyCheck.actual to carry
+      // hint text distinguishing "missing" vs "drift" vs "verified" — no
+      // discriminated-union shape change needed.
+      const missing = VerifyCheck.parse({
+        name: 'mta-sts:txt:_mta-sts.acme.example',
+        ok: false,
+        expected: 'TXT v=STSv1; id=<any>',
+        actual: 'not provisioned — call POST /v1/admin/domains/:id/mta-sts/enable',
+      });
+      expect(missing.ok).toBe(false);
+      expect(missing.actual).toContain('not provisioned');
+    });
+
+    it('VerifyResponse parses with checks array + optional fields', () => {
+      const r = VerifyResponse.parse({
+        id: '01HXR0000000000000000000A8',
+        status: 'verified',
+        checks: [{ name: 'cname:_mta-sts.acme.example', ok: true, expected: '...', actual: '...' }],
+        message: 'all good',
+        verified_at: 1715731200,
+      });
+      expect(r.checks).toHaveLength(1);
+      expect(r.verified_at).toBe(1715731200);
+    });
+
+    it('VerifyResponse parses without optional fields', () => {
+      const r = VerifyResponse.parse({
+        id: '01HXR0000000000000000000A8',
+        status: 'pending',
+        checks: [],
+      });
+      expect(r.checks).toEqual([]);
+      expect(r.message).toBeUndefined();
+    });
+
+    it('VerifyResponse rejects bad status', () => {
+      expect(() =>
+        VerifyResponse.parse({
+          id: '01HXR0000000000000000000A8',
+          status: 'banana',
+          checks: [],
+        }),
+      ).toThrow();
     });
   });
 });
