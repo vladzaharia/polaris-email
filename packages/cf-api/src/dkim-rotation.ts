@@ -207,21 +207,30 @@ export async function generateKeyMaterial(
   // The Web Crypto naming for ed25519 differs between runtimes: workerd
   // accepts the literal 'Ed25519'; some browser builds expect
   // { name: 'Ed25519' }. Try the object form first (most portable).
+  // The DOM-lib types for `generateKey` overload split Algorithm vs
+  // RsaHashedKeyGenParams in a way that's awkward to unify here; cast to
+  // unknown so workerd + node + browser type stacks all accept it.
   const keyAlgo =
     algo === 'ed25519'
-      ? ({ name: 'Ed25519' } as AlgorithmIdentifier)
-      : ({
+      ? { name: 'Ed25519' }
+      : {
           name: 'RSASSA-PKCS1-v1_5',
           modulusLength: 2048,
           publicExponent: new Uint8Array([0x01, 0x00, 0x01]),
           hash: 'SHA-256',
-        } as RsaHashedKeyGenParams);
-  const pair = await crypto.subtle.generateKey(keyAlgo, true, ['sign', 'verify']);
+        };
+  const pair = await crypto.subtle.generateKey(
+    keyAlgo as unknown as Parameters<typeof crypto.subtle.generateKey>[0],
+    true,
+    ['sign', 'verify'],
+  );
   if (!('publicKey' in pair) || !('privateKey' in pair)) {
     throw new Error('generateKeyMaterial: expected a CryptoKeyPair from generateKey');
   }
-  const spki = await crypto.subtle.exportKey('spki', pair.publicKey);
-  const pkcs8 = await crypto.subtle.exportKey('pkcs8', pair.privateKey);
+  // exportKey('spki' | 'pkcs8') always returns ArrayBuffer; the union with
+  // JsonWebKey comes from the 'jwk' overload that we don't use here.
+  const spki = (await crypto.subtle.exportKey('spki', pair.publicKey)) as ArrayBuffer;
+  const pkcs8 = (await crypto.subtle.exportKey('pkcs8', pair.privateKey)) as ArrayBuffer;
   return {
     publicKey: base64Encode(new Uint8Array(spki)),
     privateKey: base64Encode(new Uint8Array(pkcs8)),

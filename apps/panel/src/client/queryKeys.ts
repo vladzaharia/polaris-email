@@ -85,6 +85,12 @@ export const cfZoneKeys = {
   detail: (name: string) => [...cfZoneKeys.all, 'detail', name] as const,
 };
 
+// Synthetic monitoring runs (W11) — per-check status feed for diagnostics.
+export const syntheticKeys = {
+  all: ['synthetic-runs'] as const,
+  summary: () => [...syntheticKeys.all, 'summary'] as const,
+};
+
 // DMARC promotion (W8) — fleet view of the auto-promotion state machine.
 export const dmarcPromotionKeys = {
   all: ['dmarc-promotion'] as const,

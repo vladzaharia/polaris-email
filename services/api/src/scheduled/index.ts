@@ -14,6 +14,8 @@ import { staleness } from './staleness.js';
 import { synthetic } from './synthetic.js';
 import { senderAbuseThresholdRun } from './sender-abuse-threshold.js';
 import { dmarcPromoteRun } from './dmarc-promote.js';
+import { mtaStsContinuityRun } from './mta-sts-continuity.js';
+import { dkimSelfVerifyRun } from './dkim-self-verify.js';
 import type { Env } from '../env.js';
 
 export async function scheduled(event: ScheduledEvent, env: Env): Promise<void> {
@@ -41,6 +43,27 @@ export async function scheduled(event: ScheduledEvent, env: Env): Promise<void> 
       console.log(
         'dmarc-promote cron:',
         `candidates=${r.candidates} promoted=${r.promoted} paused=${r.paused} noop=${r.noOp}`,
+      );
+      return;
+    }
+    case '0 */6 * * *': {
+      // W11 — MTA-STS continuity. Every 6h.
+      const r = await mtaStsContinuityRun(env);
+      // eslint-disable-next-line no-console
+      console.log(
+        'mta-sts-continuity cron:',
+        `candidates=${r.candidates} ok=${r.ok} failed=${r.failed}`,
+      );
+      return;
+    }
+    case '30 */6 * * *': {
+      // W11 — DKIM self-verify. Every 6h, offset 30m from MTA-STS check
+      // so the two probes don't pile DoH lookups into the same minute.
+      const r = await dkimSelfVerifyRun(env);
+      // eslint-disable-next-line no-console
+      console.log(
+        'dkim-self-verify cron:',
+        `candidates=${r.candidates} ok=${r.ok} failed=${r.failed}`,
       );
       return;
     }

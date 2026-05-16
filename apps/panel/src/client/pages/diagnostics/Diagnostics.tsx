@@ -24,7 +24,7 @@ import {
 import { Badge } from '../../components/ui/badge.js';
 import { Skeleton } from '../../components/ui/skeleton.js';
 import { useAdminQuery } from '../../hooks/useAdminApi.js';
-import { bridgeKeys, diagnosticsKeys, dlqKeys, statsKeys } from '../../queryKeys.js';
+import { bridgeKeys, diagnosticsKeys, dlqKeys, statsKeys, syntheticKeys } from '../../queryKeys.js';
 import { formatDate, formatRelative } from '../../lib/format.js';
 
 interface DiagCheck {
@@ -193,9 +193,7 @@ function BridgesCard() {
               </Badge>
             </span>
             {online.length < active.length ? (
-              <span className="text-xs text-[var(--color-muted-foreground)]">
-                stale &gt; 5min
-              </span>
+              <span className="text-xs text-[var(--color-muted-foreground)]">stale &gt; 5min</span>
             ) : null}
           </div>
         )}
@@ -254,9 +252,7 @@ function RecentFailuresCard() {
               </li>
             ))}
             {recent.length > 5 ? (
-              <li className="text-[var(--color-muted-foreground)]">
-                +{recent.length - 5} more
-              </li>
+              <li className="text-[var(--color-muted-foreground)]">+{recent.length - 5} more</li>
             ) : null}
           </ul>
         )}
@@ -400,6 +396,64 @@ function AuditAnchorCard() {
   );
 }
 
+// W11 — Synthetic monitoring card. Reads the per-check 24h summary from
+// the synthetic_runs ledger so operators can see at a glance whether
+// MTA-STS continuity + DKIM self-verify + (future) per-domain roundtrip
+// are passing.
+interface SyntheticRow {
+  check_kind: string;
+  total: number;
+  passes: number;
+  avg_latency_ms: number;
+  latest_at: string;
+}
+
+function SyntheticMonitoringCard() {
+  const q = useAdminQuery<{ data: SyntheticRow[] }>(
+    syntheticKeys.summary(),
+    '/api/admin/synthetic-runs/summary',
+  );
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Synthetic monitoring (24h)</CardTitle>
+      </CardHeader>
+      <CardContent>
+        {q.isLoading ? (
+          <Skeleton className="h-20 w-full" />
+        ) : q.error ? (
+          <Unavailable message={q.error.message} />
+        ) : (q.data?.data ?? []).length === 0 ? (
+          <Unavailable message="No synthetic runs in the last 24 hours." />
+        ) : (
+          <div className="space-y-2 text-sm">
+            {(q.data?.data ?? []).map((r) => {
+              const pct = r.total === 0 ? 0 : Math.round((r.passes / r.total) * 100);
+              return (
+                <div key={r.check_kind} className="flex items-center justify-between gap-2">
+                  <span className="font-mono text-xs">{r.check_kind}</span>
+                  <div className="flex items-center gap-2">
+                    <Badge
+                      variant={pct >= 99 ? 'success' : pct >= 90 ? 'secondary' : 'destructive'}
+                    >
+                      {r.passes}/{r.total} ({pct}%)
+                    </Badge>
+                    {r.avg_latency_ms != null && (
+                      <span className="text-xs text-[var(--color-muted-foreground)]">
+                        {Math.round(r.avg_latency_ms)}ms avg
+                      </span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export function Diagnostics() {
   return (
     <PageCard
@@ -415,6 +469,7 @@ export function Diagnostics() {
         <DlqCard />
         <RecentFailuresCard />
         <AuditAnchorCard />
+        <SyntheticMonitoringCard />
       </div>
     </PageCard>
   );
