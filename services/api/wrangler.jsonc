@@ -79,5 +79,8 @@
     "ANCHOR_S3_REGION": "us-west-005",
     "ALERT_WEBHOOK": "https://alerts.example.com/polaris-email",
     "MAX_LATENCY_MS": "300000",
+    // Phase C — default TLS-RPT aggregation address. Single mailbox we own;
+    // per-domain overrides are stored in mail_domains.tlsrpt_rua.
+    "TLSRPT_DEFAULT_RUA": "mailto:tlsrpt@plrs.im",
   },
 }

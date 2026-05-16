@@ -53,6 +53,16 @@ export const TRANSPORT_FORBIDDEN_HEADERS: ReadonlySet<string> = new Set([
   'resent-cc',
   'resent-bcc',
   'resent-message-id',
+  // CF Email Service platform-controlled headers (Phase A): the platform sets
+  // transfer encoding and feedback/TLS-reporting headers; submitter overrides
+  // would either be ignored or corrupt deliverability signals.
+  'content-transfer-encoding',
+  'feedback-id',
+  'cfbl-address',
+  'cfbl-feedback-id',
+  'tls-required',
+  'tls-report-domain',
+  'tls-report-submitter',
 ]);
 
 export interface ParsedMime {

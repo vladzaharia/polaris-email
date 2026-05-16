@@ -49,7 +49,22 @@ jobs:
         with: { node-version: 22, cache: pnpm }
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @polaris-email/test-vectors run generate
-      - run: pnpm -r run test
+      - run: pnpm test:unit
+
+  integration-test:
+    # Pool-workers integration tests: real Miniflare + workerd, no Cloudflare
+    # account required. Slower than `test` (one pool boot per file), so split
+    # into a parallel job. Required check — keep alongside `test`.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 9 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @polaris-email/test-vectors run generate
+      - run: pnpm test:integration
 
   go-test:
     runs-on: ubuntu-latest

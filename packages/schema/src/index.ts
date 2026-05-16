@@ -4,7 +4,17 @@
 // types are gone; mailbox, sender, and receiver shapes replace them. See
 // `services/api/migrations/0001_init.sql` for the canonical D1 schema.
 import { z } from 'zod';
-import { TRANSPORT_FORBIDDEN_HEADERS } from '@polaris-email/mime';
+import {
+  MAX_CUSTOM_HEADERS_PAYLOAD,
+  MAX_HEADER_NAME_LENGTH,
+  MAX_HEADER_VALUE_LENGTH,
+  MAX_NON_X_CUSTOM_HEADERS,
+  MAX_RECIPIENTS,
+  MAX_SUBJECT_LENGTH,
+  PLATFORM_CONTROLLED_HEADERS,
+  USE_API_FIELD_HEADERS,
+  WHITELISTED_CUSTOM_HEADERS,
+} from '@polaris-email/mime';
 
 // ---------- primitives ----------
 
@@ -68,6 +78,16 @@ export const ErrorCode = z.enum([
   'unauthorized',
   'forbidden',
   'conflict',
+  // Phase A: typed CF Email Service limit failures. Each is emitted by
+  // SendRequest's superRefine (and downstream services) so the API layer
+  // can render a precise error envelope without parsing free-form text.
+  'too_many_recipients',
+  'subject_too_long',
+  'message_too_large',
+  'header_not_allowed',
+  'header_too_long',
+  'too_many_custom_headers',
+  'custom_headers_too_large',
 ]);
 export type ErrorCode = z.infer<typeof ErrorCode>;
 
@@ -97,31 +117,57 @@ export type WebhookEventType = z.infer<typeof WebhookEventType>;
 // ---------- forbidden headers ----------
 //
 // Headers the submitter has no business setting on the JSON SendRequest path.
-// The set is the union of:
-//   1. The transport-security set from `@polaris-email/mime`
-//      (`TRANSPORT_FORBIDDEN_HEADERS`) — Received, DKIM-Signature,
-//      Authentication-Results, ARC-*, Resent-*, Return-Path. These are
-//      relay/MTA-owned and the canonicalizer rejects them on raw RFC822 too.
-//   2. The "we generate this from a dedicated JSON field" set — Date,
-//      Message-ID, From, To, Cc, Bcc, Subject, Content-Type, MIME-Version.
-//      Setting these via the JSON `headers` map is meaningless because
-//      `composeFromJson()` always writes them from the structured fields.
-// All lowercase.
-const SCHEMA_GENERATED_HEADERS = [
-  'date',
-  'message-id',
-  'from',
-  'to',
-  'cc',
-  'bcc',
-  'subject',
-  'content-type',
-  'mime-version',
-] as const;
+// Sourced from `@polaris-email/mime/limits.ts` — the canonical CF Email
+// Service list — so changes to CF's rules propagate via that one file.
+// Members come from PLATFORM_CONTROLLED_HEADERS (DKIM-Signature, Date,
+// Message-ID, ARC-*, etc.) plus USE_API_FIELD_HEADERS (From/To/Cc/Bcc/
+// Subject/Reply-To, which belong as typed SendRequest fields). All lowercase.
 export const FORBIDDEN_HEADERS: ReadonlySet<string> = new Set([
-  ...TRANSPORT_FORBIDDEN_HEADERS,
-  ...SCHEMA_GENERATED_HEADERS,
+  ...PLATFORM_CONTROLLED_HEADERS,
+  ...USE_API_FIELD_HEADERS,
 ]);
+
+// ---------- custom-header validation ----------
+
+export type ValidateHeaderResult =
+  | { ok: true }
+  | {
+      ok: false;
+      reason:
+        | 'platform_controlled'
+        | 'use_api_field'
+        | 'name_too_long'
+        | 'invalid_x_format'
+        | 'not_whitelisted';
+    };
+
+/**
+ * Validate a custom header NAME against CF Email Service rules. Does NOT
+ * validate the value (caller checks value length separately).
+ *
+ * Order of precedence:
+ *   1. name length > MAX_HEADER_NAME_LENGTH → name_too_long
+ *   2. lowercased name in PLATFORM_CONTROLLED_HEADERS → platform_controlled
+ *   3. lowercased name in USE_API_FIELD_HEADERS → use_api_field
+ *   4. name starts with `X-` / `x-`:
+ *      - matches /^X-[A-Za-z0-9\-_]+$/i → ok
+ *      - else → invalid_x_format
+ *   5. lowercased name in WHITELISTED_CUSTOM_HEADERS → ok
+ *   6. else → not_whitelisted
+ */
+export function validateHeaderAllowed(name: string): ValidateHeaderResult {
+  if (name.length > MAX_HEADER_NAME_LENGTH) return { ok: false, reason: 'name_too_long' };
+  const lc = name.toLowerCase();
+  if (PLATFORM_CONTROLLED_HEADERS.has(lc)) return { ok: false, reason: 'platform_controlled' };
+  if (USE_API_FIELD_HEADERS.has(lc)) return { ok: false, reason: 'use_api_field' };
+  if (/^x-/i.test(name)) {
+    return /^X-[A-Za-z0-9\-_]+$/i.test(name)
+      ? { ok: true }
+      : { ok: false, reason: 'invalid_x_format' };
+  }
+  if (WHITELISTED_CUSTOM_HEADERS.has(lc)) return { ok: true };
+  return { ok: false, reason: 'not_whitelisted' };
+}
 
 // ---------- mailbox plane ----------
 
@@ -174,6 +220,13 @@ export type MailDomainStatus = z.infer<typeof MailDomainStatus>;
 
 export const DmarcPolicy = z.enum(['none', 'quarantine', 'reject']);
 
+// Phase C (MTA-STS + TLS-RPT) extension — mirrors columns added by migration
+// 0007. The flat shape is sufficient: there is no per-mode required-field
+// asymmetry (every field is independently nullable / defaulted), so a
+// discriminated union on `mta_sts_mode` would only add ceremony without
+// catching extra invalid rows. The verify flow distinguishes
+// missing / drift / verified states via free-form hint text on
+// `VerifyCheck.actual` (see VerifyCheck below).
 export const MailDomain = z.object({
   id: Ulid,
   zone_id: Ulid,
@@ -193,6 +246,19 @@ export const MailDomain = z.object({
   verified_at: z.string().nullable(),
   last_verify_check_at: z.string().nullable(),
   disabled_at: z.string().nullable(),
+  // Phase C — MTA-STS (RFC 8461) + TLS-RPT (RFC 8460). See
+  // services/api/migrations/0007_mta_sts.sql for the canonical D1 column
+  // definitions. `tlsrpt_enabled` is stored as an INTEGER 0/1 to match the
+  // existing inbound_enabled / outbound_enabled / default_for_mailbox pattern
+  // (SQLite has no native boolean). The PATCH /v1/admin/domains/:id surface
+  // accepts a boolean for this field; the route layer coerces it.
+  mta_sts_mode: z.enum(['none', 'testing', 'enforce']),
+  mta_sts_policy_id: z.string().nullable(),
+  mta_sts_max_age: z.number().int().nonnegative(),
+  mta_sts_verified_at: z.string().nullable(),
+  tlsrpt_enabled: z.number().int().min(0).max(1),
+  tlsrpt_rua: z.string().nullable(),
+  tlsrpt_verified_at: z.string().nullable(),
 });
 export type MailDomain = z.infer<typeof MailDomain>;
 
@@ -209,7 +275,55 @@ export const UpdateMailDomainRequest = z.object({
   dmarc_policy: DmarcPolicy.optional(),
   dmarc_rua: z.string().max(320).optional(),
   dkim_selector: z.string().min(1).max(63).optional(),
+  // Phase C — MTA-STS + TLS-RPT toggles. `tlsrpt_enabled` is a boolean in
+  // the request body but is persisted as INTEGER 0/1 in `mail_domains`; the
+  // route layer (C.10) performs the coercion. Switching MTA-STS mode itself
+  // is normally routed through the dedicated lifecycle endpoints
+  // (`POST .../mta-sts/enable|disable|promote`) so they can also publish
+  // the policy file / KV record; accepting it here keeps the generic PATCH
+  // surface usable for bulk operator scripts.
+  mta_sts_mode: z.enum(['none', 'testing', 'enforce']).optional(),
+  mta_sts_max_age: z.number().int().nonnegative().optional(),
+  tlsrpt_enabled: z.boolean().optional(),
+  tlsrpt_rua: z.string().optional(),
 });
+
+// ---------- domain verify ----------
+//
+// Canonical shape for the per-check rows emitted by
+// `POST /v1/admin/domains/:id/verify` (and the matching cf-api MTA-STS
+// verifier). Extracted to the schema package so the API route, cf-api helpers,
+// and panel client can share the same `VerifyCheck[]` type without each
+// re-declaring it.
+//
+// `actual` carries free-form hint text in addition to the observed value so
+// the verify flow can express three failure flavours uniformly:
+//   - "missing"     — record/policy hasn't been provisioned yet
+//                     (e.g. "not provisioned — call POST .../mta-sts/enable")
+//   - "drift"       — provisioned but DNS / KV / DB are out of sync
+//                     (e.g. "mode=testing (drift: published policy differs)")
+//   - "unreachable" — DoH / HTTPS fetch failed entirely
+// Per the user note for MTA-STS specifically: records require MANUAL
+// provisioning via the dedicated admin endpoints (Phase C.10), unlike DKIM /
+// SPF / DMARC which CF auto-publishes during Email Routing onboarding. The
+// flat string-actual encoding keeps the panel rendering simple while still
+// expressing this distinction.
+export const VerifyCheck = z.object({
+  name: z.string(),
+  ok: z.boolean(),
+  expected: z.string(),
+  actual: z.string(),
+});
+export type VerifyCheck = z.infer<typeof VerifyCheck>;
+
+export const VerifyResponse = z.object({
+  id: Ulid,
+  status: MailDomainStatus,
+  checks: z.array(VerifyCheck),
+  message: z.string().optional(),
+  verified_at: z.number().int().optional(),
+});
+export type VerifyResponse = z.infer<typeof VerifyResponse>;
 
 // ---------- credential plane ----------
 
@@ -541,16 +655,82 @@ export const SendRequest = z
     reply_to: z.string().optional(),
     idempotency_key: z.string().optional(),
   })
-  .refine(
-    (req) => {
-      if (!req.headers) return true;
-      for (const key of Object.keys(req.headers)) {
-        if (FORBIDDEN_HEADERS.has(key.toLowerCase())) return false;
+  // Phase A: enforce CF Email Service caps. Each issue's `message` is
+  // shaped as `"<error_code>:<detail>"` so the API layer can extract the
+  // typed code via `result.error.issues[i].message.split(':')[0]` and map
+  // it to an `ErrorCode` without inspecting free-form text.
+  .superRefine((req, ctx) => {
+    // (1) recipient cap — sum of to + cc + bcc must not exceed MAX_RECIPIENTS.
+    const recipCount = req.to.length + (req.cc?.length ?? 0) + (req.bcc?.length ?? 0);
+    if (recipCount > MAX_RECIPIENTS) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['to'],
+        message: `too_many_recipients:${recipCount} exceeds ${MAX_RECIPIENTS}`,
+      });
+    }
+
+    // (2) subject length cap.
+    if (req.subject != null && req.subject.length > MAX_SUBJECT_LENGTH) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['subject'],
+        message: `subject_too_long:${req.subject.length} exceeds ${MAX_SUBJECT_LENGTH}`,
+      });
+    }
+
+    // (3-5) custom headers.
+    if (req.headers) {
+      const encoder = new TextEncoder();
+      let nonXCount = 0;
+      let payloadBytes = 0;
+
+      for (const [name, value] of Object.entries(req.headers)) {
+        // (3a) name allowed?
+        const allowed = validateHeaderAllowed(name);
+        if (!allowed.ok) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['headers', name],
+            message: `header_not_allowed:${allowed.reason}`,
+          });
+        }
+
+        // (3b) value byte length cap.
+        const nameBytes = encoder.encode(name).byteLength;
+        const valueBytes = encoder.encode(value).byteLength;
+        if (valueBytes > MAX_HEADER_VALUE_LENGTH) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['headers', name],
+            message: `header_too_long:${valueBytes}`,
+          });
+        }
+
+        // (4) non-X header count.
+        if (!/^x-/i.test(name)) nonXCount++;
+
+        // (5) total payload accumulator: `Name: Value\r\n` per header.
+        payloadBytes += nameBytes + 2 + valueBytes + 2;
       }
-      return true;
-    },
-    { message: 'forbidden header in headers' },
-  );
+
+      if (nonXCount > MAX_NON_X_CUSTOM_HEADERS) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['headers'],
+          message: `too_many_custom_headers:${nonXCount}`,
+        });
+      }
+
+      if (payloadBytes > MAX_CUSTOM_HEADERS_PAYLOAD) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['headers'],
+          message: `custom_headers_too_large:${payloadBytes}`,
+        });
+      }
+    }
+  });
 export type SendRequest = z.infer<typeof SendRequest>;
 
 // ---------- idempotency ----------
@@ -647,6 +827,14 @@ export const AuditAction = z.enum([
   'rate_limit.exceeded',
   // CF zone discover + configure (cf-zones.ts)
   'cf_zone.configure',
+  // MTA-STS + TLS-RPT (Phase C). Lifecycle audit hits for the dedicated
+  // policy-management endpoints; mirrors the additions to the audit_log
+  // CHECK constraint in services/api/migrations/0007_mta_sts.sql.
+  'mta_sts.enable',
+  'mta_sts.disable',
+  'mta_sts.promote',
+  'tls_rpt.enable',
+  'tls_rpt.disable',
 ]);
 export type AuditAction = z.infer<typeof AuditAction>;
 

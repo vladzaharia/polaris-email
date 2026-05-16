@@ -16,6 +16,7 @@ import { bootstrap } from './routes/bootstrap.js';
 import type { Env } from './env.js';
 import { messages } from './routes/messages.js';
 import { messagesState } from './routes/messages-state.js';
+import { mtaStsPolicy } from './routes/mta-sts.js';
 import { requestId } from '@polaris-email/ids';
 import { buildError } from './errors.js';
 import { scheduled } from './scheduled/index.js';
@@ -37,6 +38,13 @@ app.use('*', async (c, next) => {
 });
 
 app.get('/healthz', (c) => c.json({ ok: true }));
+
+// Phase C.9 — public, unauthenticated MTA-STS policy origin.
+// MUST be mounted BEFORE any auth-bearing routes: sender MTAs fetch this
+// anonymously per RFC 8461 §3.3. The handler itself short-circuits to
+// `c.notFound()` for any Host that does not start with `mta-sts.`, so
+// mounting it at root cannot leak the policy on unrelated hostnames.
+app.route('/', mtaStsPolicy);
 
 app.route('/', messages);
 app.route('/', messagesState);

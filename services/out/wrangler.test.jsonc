@@ -1,0 +1,27 @@
+// services/out/wrangler.test.jsonc — test-only.
+// The static `send_email` binding name matches the binding derivation in
+// services/out/src/index.ts: domain `verified.test` → `EMAIL_VERIFIED_TEST`.
+// Tests seed a `mail_domains` row with name='verified.test'.
+{
+  "$schema": "https://json-schema.org/draft-07/schema",
+  "name": "polaris-email-out-test",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-01-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "d1_databases": [
+    { "binding": "DB", "database_name": "polaris-email", "database_id": "test-local" },
+  ],
+  "r2_buckets": [{ "binding": "R2", "bucket_name": "polaris-email" }],
+  "queues": {
+    "consumers": [
+      {
+        "queue": "polaris-email-outbound",
+        "max_batch_size": 10,
+        "max_batch_timeout": 5,
+        "max_retries": 1,
+      },
+    ],
+    "producers": [{ "binding": "FANOUT_QUEUE", "queue": "polaris-email-fanout" }],
+  },
+  "send_email": [{ "name": "EMAIL_VERIFIED_TEST" }],
+}

@@ -17,7 +17,8 @@
 // deleted.
 
 import { Hono, type Context } from 'hono';
-import { SendRequest } from '@polaris-email/schema';
+import type { z } from 'zod';
+import { SendRequest, type ErrorCode } from '@polaris-email/schema';
 import { verify, sha256Hex } from '@polaris-email/hmac';
 import { ulid } from '@polaris-email/ids';
 import {
@@ -26,6 +27,7 @@ import {
   extractAttachmentParts,
   mimeToMessage,
   parseStrict,
+  MAX_MESSAGE_SIZE_VERIFIED,
   MimeError,
   SenderPolicyError,
   type UnifiedMessage,
@@ -50,6 +52,43 @@ const DEFAULT_INLINE_ATTACHMENTS_BYTES = 262144;
 const BRIDGE_DEFAULT_RATE_PER_MIN = 600;
 // TODO(bridge-rate-limit): `bridges.rate_limit_per_min` column is not in
 // 0001_init.sql; the bridge path falls back to this constant.
+
+// Phase A.5 — allowlist of typed ErrorCodes that the SendRequest superRefine
+// is permitted to surface via its `"<code>:<detail>"` issue.message convention.
+// Adding to this set is a deliberate act and must be paired with a matching
+// entry in ERROR_HTTP / ERROR_RETRYABLE (see errors.ts). Anything outside this
+// set falls back to bad_request so unknown free-form messages never leak as
+// novel error codes to callers.
+const CF_TYPED_CODES = new Set<ErrorCode>([
+  'too_many_recipients',
+  'subject_too_long',
+  'message_too_large',
+  'header_not_allowed',
+  'header_too_long',
+  'too_many_custom_headers',
+  'custom_headers_too_large',
+]);
+
+/**
+ * Classify a zod issue into a typed ErrorCode + human-readable message.
+ *
+ * Contract (Phase A): SendRequest.superRefine emits issues whose `message` is
+ * shaped as `"<error_code>:<detail>"` (e.g., `"too_many_recipients:51 exceeds 50"`).
+ * This function splits on the first colon and, if the prefix is in
+ * `CF_TYPED_CODES`, returns the typed code with the detail portion as the
+ * human message. Otherwise returns `bad_request` with the raw message verbatim.
+ *
+ * Exported for unit testing — keep the implementation here so the production
+ * call site and the test exercise the same logic.
+ */
+export function classifyZodIssue(issue: z.ZodIssue): { code: ErrorCode; message: string } {
+  const [maybeCode, ...rest] = issue.message.split(':');
+  const detail = rest.join(':') || issue.message;
+  if (CF_TYPED_CODES.has(maybeCode as ErrorCode)) {
+    return { code: maybeCode as ErrorCode, message: detail };
+  }
+  return { code: 'bad_request', message: issue.message };
+}
 
 function inlineBodyMax(env: Env): number {
   const v = env.INLINE_BODY_BYTES_MAX
@@ -319,12 +358,25 @@ messages.post('/v1/messages', async (c) => {
       return buildError(c, 'key_revoked', 'principal revoked');
     }
 
-    let req: SendRequest;
+    // Phase A.5: parse + validate in two steps so we can distinguish JSON
+    // syntax errors (always `bad_request`) from zod validation issues that may
+    // map to typed CF error codes via the `"<code>:<detail>"` convention.
+    let parsedBody: unknown;
     try {
-      req = SendRequest.parse(JSON.parse(new TextDecoder().decode(bodyBytes)));
-    } catch (e) {
-      return buildError(c, 'bad_request', e instanceof Error ? e.message : 'invalid JSON body');
+      parsedBody = JSON.parse(new TextDecoder().decode(bodyBytes));
+    } catch {
+      return buildError(c, 'bad_request', 'invalid JSON body');
     }
+    const parseResult = SendRequest.safeParse(parsedBody);
+    if (!parseResult.success) {
+      // Zod guarantees at least one issue when success=false; the optional
+      // chain is a strict-mode appeasement (noUncheckedIndexedAccess).
+      const firstIssue = parseResult.error.issues[0];
+      if (!firstIssue) return buildError(c, 'bad_request', 'invalid request body');
+      const { code, message } = classifyZodIssue(firstIssue);
+      return buildError(c, code, message);
+    }
+    const req: SendRequest = parseResult.data;
 
     if (apiKey.sender_scope_ids.length > 0) {
       const fromLc = req.from.toLowerCase();
@@ -347,6 +399,18 @@ messages.post('/v1/messages', async (c) => {
     }
 
     const rawMime = composeFromJson(req);
+    // Phase A.6 — reject before parseStrict (and before enqueue) so callers see
+    // a typed `message_too_large` (HTTP 413) rather than a generic MIME error.
+    // The 25 MiB cap is the CF Email Service verified-domain ceiling; it is a
+    // separate contract from the canonicalizer's 64 KiB header cap, so the
+    // check lives here at the route boundary, not inside parseStrict.
+    if (rawMime.byteLength > MAX_MESSAGE_SIZE_VERIFIED) {
+      return buildError(
+        c,
+        'message_too_large',
+        `message ${rawMime.byteLength} bytes exceeds ${MAX_MESSAGE_SIZE_VERIFIED}`,
+      );
+    }
     try {
       parseStrict(rawMime);
     } catch (e) {
@@ -397,6 +461,18 @@ messages.post('/v1/messages', async (c) => {
       return buildError(c, 'too_many_requests', 'rate limit exceeded', {
         'retry-after': String(rl.retryAfterSec),
       });
+    }
+
+    // Phase A.6 — reject oversized bodies before parseStrict (and before any
+    // pipeline work) so the bridge submitter sees a typed `message_too_large`.
+    // The check sits after HMAC auth so we don't leak the rejection to
+    // unauthenticated callers, but before any parsing per the contract.
+    if (bodyBytes.byteLength > MAX_MESSAGE_SIZE_VERIFIED) {
+      return buildError(
+        c,
+        'message_too_large',
+        `message ${bodyBytes.byteLength} bytes exceeds ${MAX_MESSAGE_SIZE_VERIFIED}`,
+      );
     }
 
     let mime;

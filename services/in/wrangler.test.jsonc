@@ -1,0 +1,19 @@
+// services/in/wrangler.test.jsonc — Test-only config consumed by
+// @cloudflare/vitest-pool-workers. Miniflare simulates each binding in-memory
+// per test file; the IDs below are placeholders, not real CF resources.
+// DO NOT use for deploys — only `wrangler.jsonc` is rendered for production.
+{
+  "$schema": "https://json-schema.org/draft-07/schema",
+  "name": "polaris-email-in-test",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-01-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "d1_databases": [
+    { "binding": "DB", "database_name": "polaris-email", "database_id": "test-local" },
+  ],
+  "r2_buckets": [{ "binding": "R2", "bucket_name": "polaris-email" }],
+  "kv_namespaces": [{ "binding": "KV_RATE_LIMIT", "id": "test-local-kv-rate-limit" }],
+  "queues": {
+    "producers": [{ "binding": "FANOUT_QUEUE", "queue": "polaris-email-fanout" }],
+  },
+}

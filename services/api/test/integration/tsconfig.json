@@ -1,0 +1,13 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "../..",
+    "types": ["@cloudflare/workers-types", "@cloudflare/vitest-pool-workers/types"],
+    "noEmit": true
+  },
+  // services/api has many pre-existing mock-backed integration tests under
+  // `test/integration/*.integration.test.ts` that the main `tsconfig.json`
+  // intentionally excludes (it's scoped to `src/**/*`). Mirror that exclusion
+  // here by including only the workers-pool tests + their support files.
+  "include": ["../../src/**/*", "./*.workers.test.ts", "./global-setup.ts", "./types.d.ts"]
+}

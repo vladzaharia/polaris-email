@@ -6,11 +6,13 @@
 // edge-specific concerns (raw-stream reading, rate shed, recipient -> mailbox
 // resolution, forward primitive, fanout queue dispatch).
 import { ulid } from '@polaris-email/ids';
-import { parseAuthResults } from '@polaris-email/mime';
+import { MAX_MESSAGE_SIZE_VERIFIED, parseAuthResults } from '@polaris-email/mime';
 import { processMessage, type PipelineEnv } from '@polaris-email/pipeline';
 
-// Inbound-edge sentinel for the 25MiB stream cap. Strict MIME validation
-// happens later inside `processMessage` (via `@polaris-email/mime`'s
+// Inbound-edge sentinel for the message-size cap. We use the CF verified-
+// domain ceiling (25 MiB) — inbound is only accepted on already-verified
+// mail_domains rows, so the unverified 5 MiB cap doesn't apply. Strict MIME
+// validation happens later inside `processMessage` (via `@polaris-email/mime`'s
 // `parseStrict`/`summarizeMime`); this class only signals an edge-level
 // size rejection that translates to SMTP 552.
 class IngestError extends Error {
@@ -48,8 +50,8 @@ async function readAll(stream: ReadableStream<Uint8Array>): Promise<Uint8Array> 
     if (!value) continue;
     chunks.push(value);
     total += value.byteLength;
-    if (total > 25 * 1024 * 1024) {
-      throw new IngestError('too_large', 'over 25MiB');
+    if (total > MAX_MESSAGE_SIZE_VERIFIED) {
+      throw new IngestError('too_large', `over ${MAX_MESSAGE_SIZE_VERIFIED} bytes`);
     }
   }
   const out = new Uint8Array(total);

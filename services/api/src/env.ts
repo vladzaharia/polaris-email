@@ -51,7 +51,21 @@ export interface Env {
   /** Grace window (days) for the janitor's expunged_at sweep. */
   BRIDGE_EXPUNGE_GRACE_DAYS?: string;
 
+  /**
+   * Default TLS-RPT aggregation address (mailto: scheme) written to
+   * `mail_domains.tlsrpt_rua` when a domain is onboarded. Falls back to
+   * `mailto:tlsrpt@plrs.im` if unset. Phase C.
+   */
+  TLSRPT_DEFAULT_RUA?: string;
+
   // Secrets via `wrangler secret put`:
+  /**
+   * Cloudflare API token + account id used for DNS / Email Routing /
+   * Workers Routes provisioning. Required for the domain-verify path and
+   * all MTA-STS / TLS-RPT admin endpoints (Phase C). Wrangler-secret pair.
+   */
+  CF_API_TOKEN?: string;
+  CF_ACCOUNT_ID?: string;
   POLARIS_SECRET_A?: string;
   POLARIS_SECRET_B?: string;
   ARGON2_PEPPER?: string;
@@ -63,10 +77,7 @@ export interface Env {
   // services/api/src/bridge-auth.ts.
 
   // -- CF zone discovery + configure (cf-zones.ts) --------------------------
-  /** CF API token. Needs Zone:Read across the account + Email Routing:Edit. */
-  CF_API_TOKEN?: string;
-  /** CF account ID — used to scope the zone listing + sender onboarding. */
-  CF_ACCOUNT_ID?: string;
+  // CF_API_TOKEN + CF_ACCOUNT_ID are declared above and reused here.
   /** Worker name the catch-all rule must target. Default `polaris-email-in`. */
   WORKER_NAME_INBOUND?: string;
 }

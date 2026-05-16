@@ -626,11 +626,11 @@ export function composeFromJson(req: SendRequestLike): Uint8Array {
       name: 'Content-Type',
       value: 'text/html; charset=utf-8',
     });
-    headerList.push({
-      nameLc: 'content-transfer-encoding',
-      name: 'Content-Transfer-Encoding',
-      value: '8bit',
-    });
+    // Top-level Content-Transfer-Encoding intentionally omitted: CF's
+    // send_email binding generates it from content analysis (per CF docs),
+    // and parseStrict (Phase A.2) treats CTE as a platform-controlled
+    // forbidden header. Multipart branches above keep part-level CTE
+    // (inside the body, not inspected by parseStrict).
     body = new TextEncoder().encode(req.html ?? '');
   } else {
     headerList.push({
@@ -638,11 +638,7 @@ export function composeFromJson(req: SendRequestLike): Uint8Array {
       name: 'Content-Type',
       value: 'text/plain; charset=utf-8',
     });
-    headerList.push({
-      nameLc: 'content-transfer-encoding',
-      name: 'Content-Transfer-Encoding',
-      value: '8bit',
-    });
+    // See note above re: top-level CTE omission.
     body = new TextEncoder().encode(req.text ?? '');
   }
 

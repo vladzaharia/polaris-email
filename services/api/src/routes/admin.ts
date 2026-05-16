@@ -20,6 +20,7 @@ import { bridgeCredentialLookup } from './bridge/credential-lookup.js';
 import { bridges } from './admin/bridges.js';
 import { cfZones } from './admin/cf-zones.js';
 import { domains } from './admin/domains.js';
+import { domainsMtaSts } from './admin/domains-mta-sts.js';
 import { mailboxes as mailboxesRoutes } from './admin/mailboxes.js';
 import { senders as sendersRoutes } from './admin/senders.js';
 import { stats } from './admin/stats.js';
@@ -42,6 +43,7 @@ admin.use('/v1/bridge/*', adminHmac);
 // Sub-routers. All rely on the admin middleware above.
 admin.route('/', mailboxesRoutes);
 admin.route('/', domains);
+admin.route('/', domainsMtaSts);
 admin.route('/', sendersRoutes);
 admin.route('/', zones);
 admin.route('/', cfZones);

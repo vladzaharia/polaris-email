@@ -1,0 +1,49 @@
+// services/api/wrangler.test.jsonc — test-only.
+// Cron schedules are intentionally omitted; pool-workers invokes scheduled
+// handlers via createScheduledController() rather than wall-clock cron.
+{
+  "$schema": "https://json-schema.org/draft-07/schema",
+  "name": "polaris-email-api-test",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-01-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "polaris-email",
+      "database_id": "test-local",
+      "migrations_dir": "migrations",
+    },
+  ],
+  "r2_buckets": [{ "binding": "R2", "bucket_name": "polaris-email" }],
+  "kv_namespaces": [
+    { "binding": "KV_NONCE", "id": "test-local-nonce" },
+    { "binding": "KV_IDEMPOTENCY", "id": "test-local-idem" },
+    { "binding": "KV_RATE_LIMIT", "id": "test-local-rate-limit" },
+    { "binding": "KV_KEY_CACHE", "id": "test-local-key-cache" },
+    { "binding": "KV_REVOCATIONS", "id": "test-local-revocations" },
+  ],
+  "queues": {
+    "producers": [{ "binding": "OUTBOUND_QUEUE", "queue": "polaris-email-outbound" }],
+    "consumers": [
+      {
+        "queue": "polaris-email-fanout",
+        "max_concurrency": 4,
+        "max_batch_size": 10,
+        "max_batch_timeout": 5,
+        "max_retries": 1,
+      },
+    ],
+  },
+  "vars": {
+    "API_BASE_URL": "https://api.test.local",
+    "R2_PUBLIC_HOST": "r2.test.local",
+    "ANCHOR_R2_PREFIX": "anchors/",
+    "ANCHOR_S3_ENDPOINT": "https://s3.test.local",
+    "ANCHOR_S3_BUCKET": "polaris-anchors-test",
+    "ANCHOR_S3_REGION": "us-test-1",
+    "ALERT_WEBHOOK": "https://alerts.test.local/polaris-email",
+    "MAX_LATENCY_MS": "300000",
+    "TLSRPT_DEFAULT_RUA": "mailto:tlsrpt@test.local",
+  },
+}

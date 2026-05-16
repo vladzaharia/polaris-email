@@ -471,4 +471,48 @@ describe('out worker', () => {
     expect(m.retried).toBe(true);
     expect(m.acked).toBe(false);
   });
+  it('oversized raw body rejected before binding.send (Phase A.7)', async () => {
+    // Belt-and-suspenders: a 26 MiB R2 object (above the 25 MiB CF cap) must
+    // fail with a typed `message_too_large:<bytes>` last_error and never reach
+    // binding.send. The API-layer pre-enqueue check (Phase A.6) is the
+    // authoritative gate; this guards against stale enqueues or bugs.
+    const binding = new FakeBinding();
+    const env = mkEnv(binding);
+    const db = env.DB as unknown as FakeDB;
+    const r2 = env.R2 as unknown as FakeR2;
+    db.domains.set('example.com', { id: 'D1', name: 'example.com' });
+    const oversized = new Uint8Array(26 * 1024 * 1024);
+    oversized.fill(0x61); // 'a'
+    r2.map.set('mime/big', oversized);
+    const batch = mkBatch({
+      messageId: 'OVERSIZE',
+      source: 'raw',
+      r2KeyOrInline: 'mime/big',
+      fromDomain: 'example.com',
+      fromAddress: 'a@example.com',
+      mailboxId: 'svc',
+      domainId: 'D1',
+      mode: 'live',
+    });
+    await worker.queue(batch, env as unknown as Parameters<typeof worker.queue>[1]);
+    // binding.send must NEVER be called.
+    expect(binding.lastRaw).toBeUndefined();
+    // Status must be 'failed' with a typed message_too_large:<bytes> error.
+    const status = db.statuses.get('OVERSIZE');
+    expect(status?.status).toBe('failed');
+    expect(status?.last_error).toMatch(/^message_too_large:\d+$/);
+    expect(status?.last_error).toBe(`message_too_large:${oversized.byteLength}`);
+    // Fanout must include a typed message.failed event with reason=message_too_large.
+    const sent = (
+      env.FANOUT_QUEUE as unknown as FakeQueue<{
+        event: string;
+        data?: { reason?: string; bytes?: number; cap?: number };
+      }>
+    ).sent;
+    expect(sent.length).toBe(1);
+    expect(sent[0]?.event).toBe('message.failed');
+    expect(sent[0]?.data?.reason).toBe('message_too_large');
+    expect(sent[0]?.data?.bytes).toBe(oversized.byteLength);
+    expect(typeof sent[0]?.data?.cap).toBe('number');
+  });
 });

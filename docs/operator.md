@@ -285,6 +285,88 @@ Each transition requires DoH read-back proving the prior step actually took
 effect on the public DNS before progressing. The `domains` row is tombstoned
 (retained for audit) — never hard-deleted.
 
+## Inbound TLS hardening (MTA-STS + TLS-RPT)
+
+Phase C adds RFC 8461 (MTA-STS) and RFC 8460 (TLS-RPT) record publishing per
+onboarded domain. Senders that understand MTA-STS will require valid TLS when
+delivering to Cloudflare's inbound MX (`*.mx.cloudflare.net`) and report
+failures via TLS-RPT, giving us first-class visibility into inbound TLS
+failures.
+
+### Architectural note: manual provisioning
+
+Unlike DKIM / SPF / DMARC — which Cloudflare auto-publishes when a domain is
+onboarded to Email Routing / Email Service — MTA-STS records require
+**explicit operator action**. The admin endpoints below are the canonical way
+to publish and revoke them. The verify flow detects drift and surfaces
+`operator-action` hint rows when re-publishing is needed.
+
+Admin endpoints:
+
+- `POST /v1/admin/domains/:id/mta-sts/enable`
+- `POST /v1/admin/domains/:id/mta-sts/disable`
+- `POST /v1/admin/domains/:id/mta-sts/promote` (testing → enforce)
+- `POST /v1/admin/domains/:id/tls-rpt/enable`
+- `POST /v1/admin/domains/:id/tls-rpt/disable`
+
+### Default state on new domains
+
+New domain rows are created with `mta_sts_mode='testing'` and
+`tlsrpt_enabled=1`. These are _intent flags_ set on row creation, but **the
+actual DNS records are NOT published until** an operator (or
+`bin/backfill-mta-sts.sh`) calls `/mta-sts/enable`. This intentional
+two-phase shape lets operators stage rollout per domain without surprising
+fleet-wide DNS writes.
+
+### Records published per domain on enable
+
+Calling `/mta-sts/enable` publishes three records:
+
+1. DNS `TXT` at `_mta-sts.{tenant}` → `v=STSv1; id={policyId}`
+2. Workers custom domain `mta-sts.{tenant}` → `polaris-email-api` (the
+   public policy handler from C.9, which serves the policy body at
+   `https://mta-sts.{tenant}/.well-known/mta-sts.txt`)
+3. DNS `TXT` at `_smtp._tls.{tenant}` → `v=TLSRPTv1; rua=mailto:tlsrpt@plrs.im`
+
+`/tls-rpt/enable` publishes only record 3 (used when an operator opts into
+reporting without yet publishing MTA-STS).
+
+### Promotion ritual
+
+```
+enable (mode=testing) -> wait >= 30 days -> review TLS-RPT reports -> promote (mode=enforce)
+```
+
+Promotion bumps `mta_sts_policy_id`, which forces sender-side caches to
+refresh and pick up the stricter mode. Skipping the testing soak risks
+silently breaking deliverability from misconfigured senders.
+
+### Drift detection
+
+`POST /v1/admin/domains/:id/verify` returns a `checks[]` array. Drift surfaces
+as rows with names like `mta-sts:operator-action:republish-policy` or
+`tls-rpt:operator-action:republish-rua`, and each row's `actual` field
+names the exact admin endpoint to call to remediate. The panel's domain
+detail page highlights these rows (C.13).
+
+### Tools
+
+- `bin/backfill-mta-sts.sh` — fleet enable for existing onboarded domains.
+  Iterates verified, inbound-enabled domains where `mta_sts_mode='none'` and
+  calls `/mta-sts/enable` + `/tls-rpt/enable` on each. Idempotent; safe to
+  re-run.
+- `bin/smoke-mta-sts.sh` — gated end-to-end probe. Requires
+  `SMOKE_MTA_STS_DOMAIN_ID` env pointing at a real verified, MTA-STS-enabled
+  domain. Designed for nightly CI on `main`.
+
+### TLS-RPT mailbox
+
+Reports land at `tlsrpt@plrs.im` by default (overridable per-domain via
+`mail_domains.tlsrpt_rua`). Phase C ships only the DNS record. Report
+ingestion — parsing the JSON reports, storage, and alerting — is a
+follow-up phase; for now `tlsrpt@plrs.im` simply collects reports for
+manual inspection.
+
 ## Daily operations
 
 - **Watch DLQ depth**: alert if `polaris-email status --queues` shows DLQ
