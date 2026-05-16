@@ -158,6 +158,24 @@ adminProxyRoutes.post('/api/admin/webhook-dlq/:id/drop', withApproval('webhook_d
   forward(c, `/v1/admin/webhook-dlq/${c.req.param('id')}/drop`),
 );
 
+// W8 — DMARC promotion mutations all touch live state (pause/resume the
+// auto-promotion cron, claim DNS management, run the cron immediately).
+// Approval-gate them all.
+adminProxyRoutes.post('/api/admin/dmarc-promotion/:id/pause', withApproval('dmarc.pause'), (c) =>
+  forward(c, `/v1/admin/dmarc-promotion/${c.req.param('id')}/pause`),
+);
+adminProxyRoutes.post('/api/admin/dmarc-promotion/:id/resume', withApproval('dmarc.resume'), (c) =>
+  forward(c, `/v1/admin/dmarc-promotion/${c.req.param('id')}/resume`),
+);
+adminProxyRoutes.post(
+  '/api/admin/dmarc-promotion/:id/claim-management',
+  withApproval('dmarc.claim_management'),
+  (c) => forward(c, `/v1/admin/dmarc-promotion/${c.req.param('id')}/claim-management`),
+);
+adminProxyRoutes.post('/api/admin/dmarc-promotion/run', withApproval('dmarc.promote_run'), (c) =>
+  forward(c, '/v1/admin/dmarc-promotion/run'),
+);
+
 // W2c — manual "Run threshold cron now" is approval-gated (it can suppress
 // senders, so it's destructive).
 adminProxyRoutes.post(

@@ -47,6 +47,7 @@ const OPERATIONS: NavItem[] = [
   { to: '/reports/abuse', label: 'Abuse reports', icon: AlertTriangle },
   { to: '/admin-alerts', label: 'Admin alerts', icon: AlertOctagon },
   { to: '/sender-abuse', label: 'Sender abuse', icon: AlertTriangle },
+  { to: '/dmarc-promotion', label: 'DMARC promotion', icon: Settings },
 ];
 
 const CONFIGURATION: NavItem[] = [

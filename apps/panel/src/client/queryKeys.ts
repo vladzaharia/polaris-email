@@ -85,6 +85,12 @@ export const cfZoneKeys = {
   detail: (name: string) => [...cfZoneKeys.all, 'detail', name] as const,
 };
 
+// DMARC promotion (W8) — fleet view of the auto-promotion state machine.
+export const dmarcPromotionKeys = {
+  all: ['dmarc-promotion'] as const,
+  list: () => [...dmarcPromotionKeys.all, 'list'] as const,
+};
+
 // DMARC aggregate reports (W6) — per-domain alignment ledger + rollup.
 export const dmarcKeys = {
   all: ['dmarc-reports'] as const,

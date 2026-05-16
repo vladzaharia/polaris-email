@@ -914,6 +914,11 @@ export const AuditAction = z.enum([
   'tls_rpt_report.ingest',
   // W6 — DMARC RUA receiver (migration 0015).
   'dmarc_aggregate_report.ingest',
+  // W8 — DMARC promotion state machine (migration 0016).
+  'dmarc.promote',
+  'dmarc.pause',
+  'dmarc.rollback',
+  'dmarc.claim_management',
 ]);
 export type AuditAction = z.infer<typeof AuditAction>;
 

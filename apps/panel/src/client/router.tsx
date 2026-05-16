@@ -185,6 +185,15 @@ const senderAbuseList = createRoute({
   component: lazyRouteComponent(() => import('./pages/sender-abuse/List.js'), 'SenderAbuseList'),
   errorComponent: RouteError,
 });
+const dmarcPromotionList = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/dmarc-promotion',
+  component: lazyRouteComponent(
+    () => import('./pages/dmarc-promotion/List.js'),
+    'DmarcPromotionList',
+  ),
+  errorComponent: RouteError,
+});
 const suppressionDetail = createRoute({
   getParentRoute: () => rootRoute,
   path: '/suppressions/$id',
@@ -222,6 +231,7 @@ const routeTree = rootRoute.addChildren([
   abuseReportsList,
   adminAlertsList,
   senderAbuseList,
+  dmarcPromotionList,
 ]);
 
 // Phase 6d.8 — `defaultPendingComponent` swaps in PageSkeleton on every

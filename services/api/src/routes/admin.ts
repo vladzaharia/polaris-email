@@ -28,6 +28,7 @@ import { status } from './admin/status.js';
 import { abuseEvents } from './admin/abuse-events.js';
 import { alerts as adminAlerts } from './admin/alerts.js';
 import { dmarcReports } from './admin/dmarc-reports.js';
+import { dmarcPromotion } from './admin/dmarc-promotion.js';
 import { senderAbuse } from './admin/sender-abuse.js';
 import { suppressions } from './admin/suppressions.js';
 import { tlsRptReports } from './admin/tls-rpt-reports.js';
@@ -68,6 +69,7 @@ admin.route('/', adminAlerts);
 admin.route('/', senderAbuse);
 admin.route('/', tlsRptReports);
 admin.route('/', dmarcReports);
+admin.route('/', dmarcPromotion);
 
 // ---------- api keys ----------
 

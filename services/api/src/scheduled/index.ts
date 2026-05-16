@@ -13,6 +13,7 @@ import { janitor } from './janitor.js';
 import { staleness } from './staleness.js';
 import { synthetic } from './synthetic.js';
 import { senderAbuseThresholdRun } from './sender-abuse-threshold.js';
+import { dmarcPromoteRun } from './dmarc-promote.js';
 import type { Env } from '../env.js';
 
 export async function scheduled(event: ScheduledEvent, env: Env): Promise<void> {
@@ -31,6 +32,16 @@ export async function scheduled(event: ScheduledEvent, env: Env): Promise<void> 
       const r = await senderAbuseThresholdRun(env);
       // eslint-disable-next-line no-console
       console.log('sender-abuse-threshold cron:', `candidates=${r.candidates} fired=${r.fired}`);
+      return;
+    }
+    case '0 4 * * *': {
+      // W8 — DMARC policy auto-promotion. Daily.
+      const r = await dmarcPromoteRun(env);
+      // eslint-disable-next-line no-console
+      console.log(
+        'dmarc-promote cron:',
+        `candidates=${r.candidates} promoted=${r.promoted} paused=${r.paused} noop=${r.noOp}`,
+      );
       return;
     }
     default:
