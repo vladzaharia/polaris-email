@@ -12,6 +12,7 @@
   "dependencies": {
     "@polaris-email/ids": "workspace:*",
     "@polaris-email/mime": "workspace:*",
+    "@polaris-email/policy-engine": "workspace:*",
     "@polaris-email/schema": "workspace:*",
     "@polaris-email/suppressions": "workspace:*"
   },

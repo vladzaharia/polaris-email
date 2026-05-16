@@ -24,6 +24,7 @@
 import { ulid } from '@polaris-email/ids';
 import { MAX_MESSAGE_SIZE_VERIFIED } from '@polaris-email/mime';
 import { checkRecipientSuppression, checkSenderSuppression } from '@polaris-email/suppressions/d1';
+import { evaluateOutboundPolicy } from './lib/policy-dispatch.js';
 import type { Env, FanoutEvent, OutboundQueueMessage, SendEmailBinding } from './env.js';
 
 const MAX_DELIVERY_ATTEMPTS = 5; // matches the Workers Queues default; keep in sync with wrangler
@@ -67,7 +68,7 @@ async function loadRawMime(env: Env, key: string): Promise<Uint8Array | null> {
 async function setStatus(
   env: Env,
   id: string,
-  status: 'sending' | 'sent' | 'bounced' | 'failed',
+  status: 'sending' | 'sent' | 'bounced' | 'failed' | 'held',
   meta: { last_error?: string; bounce_metadata?: string } = {},
 ): Promise<void> {
   const nowIso = new Date().toISOString();
@@ -392,6 +393,57 @@ async function handleOne(env: Env, msg: OutboundQueueMessage, attempts: number):
   }
   const envelopeTo: string | string[] =
     survivingRecipients.length === 1 ? survivingRecipients[0]! : survivingRecipients;
+
+  // 0019 — Hybrid Policy Engine. Heuristics-only on outbound (no AI
+  // binding wired on services/out — uncertain band goes straight to
+  // 'hold'). Block + hold downgrade to pass_warn during the
+  // POLICY_ENGINE_OUTBOUND_FULL soak. Runs AFTER W1 so obviously-banned
+  // sender/recipient pairs are filtered cheaply before the engine runs.
+  const policyAction = await evaluateOutboundPolicy(env, msg, raw, domainId);
+  if (policyAction.kind === 'block') {
+    await setStatus(env, msg.messageId, 'failed', {
+      last_error: `policy_block:${policyAction.decision.total_score}`,
+      bounce_metadata: JSON.stringify({
+        policy_block: {
+          decision_id: policyAction.decision.decision_id,
+          score: policyAction.decision.total_score,
+          reasons: policyAction.decision.reasons,
+        },
+      }),
+    });
+    await fanout(env, {
+      event_id: ulid(),
+      event: 'message.bounced',
+      message_id: msg.messageId,
+      mailbox_id: msg.mailboxId,
+      domain_id: domainId,
+      created_at: Date.now(),
+      data: {
+        reason: 'policy_block',
+        decision_id: policyAction.decision.decision_id,
+        score: policyAction.decision.total_score,
+        top_reasons: policyAction.decision.reasons.slice(0, 5),
+      },
+    });
+    return;
+  }
+  if (policyAction.kind === 'hold') {
+    await setStatus(env, msg.messageId, 'held', {
+      last_error: `policy_hold:${policyAction.decision.total_score}`,
+      bounce_metadata: JSON.stringify({
+        policy_hold: {
+          decision_id: policyAction.decision.decision_id,
+          hold_id: policyAction.hold_id,
+          score: policyAction.decision.total_score,
+          reasons: policyAction.decision.reasons,
+        },
+      }),
+    });
+    // Note: no fanout event for hold yet — the moderation queue UI in
+    // P4 surfaces these. A `message.held` fanout event could be added
+    // later if callers want webhook notification on hold.
+    return;
+  }
 
   // Mark sending BEFORE the binding.send() call. Combined with the
   // idempotency check at the top of handleOne, this serves as the

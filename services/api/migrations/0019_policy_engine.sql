@@ -162,6 +162,7 @@ CREATE TABLE messages (
   sent_at                 TEXT,
   delivered_at            TEXT,
   failed_at               TEXT,
+  bounced_at              TEXT,
   bounce_metadata         TEXT,
   last_error              TEXT,
   auth_spf                TEXT,
@@ -180,7 +181,7 @@ INSERT INTO messages (
   body_bytes, attachments_total_bytes, idempotency_key, message_id_header,
   header_message_id, thread_id, send_attempt_id, received_at_bridge,
   received_at_api, queued_at, sending_at, sent_at, delivered_at, failed_at,
-  bounce_metadata, last_error, auth_spf, auth_dkim, auth_dmarc,
+  bounced_at, bounce_metadata, last_error, auth_spf, auth_dkim, auth_dmarc,
   auth_remote_ip, stream_type, policy_decision_id, created_at
 )
 SELECT
@@ -189,7 +190,7 @@ SELECT
   body_bytes, attachments_total_bytes, idempotency_key, message_id_header,
   header_message_id, thread_id, send_attempt_id, received_at_bridge,
   received_at_api, queued_at, sending_at, sent_at, delivered_at, failed_at,
-  bounce_metadata, last_error, auth_spf, auth_dkim, auth_dmarc,
+  bounced_at, bounce_metadata, last_error, auth_spf, auth_dkim, auth_dmarc,
   auth_remote_ip,
   -- Direction='in' on legacy rows gets stream_type='inbound'; everything
   -- else defaults to 'transactional' (which was the implicit pre-engine

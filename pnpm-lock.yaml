@@ -466,6 +466,9 @@ importers:
       '@polaris-email/mime':
         specifier: workspace:*
         version: link:../../packages/mime
+      '@polaris-email/policy-engine':
+        specifier: workspace:*
+        version: link:../../packages/policy-engine
       '@polaris-email/schema':
         specifier: workspace:*
         version: link:../../packages/schema
