@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p test/integration/tsconfig.json --noEmit",
     "build": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "lint": "oxlint .",
