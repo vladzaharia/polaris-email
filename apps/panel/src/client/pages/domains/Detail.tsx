@@ -30,6 +30,14 @@ interface DomainPayload {
   dkim_selector: string | null;
   inbound_enabled?: number;
   outbound_enabled?: number;
+  // Phase C — MTA-STS + TLS-RPT
+  mta_sts_mode?: 'none' | 'testing' | 'enforce';
+  mta_sts_policy_id?: string | null;
+  mta_sts_max_age?: number;
+  mta_sts_verified_at?: string | null;
+  tlsrpt_enabled?: number;
+  tlsrpt_rua?: string | null;
+  tlsrpt_verified_at?: string | null;
 }
 
 interface VerifyCheck {
@@ -53,6 +61,9 @@ export function DomainDetail() {
   const [confirmRotateDkim, setConfirmRotateDkim] = useState(false);
   const [confirmDisableInbound, setConfirmDisableInbound] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [confirmPromoteMtaSts, setConfirmPromoteMtaSts] = useState(false);
+  const [confirmDisableMtaSts, setConfirmDisableMtaSts] = useState(false);
+  const [confirmDisableTlsRpt, setConfirmDisableTlsRpt] = useState(false);
   const verify = useAdminMutation<VerifyResponse, undefined>(
     () => ({ path: `/api/admin/domains/${id}/verify`, method: 'POST' }),
     { invalidateKeys: [domainKeys.detail(id)], silent: true },
@@ -72,6 +83,26 @@ export function DomainDetail() {
   const remove = useAdminMutation<unknown, undefined>(
     () => ({ path: `/api/admin/domains/${id}`, method: 'DELETE' }),
     { invalidateKeys: [domainKeys.all], successMessage: 'Domain deleted.' },
+  );
+  const enableMtaSts = useAdminMutation<unknown, undefined>(
+    () => ({ path: `/api/admin/domains/${id}/mta-sts/enable`, method: 'POST' }),
+    { invalidateKeys: [domainKeys.detail(id)], successMessage: 'MTA-STS enabled (testing mode).' },
+  );
+  const promoteMtaSts = useAdminMutation<unknown, undefined>(
+    () => ({ path: `/api/admin/domains/${id}/mta-sts/promote`, method: 'POST' }),
+    { invalidateKeys: [domainKeys.detail(id)], successMessage: 'MTA-STS promoted to enforce.' },
+  );
+  const disableMtaSts = useAdminMutation<unknown, undefined>(
+    () => ({ path: `/api/admin/domains/${id}/mta-sts/disable`, method: 'POST' }),
+    { invalidateKeys: [domainKeys.detail(id)], successMessage: 'MTA-STS disabled.' },
+  );
+  const enableTlsRpt = useAdminMutation<unknown, undefined>(
+    () => ({ path: `/api/admin/domains/${id}/tls-rpt/enable`, method: 'POST' }),
+    { invalidateKeys: [domainKeys.detail(id)], successMessage: 'TLS-RPT enabled.' },
+  );
+  const disableTlsRpt = useAdminMutation<unknown, undefined>(
+    () => ({ path: `/api/admin/domains/${id}/tls-rpt/disable`, method: 'POST' }),
+    { invalidateKeys: [domainKeys.detail(id)], successMessage: 'TLS-RPT disabled.' },
   );
 
   const breadcrumbs = [{ label: 'Domains', to: '/domains' }, { label: q.data?.name ?? id }];
@@ -160,20 +191,32 @@ export function DomainDetail() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {lastVerify.checks.map((ch) => (
-                  <TableRow key={ch.name}>
-                    <TableCell className="font-mono text-xs">{ch.name}</TableCell>
-                    <TableCell>
-                      {ch.ok ? (
-                        <Badge variant="success">ok</Badge>
-                      ) : (
-                        <Badge variant="destructive">fail</Badge>
-                      )}
-                    </TableCell>
-                    <TableCell className="font-mono text-xs">{ch.expected}</TableCell>
-                    <TableCell className="font-mono text-xs">{ch.actual}</TableCell>
-                  </TableRow>
-                ))}
+                {lastVerify.checks.map((ch) => {
+                  const isOperatorAction = ch.name.includes(':operator-action:');
+                  return (
+                    <TableRow
+                      key={ch.name}
+                      className={
+                        isOperatorAction ? 'bg-yellow-50 dark:bg-yellow-900/30' : undefined
+                      }
+                    >
+                      <TableCell className="font-mono text-xs">{ch.name}</TableCell>
+                      <TableCell>
+                        {ch.ok ? (
+                          <Badge variant="success">ok</Badge>
+                        ) : (
+                          <Badge variant="destructive">
+                            {isOperatorAction ? 'action required' : 'fail'}
+                          </Badge>
+                        )}
+                      </TableCell>
+                      <TableCell className="font-mono text-xs">{ch.expected}</TableCell>
+                      <TableCell className={isOperatorAction ? 'text-xs' : 'font-mono text-xs'}>
+                        {ch.actual}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           ) : (
@@ -181,6 +224,110 @@ export function DomainDetail() {
               Run Verify DNS to surface MX / SPF / DKIM / DMARC expectations.
             </p>
           )}
+        </section>
+
+        <section>
+          <h2 className="mb-2 text-xl font-medium">Inbound TLS hardening</h2>
+          <p className="mb-3 text-sm text-[var(--color-muted-foreground)]">
+            MTA-STS (RFC 8461) and TLS-RPT (RFC 8460) records harden inbound TLS for this domain.
+            Unlike DKIM/SPF/DMARC which Cloudflare auto-publishes, MTA-STS records require explicit
+            operator action — use the buttons below to publish, promote, or remove them.
+          </p>
+          <div className="mb-3 grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 text-sm">
+            <span className="font-medium">MTA-STS mode</span>
+            <span>
+              <Badge
+                variant={
+                  d.mta_sts_mode === 'enforce'
+                    ? 'success'
+                    : d.mta_sts_mode === 'testing'
+                      ? 'secondary'
+                      : 'outline'
+                }
+              >
+                {d.mta_sts_mode ?? 'none'}
+              </Badge>
+            </span>
+            <span className="font-medium">Policy id</span>
+            <span className="font-mono text-xs">{d.mta_sts_policy_id ?? '—'}</span>
+            <span className="font-medium">Max age</span>
+            <span>{d.mta_sts_max_age != null ? `${d.mta_sts_max_age}s` : '—'}</span>
+            <span className="font-medium">MTA-STS verified</span>
+            <span>{d.mta_sts_verified_at ?? 'never'}</span>
+            <span className="font-medium">TLS-RPT enabled</span>
+            <span>{d.tlsrpt_enabled === 1 ? 'yes' : 'no'}</span>
+            <span className="font-medium">TLS-RPT rua</span>
+            <span className="font-mono text-xs">{d.tlsrpt_rua ?? '—'}</span>
+            <span className="font-medium">TLS-RPT verified</span>
+            <span>{d.tlsrpt_verified_at ?? 'never'}</span>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {(!d.mta_sts_mode || d.mta_sts_mode === 'none') && (
+              <Button
+                size="sm"
+                onClick={() => enableMtaSts.mutate(undefined)}
+                disabled={enableMtaSts.isPending}
+              >
+                Enable MTA-STS (testing)
+              </Button>
+            )}
+            {d.mta_sts_mode === 'testing' && (
+              <Button
+                size="sm"
+                onClick={() => enableMtaSts.mutate(undefined)}
+                disabled={enableMtaSts.isPending}
+              >
+                Re-publish MTA-STS
+              </Button>
+            )}
+            {d.mta_sts_mode === 'testing' && (
+              <Button
+                size="sm"
+                onClick={() => setConfirmPromoteMtaSts(true)}
+                disabled={promoteMtaSts.isPending}
+              >
+                Promote to enforce
+              </Button>
+            )}
+            {d.mta_sts_mode === 'enforce' && (
+              <Button
+                size="sm"
+                onClick={() => enableMtaSts.mutate(undefined)}
+                disabled={enableMtaSts.isPending}
+              >
+                Re-publish MTA-STS
+              </Button>
+            )}
+            {d.mta_sts_mode && d.mta_sts_mode !== 'none' && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setConfirmDisableMtaSts(true)}
+                disabled={disableMtaSts.isPending}
+              >
+                Disable MTA-STS
+              </Button>
+            )}
+            {d.tlsrpt_enabled !== 1 && (
+              <Button
+                size="sm"
+                onClick={() => enableTlsRpt.mutate(undefined)}
+                disabled={enableTlsRpt.isPending}
+              >
+                Enable TLS-RPT
+              </Button>
+            )}
+            {d.tlsrpt_enabled === 1 && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setConfirmDisableTlsRpt(true)}
+                disabled={disableTlsRpt.isPending}
+              >
+                Disable TLS-RPT
+              </Button>
+            )}
+          </div>
         </section>
       </div>
 
@@ -240,6 +387,64 @@ export function DomainDetail() {
           setConfirmDelete(false);
         }}
         isPending={remove.isPending}
+      />
+
+      <DestructiveActionDialog
+        open={confirmPromoteMtaSts}
+        onOpenChange={setConfirmPromoteMtaSts}
+        action="Promote MTA-STS to enforce"
+        name={d.name}
+        blastRadius={[
+          'Sending MTAs that fail TLS to *.mx.cloudflare.net will REJECT mail',
+          'Previously cached `testing` policies will refresh on their next max_age expiry',
+          'A new policy id is minted; senders re-fetch immediately',
+        ]}
+        reversible
+        confirmLabel="Promote to enforce"
+        onConfirm={async () => {
+          await promoteMtaSts.mutateAsync(undefined);
+          setConfirmPromoteMtaSts(false);
+        }}
+        isPending={promoteMtaSts.isPending}
+      />
+
+      <DestructiveActionDialog
+        open={confirmDisableMtaSts}
+        onOpenChange={setConfirmDisableMtaSts}
+        action="Disable MTA-STS"
+        name={d.name}
+        blastRadius={[
+          'DNS TXT _mta-sts.{name} is deleted',
+          'Worker custom domain mta-sts.{name} is detached',
+          'Senders with cached policies will follow them until max_age expires',
+          'You can re-enable later via Enable MTA-STS',
+        ]}
+        reversible
+        confirmLabel="Disable MTA-STS"
+        onConfirm={async () => {
+          await disableMtaSts.mutateAsync(undefined);
+          setConfirmDisableMtaSts(false);
+        }}
+        isPending={disableMtaSts.isPending}
+      />
+
+      <DestructiveActionDialog
+        open={confirmDisableTlsRpt}
+        onOpenChange={setConfirmDisableTlsRpt}
+        action="Disable TLS-RPT"
+        name={d.name}
+        blastRadius={[
+          'DNS TXT _smtp._tls.{name} is deleted',
+          'Senders stop sending TLS failure reports',
+          'You can re-enable later via Enable TLS-RPT',
+        ]}
+        reversible
+        confirmLabel="Disable TLS-RPT"
+        onConfirm={async () => {
+          await disableTlsRpt.mutateAsync(undefined);
+          setConfirmDisableTlsRpt(false);
+        }}
+        isPending={disableTlsRpt.isPending}
       />
     </PageCard>
   );
