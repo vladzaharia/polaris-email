@@ -8,6 +8,7 @@ import {
   MAX_CUSTOM_HEADERS_PAYLOAD,
   MAX_HEADER_NAME_LENGTH,
   MAX_HEADER_VALUE_LENGTH,
+  MAX_MESSAGE_SIZE_VERIFIED,
   MAX_NON_X_CUSTOM_HEADERS,
   MAX_RECIPIENTS,
   MAX_SUBJECT_LENGTH,
@@ -129,17 +130,22 @@ export const FORBIDDEN_HEADERS: ReadonlySet<string> = new Set([
 
 // ---------- custom-header validation ----------
 
-export type ValidateHeaderResult =
-  | { ok: true }
-  | {
-      ok: false;
-      reason:
-        | 'platform_controlled'
-        | 'use_api_field'
-        | 'name_too_long'
-        | 'invalid_x_format'
-        | 'not_whitelisted';
-    };
+/**
+ * The set of `header_not_allowed` rejection reasons. Extracted as a const
+ * tuple so consumers can iterate, switch exhaustively, and so the typed
+ * `header_not_allowed:<reason>` template literal in SendRequest.superRefine
+ * is checked against the same canonical set (rather than string-glued).
+ */
+export const HEADER_REASON_CODES = [
+  'platform_controlled',
+  'use_api_field',
+  'name_too_long',
+  'invalid_x_format',
+  'not_whitelisted',
+] as const;
+export type HeaderReasonCode = (typeof HEADER_REASON_CODES)[number];
+
+export type ValidateHeaderResult = { ok: true } | { ok: false; reason: HeaderReasonCode };
 
 /**
  * Validate a custom header NAME against CF Email Service rules. Does NOT
@@ -729,6 +735,36 @@ export const SendRequest = z
           message: `custom_headers_too_large:${payloadBytes}`,
         });
       }
+    }
+
+    // (6) Body-size upper-bound pre-check. composeFromJson allocates a
+    // single ArrayBuffer the size of the canonical MIME; we want to reject
+    // an obvious overrun at the zod boundary before that allocation so a
+    // hostile authenticated caller can't force a 100MB+ heap spike. This
+    // is a CONSERVATIVE upper bound — base64 attachment content is the
+    // wire-size of the encoded bytes (1.33x the raw payload), so summing
+    // raw text/html + base64 content lengths gives a lower bound on what
+    // the canonical MIME will be. If even that lower bound exceeds the
+    // verified-domain cap, no MIME shape can fit. The precise check on
+    // the canonical-serialized bytes still lives in services/api at
+    // routes/messages.ts:452-464 as the final authoritative gate.
+    let bodyEstimate = 0;
+    if (req.text) bodyEstimate += new TextEncoder().encode(req.text).byteLength;
+    if (req.html) bodyEstimate += new TextEncoder().encode(req.html).byteLength;
+    if (req.attachments) {
+      for (const a of req.attachments) {
+        // content_base64 is the WIRE size of the encoded attachment — the
+        // canonical MIME will carry these bytes verbatim in a base64-
+        // encoded part. Length-as-bytes is correct because base64 is ASCII.
+        bodyEstimate += a.content_base64.length;
+      }
+    }
+    if (bodyEstimate > MAX_MESSAGE_SIZE_VERIFIED) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [],
+        message: `message_too_large:${bodyEstimate} exceeds ${MAX_MESSAGE_SIZE_VERIFIED} (pre-compose estimate)`,
+      });
     }
   });
 export type SendRequest = z.infer<typeof SendRequest>;

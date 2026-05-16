@@ -244,7 +244,12 @@ describe('Phase A — CF compliance', () => {
     });
 
     it('rejects > MAX_NON_X_CUSTOM_HEADERS non-X headers with too_many_custom_headers', () => {
-      // 20 whitelisted is allowed; the 21st non-X must trip the cap.
+      // The CF whitelist has exactly MAX_NON_X_CUSTOM_HEADERS (20) entries,
+      // so a 21st non-X header is reachable only by adding a non-whitelisted
+      // name. That intentionally trips BOTH `header_not_allowed` (the 21st
+      // name) AND `too_many_custom_headers` (the count cap). superRefine
+      // emits all matching issues, so we assert both codes appear and
+      // neither error masks the other — this is the intended contract.
       const whitelisted = [
         'In-Reply-To',
         'References',
@@ -269,13 +274,7 @@ describe('Phase A — CF compliance', () => {
       ];
       const headers: Record<string, string> = {};
       for (const n of whitelisted) headers[n] = 'v';
-      // One extra non-X header would push to 21; but we need it to pass
-      // header_not_allowed first. Use another whitelisted name with a
-      // different case — same key collision would dedupe; instead trick
-      // with capitalization variants is impossible. Build the 21st as a
-      // non-whitelisted name and accept that earlier issue would fire too;
-      // since superRefine emits multiple issues, look up the count code.
-      headers['Resent-Date'] = 'v'; // 21st non-X header
+      headers['Resent-Date'] = 'v'; // 21st non-X header — non-whitelisted by design.
       const result = SendRequest.safeParse({
         from: baseFrom,
         to: baseTo,
@@ -284,6 +283,10 @@ describe('Phase A — CF compliance', () => {
       expect(result.success).toBe(false);
       const codes = result.success ? [] : result.error.issues.map((i) => i.message.split(':')[0]);
       expect(codes).toContain('too_many_custom_headers');
+      // The dual-error expectation is the explicit contract — if a future
+      // refactor makes header_not_allowed short-circuit before counting,
+      // this assertion forces a deliberate decision rather than silent drift.
+      expect(codes).toContain('header_not_allowed');
     });
 
     it('rejects > MAX_CUSTOM_HEADERS_PAYLOAD bytes with custom_headers_too_large', () => {
@@ -300,6 +303,41 @@ describe('Phase A — CF compliance', () => {
       expect(result.success).toBe(false);
       const codes = result.success ? [] : result.error.issues.map((i) => i.message.split(':')[0]);
       expect(codes).toContain('custom_headers_too_large');
+    });
+
+    it('rejects a 26 MiB text body with message_too_large (pre-compose estimate)', () => {
+      // Phase A.I3 — defense-in-depth: the zod boundary rejects an obvious
+      // overrun before composeFromJson allocates a 26 MiB ArrayBuffer.
+      // The route layer's post-compose check (services/api/src/routes/
+      // messages.ts) remains the authoritative gate; this one trades
+      // precision for cheapness.
+      const result = SendRequest.safeParse({
+        from: baseFrom,
+        to: baseTo,
+        text: 'a'.repeat(26 * 1024 * 1024),
+      });
+      expect(result.success).toBe(false);
+      const codes = result.success ? [] : result.error.issues.map((i) => i.message.split(':')[0]);
+      expect(codes).toContain('message_too_large');
+    });
+
+    it('rejects a 26 MiB base64 attachment with message_too_large (pre-compose estimate)', () => {
+      const result = SendRequest.safeParse({
+        from: baseFrom,
+        to: baseTo,
+        attachments: [
+          {
+            filename: 'big.bin',
+            content_type: 'application/octet-stream',
+            // Wire length, not raw — base64 is ASCII so length == byte count
+            // and the canonical MIME carries these bytes verbatim.
+            content_base64: 'A'.repeat(26 * 1024 * 1024),
+          },
+        ],
+      });
+      expect(result.success).toBe(false);
+      const codes = result.success ? [] : result.error.issues.map((i) => i.message.split(':')[0]);
+      expect(codes).toContain('message_too_large');
     });
 
     it('accepts 50 recipients + 998-char subject + 20 whitelisted headers', () => {

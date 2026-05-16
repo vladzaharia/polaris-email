@@ -192,7 +192,18 @@ export function DomainDetail() {
               </TableHeader>
               <TableBody>
                 {lastVerify.checks.map((ch) => {
-                  const isOperatorAction = ch.name.includes(':operator-action:');
+                  const isMtaStsAction = ch.name.startsWith('mta-sts:operator-action:');
+                  const isTlsRptAction = ch.name.startsWith('tls-rpt:operator-action:');
+                  const isOperatorAction = isMtaStsAction || isTlsRptAction;
+                  const inlineFix = isMtaStsAction
+                    ? { label: 'Re-publish MTA-STS', run: () => enableMtaSts.mutate(undefined), pending: enableMtaSts.isPending }
+                    : isTlsRptAction
+                      ? {
+                          label: 'Re-publish TLS-RPT',
+                          run: () => enableTlsRpt.mutate(undefined),
+                          pending: enableTlsRpt.isPending,
+                        }
+                      : null;
                   return (
                     <TableRow
                       key={ch.name}
@@ -212,7 +223,23 @@ export function DomainDetail() {
                       </TableCell>
                       <TableCell className="font-mono text-xs">{ch.expected}</TableCell>
                       <TableCell className={isOperatorAction ? 'text-xs' : 'font-mono text-xs'}>
-                        {ch.actual}
+                        <div className="flex flex-col gap-2">
+                          <span>{ch.actual}</span>
+                          {inlineFix && (
+                            <Button
+                              size="sm"
+                              onClick={async () => {
+                                inlineFix.run();
+                                // Re-verify after the action lands so the checklist refreshes.
+                                const r = await verify.mutateAsync(undefined);
+                                setLastVerify(r);
+                              }}
+                              disabled={inlineFix.pending}
+                            >
+                              {inlineFix.pending ? 'Working…' : inlineFix.label}
+                            </Button>
+                          )}
+                        </div>
                       </TableCell>
                     </TableRow>
                   );

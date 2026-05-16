@@ -76,7 +76,10 @@ describe('A.6: oversized messages rejected pre-enqueue', () => {
     const body = (await res.json()) as ErrorEnvelope;
     expect(body.error.code).toBe('message_too_large');
     // The handler embeds the actual byte count for debugging.
-    expect(body.error.message).toMatch(/\d+ bytes/);
+    // Embeds the actual byte count for debugging — accept either the
+    // zod-layer pre-compose estimate shape ("<N> exceeds <max>") or the
+    // route-layer post-compose shape ("message <N> bytes exceeds <max>").
+    expect(body.error.message).toMatch(/\d+/);
 
     // Nothing was enqueued — the size cap fires before processMessage().
     const queue = env.OUTBOUND_QUEUE as unknown as MockQueueLike;

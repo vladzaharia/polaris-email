@@ -59,7 +59,7 @@ const BRIDGE_DEFAULT_RATE_PER_MIN = 600;
 // entry in ERROR_HTTP / ERROR_RETRYABLE (see errors.ts). Anything outside this
 // set falls back to bad_request so unknown free-form messages never leak as
 // novel error codes to callers.
-const CF_TYPED_CODES = new Set<ErrorCode>([
+export const CF_TYPED_CODES = new Set<ErrorCode>([
   'too_many_recipients',
   'subject_too_long',
   'message_too_large',
