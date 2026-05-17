@@ -1,0 +1,10 @@
+{
+  "label": "Deployment",
+  "position": 3,
+  "link": {
+    "type": "generated-index",
+    "slug": "/operators/deployment",
+    "title": "Deployment",
+    "description": "Prerequisites, the one-time cold-start, and the moving parts that sit between Cloudflare and the public custom domains. The cold-start runbook target is ≤15 minutes from a clean clone to a green smoke."
+  }
+}
