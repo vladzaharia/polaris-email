@@ -1,8 +1,11 @@
 {
   "label": "Get started",
   "position": 1,
+  "collapsed": false,
   "link": {
     "type": "generated-index",
-    "description": "Onboard a domain and send your first message."
+    "slug": "/get-started",
+    "title": "Get started with polaris-email",
+    "description": "Onboard a domain, send your first message, and read your first webhook delivery. Aimed at developers integrating with the public API — operators wanting to stand up a new install should jump to the Operators section."
   }
 }

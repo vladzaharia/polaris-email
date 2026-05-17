@@ -1,30 +1,323 @@
-/**
- * Thin override on top of the Docusaurus classic theme.
- *
- * PR 11 keeps the brand palette deliberately minimal — neutral slate accents
- * that read well in both light and dark mode. Real brand colors land with
- * the brand-assets follow-up.
- */
+/* =============================================================================
+   polaris-email — Docusaurus brand stylesheet
+   -----------------------------------------------------------------------------
+   Ported from the Polaris brand system in /Users/vlad/Repos/support-portal
+   (apps/portal/src/styles/theme.css). Same surface family — deep cosmos-indigo
+   at hue 275 — so the polaris-* sites read as a coherent product line.
+
+   Accent choice (the one thing intentionally NOT shared with support-portal):
+     · support-portal's accent  ----  hue 195   electric cyan-teal
+     · ExpressCharge's accent   ----  hue 200   electric volt
+     · polaris-email's accent   ----  hue 315   aurora violet (this file)
+
+   315° sits ~120° away from both sibling palettes on the color wheel, so the
+   three sites are immediately tell-apart at a glance without leaving the
+   polar-aurora visual story. The violet pairs cleanly with cosmos-indigo
+   surfaces — same hue family — and reads warmer than the cyan, which fits
+   "email" (communication, human) better than the cool blue support side.
+
+   To re-skin this for another polaris-* sibling: change `--polaris-accent-h`
+   below and everything downstream — buttons, links, sidebar highlights,
+   focus rings, code-line background — re-tints. The rest of the structure
+   stays put. That's the whole point of the OKLch token system: hue is a
+   single dial.
+============================================================================= */
 
 :root {
-  --ifm-color-primary: #5b8def;
-  --ifm-color-primary-dark: #3a72ea;
-  --ifm-color-primary-darker: #2a66e8;
-  --ifm-color-primary-darkest: #1a55c8;
-  --ifm-color-primary-light: #7ca5f3;
-  --ifm-color-primary-lighter: #8eb1f4;
-  --ifm-color-primary-lightest: #b7cef9;
-  --ifm-code-font-size: 92%;
-  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.08);
+  /* ----- Brand hue dials --------------------------------------------- *
+   * The accent is the customisation knob; the surface hue is shared with
+   * the rest of the polaris-* family and should not be retuned here.
+   */
+  --polaris-surface-h: 275;
+  --polaris-accent-h: 315;
+  --polaris-accent-c: 0.2;
+
+  /* ----- Accent ramp (light mode) ------------------------------------ *
+   * Mapped to Docusaurus / Infima's --ifm-color-primary-* scale. Infima
+   * expects 7 steps from darkest to lightest. OKLch keeps perceptual
+   * luminance uniform across the ramp.
+   */
+  --ifm-color-primary: oklch(0.58 var(--polaris-accent-c) var(--polaris-accent-h));
+  --ifm-color-primary-dark: oklch(0.52 var(--polaris-accent-c) var(--polaris-accent-h));
+  --ifm-color-primary-darker: oklch(0.49 var(--polaris-accent-c) var(--polaris-accent-h));
+  --ifm-color-primary-darkest: oklch(0.4 var(--polaris-accent-c) var(--polaris-accent-h));
+  --ifm-color-primary-light: oklch(0.66 var(--polaris-accent-c) var(--polaris-accent-h));
+  --ifm-color-primary-lighter: oklch(
+    0.72 calc(var(--polaris-accent-c) * 0.85) var(--polaris-accent-h)
+  );
+  --ifm-color-primary-lightest: oklch(
+    0.86 calc(var(--polaris-accent-c) * 0.55) var(--polaris-accent-h)
+  );
+
+  /* ----- Semantic ---------------------------------------------------- */
+  --polaris-success: oklch(0.62 0.18 155);
+  --polaris-warning: oklch(0.72 0.16 80);
+  --polaris-danger: oklch(0.58 0.22 22);
+
+  /* ----- Typography -------------------------------------------------- *
+   * Match the support-portal stack. System fallbacks keep the site usable
+   * even when the variable font hasn't loaded yet.
+   */
+  --ifm-font-family-base:
+    'Inter Variable', 'Inter', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+    'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --ifm-font-family-monospace:
+    'JetBrains Mono Variable', 'JetBrains Mono', ui-monospace, SFMono-Regular, 'SF Mono', Menlo,
+    Consolas, monospace;
+
+  --ifm-font-size-base: 16px;
+  --ifm-line-height-base: 1.6;
+  --ifm-h1-font-size: 2.25rem;
+  --ifm-h2-font-size: 1.75rem;
+  --ifm-h3-font-size: 1.375rem;
+  --ifm-h4-font-size: 1.125rem;
+  --ifm-heading-line-height: 1.2;
+  --ifm-heading-font-weight: 600;
+  --ifm-spacing-horizontal: 1rem;
+
+  /* ----- Code ------------------------------------------------------- */
+  --ifm-code-font-size: 0.875rem;
+  --ifm-code-border-radius: 4px;
+  --ifm-code-padding-horizontal: 0.35rem;
+  --ifm-code-padding-vertical: 0.15rem;
+  --docusaurus-highlighted-code-line-bg: color-mix(
+    in oklab,
+    var(--ifm-color-primary) 12%,
+    transparent
+  );
+
+  /* ----- Radius ----------------------------------------------------- */
+  --ifm-global-radius: 8px;
+  --ifm-button-border-radius: 8px;
+  --ifm-card-border-radius: 12px;
+  --ifm-alert-border-radius: 10px;
+
+  /* ----- Motion ----------------------------------------------------- */
+  --ifm-transition-fast: 120ms;
+  --ifm-transition-slow: 320ms;
+  --ifm-transition-timing-default: cubic-bezier(0.2, 0, 0, 1);
 }
 
+/* =============================================================================
+   Dark mode (the polaris- family is dark-by-default — same as support-portal).
+   Surfaces use a low-chroma indigo so neutrals don't read as flat grey under
+   the saturated accent.
+============================================================================= */
 [data-theme='dark'] {
-  --ifm-color-primary: #8eb1f4;
-  --ifm-color-primary-dark: #6f99f0;
-  --ifm-color-primary-darker: #5f8def;
-  --ifm-color-primary-darkest: #3a72ea;
-  --ifm-color-primary-light: #adc5f7;
-  --ifm-color-primary-lighter: #bdd1f8;
-  --ifm-color-primary-lightest: #dde7fc;
-  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.3);
+  /* Accent slightly lifted vs. light mode so it still pops against the deep
+     cosmos-indigo background. */
+  --ifm-color-primary: oklch(0.78 var(--polaris-accent-c) var(--polaris-accent-h));
+  --ifm-color-primary-dark: oklch(0.7 var(--polaris-accent-c) var(--polaris-accent-h));
+  --ifm-color-primary-darker: oklch(0.64 var(--polaris-accent-c) var(--polaris-accent-h));
+  --ifm-color-primary-darkest: oklch(0.52 var(--polaris-accent-c) var(--polaris-accent-h));
+  --ifm-color-primary-light: oklch(0.84 var(--polaris-accent-c) var(--polaris-accent-h));
+  --ifm-color-primary-lighter: oklch(
+    0.88 calc(var(--polaris-accent-c) * 0.85) var(--polaris-accent-h)
+  );
+  --ifm-color-primary-lightest: oklch(
+    0.93 calc(var(--polaris-accent-c) * 0.55) var(--polaris-accent-h)
+  );
+
+  /* Surfaces — cosmos-indigo, ported from theme.css `--color-bg` family. */
+  --ifm-background-color: oklch(0.13 0.02 var(--polaris-surface-h));
+  --ifm-background-surface-color: oklch(0.18 0.025 var(--polaris-surface-h));
+  --ifm-color-content: oklch(0.97 0.005 280);
+  --ifm-color-content-secondary: oklch(0.74 0.015 var(--polaris-surface-h));
+  --ifm-color-emphasis-0: oklch(0.13 0.02 var(--polaris-surface-h));
+  --ifm-color-emphasis-100: oklch(0.18 0.025 var(--polaris-surface-h));
+  --ifm-color-emphasis-200: oklch(0.23 0.03 var(--polaris-surface-h));
+  --ifm-color-emphasis-300: oklch(0.28 0.025 var(--polaris-surface-h));
+  --ifm-color-emphasis-400: oklch(0.4 0.025 var(--polaris-surface-h));
+  --ifm-color-emphasis-500: oklch(0.52 0.02 var(--polaris-surface-h));
+  --ifm-color-emphasis-600: oklch(0.62 0.02 var(--polaris-surface-h));
+  --ifm-color-emphasis-700: oklch(0.74 0.015 var(--polaris-surface-h));
+  --ifm-color-emphasis-800: oklch(0.86 0.01 var(--polaris-surface-h));
+  --ifm-color-emphasis-900: oklch(0.97 0.005 280);
+  --ifm-color-emphasis-1000: oklch(1 0 0);
+
+  --ifm-toc-border-color: oklch(0.23 0.03 var(--polaris-surface-h));
+  --ifm-hr-border-color: oklch(0.23 0.03 var(--polaris-surface-h));
+  --ifm-navbar-background-color: oklch(0.16 0.025 var(--polaris-surface-h));
+  --ifm-footer-background-color: oklch(0.11 0.02 var(--polaris-surface-h));
+  --ifm-menu-color-background-active: color-mix(
+    in oklab,
+    var(--ifm-color-primary) 14%,
+    transparent
+  );
+  --ifm-menu-color-background-hover: color-mix(in oklab, var(--ifm-color-primary) 8%, transparent);
+  --ifm-code-background: oklch(0.22 0.025 var(--polaris-surface-h));
+
+  --docusaurus-highlighted-code-line-bg: color-mix(
+    in oklab,
+    var(--ifm-color-primary) 18%,
+    transparent
+  );
+}
+
+/* =============================================================================
+   Global base — ported selection / focus-ring / smoothing from theme.css.
+============================================================================= */
+
+html {
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+::selection {
+  background: color-mix(in oklab, var(--ifm-color-primary) 35%, transparent);
+  color: var(--ifm-color-content);
+}
+
+:focus-visible {
+  outline: 2px solid var(--ifm-color-primary);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* Honor prefers-reduced-motion — same guard as theme.css. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* =============================================================================
+   Ambient cosmic-tint backdrop in dark mode — a barely-perceptible radial
+   gradient sourced from the brand accent. Direct port of theme.css's
+   `body::before`, scoped to dark mode and to the Docusaurus main wrapper so
+   it doesn't fight the navbar.
+============================================================================= */
+[data-theme='dark'] .main-wrapper {
+  position: relative;
+}
+
+[data-theme='dark'] .main-wrapper::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(
+      ellipse 80% 60% at 50% 0%,
+      color-mix(in oklab, var(--ifm-color-primary) 5%, transparent),
+      transparent 60%
+    ),
+    radial-gradient(
+      ellipse 70% 50% at 100% 100%,
+      color-mix(in oklab, oklch(0.65 0.2 290) 4%, transparent),
+      transparent 60%
+    );
+}
+
+/* =============================================================================
+   Component polish — small touch-ups that elevate the Docusaurus default
+   chrome to feel like the support-portal sibling. Nothing here changes
+   structure; it's all visual smoothing.
+============================================================================= */
+
+/* Navbar — soft inset hairline below, matches theme.css's `--ring-inset-1`. */
+.navbar {
+  box-shadow: none;
+  border-bottom: 1px solid var(--ifm-toc-border-color);
+  backdrop-filter: saturate(140%) blur(8px);
+}
+
+[data-theme='dark'] .navbar {
+  background-color: color-mix(in oklab, var(--ifm-navbar-background-color) 85%, transparent);
+}
+
+/* Sidebar — quiet, with a subtle accent rail on the active item. */
+.menu__link--active:not(.menu__link--sublist) {
+  font-weight: 600;
+}
+
+.menu__link--active {
+  position: relative;
+}
+
+.menu__link--active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 6px;
+  bottom: 6px;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--ifm-color-primary);
+}
+
+/* Cards on generated-index pages — slight elevation in dark mode. */
+.card {
+  border: 1px solid var(--ifm-toc-border-color);
+  background-color: var(--ifm-background-surface-color);
+  transition:
+    transform var(--ifm-transition-fast) var(--ifm-transition-timing-default),
+    border-color var(--ifm-transition-fast) var(--ifm-transition-timing-default);
+}
+
+.card:hover {
+  transform: translateY(-1px);
+  border-color: color-mix(in oklab, var(--ifm-color-primary) 30%, transparent);
+}
+
+/* Buttons — primary picks up the accent ramp; the focus ring stays tight. */
+.button--primary {
+  --ifm-button-background-color: var(--ifm-color-primary);
+  --ifm-button-border-color: var(--ifm-color-primary);
+  font-weight: 600;
+  letter-spacing: -0.005em;
+}
+
+.button--primary:hover {
+  --ifm-button-background-color: var(--ifm-color-primary-light);
+  --ifm-button-border-color: var(--ifm-color-primary-light);
+}
+
+/* Inline code — subtle wash over surface-2, no harsh boxes. */
+code {
+  background-color: var(--ifm-code-background, oklch(0.94 0.01 var(--polaris-surface-h)));
+  border: 1px solid color-mix(in oklab, var(--ifm-color-emphasis-300) 60%, transparent);
+}
+
+/* Code-block titles — inherit the brand surface, drop the harsh divider. */
+.theme-code-block-title {
+  background-color: var(--ifm-color-emphasis-200);
+  border-bottom: 1px solid var(--ifm-toc-border-color);
+  font-family: var(--ifm-font-family-monospace);
+  font-size: 0.8125rem;
+}
+
+/* Tables — quieter borders, more breathing room. */
+table {
+  display: table;
+  width: 100%;
+}
+
+table th {
+  background-color: var(--ifm-color-emphasis-100);
+  font-weight: 600;
+}
+
+/* Admonitions — keep the spec's left bar but soften the fill. */
+.admonition {
+  border-left-width: 3px;
+}
+
+/* Pagefind injected UI styling — match the navbar height and accent. The
+   actual mount point lives in the swizzled SearchBar component. */
+.pagefind-ui {
+  --pagefind-ui-primary: var(--ifm-color-primary);
+  --pagefind-ui-text: var(--ifm-color-content);
+  --pagefind-ui-background: var(--ifm-background-surface-color);
+  --pagefind-ui-border: var(--ifm-toc-border-color);
+  --pagefind-ui-tag: var(--ifm-color-emphasis-200);
+  --pagefind-ui-border-width: 1px;
+  --pagefind-ui-border-radius: var(--ifm-global-radius);
+  --pagefind-ui-font: var(--ifm-font-family-base);
 }

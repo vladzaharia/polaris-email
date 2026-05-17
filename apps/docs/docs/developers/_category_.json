@@ -3,6 +3,8 @@
   "position": 2,
   "link": {
     "type": "generated-index",
-    "description": "SDKs, REST + webhook contract, HMAC signing, code samples."
+    "slug": "/developers",
+    "title": "Developer documentation",
+    "description": "SDKs (Node, Go), the REST + webhook contract, the unified Message model, HMAC signing, and end-to-end code samples for outbound submission and inbound webhook handling."
   }
 }

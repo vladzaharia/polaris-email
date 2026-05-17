@@ -4,8 +4,11 @@
   "private": true,
   "scripts": {
     "docs:start": "docusaurus start",
+    "docs:gen-api": "docusaurus gen-api-docs all",
+    "docs:clean-api": "docusaurus clean-api-docs all",
     "docs:build": "docusaurus build",
-    "build:client": "pnpm run docs:build",
+    "build:client": "pnpm run docs:gen-api && pnpm run docs:build",
+    "postbuild:client": "pagefind --site build --output-subdir pagefind",
     "build:server": "tsc -p tsconfig.server.json --noEmit",
     "build": "pnpm run build:client && pnpm run build:server",
     "typecheck": "tsc -p tsconfig.server.json --noEmit && tsc -p tsconfig.json --noEmit",
@@ -16,10 +19,16 @@
   "dependencies": {
     "@docusaurus/core": "^3.10.1",
     "@docusaurus/preset-classic": "^3.10.1",
+    "@docusaurus/theme-common": "^3.10.1",
+    "clsx": "^2.1.1",
+    "docusaurus-plugin-openapi-docs": "^5.0.2",
+    "docusaurus-plugin-sass": "^0.2.6",
+    "docusaurus-theme-openapi-docs": "^5.0.2",
     "hono": "^4.5.0",
     "prism-react-renderer": "^2.4.0",
     "react": "^18.3.0",
-    "react-dom": "^18.3.0"
+    "react-dom": "^18.3.0",
+    "sass": "^1.99.0"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260511.1",
@@ -30,6 +39,7 @@
     "@types/react": "^18.3.0",
     "@types/react-dom": "^18.3.0",
     "oxlint": "^1.64.0",
+    "pagefind": "^1.5.2",
     "typescript": "^5.5.0",
     "wrangler": "^4.0.0"
   },
