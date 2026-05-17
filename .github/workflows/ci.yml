@@ -157,3 +157,29 @@ jobs:
       - run: pnpm --filter @polaris-email/docs run build:client
       - name: link-check
         run: pnpm dlx lychee --no-progress --exclude-mail 'apps/docs/build/**/*.html'
+
+  parity:
+    # Diffs the legacy bin/preflight.sh against the new Go port
+    # (`polaris-email setup infra preflight`). Both must agree on
+    # pass/warn/fail; divergence breaks the build.
+    #
+    # `continue-on-error: true` for the first weeks while we shake out
+    # edge cases. Flip to required once the job is green for ≥2 weeks
+    # of main commits.
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache-dependency-path: apps/polaris-cli/go.sum
+      - uses: pnpm/action-setup@v4
+        with: { version: 9 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - working-directory: apps/polaris-cli
+        run: make build
+      - name: parity diff
+        run: make parity

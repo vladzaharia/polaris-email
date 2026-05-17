@@ -1,0 +1,193 @@
+// Package config is the typed Go port of .env.deploy and bin/configure.sh.
+//
+// The file on disk stays shell-sourceable (KEY="VALUE" lines, # comments)
+// so the existing bin/* scripts can continue to source it. The Go side
+// just gives us a typed handle: parse + validate + atomic save + huh
+// prompt loop, all under unit test.
+//
+// Adding a new field: add it to the [Config] struct (with the right
+// json tag — that's the .env.deploy key), append it to [FieldOrder], and
+// add a matching prompt in prompt.go.
+package config
+
+// Config is the typed mirror of every field bin/configure.sh writes to
+// .env.deploy. The json tag is the on-disk variable name; struct field
+// order does NOT determine on-disk order — see [FieldOrder] for that.
+//
+// All fields are strings: .env.deploy is shell-sourceable, so even
+// numeric or boolean-looking values are stored as their string form. We
+// could parse them at access time but the surface stays smaller this
+// way.
+//
+// String() is intentionally not implemented — these structs are not
+// safe to log: CF_API_TOKEN and OIDC_CLIENT_SECRET are secrets.
+type Config struct {
+	// --- required non-secret fields (preflight enforces) ---
+
+	// CFAccountID is the operator's Cloudflare account ID. Every
+	// account-scoped API call hangs off this.
+	CFAccountID string `json:"CF_ACCOUNT_ID" yaml:"CF_ACCOUNT_ID"`
+	// PolarisAPIHostname is the public hostname services/api serves
+	// admin requests at. Defaults to *.workers.dev during cold-start.
+	PolarisAPIHostname string `json:"POLARIS_API_HOSTNAME" yaml:"POLARIS_API_HOSTNAME"`
+
+	// --- optional non-secret fields ---
+
+	// CFZoneID is the default zone ID used by `polaris-email domain
+	// onboard --apply` to write DNS records.
+	CFZoneID string `json:"CF_ZONE_ID" yaml:"CF_ZONE_ID"`
+	// R2PublicHost is the operator-owned custom domain attached to the
+	// `polaris-email` R2 bucket (e.g. r2.mail.example.com).
+	R2PublicHost string `json:"R2_PUBLIC_HOST" yaml:"R2_PUBLIC_HOST"`
+	// BridgeHost is the on-prem mail-bridge's public hostname; used to
+	// construct webhook callback URLs. Empty when the bridge isn't
+	// deployed.
+	BridgeHost string `json:"BRIDGE_HOST" yaml:"BRIDGE_HOST"`
+	// AlertWebhook is the webhook URL that synthetic + staleness alerts
+	// POST to on failure.
+	AlertWebhook string `json:"ALERT_WEBHOOK" yaml:"ALERT_WEBHOOK"`
+	// SyntheticMonitorDomain is the home domain for the synthetic test
+	// mailbox; it default-builds the synthetic FROM/TO addresses below.
+	SyntheticMonitorDomain string `json:"SYNTHETIC_MONITOR_DOMAIN" yaml:"SYNTHETIC_MONITOR_DOMAIN"`
+	// SyntheticFrom is the synthetic monitor's FROM address.
+	SyntheticFrom string `json:"SYNTHETIC_FROM" yaml:"SYNTHETIC_FROM"`
+	// SyntheticTo is the synthetic monitor's TO address.
+	SyntheticTo string `json:"SYNTHETIC_TO" yaml:"SYNTHETIC_TO"`
+	// AnchorS3Endpoint is the S3-compatible endpoint URL (Backblaze B2).
+	AnchorS3Endpoint string `json:"ANCHOR_S3_ENDPOINT" yaml:"ANCHOR_S3_ENDPOINT"`
+	// AnchorS3Bucket is the Object-Lock COMPLIANCE bucket name.
+	AnchorS3Bucket string `json:"ANCHOR_S3_BUCKET" yaml:"ANCHOR_S3_BUCKET"`
+	// AnchorS3Region is the bucket's region (e.g. us-west-005).
+	AnchorS3Region string `json:"ANCHOR_S3_REGION" yaml:"ANCHOR_S3_REGION"`
+	// OIDCIssuer is the OIDC discovery URL for the admin panel.
+	OIDCIssuer string `json:"OIDC_ISSUER" yaml:"OIDC_ISSUER"`
+	// OIDCClientID is the OIDC client ID for the admin panel.
+	OIDCClientID string `json:"OIDC_CLIENT_ID" yaml:"OIDC_CLIENT_ID"`
+
+	// --- secrets ---
+
+	// CFAPIToken is the bearer token bin/deploy.sh + setup infra
+	// provision use against the Cloudflare REST API.
+	CFAPIToken string `json:"CF_API_TOKEN" yaml:"CF_API_TOKEN"`
+	// OIDCClientSecret is the OIDC client secret seeded into the panel
+	// Worker via `wrangler secret put` at bootstrap time.
+	OIDCClientSecret string `json:"OIDC_CLIENT_SECRET" yaml:"OIDC_CLIENT_SECRET"`
+	// AnchorS3AccessKeyID is the B2 application key ID for the anchor
+	// bucket.
+	AnchorS3AccessKeyID string `json:"ANCHOR_S3_ACCESS_KEY_ID" yaml:"ANCHOR_S3_ACCESS_KEY_ID"`
+	// AnchorS3SecretAccessKey is the B2 application key secret for the
+	// anchor bucket.
+	AnchorS3SecretAccessKey string `json:"ANCHOR_S3_SECRET_ACCESS_KEY" yaml:"ANCHOR_S3_SECRET_ACCESS_KEY"`
+}
+
+// FieldOrder is the canonical order .env.deploy is serialized in.
+// Mirrors the ENV_VARS array in bin/configure.sh — keep them in sync
+// (a `make parity` check could enforce this in a future PR).
+var FieldOrder = []string{
+	"CF_ACCOUNT_ID",
+	"POLARIS_API_HOSTNAME",
+	"CF_API_TOKEN",
+	"CF_ZONE_ID",
+	"SYNTHETIC_MONITOR_DOMAIN",
+	"ALERT_WEBHOOK",
+	"SYNTHETIC_FROM",
+	"SYNTHETIC_TO",
+	"OIDC_ISSUER",
+	"OIDC_CLIENT_ID",
+	"OIDC_CLIENT_SECRET",
+	"ANCHOR_S3_ENDPOINT",
+	"ANCHOR_S3_BUCKET",
+	"ANCHOR_S3_REGION",
+	"ANCHOR_S3_ACCESS_KEY_ID",
+	"ANCHOR_S3_SECRET_ACCESS_KEY",
+	"R2_PUBLIC_HOST",
+	"BRIDGE_HOST",
+}
+
+// SecretFields lists the .env.deploy keys whose values must be hidden
+// in TUI prompts and never logged. Centralized so that adding a new
+// secret only requires editing one slice.
+var SecretFields = map[string]bool{
+	"CF_API_TOKEN":                true,
+	"OIDC_CLIENT_SECRET":          true,
+	"ANCHOR_S3_ACCESS_KEY_ID":     true,
+	"ANCHOR_S3_SECRET_ACCESS_KEY": true,
+}
+
+// AsMap returns a key=value map of every field, using on-disk variable
+// names as keys. Used by both Save() and preflight.CheckEnvDeploy. The
+// returned map's iteration order is undefined — use [FieldOrder] when
+// rendering.
+func (c *Config) AsMap() map[string]string {
+	if c == nil {
+		return map[string]string{}
+	}
+	return map[string]string{
+		"CF_ACCOUNT_ID":               c.CFAccountID,
+		"POLARIS_API_HOSTNAME":        c.PolarisAPIHostname,
+		"CF_API_TOKEN":                c.CFAPIToken,
+		"CF_ZONE_ID":                  c.CFZoneID,
+		"SYNTHETIC_MONITOR_DOMAIN":    c.SyntheticMonitorDomain,
+		"ALERT_WEBHOOK":               c.AlertWebhook,
+		"SYNTHETIC_FROM":              c.SyntheticFrom,
+		"SYNTHETIC_TO":                c.SyntheticTo,
+		"OIDC_ISSUER":                 c.OIDCIssuer,
+		"OIDC_CLIENT_ID":              c.OIDCClientID,
+		"OIDC_CLIENT_SECRET":          c.OIDCClientSecret,
+		"ANCHOR_S3_ENDPOINT":          c.AnchorS3Endpoint,
+		"ANCHOR_S3_BUCKET":            c.AnchorS3Bucket,
+		"ANCHOR_S3_REGION":            c.AnchorS3Region,
+		"ANCHOR_S3_ACCESS_KEY_ID":     c.AnchorS3AccessKeyID,
+		"ANCHOR_S3_SECRET_ACCESS_KEY": c.AnchorS3SecretAccessKey,
+		"R2_PUBLIC_HOST":              c.R2PublicHost,
+		"BRIDGE_HOST":                 c.BridgeHost,
+	}
+}
+
+// setField writes a single key into the typed struct. Returns false if
+// the key is unknown — the file loader uses this to decide whether to
+// preserve unknown lines (in case the operator hand-edited a field we
+// don't yet model).
+func (c *Config) setField(key, value string) bool {
+	switch key {
+	case "CF_ACCOUNT_ID":
+		c.CFAccountID = value
+	case "POLARIS_API_HOSTNAME":
+		c.PolarisAPIHostname = value
+	case "CF_API_TOKEN":
+		c.CFAPIToken = value
+	case "CF_ZONE_ID":
+		c.CFZoneID = value
+	case "SYNTHETIC_MONITOR_DOMAIN":
+		c.SyntheticMonitorDomain = value
+	case "ALERT_WEBHOOK":
+		c.AlertWebhook = value
+	case "SYNTHETIC_FROM":
+		c.SyntheticFrom = value
+	case "SYNTHETIC_TO":
+		c.SyntheticTo = value
+	case "OIDC_ISSUER":
+		c.OIDCIssuer = value
+	case "OIDC_CLIENT_ID":
+		c.OIDCClientID = value
+	case "OIDC_CLIENT_SECRET":
+		c.OIDCClientSecret = value
+	case "ANCHOR_S3_ENDPOINT":
+		c.AnchorS3Endpoint = value
+	case "ANCHOR_S3_BUCKET":
+		c.AnchorS3Bucket = value
+	case "ANCHOR_S3_REGION":
+		c.AnchorS3Region = value
+	case "ANCHOR_S3_ACCESS_KEY_ID":
+		c.AnchorS3AccessKeyID = value
+	case "ANCHOR_S3_SECRET_ACCESS_KEY":
+		c.AnchorS3SecretAccessKey = value
+	case "R2_PUBLIC_HOST":
+		c.R2PublicHost = value
+	case "BRIDGE_HOST":
+		c.BridgeHost = value
+	default:
+		return false
+	}
+	return true
+}
