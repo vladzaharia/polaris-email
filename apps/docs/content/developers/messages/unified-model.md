@@ -58,15 +58,15 @@ listener) or `out` (REST submission via `POST /v1/messages`, JSON or
 
 ## Status enum
 
-| Status        | Direction | Meaning                                                            |
-| ------------- | --------- | ------------------------------------------------------------------ |
-| `received`    | in        | Inbound mail accepted and persisted.                               |
-| `mime_stored` | in / out  | Raw RFC822 written to R2; processing in flight.                    |
-| `queued`      | out       | Submission accepted; awaiting handoff to the Email Service binding. |
-| `sending`     | out       | Handoff to `services/out` in progress.                             |
-| `sent`        | out       | Email Service binding accepted the message.                        |
-| `delivered`   | out       | Terminal success — every subscribed webhook confirmed delivery.    |
-| `bounced`     | out       | Permanent remote-side failure (recipient mailbox rejected).        |
+| Status        | Direction | Meaning                                                                                |
+| ------------- | --------- | -------------------------------------------------------------------------------------- |
+| `received`    | in        | Inbound mail accepted and persisted.                                                   |
+| `mime_stored` | in / out  | Raw RFC822 written to R2; processing in flight.                                        |
+| `queued`      | out       | Submission accepted; awaiting handoff to the Email Service binding.                    |
+| `sending`     | out       | Handoff to `services/out` in progress.                                                 |
+| `sent`        | out       | Email Service binding accepted the message.                                            |
+| `delivered`   | out       | Terminal success — every subscribed webhook confirmed delivery.                        |
+| `bounced`     | out       | Permanent remote-side failure (recipient mailbox rejected).                            |
 | `failed`      | out       | Permanent local-side failure (binding misconfigured, DKIM missing, retries exhausted). |
 
 ## R2 access — public custom domain, content-addressed keys
@@ -117,14 +117,14 @@ All retrieval endpoints require `messages:read` (or `admin:read` for
 cross-mailbox queries) and are HMAC-signed with the `polaris-api`
 domain tag.
 
-| Endpoint                                              | Purpose                                                         |
-| ----------------------------------------------------- | --------------------------------------------------------------- |
-| `GET /v1/messages`                                    | Filtered list (mailbox_id, direction, status, q, since, …).     |
-| `GET /v1/messages/:id`                                | Single message with bodies + per-attachment public URLs.        |
-| `POST /v1/messages/get`                               | Bulk fetch by id (up to 256 ids per call).                      |
-| `GET /v1/mailboxes/:id/changes?since_state=<state>`   | Delta cursor for sync (returns ids changed since state).        |
-| `GET /v1/mailboxes/:id/messages?fields=metadata`      | Metadata-only listing — no inline bodies, URLs still populated. |
-| `GET /v1/messages/:id/thread`                         | All messages with the same `thread_id`, in order.               |
+| Endpoint                                            | Purpose                                                         |
+| --------------------------------------------------- | --------------------------------------------------------------- |
+| `GET /v1/messages`                                  | Filtered list (mailbox_id, direction, status, q, since, …).     |
+| `GET /v1/messages/:id`                              | Single message with bodies + per-attachment public URLs.        |
+| `POST /v1/messages/get`                             | Bulk fetch by id (up to 256 ids per call).                      |
+| `GET /v1/mailboxes/:id/changes?since_state=<state>` | Delta cursor for sync (returns ids changed since state).        |
+| `GET /v1/mailboxes/:id/messages?fields=metadata`    | Metadata-only listing — no inline bodies, URLs still populated. |
+| `GET /v1/messages/:id/thread`                       | All messages with the same `thread_id`, in order.               |
 
 The previous `GET /v1/messages/:id/attachments/:n` signed-URL endpoint
 was removed. Consumers fetch attachments straight from the public R2

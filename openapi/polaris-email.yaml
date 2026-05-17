@@ -1,4 +1,4 @@
-openapi: 3.0.3
+openapi: 3.1.0
 info:
   title: polaris-email API
   version: 0.2.0
@@ -105,7 +105,8 @@ components:
         operator: { $ref: '#/components/schemas/Operator' }
         api_key_id: { $ref: '#/components/schemas/Ulid' }
         api_key_prefix: { type: string }
-        api_key_secret: { type: string, description: 'Returned ONCE — store via polaris-email login.' }
+        api_key_secret:
+          { type: string, description: 'Returned ONCE — store via polaris-email login.' }
         login_token:
           type: string
           pattern: '^polaris_[0-9A-HJKMNP-TV-Z]{26}\..+$'
@@ -370,9 +371,9 @@ components:
         name: { type: string, minLength: 1, maxLength: 120 }
         description: { type: string, nullable: true }
         default_sender_id:
-          oneOf:
+          allOf:
             - { $ref: '#/components/schemas/Ulid' }
-            - { type: 'null' }
+          nullable: true
         created_at: { type: string }
         updated_at: { type: string }
         disabled_at: { type: string, nullable: true }
@@ -400,9 +401,9 @@ components:
         address_pattern: { type: string, minLength: 1, maxLength: 512 }
         action: { type: string, enum: [webhook, forward, drop] }
         webhook_sub_id:
-          oneOf:
+          allOf:
             - { $ref: '#/components/schemas/Ulid' }
-            - { type: 'null' }
+          nullable: true
         forward_to: { type: string, nullable: true }
         enabled: { type: integer, minimum: 0, maximum: 1 }
         created_at: { type: string }
@@ -434,9 +435,9 @@ components:
         id: { $ref: '#/components/schemas/Ulid' }
         zone_id: { $ref: '#/components/schemas/Ulid' }
         parent_domain_id:
-          oneOf:
+          allOf:
             - { $ref: '#/components/schemas/Ulid' }
-            - { type: 'null' }
+          nullable: true
         name: { type: string }
         status: { type: string, enum: [pending, verifying, verified, failed, disabled] }
         wildcard_subdomains: { type: integer }

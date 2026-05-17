@@ -1,0 +1,80 @@
+{
+  "responses": {
+    "202": {
+      "description": "accepted for processing",
+      "content": {
+        "application/json": {
+          "schema": {
+            "type": "object",
+            "required": ["message_id", "status", "fresh"],
+            "properties": {
+              "message_id": {
+                "type": "string",
+                "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+                "title": "Ulid"
+              },
+              "status": { "type": "string" },
+              "fresh": { "type": "boolean" }
+            },
+            "title": "SendResponse"
+          }
+        }
+      }
+    },
+    "400": {
+      "description": "bad request",
+      "content": {
+        "application/json": {
+          "schema": {
+            "type": "object",
+            "required": ["error"],
+            "properties": {
+              "error": {
+                "type": "object",
+                "required": ["code", "message", "retryable", "request_id"],
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "enum": [
+                      "bad_request",
+                      "bad_content_type",
+                      "bad_signature",
+                      "key_propagating",
+                      "clock_skew",
+                      "key_revoked",
+                      "scope_violation",
+                      "nonce_replay",
+                      "idempotency_conflict",
+                      "domain_not_verified",
+                      "recipient_rejected",
+                      "rate_limited",
+                      "too_many_requests",
+                      "cf_upstream",
+                      "degraded",
+                      "not_found",
+                      "unauthorized",
+                      "forbidden",
+                      "conflict",
+                      "already_bootstrapped",
+                      "too_many_recipients",
+                      "subject_too_long",
+                      "message_too_large",
+                      "header_not_allowed",
+                      "header_too_long",
+                      "too_many_custom_headers",
+                      "custom_headers_too_large"
+                    ]
+                  },
+                  "message": { "type": "string" },
+                  "retryable": { "type": "boolean" },
+                  "request_id": { "type": "string" }
+                }
+              }
+            },
+            "title": "Error"
+          }
+        }
+      }
+    }
+  }
+}

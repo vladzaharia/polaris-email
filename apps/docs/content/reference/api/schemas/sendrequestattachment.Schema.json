@@ -1,0 +1,13 @@
+{
+  "schema": {
+    "type": "object",
+    "required": ["filename", "content_type", "content_base64"],
+    "properties": {
+      "filename": { "type": "string", "minLength": 1, "maxLength": 255 },
+      "content_type": { "type": "string", "minLength": 1, "maxLength": 255 },
+      "content_base64": { "type": "string" }
+    },
+    "title": "SendRequestAttachment"
+  },
+  "schemaType": "response"
+}

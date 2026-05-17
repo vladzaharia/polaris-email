@@ -43,11 +43,11 @@ Pick the relevant template and fill in the IdP's client id, client
 secret, and (for generic OIDC) the issuer / discovery URL. Required
 scopes for polaris-email:
 
-| Scope | Why |
-| --- | --- |
-| `openid` | Required for OIDC. |
-| `email` | Better-auth uses the email as the user's primary identifier. |
-| `profile` | Optional but recommended for display name + avatar. |
+| Scope                    | Why                                                                                                                                              |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `openid`                 | Required for OIDC.                                                                                                                               |
+| `email`                  | Better-auth uses the email as the user's primary identifier.                                                                                     |
+| `profile`                | Optional but recommended for display name + avatar.                                                                                              |
 | `groups` (or equivalent) | The panel's `ADMIN_GROUP` check reads this claim. Configure the IdP to include group membership in either the id_token or the userinfo endpoint. |
 
 **Important:** the panel's role-sync code accepts the groups claim
@@ -121,24 +121,24 @@ module "panel_access" {
 Inputs are declared in
 [`variables.tf`](https://github.com/vladzaharia/polaris-email/blob/main/infra/terraform/modules/access-app/variables.tf):
 
-| Variable | Required | Default | Purpose |
-| --- | --- | --- | --- |
-| `cf_account_id` | yes | — | Account hosting the Access app. |
-| `cf_zone_id` | yes | — | Zone the app is bound to. Must be in the same account. |
-| `app_name` | yes | — | Shown in the Access dashboard and on the login page. |
-| `domain` | yes | — | Fully-qualified domain Access protects (e.g. `panel.example.com`). |
-| `session_duration` | no | `1h` | Keep short for admin surfaces. |
-| `identity_provider_ids` | yes | — | List of allowed IdP IDs. |
-| `allowed_emails` | no | `[]` | Email-based allow policy. Use sparingly; prefer group policies once stable. |
-| `require_webauthn_step_up` | no | `true` | Adds an `auth_method = "swk"` require-block (see §3). |
+| Variable                   | Required | Default | Purpose                                                                     |
+| -------------------------- | -------- | ------- | --------------------------------------------------------------------------- |
+| `cf_account_id`            | yes      | —       | Account hosting the Access app.                                             |
+| `cf_zone_id`               | yes      | —       | Zone the app is bound to. Must be in the same account.                      |
+| `app_name`                 | yes      | —       | Shown in the Access dashboard and on the login page.                        |
+| `domain`                   | yes      | —       | Fully-qualified domain Access protects (e.g. `panel.example.com`).          |
+| `session_duration`         | no       | `1h`    | Keep short for admin surfaces.                                              |
+| `identity_provider_ids`    | yes      | —       | List of allowed IdP IDs.                                                    |
+| `allowed_emails`           | no       | `[]`    | Email-based allow policy. Use sparingly; prefer group policies once stable. |
+| `require_webauthn_step_up` | no       | `true`  | Adds an `auth_method = "swk"` require-block (see §3).                       |
 
 Outputs:
 
-| Output | Purpose |
-| --- | --- |
-| `application_id` | Used elsewhere to wire `cloudflare_access_service_token`. |
-| `aud` | The AUD claim. Workers verifying `Cf-Access-Jwt-Assertion` must match this. |
-| `domain` | Echoed for convenience. |
+| Output           | Purpose                                                                     |
+| ---------------- | --------------------------------------------------------------------------- |
+| `application_id` | Used elsewhere to wire `cloudflare_access_service_token`.                   |
+| `aud`            | The AUD claim. Workers verifying `Cf-Access-Jwt-Assertion` must match this. |
+| `domain`         | Echoed for convenience.                                                     |
 
 Apply with `terraform plan` → `terraform apply` per environment. The
 panel hostname now redirects unauthenticated requests to the Access
@@ -208,7 +208,7 @@ human-identity policy. The caller presents the token's
 `CF-Access-Client-Id` and `CF-Access-Client-Secret` headers on every
 request; Access validates them before the request reaches the
 Worker. **Inside** the Worker, the API still requires its own HMAC
-signature — Access only gates *who can knock*; polaris-email's HMAC
+signature — Access only gates _who can knock_; polaris-email's HMAC
 auth is what actually authorises the action.
 
 This compounds nicely: a stolen service token is useless without an
@@ -244,8 +244,8 @@ Configure `ADMIN_GROUP` per environment in the panel's
 ```jsonc
 {
   "vars": {
-    "ADMIN_GROUP": "polaris-admins"
-  }
+    "ADMIN_GROUP": "polaris-admins",
+  },
 }
 ```
 

@@ -1,0 +1,37 @@
+{
+  "schema": {
+    "type": "object",
+    "required": ["name", "email", "ssh_pubkey", "ssh_pubkey_fp_sha256"],
+    "properties": {
+      "name": { "type": "string", "minLength": 1, "maxLength": 120 },
+      "email": { "type": "string", "format": "email" },
+      "ssh_pubkey": { "type": "string" },
+      "ssh_pubkey_fp_sha256": { "type": "string", "pattern": "^SHA256:[A-Za-z0-9+/]{43}$" },
+      "role": {
+        "type": "string",
+        "enum": ["admin", "operator", "readonly"],
+        "default": "operator"
+      },
+      "scopes": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "enum": [
+            "send",
+            "messages:read",
+            "imap_bridge:read",
+            "admin:rotate",
+            "admin:read",
+            "admin:impersonate"
+          ],
+          "title": "KeyScope"
+        },
+        "minItems": 1,
+        "default": ["admin:read"]
+      },
+      "rate_limit_per_min": { "type": "integer", "minimum": 1, "maximum": 100000, "default": 600 }
+    },
+    "title": "OperatorCreateRequest"
+  },
+  "schemaType": "response"
+}

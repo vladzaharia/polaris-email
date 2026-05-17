@@ -58,7 +58,7 @@ const config: Config = {
         config: {
           polarisApi: {
             specPath: '../../openapi/polaris-email.yaml',
-            outputDir: 'docs/reference/api',
+            outputDir: 'content/reference/api',
             sidebarOptions: {
               groupPathsBy: 'tag',
               categoryLinkSource: 'tag',

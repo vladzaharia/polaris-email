@@ -1,0 +1,12 @@
+{
+  "schema": {
+    "type": "object",
+    "properties": {
+      "new_key_id": { "type": "string" },
+      "new_key_secret": { "type": "string" },
+      "prev_status": { "type": "string" }
+    },
+    "title": "RotateResponse"
+  },
+  "schemaType": "response"
+}

@@ -26,34 +26,34 @@ HTTP-status and retryability mappings live in `services/api/src/errors.ts`.
 
 ## Code matrix
 
-| HTTP | code                       | retryable                 | notes                                                                |
-| ---- | -------------------------- | ------------------------- | -------------------------------------------------------------------- |
-| 400  | `bad_request`              | no                        | Malformed body, missing required field.                              |
-| 400  | `bad_content_type`         | no                        | Unsupported `Content-Type` (expects JSON or `message/rfc822`).       |
-| 400  | `too_many_recipients`      | no                        | Recipient count exceeds CF Email Service limit.                      |
-| 400  | `subject_too_long`         | no                        | Subject above CF Email Service cap.                                  |
-| 400  | `header_not_allowed`       | no                        | Header in the forbidden list (`Bcc`, `DKIM-Signature`, …).           |
-| 400  | `header_too_long`          | no                        | Single header value above CF Email Service cap.                      |
-| 400  | `too_many_custom_headers`  | no                        | Custom-header count exceeds CF Email Service cap.                    |
-| 400  | `custom_headers_too_large` | no                        | Custom headers combined byte size exceeds CF Email Service cap.      |
-| 401  | `bad_signature`            | no                        | HMAC mismatch — do not retry.                                        |
-| 401  | `key_propagating`          | yes (after `Retry-After`) | New key not yet in colo cache; retry once after ~2 s.                |
-| 401  | `clock_skew`               | yes (after resync)        | `X-Polaris-Ts` outside ±5 min.                                       |
-| 401  | `unauthorized`             | no                        | Missing key id or session.                                           |
-| 403  | `key_revoked`              | no                        | Terminal — call ops.                                                 |
-| 403  | `scope_violation`          | no                        | `from` outside `sender_scopes`, or scope action denied.              |
-| 403  | `forbidden`                | no                        | Generic deny.                                                        |
-| 404  | `not_found`                | no                        |                                                                      |
-| 409  | `nonce_replay`             | no                        | Duplicate `X-Polaris-Nonce` — generate a fresh one.                  |
-| 409  | `idempotency_conflict`     | no                        | Same `Idempotency-Key`, different body.                              |
-| 409  | `conflict`                 | no                        | Resource state conflict.                                             |
-| 413  | `message_too_large`        | no                        | Total message bytes exceed CF Email Service cap.                     |
-| 422  | `domain_not_verified`      | no                        | Sending domain not yet DNS-verified.                                 |
-| 422  | `recipient_rejected`       | no                        | Client-side recipient validation failed.                             |
-| 429  | `rate_limited`             | yes (after `Retry-After`) |                                                                      |
-| 429  | `too_many_requests`        | yes (after `Retry-After`) | Per-principal / per-mailbox quota exceeded; honor `Retry-After`.     |
+| HTTP | code                       | retryable                 | notes                                                                   |
+| ---- | -------------------------- | ------------------------- | ----------------------------------------------------------------------- |
+| 400  | `bad_request`              | no                        | Malformed body, missing required field.                                 |
+| 400  | `bad_content_type`         | no                        | Unsupported `Content-Type` (expects JSON or `message/rfc822`).          |
+| 400  | `too_many_recipients`      | no                        | Recipient count exceeds CF Email Service limit.                         |
+| 400  | `subject_too_long`         | no                        | Subject above CF Email Service cap.                                     |
+| 400  | `header_not_allowed`       | no                        | Header in the forbidden list (`Bcc`, `DKIM-Signature`, …).              |
+| 400  | `header_too_long`          | no                        | Single header value above CF Email Service cap.                         |
+| 400  | `too_many_custom_headers`  | no                        | Custom-header count exceeds CF Email Service cap.                       |
+| 400  | `custom_headers_too_large` | no                        | Custom headers combined byte size exceeds CF Email Service cap.         |
+| 401  | `bad_signature`            | no                        | HMAC mismatch — do not retry.                                           |
+| 401  | `key_propagating`          | yes (after `Retry-After`) | New key not yet in colo cache; retry once after ~2 s.                   |
+| 401  | `clock_skew`               | yes (after resync)        | `X-Polaris-Ts` outside ±5 min.                                          |
+| 401  | `unauthorized`             | no                        | Missing key id or session.                                              |
+| 403  | `key_revoked`              | no                        | Terminal — call ops.                                                    |
+| 403  | `scope_violation`          | no                        | `from` outside `sender_scopes`, or scope action denied.                 |
+| 403  | `forbidden`                | no                        | Generic deny.                                                           |
+| 404  | `not_found`                | no                        |                                                                         |
+| 409  | `nonce_replay`             | no                        | Duplicate `X-Polaris-Nonce` — generate a fresh one.                     |
+| 409  | `idempotency_conflict`     | no                        | Same `Idempotency-Key`, different body.                                 |
+| 409  | `conflict`                 | no                        | Resource state conflict.                                                |
+| 413  | `message_too_large`        | no                        | Total message bytes exceed CF Email Service cap.                        |
+| 422  | `domain_not_verified`      | no                        | Sending domain not yet DNS-verified.                                    |
+| 422  | `recipient_rejected`       | no                        | Client-side recipient validation failed.                                |
+| 429  | `rate_limited`             | yes (after `Retry-After`) |                                                                         |
+| 429  | `too_many_requests`        | yes (after `Retry-After`) | Per-principal / per-mailbox quota exceeded; honor `Retry-After`.        |
 | 502  | `cf_upstream`              | yes                       | CF Email Service transient — safe to retry with same `Idempotency-Key`. |
-| 503  | `degraded`                 | yes                       | Local circuit-breaker open.                                          |
+| 503  | `degraded`                 | yes                       | Local circuit-breaker open.                                             |
 
 ## Retry policy
 

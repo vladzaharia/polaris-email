@@ -18,13 +18,13 @@ production hostnames at the deployed Workers is a follow-up step.
 
 ## Hostname inventory
 
-| Hostname (default)      | Worker / target          | Owner       | Required? |
-| ----------------------- | ------------------------ | ----------- | --------- |
-| `r2.mail.plrs.im`       | R2 bucket `polaris-email` | Terraform   | Yes       |
-| `polaris-email-api.workers.dev` (or your custom API host) | `polaris-email-api` | Wrangler    | Yes       |
-| `panel.mail.plrs.im` (or your panel host) | `polaris-email-panel` | Wrangler    | Optional  |
-| `docs.mail.plrs.im`     | `polaris-email-docs`     | Wrangler    | Optional  |
-| `mta-sts.<tenant>`      | `polaris-email-api`      | Per-domain admin endpoint | Per onboarded domain |
+| Hostname (default)                                        | Worker / target           | Owner                     | Required?            |
+| --------------------------------------------------------- | ------------------------- | ------------------------- | -------------------- |
+| `r2.mail.plrs.im`                                         | R2 bucket `polaris-email` | Terraform                 | Yes                  |
+| `polaris-email-api.workers.dev` (or your custom API host) | `polaris-email-api`       | Wrangler                  | Yes                  |
+| `panel.mail.plrs.im` (or your panel host)                 | `polaris-email-panel`     | Wrangler                  | Optional             |
+| `docs.mail.plrs.im`                                       | `polaris-email-docs`      | Wrangler                  | Optional             |
+| `mta-sts.<tenant>`                                        | `polaris-email-api`       | Per-domain admin endpoint | Per onboarded domain |
 
 ## R2 public domain (`r2.mail.plrs.im`)
 

@@ -1,0 +1,12 @@
+{
+  "schema": {
+    "type": "object",
+    "required": ["ssh_pubkey", "ssh_pubkey_fp_sha256"],
+    "properties": {
+      "ssh_pubkey": { "type": "string" },
+      "ssh_pubkey_fp_sha256": { "type": "string", "pattern": "^SHA256:[A-Za-z0-9+/]{43}$" }
+    },
+    "title": "OperatorRotatePubkeyRequest"
+  },
+  "schemaType": "response"
+}

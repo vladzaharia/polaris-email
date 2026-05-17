@@ -23,15 +23,15 @@ un-versioned `X-Polaris-Sig: <hex>` — 64 lowercase hex chars, no prefix.
 <domain>\n<METHOD>\n<path>\n<canonical-query>\n<ts>\n<nonce>\n<sha256-hex-of-body>
 ```
 
-| Field                   | Notes                                                            |
-| ----------------------- | ---------------------------------------------------------------- |
-| `domain`                | `polaris-api` for API requests, `polaris-webhook` for webhooks.  |
-| `METHOD`                | Uppercase HTTP method.                                           |
-| `path`                  | Request path, no query string.                                   |
-| `canonical-query`       | Empty string if no query; otherwise the verbatim query string.   |
-| `ts`                    | Milliseconds since epoch, ASCII decimal.                         |
-| `nonce`                 | Base64url, at least 96 bits of entropy. One-shot.                |
-| `sha256-hex-of-body`    | SHA-256 of the exact body bytes on the wire, lowercase hex.      |
+| Field                | Notes                                                           |
+| -------------------- | --------------------------------------------------------------- |
+| `domain`             | `polaris-api` for API requests, `polaris-webhook` for webhooks. |
+| `METHOD`             | Uppercase HTTP method.                                          |
+| `path`               | Request path, no query string.                                  |
+| `canonical-query`    | Empty string if no query; otherwise the verbatim query string.  |
+| `ts`                 | Milliseconds since epoch, ASCII decimal.                        |
+| `nonce`              | Base64url, at least 96 bits of entropy. One-shot.               |
+| `sha256-hex-of-body` | SHA-256 of the exact body bytes on the wire, lowercase hex.     |
 
 HMAC is SHA-256, 256-bit keys, constant-time compare. The full spec is in
 [HMAC reference](/security/hmac-reference); the narrative is at
@@ -132,13 +132,13 @@ for the full shape.
 
 ## Retry semantics
 
-| Status                | Retry?                              |
-| --------------------- | ----------------------------------- |
-| `401 bad_signature`   | no — terminal                       |
-| `401 key_propagating` | yes, after `Retry-After`            |
-| `429 rate_limited`    | yes, after `Retry-After`            |
-| `5xx`                 | yes, exponential backoff            |
-| All other `4xx`       | no — fix the request                |
+| Status                | Retry?                   |
+| --------------------- | ------------------------ |
+| `401 bad_signature`   | no — terminal            |
+| `401 key_propagating` | yes, after `Retry-After` |
+| `429 rate_limited`    | yes, after `Retry-After` |
+| `5xx`                 | yes, exponential backoff |
+| All other `4xx`       | no — fix the request     |
 
 The retry contract is in the
 [consumer contract](/reference/consumer-contract).

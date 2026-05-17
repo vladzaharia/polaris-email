@@ -18,12 +18,12 @@ The entire control plane runs in **one Cloudflare account** across three
 Workers. The panel runs as a fourth Worker but is operationally a client
 of the API.
 
-| Worker      | Role                                                                                                                                                                         |
-| ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `api`       | The REST surface. **Also** hosts the webhook fan-out queue consumer and every cron trigger — hourly audit anchor, weekly secret staleness check, per-minute health synthetic, nightly retention janitor. |
-| `in`        | Email Routing handler. Parses inbound MIME, runs the unified pipeline, persists.                                                                                             |
-| `out`       | Outbound queue consumer. Drives the configured provider (Cloudflare `send_email` binding per domain).                                                                        |
-| `panel`     | Admin UI (Hono + React, sessions in D1). Talks to `api` via a service binding, not a public fetch. Not in the mail path.                                                     |
+| Worker  | Role                                                                                                                                                                                                     |
+| ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `api`   | The REST surface. **Also** hosts the webhook fan-out queue consumer and every cron trigger — hourly audit anchor, weekly secret staleness check, per-minute health synthetic, nightly retention janitor. |
+| `in`    | Email Routing handler. Parses inbound MIME, runs the unified pipeline, persists.                                                                                                                         |
+| `out`   | Outbound queue consumer. Drives the configured provider (Cloudflare `send_email` binding per domain).                                                                                                    |
+| `panel` | Admin UI (Hono + React, sessions in D1). Talks to `api` via a service binding, not a public fetch. Not in the mail path.                                                                                 |
 
 Three mail-path Workers, not five. The previous separate `fanout` and
 `cron` Workers were folded into `api`, and the `forensic` Worker was
@@ -82,13 +82,13 @@ For each message, the pipeline:
 
 ## Storage
 
-| Store               | Holds                                                                                                                                                                                                                                                                                |
-| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **D1**              | Source of truth: mailboxes, senders, receivers, principals, messages, webhook subs, audit log, anchors, bookkeeping. Single database (`polaris-email`).                                                                                                                              |
-| **R2**              | Content-addressed bodies and attachments, reference-counted by `r2_refs`. Served over the public custom domain `r2.mail.plrs.im`. SHA-256 keys are the unguessability boundary — there is no signed URL layer. See the [threat model](/security/threat-model) before changing this. |
-| **KV**              | Hot path: HMAC replay nonces, idempotency keys (24h TTL), rate limits, `key_id → secret` cache, **credential revocations**. Revocations propagate to all Workers within ≤60 s (KV write + 60 s per-Worker cache).                                                                    |
-| **Queues**          | Outbound, inbound, fan-out — each with its own DLQ.                                                                                                                                                                                                                                  |
-| **Backblaze B2**    | Hourly signed audit anchors, **off Cloudflare**, under Object Lock COMPLIANCE mode with ~7-year retention. See [Audit anchors](#audit-anchors).                                                                                                                                      |
+| Store            | Holds                                                                                                                                                                                                                                                                               |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **D1**           | Source of truth: mailboxes, senders, receivers, principals, messages, webhook subs, audit log, anchors, bookkeeping. Single database (`polaris-email`).                                                                                                                             |
+| **R2**           | Content-addressed bodies and attachments, reference-counted by `r2_refs`. Served over the public custom domain `r2.mail.plrs.im`. SHA-256 keys are the unguessability boundary — there is no signed URL layer. See the [threat model](/security/threat-model) before changing this. |
+| **KV**           | Hot path: HMAC replay nonces, idempotency keys (24h TTL), rate limits, `key_id → secret` cache, **credential revocations**. Revocations propagate to all Workers within ≤60 s (KV write + 60 s per-Worker cache).                                                                   |
+| **Queues**       | Outbound, inbound, fan-out — each with its own DLQ.                                                                                                                                                                                                                                 |
+| **Backblaze B2** | Hourly signed audit anchors, **off Cloudflare**, under Object Lock COMPLIANCE mode with ~7-year retention. See [Audit anchors](#audit-anchors).                                                                                                                                     |
 
 Identical attachments forwarded to multiple mailboxes share one R2 object
 via reference counting. Soft-deletes decrement the ref count; the nightly
@@ -136,11 +136,11 @@ whole point.
 
 ## Authentication
 
-| Surface     | Mechanism                                                                                                                                                                                                                                                                                |
-| ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| API         | HMAC-signed requests with the `polaris-api` domain tag. `key_id` + secret per principal. Revocation via `KV_REVOCATIONS`, ≤60 s propagation. See [HMAC concept](/developers/authentication/concept).                                                                                       |
-| Panel       | better-auth with OIDC (default IdP is Cloudflare Access). Sessions in D1. Destructive actions gated client-side via type-the-resource-name confirmation; every mutation lands in the hash-chained `audit_log`.                                                                          |
-| Mail bridge | Per-bridge HMAC key seeded at registration; mailbox credentials (bcrypt hashes) mirrored locally for SMTPS / IMAP auth. The global bridge HMAC key was retired — a single leaked key no longer compromises every bridge.                                                                |
+| Surface     | Mechanism                                                                                                                                                                                                                |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| API         | HMAC-signed requests with the `polaris-api` domain tag. `key_id` + secret per principal. Revocation via `KV_REVOCATIONS`, ≤60 s propagation. See [HMAC concept](/developers/authentication/concept).                     |
+| Panel       | better-auth with OIDC (default IdP is Cloudflare Access). Sessions in D1. Destructive actions gated client-side via type-the-resource-name confirmation; every mutation lands in the hash-chained `audit_log`.           |
+| Mail bridge | Per-bridge HMAC key seeded at registration; mailbox credentials (bcrypt hashes) mirrored locally for SMTPS / IMAP auth. The global bridge HMAC key was retired — a single leaked key no longer compromises every bridge. |
 
 Revocation is KV-backed. The previous Durable Object revocation channel
 was retired; do not reintroduce one.

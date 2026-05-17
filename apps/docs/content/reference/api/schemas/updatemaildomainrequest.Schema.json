@@ -1,0 +1,22 @@
+{
+  "schema": {
+    "type": "object",
+    "description": "Generic patch surface for a mail domain. Note: switching MTA-STS state\nend-to-end (DNS + KV + DB) is normally routed through the dedicated\nlifecycle endpoints — `POST .../mta-sts/{enable,disable,promote}`\nso the publish side-effects fire. The fields here are accepted by\nbulk operator scripts that have already manually staged the records.\n",
+    "properties": {
+      "cf_zone_id": { "type": "string", "maxLength": 64 },
+      "status": {
+        "type": "string",
+        "enum": ["pending", "verifying", "verified", "failed", "disabled"]
+      },
+      "dmarc_policy": { "type": "string", "enum": ["none", "quarantine", "reject"] },
+      "dmarc_rua": { "type": "string", "maxLength": 320 },
+      "dkim_selector": { "type": "string", "minLength": 1, "maxLength": 63 },
+      "mta_sts_mode": { "type": "string", "enum": ["none", "testing", "enforce"] },
+      "mta_sts_max_age": { "type": "integer", "minimum": 0 },
+      "tlsrpt_enabled": { "type": "boolean" },
+      "tlsrpt_rua": { "type": "string" }
+    },
+    "title": "UpdateMailDomainRequest"
+  },
+  "schemaType": "response"
+}

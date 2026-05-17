@@ -1,0 +1,15 @@
+{
+  "schema": {
+    "type": "string",
+    "enum": [
+      "send",
+      "messages:read",
+      "imap_bridge:read",
+      "admin:rotate",
+      "admin:read",
+      "admin:impersonate"
+    ],
+    "title": "KeyScope"
+  },
+  "schemaType": "response"
+}

@@ -23,12 +23,12 @@ pnpm add @polaris/sdk@workspace:*
 
 ## Sub-paths
 
-| Import                    | Purpose                                                  |
-| ------------------------- | -------------------------------------------------------- |
-| `@polaris/sdk`            | `Polaris` HTTP client + typed wrappers + `PolarisError`. |
-| `@polaris/sdk/webhook`    | `verifyWebhook` (strict canonical-string HMAC).          |
-| `@polaris/sdk/node`       | Node-only helpers (file uploads, stream wrappers).       |
-| `@polaris/sdk/react`      | TanStack Query hooks (used by the panel).                |
+| Import                 | Purpose                                                  |
+| ---------------------- | -------------------------------------------------------- |
+| `@polaris/sdk`         | `Polaris` HTTP client + typed wrappers + `PolarisError`. |
+| `@polaris/sdk/webhook` | `verifyWebhook` (strict canonical-string HMAC).          |
+| `@polaris/sdk/node`    | Node-only helpers (file uploads, stream wrappers).       |
+| `@polaris/sdk/react`   | TanStack Query hooks (used by the panel).                |
 
 ## Quickstart: signed API request
 

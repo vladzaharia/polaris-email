@@ -1,0 +1,26 @@
+{
+  "parameters": [
+    { "in": "path", "name": "id", "required": true, "schema": { "type": "string" } },
+    {
+      "name": "X-Polaris-Key-Id",
+      "in": "header",
+      "required": true,
+      "schema": { "type": "string", "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$" }
+    },
+    { "name": "X-Polaris-Ts", "in": "header", "required": true, "schema": { "type": "string" } },
+    {
+      "name": "X-Polaris-Nonce",
+      "in": "header",
+      "required": true,
+      "schema": { "type": "string", "minLength": 16, "maxLength": 128 }
+    },
+    {
+      "name": "Idempotency-Key",
+      "in": "header",
+      "required": false,
+      "description": "Idempotency keys are scoped per principal: the same key string used by\ntwo different principals never collides. Retries from the same\nprincipal with the same key return the original `message_id`. Keys are\ncached for 24h.\n",
+      "schema": { "type": "string", "pattern": "^[A-Za-z0-9_-]{8,128}$" }
+    },
+    { "in": "query", "name": "dry_run", "schema": { "type": "string", "enum": ["1"] } }
+  ]
+}

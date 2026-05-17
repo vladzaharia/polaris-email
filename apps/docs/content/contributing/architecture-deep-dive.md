@@ -35,11 +35,11 @@ fetch, no HMAC key in the happy path.
 
 ## Three Workers, not five
 
-| Worker         | Hosts                                                                                                                                                  |
-| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `services/api` | REST surface, admin API, audit chain, idempotency, HMAC auth, **the webhook fan-out queue consumer**, and **every cron trigger**.                      |
-| `services/in`  | Email Routing handler. Parses inbound MIME, runs the unified pipeline.                                                                                  |
-| `services/out` | Outbound queue consumer. Drives the `send_email` binding per domain.                                                                                    |
+| Worker         | Hosts                                                                                                                             |
+| -------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `services/api` | REST surface, admin API, audit chain, idempotency, HMAC auth, **the webhook fan-out queue consumer**, and **every cron trigger**. |
+| `services/in`  | Email Routing handler. Parses inbound MIME, runs the unified pipeline.                                                            |
+| `services/out` | Outbound queue consumer. Drives the `send_email` binding per domain.                                                              |
 
 **Topology rationale (B1 consolidation).** The previous standalone
 `services/fanout` and `services/cron` Workers were folded into
@@ -209,15 +209,15 @@ refactor as if one path were canonical.
 
 ## Where to look first for X
 
-| Question                                       | Start here                                                                                                                            |
-| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| "How does outbound submission work?"           | `packages/pipeline/src/process-message.ts` + `services/api/src/routes/messages.ts` + `services/out/src/index.ts`                      |
-| "How is a webhook signed?"                     | `services/api/src/queue/fanout.ts` + `packages/hmac/src/index.ts`                                                                     |
-| "How does IMAP read from D1?"                  | `apps/mail-bridge/internal/store/mirror.go` (bridge-local SQLite mirror of `mailbox_messages_state`)                                  |
-| "How is a request authenticated?"              | `services/api/src/auth.ts` + `packages/revocation/` (KV-backed, ≤60 s propagation)                                                    |
-| "How do I onboard a domain end-to-end?"        | `apps/polaris-cli/internal/cmds/domain.go` and the wizard in `apps/polaris-cli/internal/wizards/`                                     |
-| "Where does outbound mail actually leave CF?"  | `services/out/src/index.ts` — the `send_email` binding invocation                                                                     |
-| "What is the unified `Message` shape?"         | `packages/schema/src/index.ts` (Zod) — normative wire format is `openapi/polaris-email.yaml`                                          |
+| Question                                      | Start here                                                                                                       |
+| --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| "How does outbound submission work?"          | `packages/pipeline/src/process-message.ts` + `services/api/src/routes/messages.ts` + `services/out/src/index.ts` |
+| "How is a webhook signed?"                    | `services/api/src/queue/fanout.ts` + `packages/hmac/src/index.ts`                                                |
+| "How does IMAP read from D1?"                 | `apps/mail-bridge/internal/store/mirror.go` (bridge-local SQLite mirror of `mailbox_messages_state`)             |
+| "How is a request authenticated?"             | `services/api/src/auth.ts` + `packages/revocation/` (KV-backed, ≤60 s propagation)                               |
+| "How do I onboard a domain end-to-end?"       | `apps/polaris-cli/internal/cmds/domain.go` and the wizard in `apps/polaris-cli/internal/wizards/`                |
+| "Where does outbound mail actually leave CF?" | `services/out/src/index.ts` — the `send_email` binding invocation                                                |
+| "What is the unified `Message` shape?"        | `packages/schema/src/index.ts` (Zod) — normative wire format is `openapi/polaris-email.yaml`                     |
 
 ## Things contributors should not do
 

@@ -1,0 +1,19 @@
+{
+  "schema": {
+    "type": "object",
+    "required": ["filename", "content_type", "size_bytes"],
+    "properties": {
+      "filename": { "type": "string" },
+      "content_type": { "type": "string" },
+      "size_bytes": { "type": "integer", "minimum": 0 },
+      "content_base64": { "type": "string" },
+      "url": {
+        "type": "string",
+        "format": "uri",
+        "description": "Public, content-addressed URL on the R2 custom domain\n`r2.mail.plrs.im`. Absolute, no expiry. SHA-256 in the\npath provides unguessability — treat the URL as a capability\ntoken. Fetch directly without HMAC.\n"
+      }
+    },
+    "title": "MessageAttachment"
+  },
+  "schemaType": "response"
+}

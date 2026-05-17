@@ -1,0 +1,31 @@
+---
+id: mailboxreceiver
+title: 'MailboxReceiver'
+description: ''
+sidebar_label: 'MailboxReceiver'
+hide_title: true
+hide_table_of_contents: true
+schema: true
+sample:
+  {
+    'id': 'string',
+    'mailbox_id': 'string',
+    'domain_id': 'string',
+    'priority': 0,
+    'address_pattern': 'string',
+    'action': 'webhook',
+    'webhook_sub_id': 'string',
+    'forward_to': 'string',
+    'enabled': 0,
+    'created_at': 'string',
+    'disabled_at': 'string',
+  }
+custom_edit_url: null
+---
+
+import Schema from '@theme/Schema';
+import Heading from '@theme/Heading';
+
+<Heading as={'h1'} className={'openapi__heading'} children={'MailboxReceiver'}></Heading>
+
+<Schema {...require('./mailboxreceiver.Schema.json')}></Schema>

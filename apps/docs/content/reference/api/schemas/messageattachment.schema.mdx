@@ -1,0 +1,25 @@
+---
+id: messageattachment
+title: 'MessageAttachment'
+description: ''
+sidebar_label: 'MessageAttachment'
+hide_title: true
+hide_table_of_contents: true
+schema: true
+sample:
+  {
+    'filename': 'string',
+    'content_type': 'string',
+    'size_bytes': 0,
+    'content_base64': 'string',
+    'url': 'string',
+  }
+custom_edit_url: null
+---
+
+import Schema from '@theme/Schema';
+import Heading from '@theme/Heading';
+
+<Heading as={'h1'} className={'openapi__heading'} children={'MessageAttachment'}></Heading>
+
+<Schema {...require('./messageattachment.Schema.json')}></Schema>

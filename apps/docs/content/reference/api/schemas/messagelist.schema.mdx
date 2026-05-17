@@ -1,0 +1,68 @@
+---
+id: messagelist
+title: 'MessageList'
+description: ''
+sidebar_label: 'MessageList'
+hide_title: true
+hide_table_of_contents: true
+schema: true
+sample:
+  {
+    'data':
+      [
+        {
+          'id': 'string',
+          'mailbox_id': 'string',
+          'direction': 'in',
+          'status': 'received',
+          'from': 'string',
+          'from_addr': 'user@example.com',
+          'to': ['string'],
+          'cc': ['string'],
+          'bcc': ['string'],
+          'subject': 'string',
+          'text': 'string',
+          'html': 'string',
+          'body_url': 'string',
+          'headers': {},
+          'attachments':
+            [
+              {
+                'filename': 'string',
+                'content_type': 'string',
+                'size_bytes': 0,
+                'content_base64': 'string',
+                'url': 'string',
+              },
+            ],
+          'header_message_id': 'string',
+          'thread_id': 'string',
+          'auth': { 'spf': 'string', 'dkim': 'string', 'dmarc': 'string', 'remote_ip': 'string' },
+          'body_bytes': 0,
+          'attachments_total_bytes': 0,
+          'received_at_bridge': 'string',
+          'received_at_api': 'string',
+          'queued_at': 'string',
+          'sending_at': 'string',
+          'sent_at': 'string',
+          'delivered_at': 'string',
+          'failed_at': 'string',
+          'bounce_metadata': {},
+          'last_error': 'string',
+          'created_at': 'string',
+          'flags': ['string'],
+          'read_at': 'string',
+          'change_id': 0,
+        },
+      ],
+    'next_offset': 0,
+  }
+custom_edit_url: null
+---
+
+import Schema from '@theme/Schema';
+import Heading from '@theme/Heading';
+
+<Heading as={'h1'} className={'openapi__heading'} children={'MessageList'}></Heading>
+
+<Schema {...require('./messagelist.Schema.json')}></Schema>

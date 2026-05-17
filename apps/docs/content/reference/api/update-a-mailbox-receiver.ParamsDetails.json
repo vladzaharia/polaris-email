@@ -1,0 +1,29 @@
+{
+  "parameters": [
+    {
+      "in": "path",
+      "name": "id",
+      "required": true,
+      "schema": { "type": "string", "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$", "title": "Ulid" }
+    },
+    {
+      "in": "path",
+      "name": "receiverId",
+      "required": true,
+      "schema": { "type": "string", "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$", "title": "Ulid" }
+    },
+    {
+      "name": "X-Polaris-Key-Id",
+      "in": "header",
+      "required": true,
+      "schema": { "type": "string", "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$" }
+    },
+    { "name": "X-Polaris-Ts", "in": "header", "required": true, "schema": { "type": "string" } },
+    {
+      "name": "X-Polaris-Nonce",
+      "in": "header",
+      "required": true,
+      "schema": { "type": "string", "minLength": 16, "maxLength": 128 }
+    }
+  ]
+}

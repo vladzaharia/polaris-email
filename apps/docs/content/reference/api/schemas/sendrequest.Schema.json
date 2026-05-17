@@ -1,0 +1,37 @@
+{
+  "schema": {
+    "type": "object",
+    "required": ["from", "to"],
+    "description": "JSON submission body for `POST /v1/messages` with `Content-Type: application/json`.\nForbidden headers (date, message-id, from, to, cc, bcc, subject, content-type, etc.)\nMUST NOT appear in `headers`.\n",
+    "properties": {
+      "from": { "type": "string" },
+      "to": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+      "cc": { "type": "array", "items": { "type": "string" } },
+      "bcc": { "type": "array", "items": { "type": "string" } },
+      "subject": { "type": "string" },
+      "text": { "type": "string" },
+      "html": { "type": "string" },
+      "headers": { "type": "object", "additionalProperties": { "type": "string" } },
+      "attachments": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": ["filename", "content_type", "content_base64"],
+          "properties": {
+            "filename": { "type": "string", "minLength": 1, "maxLength": 255 },
+            "content_type": { "type": "string", "minLength": 1, "maxLength": 255 },
+            "content_base64": { "type": "string" }
+          },
+          "title": "SendRequestAttachment"
+        }
+      },
+      "reply_to": { "type": "string" },
+      "idempotency_key": {
+        "type": "string",
+        "description": "Scoped per principal — see the `Idempotency-Key` header parameter.\nTwo principals using the same string get independent claims; the\nsame principal retrying gets the original `message_id`.\n"
+      }
+    },
+    "title": "SendRequest"
+  },
+  "schemaType": "response"
+}

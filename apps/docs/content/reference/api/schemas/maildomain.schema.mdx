@@ -1,0 +1,52 @@
+---
+id: maildomain
+title: 'MailDomain'
+description: 'Mail domain — the unit of DNS ownership for inbound (Email Routing'
+sidebar_label: 'MailDomain'
+hide_title: true
+hide_table_of_contents: true
+schema: true
+sample:
+  {
+    'id': 'string',
+    'zone_id': 'string',
+    'parent_domain_id': 'string',
+    'name': 'string',
+    'status': 'pending',
+    'wildcard_subdomains': 0,
+    'dmarc_policy': 'string',
+    'dmarc_rua': 'string',
+    'inbound_enabled': 0,
+    'outbound_enabled': 0,
+    'provider': 'string',
+    'cf_zone_id': 'string',
+    'dkim_selector': 'string',
+    'created_at': 'string',
+    'updated_at': 'string',
+    'verified_at': 'string',
+    'last_verify_check_at': 'string',
+    'disabled_at': 'string',
+    'mta_sts_mode': 'none',
+    'mta_sts_policy_id': 'string',
+    'mta_sts_max_age': 0,
+    'mta_sts_verified_at': 'string',
+    'tlsrpt_enabled': 0,
+    'tlsrpt_rua': 'string',
+    'tlsrpt_verified_at': 'string',
+  }
+custom_edit_url: null
+---
+
+import Schema from '@theme/Schema';
+import Heading from '@theme/Heading';
+
+<Heading as={'h1'} className={'openapi__heading'} children={'MailDomain'}></Heading>
+
+Mail domain — the unit of DNS ownership for inbound (Email Routing
+CNAMEs + MX) and outbound (DKIM, SPF, DMARC, MTA-STS, TLS-RPT) email.
+Mirrors the `mail_domains` row shape after `services/api/migrations/
+0007_mta_sts.sql`. The Phase C MTA-STS + TLS-RPT fields drive
+self-hosted policy publishing under `mta-sts.{domain}`; see
+`_mta_sts_mode` for the lifecycle states.
+
+<Schema {...require('./maildomain.Schema.json')}></Schema>

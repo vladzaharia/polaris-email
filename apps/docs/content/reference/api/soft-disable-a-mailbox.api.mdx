@@ -1,0 +1,41 @@
+---
+id: soft-disable-a-mailbox
+title: 'Soft-disable a mailbox'
+description: 'Soft-disable a mailbox'
+sidebar_label: 'Soft-disable a mailbox'
+hide_title: true
+hide_table_of_contents: true
+api: eJy9VWFv2zYQ/SvEYcBsQLIcAw06oQhmtAHSZWmD2u2GWR5Ei2eLsESqJCXHEPTfB1KSYydeC7TdPkmi7u7dPd67q6GgiuZoUGkIFzVwASEU1KTggaA5QgicgQcKP5dcIYPQqBI90EmKOYWwBrMvrJU2iosNeNbZoLJh/l6M/V+m/s1vt3fv7v35J/+vZT25bH4CDww3mfX6mHEGTePVPdif/r3MqOLav8W9/9ZCu5RSpAzVj07kPPJcfzPq+YDvpEjwOyrJufgdxcakEF5cepDTh8Pn5GXTLG0sXUihUVv3yXhsHwx1onhhuLSwjGu6ytCx/eTXTK6N3/0nlOSUZyv5YHHRpJLZhpDatIymEEJQXQSU5VwEnSnqoOasCboY4IFGVfUtVarMlm1MocMgKDpO0Pr6tOCjnVRbVHrEsAJbi8akVNzsnfPN3fT1tLSwi+Xxz5klqy330eTAHC34Le6fMf7sYmbcXRlwsZbOvWvLkyTJ9P4teGDrafkajyajMTxl0abh09KkKAxPqEFGPlzP5kSXak0TJGupyEncEZlmGbFdgNpoQhUSzTcCGdlxk0YiPskzJK9SfBg4lNnNdPLicqAxUWg8klAhBU9oNhxexWSXosLHM8J1JOIemBY8isSru+v5zfs3V/bV3ql7OXj4n0tUe3d2rIknB66n3ZlO6eTFpW+zW0m2H17Fo0hE4g9cpVJuNWGY8QoVMmIk0eXKkrZCpcnApEg6s2tRYSYLJK0KyAozuRsekXKej6uYyAoVsZEeS26Fc1T2rgWJInH/fjb/atmmLVZ8ucTXUugyt4XoVJYZIxUqvt6723MJzd7ckkH868mlB5ptfSEZxj9rErceHQVxJKQifc5dyqNPJyZkrWRO4oImW7pB7aJtZDwcRQIaz+k0p8K2ctfr/6rtk+Y9CMfggwmKjHIXzim37mS/gOoCPHDCt7Ohlz54ELoV0at/6UFq50W4gLpeUY0fVdY09tgxbJXsQUUVd9ZW5IfZFK5ppvFZcokUBoWBEAYfuqE5JHaLnEu6HwHC6r+iWWm/wIMt7ttl1iwbr58JPxy9RTmzxQ6Z2A3xn0K69fX/wfXL7RFxebQ5rN6gaf4BbIvdLg==
+sidebar_class_name: 'post api-method'
+info_path: reference/api/polaris-email-api
+custom_edit_url: null
+---
+
+import MethodEndpoint from '@theme/ApiExplorer/MethodEndpoint';
+import ParamsDetails from '@theme/ParamsDetails';
+import RequestSchema from '@theme/RequestSchema';
+import StatusCodes from '@theme/StatusCodes';
+import OperationTabs from '@theme/OperationTabs';
+import TabItem from '@theme/TabItem';
+import Heading from '@theme/Heading';
+import Translate from '@docusaurus/Translate';
+
+<Heading as={'h1'} className={'openapi__heading'} children={'Soft-disable a mailbox'}></Heading>
+
+<MethodEndpoint
+  method={'post'}
+  path={'/v1/admin/mailboxes/{id}/disable'}
+  context={'endpoint'}
+></MethodEndpoint>
+
+Soft-disable a mailbox
+
+<Heading id={'request'} as={'h2'} className={'openapi-tabs__heading'}>
+  <Translate id="theme.openapi.request.title">Request</Translate>
+</Heading>
+
+<ParamsDetails {...require('./soft-disable-a-mailbox.ParamsDetails.json')}></ParamsDetails>
+
+<RequestSchema {...require('./soft-disable-a-mailbox.RequestSchema.json')}></RequestSchema>
+
+<StatusCodes {...require('./soft-disable-a-mailbox.StatusCodes.json')}></StatusCodes>

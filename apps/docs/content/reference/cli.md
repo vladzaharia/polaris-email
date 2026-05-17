@@ -98,12 +98,12 @@ today.
 
 ## Quick reference
 
-| Verb       | What it touches               | Reversible?            | Propagation      |
-| ---------- | ----------------------------- | ---------------------- | ---------------- |
-| revoke     | credential signing key        | no (rotate to restore) | ≤60 s            |
-| deregister | bridge registration           | re-register            | next mirror tick |
-| disable    | domain / routing rule         | enable flips back      | immediate        |
-| delete     | row (tombstoned)              | only via PITR          | immediate        |
+| Verb       | What it touches        | Reversible?            | Propagation      |
+| ---------- | ---------------------- | ---------------------- | ---------------- |
+| revoke     | credential signing key | no (rotate to restore) | ≤60 s            |
+| deregister | bridge registration    | re-register            | next mirror tick |
+| disable    | domain / routing rule  | enable flips back      | immediate        |
+| delete     | row (tombstoned)       | only via PITR          | immediate        |
 
 ## See also
 

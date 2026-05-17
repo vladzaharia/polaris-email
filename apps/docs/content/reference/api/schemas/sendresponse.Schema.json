@@ -1,0 +1,13 @@
+{
+  "schema": {
+    "type": "object",
+    "required": ["message_id", "status", "fresh"],
+    "properties": {
+      "message_id": { "type": "string", "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$", "title": "Ulid" },
+      "status": { "type": "string" },
+      "fresh": { "type": "boolean" }
+    },
+    "title": "SendResponse"
+  },
+  "schemaType": "response"
+}

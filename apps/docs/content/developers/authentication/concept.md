@@ -22,8 +22,8 @@ properties polaris-email needs to avoid:
 
 - **Replay**. A captured request can be re-sent indefinitely until the
   bearer is rotated.
-- **No request binding**. A bearer authenticates *the caller*, not *this
-  particular request*. A leak of the token over a proxy log gives the
+- **No request binding**. A bearer authenticates _the caller_, not _this
+  particular request_. A leak of the token over a proxy log gives the
   attacker arbitrary requests, not just the one that leaked.
 
 HMAC signatures bind the signature to the exact request: method, path,
@@ -37,27 +37,27 @@ replay defence refuses you.
 Seven things are joined into a canonical string, then HMAC-SHA256'd with
 your secret:
 
-| Line | Field            | Why                                                                                                                                     |
-| ---- | ---------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| 1    | direction        | Domain separation — `polaris-api` for requests, `polaris-webhook` for outgoing webhooks. Prevents cross-direction signature reuse.      |
-| 2    | METHOD           | Uppercased HTTP method.                                                                                                                 |
-| 3    | path             | URL path with leading `/`. No host, no scheme, no fragment.                                                                             |
-| 4    | canonical-query  | Sorted, percent-encoded query string. Empty string when there is none.                                                                  |
-| 5    | X-Polaris-Ts     | Millisecond Unix timestamp.                                                                                                             |
-| 6    | X-Polaris-Nonce  | 16–128 ASCII chars unique within the skew window.                                                                                       |
-| 7    | sha256(body)     | Lowercase hex over the **exact raw body bytes** on the wire. No whitespace normalisation. Empty body hashes the empty string.           |
+| Line | Field           | Why                                                                                                                                |
+| ---- | --------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| 1    | direction       | Domain separation — `polaris-api` for requests, `polaris-webhook` for outgoing webhooks. Prevents cross-direction signature reuse. |
+| 2    | METHOD          | Uppercased HTTP method.                                                                                                            |
+| 3    | path            | URL path with leading `/`. No host, no scheme, no fragment.                                                                        |
+| 4    | canonical-query | Sorted, percent-encoded query string. Empty string when there is none.                                                             |
+| 5    | X-Polaris-Ts    | Millisecond Unix timestamp.                                                                                                        |
+| 6    | X-Polaris-Nonce | 16–128 ASCII chars unique within the skew window.                                                                                  |
+| 7    | sha256(body)    | Lowercase hex over the **exact raw body bytes** on the wire. No whitespace normalisation. Empty body hashes the empty string.      |
 
 Joined by single `\n` bytes. No trailing newline. No `\r`. The full
 byte-exact layout is in the [reference](/security/hmac-reference).
 
 ## The four request headers
 
-| Header             | Purpose                                                                                                          |
-| ------------------ | ---------------------------------------------------------------------------------------------------------------- |
-| `X-Polaris-Key-Id` | Identifies which key signed this request. Opaque — usually a ULID.                                               |
-| `X-Polaris-Ts`     | Milliseconds since the Unix epoch, base-10 integer string.                                                       |
-| `X-Polaris-Nonce`  | 16–128 ASCII chars. Must be unique per request within the ±5-minute skew window.                                 |
-| `X-Polaris-Sig`    | 64 lowercase hex chars. `HMAC-SHA256(secret, canonical)` encoded as hex.                                         |
+| Header             | Purpose                                                                          |
+| ------------------ | -------------------------------------------------------------------------------- |
+| `X-Polaris-Key-Id` | Identifies which key signed this request. Opaque — usually a ULID.               |
+| `X-Polaris-Ts`     | Milliseconds since the Unix epoch, base-10 integer string.                       |
+| `X-Polaris-Nonce`  | 16–128 ASCII chars. Must be unique per request within the ±5-minute skew window. |
+| `X-Polaris-Sig`    | 64 lowercase hex chars. `HMAC-SHA256(secret, canonical)` encoded as hex.         |
 
 The signature header is the **bare** hex tag. No `v1=` prefix, no
 algorithm prefix, no `:` separator. Verifiers reject anything matching
@@ -79,9 +79,9 @@ of `1700000000000` can be replayed deterministically.
 header that asks polaris-email to **dedupe** a request if you retry it.
 Two different concerns:
 
-- The **nonce** stops an attacker from replaying *your* request. It is
+- The **nonce** stops an attacker from replaying _your_ request. It is
   inside the signature. The server stores it briefly to detect a replay.
-- The **idempotency key** lets *you* retry a request safely after a
+- The **idempotency key** lets _you_ retry a request safely after a
   transient error. It is outside the signature; the server caches the
   response keyed on `(key_id, idempotency_key)` for 24 hours and returns
   the cached response on a retry.

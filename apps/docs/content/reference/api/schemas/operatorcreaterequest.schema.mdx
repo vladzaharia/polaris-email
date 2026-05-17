@@ -1,0 +1,27 @@
+---
+id: operatorcreaterequest
+title: 'OperatorCreateRequest'
+description: ''
+sidebar_label: 'OperatorCreateRequest'
+hide_title: true
+hide_table_of_contents: true
+schema: true
+sample:
+  {
+    'name': 'string',
+    'email': 'user@example.com',
+    'ssh_pubkey': 'string',
+    'ssh_pubkey_fp_sha256': 'string',
+    'role': 'operator',
+    'scopes': ['send'],
+    'rate_limit_per_min': 600,
+  }
+custom_edit_url: null
+---
+
+import Schema from '@theme/Schema';
+import Heading from '@theme/Heading';
+
+<Heading as={'h1'} className={'openapi__heading'} children={'OperatorCreateRequest'}></Heading>
+
+<Schema {...require('./operatorcreaterequest.Schema.json')}></Schema>

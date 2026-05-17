@@ -1,0 +1,73 @@
+{
+  "schema": {
+    "type": "object",
+    "description": "Mail domain — the unit of DNS ownership for inbound (Email Routing\nCNAMEs + MX) and outbound (DKIM, SPF, DMARC, MTA-STS, TLS-RPT) email.\nMirrors the `mail_domains` row shape after `services/api/migrations/\n0007_mta_sts.sql`. The Phase C MTA-STS + TLS-RPT fields drive\nself-hosted policy publishing under `mta-sts.{domain}`; see\n`_mta_sts_mode` for the lifecycle states.\n",
+    "required": [
+      "id",
+      "zone_id",
+      "name",
+      "status",
+      "wildcard_subdomains",
+      "inbound_enabled",
+      "outbound_enabled",
+      "provider",
+      "created_at",
+      "updated_at",
+      "mta_sts_mode",
+      "mta_sts_max_age",
+      "tlsrpt_enabled"
+    ],
+    "properties": {
+      "id": { "type": "string", "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$", "title": "Ulid" },
+      "zone_id": { "type": "string", "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$", "title": "Ulid" },
+      "parent_domain_id": {
+        "allOf": [{ "type": "string", "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$", "title": "Ulid" }],
+        "nullable": true
+      },
+      "name": { "type": "string" },
+      "status": {
+        "type": "string",
+        "enum": ["pending", "verifying", "verified", "failed", "disabled"]
+      },
+      "wildcard_subdomains": { "type": "integer" },
+      "dmarc_policy": { "type": "string", "nullable": true },
+      "dmarc_rua": { "type": "string", "nullable": true },
+      "inbound_enabled": { "type": "integer" },
+      "outbound_enabled": { "type": "integer" },
+      "provider": { "type": "string" },
+      "cf_zone_id": { "type": "string", "nullable": true },
+      "dkim_selector": { "type": "string", "nullable": true },
+      "created_at": { "type": "string" },
+      "updated_at": { "type": "string" },
+      "verified_at": { "type": "string", "nullable": true },
+      "last_verify_check_at": { "type": "string", "nullable": true },
+      "disabled_at": { "type": "string", "nullable": true },
+      "mta_sts_mode": {
+        "type": "string",
+        "enum": ["none", "testing", "enforce"],
+        "description": "Lifecycle state for self-hosted MTA-STS:\n  - `none` — no policy published; senders fall back to opportunistic TLS.\n  - `testing` — policy published with `mode: testing`; senders honour MX hosts\n    but do NOT enforce on failure (TLS-RPT reports record violations).\n  - `enforce` — policy published with `mode: enforce`; senders refuse delivery\n    on policy failure.\n"
+      },
+      "mta_sts_policy_id": {
+        "type": "string",
+        "nullable": true,
+        "description": "Opaque ULID/hash advertised as `id=` in the `_mta-sts.{domain}` TXT\nrecord and embedded in the served policy file. Rotated on every\npolicy publish so MTA-STS-aware senders refresh their cached copy.\n"
+      },
+      "mta_sts_max_age": {
+        "type": "integer",
+        "minimum": 0,
+        "description": "`max_age` (seconds) emitted in the served policy file (RFC 8461 §3.2).\nDefault 86400 (1 day). Operators may raise this once policy is\nstable to extend sender-side caching.\n"
+      },
+      "mta_sts_verified_at": { "type": "string", "nullable": true },
+      "tlsrpt_enabled": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 1,
+        "description": "Whether the `_smtp._tls.{domain}` TXT record is published. Stored\nas INTEGER 0/1 to match the existing `inbound_enabled` /\n`outbound_enabled` pattern; PATCH accepts a boolean.\n"
+      },
+      "tlsrpt_rua": { "type": "string", "nullable": true },
+      "tlsrpt_verified_at": { "type": "string", "nullable": true }
+    },
+    "title": "MailDomain"
+  },
+  "schemaType": "response"
+}

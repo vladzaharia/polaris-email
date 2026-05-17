@@ -74,6 +74,7 @@ already-complete phases on retry. The phases are:
 
    Every resource ID is captured into `.deploy-state.json` (gitignored).
    Reruns skip already-known resources.
+
 3. Render `services/*/wrangler.local.jsonc` from each
    `wrangler.local.template.jsonc` using `.deploy-state.json` plus
    `.env.deploy`. Do not hand-edit the materialised files.
@@ -122,13 +123,13 @@ All gitignored, all material. If you lose `.deploy-state.json`, run
 `polaris-email setup infra state rebuild` (or
 `polaris-email setup infra state rebuild --dry-run` to preview).
 
-| File                     | Purpose                                                                                                  |
-| ------------------------ | -------------------------------------------------------------------------------------------------------- |
-| `.env.deploy`            | Environment-specific config written by `polaris-email setup infra configure`.                            |
-| `.deploy-state.json`     | All Cloudflare resource IDs + last deployed version per service + rotation state.                        |
-| `.bootstrap-output.json` | Admin `key_id` + `key_secret` from the one-time bootstrap. **Treat as a credential.**                    |
-| `secrets.created.json`   | Timestamps for master secret seeding (names only, no values).                                            |
-| `.deploy-state.last-sha` | Last SHA `polaris-email setup infra deploy changed` deployed, for diff computation.                      |
+| File                     | Purpose                                                                               |
+| ------------------------ | ------------------------------------------------------------------------------------- |
+| `.env.deploy`            | Environment-specific config written by `polaris-email setup infra configure`.         |
+| `.deploy-state.json`     | All Cloudflare resource IDs + last deployed version per service + rotation state.     |
+| `.bootstrap-output.json` | Admin `key_id` + `key_secret` from the one-time bootstrap. **Treat as a credential.** |
+| `secrets.created.json`   | Timestamps for master secret seeding (names only, no values).                         |
+| `.deploy-state.last-sha` | Last SHA `polaris-email setup infra deploy changed` deployed, for diff computation.   |
 
 `state rebuild` queries `wrangler d1 list`, `wrangler kv namespace list`,
 and `wrangler queues list`, matches resources by name, and writes a fresh

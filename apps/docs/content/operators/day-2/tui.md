@@ -5,7 +5,6 @@ sidebar_label: Admin TUI
 sidebar_position: 2
 ---
 
-
 The `polaris-email` binary ships a fullscreen tabbed admin TUI. It's the
 primary day-2 interface for operators — same eight tabs whether you launch
 it locally (`polaris-email tui`) or SSH into a Wish-fronted bastion
@@ -30,29 +29,29 @@ scripts aren't broken by the alt-screen escape sequences.
 
 ## Tabs
 
-| # | Tab            | Refresh | Lists what                                                                                      |
-|---|----------------|---------|-------------------------------------------------------------------------------------------------|
-| 1 | Dashboard      | 5–30s   | KPI cards + DLQ sparkline + audit anchor freshness + bridge health + recent admin alerts        |
-| 2 | Mailboxes      | 30s     | `/v1/admin/mailboxes` with a detail pane                                                        |
-| 3 | Domains        | 60s     | `/v1/admin/domains` with verification status                                                    |
-| 4 | Credentials    | 60s     | `/v1/admin/credentials` (mailbox-scoped facade over api_keys + smtp_credentials)                |
-| 5 | Webhooks / DLQ | 10–30s  | Subscriptions + DLQ entries on a split pane (`tab` toggles focus)                                |
-| 6 | Bridges        | 30s     | Registered SMTP/IMAP bridges with last-seen freshness                                            |
-| 7 | Audit          | 30s     | Most-recent `audit_log` entries; selecting a row opens its detail in the right pane              |
-| 8 | Logs           | SSE     | Live `/v1/admin/logs/stream` (reuses the existing `logs --follow` model)                         |
+| #   | Tab            | Refresh | Lists what                                                                               |
+| --- | -------------- | ------- | ---------------------------------------------------------------------------------------- |
+| 1   | Dashboard      | 5–30s   | KPI cards + DLQ sparkline + audit anchor freshness + bridge health + recent admin alerts |
+| 2   | Mailboxes      | 30s     | `/v1/admin/mailboxes` with a detail pane                                                 |
+| 3   | Domains        | 60s     | `/v1/admin/domains` with verification status                                             |
+| 4   | Credentials    | 60s     | `/v1/admin/credentials` (mailbox-scoped facade over api_keys + smtp_credentials)         |
+| 5   | Webhooks / DLQ | 10–30s  | Subscriptions + DLQ entries on a split pane (`tab` toggles focus)                        |
+| 6   | Bridges        | 30s     | Registered SMTP/IMAP bridges with last-seen freshness                                    |
+| 7   | Audit          | 30s     | Most-recent `audit_log` entries; selecting a row opens its detail in the right pane      |
+| 8   | Logs           | SSE     | Live `/v1/admin/logs/stream` (reuses the existing `logs --follow` model)                 |
 
 ## Keymap
 
 Global:
 
-| Key            | Action                              |
-|----------------|-------------------------------------|
-| `q`, `ctrl+c`  | Quit                                |
-| `tab`, `→`     | Next tab                            |
-| `shift+tab`, `←` | Previous tab                      |
-| `1`–`8`        | Jump to tab N                       |
-| `r`            | Force-refresh the active tab        |
-| `?`            | Help overlay (when implemented)     |
+| Key              | Action                          |
+| ---------------- | ------------------------------- |
+| `q`, `ctrl+c`    | Quit                            |
+| `tab`, `→`       | Next tab                        |
+| `shift+tab`, `←` | Previous tab                    |
+| `1`–`8`          | Jump to tab N                   |
+| `r`              | Force-refresh the active tab    |
+| `?`              | Help overlay (when implemented) |
 
 Per-tab keys are surfaced in the status-bar hint line and inherited from
 `bubbles/table` (`↑/k` `↓/j` move, `pgup/pgdn` page, etc.).

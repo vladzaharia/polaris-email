@@ -1,0 +1,45 @@
+---
+id: soft-disable-a-mailbox-receiver
+title: 'Soft-disable a mailbox_receiver'
+description: 'Soft-disable a mailbox_receiver'
+sidebar_label: 'Soft-disable a mailbox_receiver'
+hide_title: true
+hide_table_of_contents: true
+api: eJy9VW1v2zYQ/ivEYcBsQLIcAw06oQhmNAbSpWmD2u2GRd5Ei2eLsESqJCXHMPTfB1KSXxJjBbYgnyRRvHuee+5tBwVVNEeDSkP4sAMuIISCmhQ8EDRHCIEz8EDh95IrZBAaVaIHOkkxpxDuwGwLe0sbxcUKPGtsUFk3fz0M/V/G/s1vt3ef7v3ZN//P+W50Wf8EHhhuMmv1NeMM6to7C6wwQV6h+vAqBFrQP/x7mVHFtX+LW99BO2opUobqpYmcR57p/4x63uEnKRL8H5HkXHxEsTIphBeXHuT0cf85elvXc+tLF1Jo1NZ8NBzaB0OdKF4YLi0s45ouMnRqP/k1lUvjt/8JJTnl2UI+/t3l3xJAk0pmvWCGBhtxUwghqC4CynIugtYKdbDjrA46Yx3sDnVUgwcaVdVVe6kyK4gxhQ6DoGjVQuvKpwUfbKRao9IDhhXYKDUmpeJm64xv7sbvx6Vl8TA//jm1MjZCHK7sNaUFv8Xts1w8S9mUu2QCF0vpzNuCPSFJxvcfwAMbT6PkcDAaDOGpvpaGT0uTojA8oQYZ+TKZzogu1ZImSJZSkRO/AzLOMmLrA7XRhCokmq8EMrLhJo1EfMIzJO9SfOw5lOnNePTmsqcxUWg8klAhBU9o1u9fxWSTosLDGeE6EnEHTAseReLd3WR28/n6yr7aFLuXvYX/vUS1dWfH3fLkwFW7O9MpHb259C27hWTb/lU8iEQkfsdFKuVaE4aZLQxkxEiiy4UVbYFKk55JkbTXJqLCTBZImv4gC8zkpn8kynk9rmIiK1TEejqE3LTUUdibBiSKxP3n6eyHYZsmWPHvIb6XQpe5DUSnsswYqVDx5dZlzxGaXt+SXvzrSdIDzda+kAzjnzWJG4tWgjgSUpGOc0t58O3kClkqmZO4oMmarlA7bysZ9weRgNqDQmqTU2FLua31H3f9SRXvO8jgowmKjHLn17Xwrh0HD1BdgAduINip0Y0E8CBs11g7FezJ0X6Ze5BKbayH3W5BNX5VWV3bYye9bXEPKqq4Jeu6fz/OwiXNND4jm0hhUBgIofelnbN9YhfPuSC62SDsYKhoVtov8GCN22YB26n+iohHytTz2uvG1IvH3aCdWbl7Ri8e+FNIt2tfD67bxAfE+dF2u558nMwmUNf/AEk2Q0w=
+sidebar_class_name: 'delete api-method'
+info_path: reference/api/polaris-email-api
+custom_edit_url: null
+---
+
+import MethodEndpoint from '@theme/ApiExplorer/MethodEndpoint';
+import ParamsDetails from '@theme/ParamsDetails';
+import RequestSchema from '@theme/RequestSchema';
+import StatusCodes from '@theme/StatusCodes';
+import OperationTabs from '@theme/OperationTabs';
+import TabItem from '@theme/TabItem';
+import Heading from '@theme/Heading';
+import Translate from '@docusaurus/Translate';
+
+<Heading
+  as={'h1'}
+  className={'openapi__heading'}
+  children={'Soft-disable a mailbox_receiver'}
+></Heading>
+
+<MethodEndpoint
+  method={'delete'}
+  path={'/v1/admin/mailboxes/{id}/receivers/{receiverId}'}
+  context={'endpoint'}
+></MethodEndpoint>
+
+Soft-disable a mailbox_receiver
+
+<Heading id={'request'} as={'h2'} className={'openapi-tabs__heading'}>
+  <Translate id="theme.openapi.request.title">Request</Translate>
+</Heading>
+
+<ParamsDetails {...require('./soft-disable-a-mailbox-receiver.ParamsDetails.json')}></ParamsDetails>
+
+<RequestSchema {...require('./soft-disable-a-mailbox-receiver.RequestSchema.json')}></RequestSchema>
+
+<StatusCodes {...require('./soft-disable-a-mailbox-receiver.StatusCodes.json')}></StatusCodes>

@@ -27,18 +27,18 @@ docker compose --profile lego up
 
 ## Files in this directory
 
-| Path | Purpose | Mode |
-|---|---|---|
-| `docker-compose.yml`     | Compose stack the wizard rendered.            | 0644 |
-| `.env`                   | Operator-overrideable knobs.                  | 0600 |
-| `bridge.toml`            | Bridge config (env vars override at runtime). | 0644 |
-| `secrets/`               | Credentials. **Treat as keys-on-paper.**      | 0700 |
-| `secrets/bridge_id`      | Bridge UUID minted by the control plane.      | 0600 |
-| `secrets/hmac_key`       | HMAC secret used to sign API calls.           | 0600 |
-| `secrets/access_client_id` | Cloudflare Access service-token id.         | 0600 |
-| `secrets/access_client_secret` | Cloudflare Access service-token secret. | 0600 |
-| `registration.json`      | Full registration response (operator audit).  | 0600 |
-| `.polaris-setup.json`    | Wizard input snapshot; secrets replaced.      | 0600 |
+| Path                           | Purpose                                       | Mode |
+| ------------------------------ | --------------------------------------------- | ---- |
+| `docker-compose.yml`           | Compose stack the wizard rendered.            | 0644 |
+| `.env`                         | Operator-overrideable knobs.                  | 0600 |
+| `bridge.toml`                  | Bridge config (env vars override at runtime). | 0644 |
+| `secrets/`                     | Credentials. **Treat as keys-on-paper.**      | 0700 |
+| `secrets/bridge_id`            | Bridge UUID minted by the control plane.      | 0600 |
+| `secrets/hmac_key`             | HMAC secret used to sign API calls.           | 0600 |
+| `secrets/access_client_id`     | Cloudflare Access service-token id.           | 0600 |
+| `secrets/access_client_secret` | Cloudflare Access service-token secret.       | 0600 |
+| `registration.json`            | Full registration response (operator audit).  | 0600 |
+| `.polaris-setup.json`          | Wizard input snapshot; secrets replaced.      | 0600 |
 
 ## Re-running the wizard
 

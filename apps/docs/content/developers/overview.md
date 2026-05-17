@@ -28,9 +28,9 @@ scratch.
 
 ## Use a first-party SDK
 
-| Language | Page                                  |
-| -------- | ------------------------------------- |
-| Node     | [`@polaris/sdk`](/developers/sdks/node)    |
+| Language | Page                                      |
+| -------- | ----------------------------------------- |
+| Node     | [`@polaris/sdk`](/developers/sdks/node)   |
 | Go       | [`polaris-sdk-go`](/developers/sdks/go)   |
 | Other    | [REST + curl](/developers/sdks/rest-curl) |
 

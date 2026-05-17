@@ -25,12 +25,12 @@ mode, the operator owns firewall posture instead.
 
 ## Common gotchas
 
-| Gotcha                       | Fix                                                                      |
-| ---------------------------- | ------------------------------------------------------------------------ |
-| STARTTLS-only library        | Reconfigure to implicit TLS (`SMTPSecure='ssl'`, `SMTPS`, `SSL=true`, `port=465`). |
-| Cert SAN mismatch            | Always connect to the bridge's exact configured hostname.                |
-| JDK ≤ 11 trust store         | Some old JDKs reject `.ts.net` LE-issued chains. Upgrade or import the cert. |
-| IDLE poll latency            | ~5 s. IMAP IDLE sees batches every 5 s, not real-time. Real-time inbound is webhook-only. |
+| Gotcha                | Fix                                                                                       |
+| --------------------- | ----------------------------------------------------------------------------------------- |
+| STARTTLS-only library | Reconfigure to implicit TLS (`SMTPSecure='ssl'`, `SMTPS`, `SSL=true`, `port=465`).        |
+| Cert SAN mismatch     | Always connect to the bridge's exact configured hostname.                                 |
+| JDK ≤ 11 trust store  | Some old JDKs reject `.ts.net` LE-issued chains. Upgrade or import the cert.              |
+| IDLE poll latency     | ~5 s. IMAP IDLE sees batches every 5 s, not real-time. Real-time inbound is webhook-only. |
 
 ## Library-by-library
 

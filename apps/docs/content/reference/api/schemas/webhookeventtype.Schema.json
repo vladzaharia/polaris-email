@@ -1,0 +1,14 @@
+{
+  "schema": {
+    "type": "string",
+    "enum": [
+      "message.received",
+      "message.sent",
+      "message.delivered",
+      "message.bounced",
+      "message.failed"
+    ],
+    "title": "WebhookEventType"
+  },
+  "schemaType": "response"
+}

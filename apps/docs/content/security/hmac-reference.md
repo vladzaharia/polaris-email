@@ -35,14 +35,14 @@ No `\r`:
 <lowercase-hex(SHA-256(raw-body-bytes))>
 ```
 
-| Field             | Specification                                                                                                                                                  |
-| ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `direction`       | `polaris-api` (HTTP requests to the REST surface) **or** `polaris-webhook` (outgoing webhook deliveries). Domain separation. No `.v1` suffix.                  |
-| `METHOD`          | Uppercased HTTP method: `POST`, `GET`, `PATCH`, `DELETE`, …. Must match `^[A-Z]+$`.                                                                            |
-| `path`            | URL path with leading `/`. No fragment, no scheme, no host.                                                                                                    |
-| `canonical-query` | RFC3986 percent-encoded query string, sorted first by lowercased key then by raw value. Empty string when there is no query. No leading `?`.                   |
-| `X-Polaris-Ts`    | Millisecond Unix timestamp as a base-10 integer string. No leading zeros.                                                                                      |
-| `X-Polaris-Nonce` | 16–128 ASCII chars. No whitespace, CR, LF, tab, NUL, or non-ASCII.                                                                                             |
+| Field             | Specification                                                                                                                                                       |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `direction`       | `polaris-api` (HTTP requests to the REST surface) **or** `polaris-webhook` (outgoing webhook deliveries). Domain separation. No `.v1` suffix.                       |
+| `METHOD`          | Uppercased HTTP method: `POST`, `GET`, `PATCH`, `DELETE`, …. Must match `^[A-Z]+$`.                                                                                 |
+| `path`            | URL path with leading `/`. No fragment, no scheme, no host.                                                                                                         |
+| `canonical-query` | RFC3986 percent-encoded query string, sorted first by lowercased key then by raw value. Empty string when there is no query. No leading `?`.                        |
+| `X-Polaris-Ts`    | Millisecond Unix timestamp as a base-10 integer string. No leading zeros.                                                                                           |
+| `X-Polaris-Nonce` | 16–128 ASCII chars. No whitespace, CR, LF, tab, NUL, or non-ASCII.                                                                                                  |
 | Body hash         | `lowercase-hex(SHA-256(body))` over the **exact raw bytes** sent on the wire. No canonicalisation, no whitespace normalisation. Empty body hashes the empty string. |
 
 ### Canonical-query encoding
@@ -76,10 +76,10 @@ containing `=`, `:`, or uppercase hex is refused with
 
 ## Domain tags
 
-| Tag               | Used for                                                  | Signer location                                  |
-| ----------------- | --------------------------------------------------------- | ------------------------------------------------ |
-| `polaris-api`     | HTTP requests from a caller to the polaris-email REST API | Caller's SDK or hand-rolled signing code         |
-| `polaris-webhook` | Outgoing webhook deliveries from polaris-email to a consumer | `services/api/src/queue/fanout.ts` (only)        |
+| Tag               | Used for                                                     | Signer location                           |
+| ----------------- | ------------------------------------------------------------ | ----------------------------------------- |
+| `polaris-api`     | HTTP requests from a caller to the polaris-email REST API    | Caller's SDK or hand-rolled signing code  |
+| `polaris-webhook` | Outgoing webhook deliveries from polaris-email to a consumer | `services/api/src/queue/fanout.ts` (only) |
 
 Domain separation prevents an attacker from re-using an API-direction
 signature as a webhook-direction signature. The two tags are the only
@@ -87,12 +87,12 @@ allowed values.
 
 ## Required request headers
 
-| Header             | Format                                                         | Validation                                |
-| ------------------ | -------------------------------------------------------------- | ----------------------------------------- |
-| `X-Polaris-Key-Id` | Opaque key identifier (e.g. ULID).                             | Resolves to a secret in the key cache.    |
-| `X-Polaris-Ts`     | Milliseconds since Unix epoch, base-10 integer.                | `^[0-9]+$`; clock-skew check below.       |
-| `X-Polaris-Nonce`  | 16–128 ASCII chars, unique per request within the skew window. | Length window + ASCII check.              |
-| `X-Polaris-Sig`    | 64 lowercase hex chars.                                        | `^[0-9a-f]{64}$`; constant-time compare.  |
+| Header             | Format                                                         | Validation                               |
+| ------------------ | -------------------------------------------------------------- | ---------------------------------------- |
+| `X-Polaris-Key-Id` | Opaque key identifier (e.g. ULID).                             | Resolves to a secret in the key cache.   |
+| `X-Polaris-Ts`     | Milliseconds since Unix epoch, base-10 integer.                | `^[0-9]+$`; clock-skew check below.      |
+| `X-Polaris-Nonce`  | 16–128 ASCII chars, unique per request within the skew window. | Length window + ASCII check.             |
+| `X-Polaris-Sig`    | 64 lowercase hex chars.                                        | `^[0-9a-f]{64}$`; constant-time compare. |
 
 Reject any of the four if they contain space, tab, CR, LF, NUL, or any
 byte above `0x7e` — **before** running HMAC verification. This guards
@@ -113,12 +113,12 @@ recorded `ts` can be replayed deterministically.
 
 Verifiers MUST compare signatures with a constant-time byte comparison:
 
-| Language     | Primitive                            |
-| ------------ | ------------------------------------ |
-| Node         | `crypto.timingSafeEqual`             |
-| Go           | `crypto/subtle.ConstantTimeCompare`  |
-| Python       | `hmac.compare_digest`                |
-| Shell        | `polaris-email auth verify` (wraps the Go primitive) |
+| Language | Primitive                                            |
+| -------- | ---------------------------------------------------- |
+| Node     | `crypto.timingSafeEqual`                             |
+| Go       | `crypto/subtle.ConstantTimeCompare`                  |
+| Python   | `hmac.compare_digest`                                |
+| Shell    | `polaris-email auth verify` (wraps the Go primitive) |
 
 A naïve `===` / `==` comparison leaks signature bytes via timing and is
 a verification bug.
@@ -228,12 +228,12 @@ is skipped during tests. In production, the gate is always on.
 Defined in `packages/hmac/src/index.ts`; SDKs and the API surface this
 set verbatim.
 
-| Code                | Cause                                                                                                       |
-| ------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `missing_header`    | One of `X-Polaris-Ts`, `X-Polaris-Nonce`, `X-Polaris-Sig` is absent.                                        |
+| Code                | Cause                                                                                                                                        |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `missing_header`    | One of `X-Polaris-Ts`, `X-Polaris-Nonce`, `X-Polaris-Sig` is absent.                                                                         |
 | `header_invalid`    | A header contained whitespace, CR/LF/NUL, or non-ASCII; the timestamp wasn't a base-10 integer; or the nonce length was outside `[16, 128]`. |
-| `clock_skew`        | `abs(now_ms - ts_ms) > 300_000`.                                                                            |
-| `invalid_signature` | Signature didn't match `^[0-9a-f]+$`, didn't hex-decode, or the constant-time comparison failed.            |
+| `clock_skew`        | `abs(now_ms - ts_ms) > 300_000`.                                                                                                             |
+| `invalid_signature` | Signature didn't match `^[0-9a-f]+$`, didn't hex-decode, or the constant-time comparison failed.                                             |
 
 Note that signatures shaped like `v1=…` / `v2=…` fail the bare-hex
 regex and are rejected with `invalid_signature` — not `header_invalid`.
@@ -277,22 +277,22 @@ What the scheme does **not** do:
   same.
 - **It does not authenticate `X-Polaris-Key-Id`.** The key-id is
   outside the signature because the verifier needs it to look up the
-  secret. The signature is authenticated by *being computable* under
+  secret. The signature is authenticated by _being computable_ under
   the looked-up secret — but a hostile key-id with a valid signature
   under that key's secret will still authenticate as that key. Don't
   treat the key-id as if it were inside the signature.
 
 ## Implementation references
 
-| Component           | File                                                                                                            |
-| ------------------- | --------------------------------------------------------------------------------------------------------------- |
-| Canonical signer + verifier | `packages/hmac/src/index.ts`                                                                            |
-| API direction (inbound auth) | `services/api/src/auth.ts`                                                                             |
-| Webhook direction (outbound signing) | `services/api/src/queue/fanout.ts`                                                            |
-| Node SDK verifier   | `packages/sdk-node/`                                                                                            |
-| Go SDK verifier     | `packages/sdk-go/`                                                                                              |
-| Operator-side CLI   | `polaris-email auth verify` (in `apps/polaris-cli/`)                                                            |
-| Test vectors        | `packages/test-vectors/vectors.json`                                                                            |
+| Component                            | File                                                 |
+| ------------------------------------ | ---------------------------------------------------- |
+| Canonical signer + verifier          | `packages/hmac/src/index.ts`                         |
+| API direction (inbound auth)         | `services/api/src/auth.ts`                           |
+| Webhook direction (outbound signing) | `services/api/src/queue/fanout.ts`                   |
+| Node SDK verifier                    | `packages/sdk-node/`                                 |
+| Go SDK verifier                      | `packages/sdk-go/`                                   |
+| Operator-side CLI                    | `polaris-email auth verify` (in `apps/polaris-cli/`) |
+| Test vectors                         | `packages/test-vectors/vectors.json`                 |
 
 ## See also
 

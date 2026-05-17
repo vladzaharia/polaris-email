@@ -31,7 +31,7 @@ Every Worker emits two kinds of telemetry to Analytics Engine:
   authenticated request.
 - **Per-domain rollups** — outbound throughput, bounce rate, DKIM
   failure rate, fanout backlog depth. Emitted by the queue consumer
-  + cron handlers in `services/api`.
+  - cron handlers in `services/api`.
 
 Query via `wrangler` or the dashboard's Analytics → Workers Analytics
 Engine view. The dataset names are stable across environments
@@ -118,11 +118,11 @@ alerting at 2 minutes).
 Logpush jobs ship structured Worker logs (one JSON line per console
 output) to an external destination. polaris-email recommends one of:
 
-| Destination | When | Notes |
-| --- | --- | --- |
-| **R2** | Default. Cheapest, same account, no cross-cloud egress. | Pair with a retention rule so logs roll off at your audit window. |
-| **S3** | You already have an SIEM that ingests from S3 (Splunk, Sumo, Panther). | Cross-cloud egress applies. |
-| **HTTP webhook** | Lightweight forwarding to a logs-as-a-service backend (Datadog, Axiom, Logtail). | Buffered server-side; spiky delivery. |
+| Destination      | When                                                                             | Notes                                                             |
+| ---------------- | -------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| **R2**           | Default. Cheapest, same account, no cross-cloud egress.                          | Pair with a retention rule so logs roll off at your audit window. |
+| **S3**           | You already have an SIEM that ingests from S3 (Splunk, Sumo, Panther).           | Cross-cloud egress applies.                                       |
+| **HTTP webhook** | Lightweight forwarding to a logs-as-a-service backend (Datadog, Axiom, Logtail). | Buffered server-side; spiky delivery.                             |
 
 Create a Logpush job per Worker via `wrangler` or the dashboard:
 
@@ -146,13 +146,13 @@ party).
 The Workers emit structured `console.warn` / `console.error` lines
 the operator can pattern-match on:
 
-| `event` | Surface | Meaning |
-| --- | --- | --- |
-| `hmac_verification_failed` | API | One of `bad_signature`, `clock_skew`, `nonce_replay`. Includes the key id + path. |
-| `anchor_b2_write_failed` | API cron | B2 PUT failed; daily backfill cron will retry. |
-| `synthetic_check_failed` | API cron | `/healthz` probe failed twice in a row; `ALERT_WEBHOOK` already fired. |
-| `revocation_check_failed` | API | `KV_REVOCATIONS` read errored; treated as not-revoked but logged. |
-| `webhook_delivery_failed` | API queue | One webhook attempt failed; check `paused` and `failure_count` on the sub. |
+| `event`                    | Surface   | Meaning                                                                           |
+| -------------------------- | --------- | --------------------------------------------------------------------------------- |
+| `hmac_verification_failed` | API       | One of `bad_signature`, `clock_skew`, `nonce_replay`. Includes the key id + path. |
+| `anchor_b2_write_failed`   | API cron  | B2 PUT failed; daily backfill cron will retry.                                    |
+| `synthetic_check_failed`   | API cron  | `/healthz` probe failed twice in a row; `ALERT_WEBHOOK` already fired.            |
+| `revocation_check_failed`  | API       | `KV_REVOCATIONS` read errored; treated as not-revoked but logged.                 |
+| `webhook_delivery_failed`  | API queue | One webhook attempt failed; check `paused` and `failure_count` on the sub.        |
 
 ## `ALERT_WEBHOOK` integration
 
@@ -160,11 +160,11 @@ the operator can pattern-match on:
 failure. It's configured via `polaris-email setup infra configure` and
 surfaces in three places:
 
-| Caller | When |
-| --- | --- |
-| `services/api/src/scheduled/synthetic.ts` | After two consecutive `/healthz` failures. Counter persisted in `KV_RATE_LIMIT` so isolate evictions don't reset it. |
-| `services/api/src/scheduled/staleness.ts` | Weekly check that the control-plane signing secret has been rotated within 365 days. |
-| `services/api/src/lib/admin-alert.ts` | Generic `sendAlert()` writer used by sender abuse threshold, phishing reports, legal takedowns, DMARC alignment drops, etc. Deduped via `KV_ADMIN_ALERTS` (1h bucket) so an alert storm doesn't spam the operator. |
+| Caller                                    | When                                                                                                                                                                                                               |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `services/api/src/scheduled/synthetic.ts` | After two consecutive `/healthz` failures. Counter persisted in `KV_RATE_LIMIT` so isolate evictions don't reset it.                                                                                               |
+| `services/api/src/scheduled/staleness.ts` | Weekly check that the control-plane signing secret has been rotated within 365 days.                                                                                                                               |
+| `services/api/src/lib/admin-alert.ts`     | Generic `sendAlert()` writer used by sender abuse threshold, phishing reports, legal takedowns, DMARC alignment drops, etc. Deduped via `KV_ADMIN_ALERTS` (1h bucket) so an alert storm doesn't spam the operator. |
 
 All three call the webhook through `safeFetch` (see
 [`services/api/src/queue/ssrf.ts`](https://github.com/vladzaharia/polaris-email/blob/main/services/api/src/queue/ssrf.ts))
@@ -226,14 +226,14 @@ Aim for these. Each is met today on the canonical deployment; falling
 below any one of them is the operator's signal that something has
 regressed.
 
-| SLO | Threshold | Measured by |
-| --- | --- | --- |
-| `/v1/messages` publish latency | 99% < 250 ms | `polaris_api_requests` Analytics Engine, p99 by minute. |
-| Webhook delivery latency | 99.9% within 30 s of source event | `polaris_webhook_deliveries` Analytics Engine, p99.9 by minute. |
-| Anchor cron freshness | Latest anchor < 1 h stale | `polaris_cron_runs` Analytics Engine + the [anchor maintenance runbook](/operators/runbooks/anchor-maintenance). |
-| Synthetic outbound | 100% over rolling 1 h window (allow ≤2 transient blips) | `services/api/src/scheduled/synthetic.ts` counter in `KV_RATE_LIMIT`; alert fires on `≥ ALERT_THRESHOLD` (2). |
-| Bridge `last_seen` lag | < 2 min for every healthy bridge | D1 `mail_bridges.last_sync_at`. |
-| DLQ growth | Bounded at zero outside an incident window | Queues consumer status; the [webhook DLQ runbook](/operators/runbooks/webhook-dlq) is the recovery path. |
+| SLO                            | Threshold                                               | Measured by                                                                                                      |
+| ------------------------------ | ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `/v1/messages` publish latency | 99% < 250 ms                                            | `polaris_api_requests` Analytics Engine, p99 by minute.                                                          |
+| Webhook delivery latency       | 99.9% within 30 s of source event                       | `polaris_webhook_deliveries` Analytics Engine, p99.9 by minute.                                                  |
+| Anchor cron freshness          | Latest anchor < 1 h stale                               | `polaris_cron_runs` Analytics Engine + the [anchor maintenance runbook](/operators/runbooks/anchor-maintenance). |
+| Synthetic outbound             | 100% over rolling 1 h window (allow ≤2 transient blips) | `services/api/src/scheduled/synthetic.ts` counter in `KV_RATE_LIMIT`; alert fires on `≥ ALERT_THRESHOLD` (2).    |
+| Bridge `last_seen` lag         | < 2 min for every healthy bridge                        | D1 `mail_bridges.last_sync_at`.                                                                                  |
+| DLQ growth                     | Bounded at zero outside an incident window              | Queues consumer status; the [webhook DLQ runbook](/operators/runbooks/webhook-dlq) is the recovery path.         |
 
 The publish-latency SLO bakes in a budget for Argon2id key
 verification — that's why Argon2id moved to the Out Worker in the

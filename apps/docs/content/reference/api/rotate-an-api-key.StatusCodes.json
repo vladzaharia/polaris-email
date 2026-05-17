@@ -1,0 +1,20 @@
+{
+  "responses": {
+    "200": {
+      "description": "rotated",
+      "content": {
+        "application/json": {
+          "schema": {
+            "type": "object",
+            "properties": {
+              "new_key_id": { "type": "string" },
+              "new_key_secret": { "type": "string" },
+              "prev_status": { "type": "string" }
+            },
+            "title": "RotateResponse"
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,25 @@
+---
+id: issueapikeyrequest
+title: 'IssueApiKeyRequest'
+description: ''
+sidebar_label: 'IssueApiKeyRequest'
+hide_title: true
+hide_table_of_contents: true
+schema: true
+sample:
+  {
+    'mailbox_id': 'string',
+    'display_name': 'string',
+    'sender_ids': ['string'],
+    'scopes': ['send'],
+    'rate_limit_per_min': 1000,
+  }
+custom_edit_url: null
+---
+
+import Schema from '@theme/Schema';
+import Heading from '@theme/Heading';
+
+<Heading as={'h1'} className={'openapi__heading'} children={'IssueApiKeyRequest'}></Heading>
+
+<Schema {...require('./issueapikeyrequest.Schema.json')}></Schema>

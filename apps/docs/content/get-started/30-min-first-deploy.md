@@ -91,16 +91,16 @@ polaris-email setup infra configure
 
 You will be asked for, in order:
 
-| Var | Source |
-| --- | --- |
-| `CF_ACCOUNT_ID` | Cloudflare dashboard → top-right corner. |
+| Var                    | Source                                                                                      |
+| ---------------------- | ------------------------------------------------------------------------------------------- |
+| `CF_ACCOUNT_ID`        | Cloudflare dashboard → top-right corner.                                                    |
 | `POLARIS_API_HOSTNAME` | Where the API Worker will live (e.g. `polaris-email-api.workers.dev` or a custom hostname). |
-| `CF_API_TOKEN` | The token you minted in step 0. |
-| `CF_ZONE_ID` | Default zone for domain ops (optional). |
-| `ALERT_WEBHOOK` | Slack / PagerDuty inbound webhook for synthetic + staleness alerts (optional, recommended). |
-| `OIDC_*` | Panel auth — defer if you don't need the panel today. |
-| `ANCHOR_S3_*` | Backblaze B2 endpoint, bucket, region, application key id, application key secret. |
-| `R2_PUBLIC_HOST` | Public R2 custom domain for message bodies + attachments (e.g. `r2.mail.example.com`). |
+| `CF_API_TOKEN`         | The token you minted in step 0.                                                             |
+| `CF_ZONE_ID`           | Default zone for domain ops (optional).                                                     |
+| `ALERT_WEBHOOK`        | Slack / PagerDuty inbound webhook for synthetic + staleness alerts (optional, recommended). |
+| `OIDC_*`               | Panel auth — defer if you don't need the panel today.                                       |
+| `ANCHOR_S3_*`          | Backblaze B2 endpoint, bucket, region, application key id, application key secret.          |
+| `R2_PUBLIC_HOST`       | Public R2 custom domain for message bodies + attachments (e.g. `r2.mail.example.com`).      |
 
 The file is rewritten after every prompt, so a Ctrl-C halfway
 through leaves you with a partial `.env.deploy` and the next run

@@ -1,0 +1,35 @@
+---
+id: sendrequest
+title: 'SendRequest'
+description: 'JSON submission body for `POST /v1/messages` with `Content-Type: application/json`.'
+sidebar_label: 'SendRequest'
+hide_title: true
+hide_table_of_contents: true
+schema: true
+sample:
+  {
+    'from': 'string',
+    'to': ['string'],
+    'cc': ['string'],
+    'bcc': ['string'],
+    'subject': 'string',
+    'text': 'string',
+    'html': 'string',
+    'headers': {},
+    'attachments': [{ 'filename': 'string', 'content_type': 'string', 'content_base64': 'string' }],
+    'reply_to': 'string',
+    'idempotency_key': 'string',
+  }
+custom_edit_url: null
+---
+
+import Schema from '@theme/Schema';
+import Heading from '@theme/Heading';
+
+<Heading as={'h1'} className={'openapi__heading'} children={'SendRequest'}></Heading>
+
+JSON submission body for `POST /v1/messages` with `Content-Type: application/json`.
+Forbidden headers (date, message-id, from, to, cc, bcc, subject, content-type, etc.)
+MUST NOT appear in `headers`.
+
+<Schema {...require('./sendrequest.Schema.json')}></Schema>

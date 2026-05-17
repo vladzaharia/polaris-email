@@ -33,10 +33,10 @@ narrative is at [HMAC concept](/developers/authentication/concept).
 
 `POST /v1/messages` accepts two content types:
 
-| Content-Type        | Body shape                                             |
-| ------------------- | ------------------------------------------------------ |
-| `application/json`  | `SendRequest` (see [REST reference](/reference/api/submit-a-message-json-or-rfc-822)) |
-| `message/rfc822`    | Raw RFC 5322 bytes; canonicalised by the API on receipt |
+| Content-Type       | Body shape                                                                            |
+| ------------------ | ------------------------------------------------------------------------------------- |
+| `application/json` | `SendRequest` (see [REST reference](/reference/api/submit-a-message-json-or-rfc-822)) |
+| `message/rfc822`   | Raw RFC 5322 bytes; canonicalised by the API on receipt                               |
 
 Use `message/rfc822` when forwarding an already-composed MIME message from
 a downstream tool or bridge.
@@ -222,11 +222,11 @@ If your service needs to react to inbound mail, register a webhook
 subscription pointing at your service's URL. Then verify the signature
 using one of the first-party SDK verifiers:
 
-| Language | Verifier                                                |
-| -------- | ------------------------------------------------------- |
-| Node     | `@polaris/sdk/webhook` (`verifyWebhook`)                |
-| Go       | `polarissdkgo.VerifyWebhook`                            |
-| Other    | [REST + curl](/developers/sdks/rest-curl) (openssl)     |
+| Language | Verifier                                            |
+| -------- | --------------------------------------------------- |
+| Node     | `@polaris/sdk/webhook` (`verifyWebhook`)            |
+| Go       | `polarissdkgo.VerifyWebhook`                        |
+| Other    | [REST + curl](/developers/sdks/rest-curl) (openssl) |
 
 The webhook body is the **v2 envelope**:
 `{event_id, event, occurred_at, message}`. The full `Message` is inlined;

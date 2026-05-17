@@ -45,14 +45,14 @@ both already exist. Rewrote to point at the live pages. Added missing
 
 Page documented commands that do not exist in the CLI surface today:
 
-| Wrong                                  | Correct                                 |
-| -------------------------------------- | --------------------------------------- |
-| `polaris-email credential revoke`      | `polaris-email cred revoke`              |
-| `polaris-email bridge revoke`          | (does not exist — use `rotate` or `deregister`) |
-| `polaris-email mailbox disable`        | (REST surface only today)               |
-| `polaris-email mailbox delete --cascade` | (REST surface only today)             |
-| `polaris-email webhook disable`        | (REST surface only today)               |
-| `polaris-email principal delete`       | (REST surface only today)               |
+| Wrong                                    | Correct                                         |
+| ---------------------------------------- | ----------------------------------------------- |
+| `polaris-email credential revoke`        | `polaris-email cred revoke`                     |
+| `polaris-email bridge revoke`            | (does not exist — use `rotate` or `deregister`) |
+| `polaris-email mailbox disable`          | (REST surface only today)                       |
+| `polaris-email mailbox delete --cascade` | (REST surface only today)                       |
+| `polaris-email webhook disable`          | (REST surface only today)                       |
+| `polaris-email principal delete`         | (REST surface only today)                       |
 
 Rewrote with the verbs that actually compile (`cred revoke`, `bridge
 deregister`, `domain disable`, `route disable`, `route enable`, `domain
@@ -64,20 +64,20 @@ not lie to operators.
 Multiple pages cite a future batch for pages that already exist. Fixed
 in nine pages:
 
-| Page                                                       | Stale claim → fix                                                                 |
-| ---------------------------------------------------------- | --------------------------------------------------------------------------------- |
-| `developers/quickstart.md`                                 | `/security/overview` HMAC → `/security/hmac-reference`                            |
-| `developers/sdks/rest-curl.md`                             | `/security/overview` HMAC → `/security/hmac-reference`; `/developers/overview` Messages → `/developers/messages/unified-model` |
-| `developers/webhooks/lifecycle.md`                         | "HMAC spec lands in a later batch" → `/security/hmac-reference`                   |
-| `operators/day-2/cli-tour.md`                              | "HMAC reference (lands in a later batch)" → `/security/hmac-reference`            |
-| `operators/day-2/bridge-management.md`                     | "Bridge TLS renewal lands in a later batch" → `/operators/day-2/bridge-tls`       |
-| `operators/day-2/mailbox-management.md`                    | "Concepts → Architecture (lands in a later batch)" → `/operators/concepts/architecture`; HMAC link similar |
-| `operators/day-2/domain-management.md`                     | "domain-onboarding runbook (lands in a later batch)" → DKIM/DMARC/SPF page        |
-| `operators/day-2/credential-management.md`                 | "credential-rotation / key-rotation runbooks (lands in a later batch)" → `/operators/runbooks/control-plane-rotation`, `/operators/runbooks/anchor-maintenance`, `/operators/runbooks/disaster-recovery` |
-| `operators/day-2/routing-and-webhooks.md`                  | "HMAC reference (lands in a later batch)" → `/security/hmac-reference`            |
-| `operators/runbooks/overview.md`                           | "cost model (lands in a later batch)" → `/operators/concepts/cost-model`           |
-| `reference/consumer-contract.md`                           | HMAC ref placeholder → `/security/hmac-reference`                                  |
-| `security/threat-model.md`                                 | Three references to "lands in later batches" all replaced with live links          |
+| Page                                       | Stale claim → fix                                                                                                                                                                                        |
+| ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `developers/quickstart.md`                 | `/security/overview` HMAC → `/security/hmac-reference`                                                                                                                                                   |
+| `developers/sdks/rest-curl.md`             | `/security/overview` HMAC → `/security/hmac-reference`; `/developers/overview` Messages → `/developers/messages/unified-model`                                                                           |
+| `developers/webhooks/lifecycle.md`         | "HMAC spec lands in a later batch" → `/security/hmac-reference`                                                                                                                                          |
+| `operators/day-2/cli-tour.md`              | "HMAC reference (lands in a later batch)" → `/security/hmac-reference`                                                                                                                                   |
+| `operators/day-2/bridge-management.md`     | "Bridge TLS renewal lands in a later batch" → `/operators/day-2/bridge-tls`                                                                                                                              |
+| `operators/day-2/mailbox-management.md`    | "Concepts → Architecture (lands in a later batch)" → `/operators/concepts/architecture`; HMAC link similar                                                                                               |
+| `operators/day-2/domain-management.md`     | "domain-onboarding runbook (lands in a later batch)" → DKIM/DMARC/SPF page                                                                                                                               |
+| `operators/day-2/credential-management.md` | "credential-rotation / key-rotation runbooks (lands in a later batch)" → `/operators/runbooks/control-plane-rotation`, `/operators/runbooks/anchor-maintenance`, `/operators/runbooks/disaster-recovery` |
+| `operators/day-2/routing-and-webhooks.md`  | "HMAC reference (lands in a later batch)" → `/security/hmac-reference`                                                                                                                                   |
+| `operators/runbooks/overview.md`           | "cost model (lands in a later batch)" → `/operators/concepts/cost-model`                                                                                                                                 |
+| `reference/consumer-contract.md`           | HMAC ref placeholder → `/security/hmac-reference`                                                                                                                                                        |
+| `security/threat-model.md`                 | Three references to "lands in later batches" all replaced with live links                                                                                                                                |
 
 ### 5. Wrong CLI flags in runbook
 
@@ -119,15 +119,15 @@ Seven `:::warning Out of date:::` admonitions checked at HEAD SHA
 `2371f79b`. All seven are **still accurate** — the underlying source
 files still carry the stale terminology the admonition flags. Detail:
 
-| Page                                            | Flag                                                                  | Verified against                                                                                                                                          |
-| ----------------------------------------------- | --------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `changelog.md`                                  | Two-person `withApproval` retired                                     | `apps/panel/README.md` still mentions it; `apps/panel/migrations/0001_drop_step_ups.sql` confirms removal landed                                          |
-| `changelog.md` (Unreleased section)             | HMAC un-versioned, Python SDK dropped, REVOCATION_DO retired          | Confirmed against current `packages/hmac/src/index.ts`, no `packages/sdk-python/`, no `REVOCATION_DO` Durable Object in `services/api`                    |
-| `operators/day-2/routing-and-webhooks.md`       | CLI does not yet expose a `webhook subs` verb                         | `apps/polaris-cli/internal/cmds/webhook.go` confirms — only `webhook dlq` subcommands                                                                     |
-| `operators/day-2/mailbox-management.md`         | CLI does not yet expose a `mailbox` verb                              | No `mailbox.go` in `apps/polaris-cli/internal/cmds/`                                                                                                      |
-| `operators/runbooks/overview.md`                | Two-person rule on DLQ drops is now type-the-id, not co-sign         | Code confirms; admonition is correct                                                                                                                       |
-| `operators/deployment/cloudflare-access.md`     | `apps/panel/README.md` still describes `withApproval`                 | Verified — README still has it, code does not                                                                                                              |
-| `security/threat-model.md`                      | Anchor rotation step still cites `withApproval('anchor.rotate')`      | Same — copy needs an eventual cleanup pass, but the warning is accurate                                                                                    |
+| Page                                        | Flag                                                             | Verified against                                                                                                                       |
+| ------------------------------------------- | ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `changelog.md`                              | Two-person `withApproval` retired                                | `apps/panel/README.md` still mentions it; `apps/panel/migrations/0001_drop_step_ups.sql` confirms removal landed                       |
+| `changelog.md` (Unreleased section)         | HMAC un-versioned, Python SDK dropped, REVOCATION_DO retired     | Confirmed against current `packages/hmac/src/index.ts`, no `packages/sdk-python/`, no `REVOCATION_DO` Durable Object in `services/api` |
+| `operators/day-2/routing-and-webhooks.md`   | CLI does not yet expose a `webhook subs` verb                    | `apps/polaris-cli/internal/cmds/webhook.go` confirms — only `webhook dlq` subcommands                                                  |
+| `operators/day-2/mailbox-management.md`     | CLI does not yet expose a `mailbox` verb                         | No `mailbox.go` in `apps/polaris-cli/internal/cmds/`                                                                                   |
+| `operators/runbooks/overview.md`            | Two-person rule on DLQ drops is now type-the-id, not co-sign     | Code confirms; admonition is correct                                                                                                   |
+| `operators/deployment/cloudflare-access.md` | `apps/panel/README.md` still describes `withApproval`            | Verified — README still has it, code does not                                                                                          |
+| `security/threat-model.md`                  | Anchor rotation step still cites `withApproval('anchor.rotate')` | Same — copy needs an eventual cleanup pass, but the warning is accurate                                                                |
 
 No admonition was removed or rewritten — all are accurate. Each
 flags a known stale paragraph that the writers preferred to leave in
@@ -257,15 +257,15 @@ exclamation marks. The stubs were the only voice outliers.
 from each `_category_.json`. Every category has matching metadata.
 Position numbers do not collide across the top level:
 
-| Top-level                | Position |
-| ------------------------ | -------- |
-| Get started              | 1        |
-| For developers           | 2        |
-| For operators            | 3        |
-| For security reviewers   | 4        |
-| Reference                | 5        |
-| Contributing             | 6        |
-| Changelog (single page)  | 7        |
+| Top-level               | Position |
+| ----------------------- | -------- |
+| Get started             | 1        |
+| For developers          | 2        |
+| For operators           | 3        |
+| For security reviewers  | 4        |
+| Reference               | 5        |
+| Contributing            | 6        |
+| Changelog (single page) | 7        |
 
 Within `operators`, position numbers are 1 (overview), 2 (concepts /
 runbooks), 3 (deployment), 4 (day-2), 5 (troubleshooting). The "1
@@ -275,15 +275,15 @@ categories under "For operators". No orphan pages.
 
 ## llms.txt + redirects deliverables
 
-| Deliverable                                       | Path                                                  | Status |
-| ------------------------------------------------- | ----------------------------------------------------- | ------ |
-| llms.txt                                          | `apps/docs/static/llms.txt`                           | created |
-| REDIRECTS table cleanup                           | `apps/docs/src/server/index.ts`                       | updated |
-| Stub overview pages                               | `apps/docs/content/{developers,operators,security,reference}/overview.md` | rewritten |
-| CLI vocabulary page                               | `apps/docs/content/reference/cli.md`                     | rewritten |
-| "Lands in a later batch" pointers                 | 13 pages                                              | fixed |
-| `--tenant` deprecated flag in data-residency      | `apps/docs/content/operators/runbooks/data-residency.md` | fixed |
-| Phantom submission-daemon reference               | `apps/docs/content/developers/sdks/go.md`                | fixed |
+| Deliverable                                  | Path                                                                      | Status    |
+| -------------------------------------------- | ------------------------------------------------------------------------- | --------- |
+| llms.txt                                     | `apps/docs/static/llms.txt`                                               | created   |
+| REDIRECTS table cleanup                      | `apps/docs/src/server/index.ts`                                           | updated   |
+| Stub overview pages                          | `apps/docs/content/{developers,operators,security,reference}/overview.md` | rewritten |
+| CLI vocabulary page                          | `apps/docs/content/reference/cli.md`                                      | rewritten |
+| "Lands in a later batch" pointers            | 13 pages                                                                  | fixed     |
+| `--tenant` deprecated flag in data-residency | `apps/docs/content/operators/runbooks/data-residency.md`                  | fixed     |
+| Phantom submission-daemon reference          | `apps/docs/content/developers/sdks/go.md`                                 | fixed     |
 
 ## Final build
 

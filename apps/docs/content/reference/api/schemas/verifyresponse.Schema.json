@@ -1,0 +1,33 @@
+{
+  "schema": {
+    "type": "object",
+    "description": "Result of `POST /v1/admin/domains/:id/verify`. `status` reflects the\nDB-stored verification state after the run; `checks` is the per-record\nbreakdown the panel renders.\n",
+    "required": ["id", "status", "checks"],
+    "properties": {
+      "id": { "type": "string", "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$", "title": "Ulid" },
+      "status": {
+        "type": "string",
+        "enum": ["pending", "verifying", "verified", "failed", "disabled"]
+      },
+      "checks": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "description": "One row in the verify response. `actual` carries free-form hint text\nin addition to the observed value so the verify flow can express\n`missing` / `drift` / `unreachable` / `verified` states uniformly.\n",
+          "required": ["name", "ok", "expected", "actual"],
+          "properties": {
+            "name": { "type": "string" },
+            "ok": { "type": "boolean" },
+            "expected": { "type": "string" },
+            "actual": { "type": "string" }
+          },
+          "title": "VerifyCheck"
+        }
+      },
+      "message": { "type": "string" },
+      "verified_at": { "type": "integer", "format": "int64" }
+    },
+    "title": "VerifyResponse"
+  },
+  "schemaType": "response"
+}

@@ -60,9 +60,9 @@ Operator tooling:
 
 - `apps/polaris-cli` — Go CLI (`polaris-email`, aliased `pml`). Day-2 ops
   surface: the same binary ships a **fullscreen tabbed TUI** (`polaris-email
-  tui` or `polaris-email` with no args), an SSH-fronted server
+tui` or `polaris-email` with no args), an SSH-fronted server
   (`polaris-email serve --ssh` via Wish), unified auth (`polaris-email
-  login` stores tokens in the OS keychain), and an operator-identity
+login` stores tokens in the OS keychain), and an operator-identity
   registry (`polaris-email operator add`). Cobra subcommands for mailboxes,
   domains, zones, routes, credentials, bridges, webhooks, audit, status,
   setup. See `apps/polaris-cli/README.md` and [`docs/tui.md`](docs/tui.md).

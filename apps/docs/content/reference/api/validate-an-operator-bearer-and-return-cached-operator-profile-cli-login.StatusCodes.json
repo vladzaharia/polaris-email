@@ -1,0 +1,38 @@
+{
+  "responses": {
+    "200": {
+      "description": "ok",
+      "content": {
+        "application/json": {
+          "schema": {
+            "type": "object",
+            "required": ["operator"],
+            "properties": {
+              "operator": {
+                "type": "object",
+                "required": ["id", "name", "email", "role", "api_key_id"],
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+                    "title": "Ulid"
+                  },
+                  "name": { "type": "string" },
+                  "email": { "type": "string" },
+                  "role": { "type": "string", "enum": ["admin", "operator", "readonly"] },
+                  "api_key_id": {
+                    "type": "string",
+                    "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+                    "title": "Ulid"
+                  }
+                }
+              }
+            },
+            "title": "LoginResponse"
+          }
+        }
+      }
+    },
+    "403": { "description": "not an operator token" }
+  }
+}

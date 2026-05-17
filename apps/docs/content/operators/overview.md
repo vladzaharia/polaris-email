@@ -29,16 +29,16 @@ sync, and the service-token model for daemons behind Access.
 verb domain (`domain`, `cred`, `route`, `webhook`, `bridge`, `audit`,
 `suppression`, `status`, `auth`).
 
-| Workflow                                       | Page                                                             |
-| ---------------------------------------------- | ---------------------------------------------------------------- |
-| Onboard / configure / decommission domains     | [Domain management](/operators/day-2/domain-management)          |
-| Manage mailboxes (the unit everything hangs off) | [Mailbox management](/operators/day-2/mailbox-management)        |
-| Issue / rotate / revoke credentials            | [Credential management](/operators/day-2/credential-management)  |
-| Inbound routes and webhook DLQ                 | [Routing and webhooks](/operators/day-2/routing-and-webhooks)    |
-| Register / rotate / deregister bridges         | [Bridge management](/operators/day-2/bridge-management)          |
-| Rotate the bridge's TLS cert                   | [Bridge TLS](/operators/day-2/bridge-tls)                        |
-| Watch the system from the outside              | [Monitoring](/operators/day-2/monitoring)                        |
-| Daily snapshot of red/yellow/green             | [Activity inspection](/operators/day-2/activity-inspection)      |
+| Workflow                                         | Page                                                            |
+| ------------------------------------------------ | --------------------------------------------------------------- |
+| Onboard / configure / decommission domains       | [Domain management](/operators/day-2/domain-management)         |
+| Manage mailboxes (the unit everything hangs off) | [Mailbox management](/operators/day-2/mailbox-management)       |
+| Issue / rotate / revoke credentials              | [Credential management](/operators/day-2/credential-management) |
+| Inbound routes and webhook DLQ                   | [Routing and webhooks](/operators/day-2/routing-and-webhooks)   |
+| Register / rotate / deregister bridges           | [Bridge management](/operators/day-2/bridge-management)         |
+| Rotate the bridge's TLS cert                     | [Bridge TLS](/operators/day-2/bridge-tls)                       |
+| Watch the system from the outside                | [Monitoring](/operators/day-2/monitoring)                       |
+| Daily snapshot of red/yellow/green               | [Activity inspection](/operators/day-2/activity-inspection)     |
 
 ## Understand what runs where
 

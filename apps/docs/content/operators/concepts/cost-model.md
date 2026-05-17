@@ -31,12 +31,12 @@ subscription floor). Excludes Email Service per-message pricing
 | Service                        | Cost/mo     | Notes                            |
 | ------------------------------ | ----------- | -------------------------------- |
 | Workers Paid (sub floor)       | $5          | Includes 10M req/mo + 30M CPU-ms |
-| D1 storage                     | &lt;$1         | &lt;500 MB across all shards        |
-| D1 reads/writes                | &lt;$1         | Well under free tier             |
-| R2 storage                     | &lt;$1         | ~1.5 GB MIME @ $0.015/GB-mo      |
-| R2 ops                         | &lt;$1         | &lt;100k Class A + Class B          |
-| KV                             | &lt;$1         | Cache-only usage                 |
-| Queues                         | &lt;$1         | ~120k ops                        |
+| D1 storage                     | &lt;$1      | &lt;500 MB across all shards     |
+| D1 reads/writes                | &lt;$1      | Well under free tier             |
+| R2 storage                     | &lt;$1      | ~1.5 GB MIME @ $0.015/GB-mo      |
+| R2 ops                         | &lt;$1      | &lt;100k Class A + Class B       |
+| KV                             | &lt;$1      | Cache-only usage                 |
+| Queues                         | &lt;$1      | ~120k ops                        |
 | Logpush                        | $5          | Subscription floor               |
 | Analytics Engine               | $0          | Free tier                        |
 | **Subtotal CF**                | **~$15**    | + Email Service per-msg (TBD)    |
@@ -88,10 +88,10 @@ Things that disproportionately blow the bill if not watched:
    (deferred hashing pattern).
 
 2. **Queues operations — 4 ops/msg multiplier**: every send is enqueue
-   + dequeue + ack = 3 ops min, plus DLQ for failures. At 300M msgs/mo
-   and $0.40/M ops, this is the _single biggest CF line item_ and grows
-   linearly. **Mitigation**: confirm the pipeline is not double-enqueuing
-   on retry (the `send_attempt_id` CAS guards against it).
+   - dequeue + ack = 3 ops min, plus DLQ for failures. At 300M msgs/mo
+     and $0.40/M ops, this is the _single biggest CF line item_ and grows
+     linearly. **Mitigation**: confirm the pipeline is not double-enqueuing
+     on retry (the `send_attempt_id` CAS guards against it).
 
 3. **R2 Object Lock retention**: not relevant for polaris-email's R2
    bucket (which doesn't use Object Lock), but worth flagging at the
