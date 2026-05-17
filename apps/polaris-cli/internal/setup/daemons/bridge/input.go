@@ -252,3 +252,37 @@ func LoadInputFile(path string) (*BridgeSetupInput, error) {
 	}
 	return in, nil
 }
+
+// --- setup.Input implementation -------------------------------------
+//
+// BridgeSetupInput satisfies internal/setup.Input via these adapter
+// methods so the generic cobra generator can drive the bridge
+// descriptor without importing this package's concrete types.
+//
+// Note: the struct has a `Mode Mode` field (deployment mode) so the
+// Input.Mode() method ends up named ModeString() here and the
+// descriptor.Mode() method projects this string onto the interface
+// surface via an inputWrapper.
+
+// Marshal serialises the input to JSON. Used by the snapshot writer in
+// `<dir>/.polaris-setup.json` and by the --from-file round-trip test.
+func (in *BridgeSetupInput) Marshal() ([]byte, error) {
+	return json.Marshal(in)
+}
+
+// Unmarshal is the JSON-only inverse of Marshal. The bridge package
+// preserves a YAML path via LoadInputFile() for operator-supplied
+// snapshots — the setup.Input contract only requires JSON parity, so
+// this method does not try to sniff YAML.
+func (in *BridgeSetupInput) Unmarshal(data []byte) error {
+	return json.Unmarshal(data, in)
+}
+
+// ModeString returns the deployment mode label ("local" | "tailscale").
+// Empty when the input has not been populated yet. The setup.Input
+// interface requires a method literally called Mode(); a thin wrapper
+// in descriptor.go projects ModeString onto that surface (we cannot
+// shadow the `Mode Mode` field with a same-named method).
+func (in *BridgeSetupInput) ModeString() string {
+	return string(in.Mode)
+}
