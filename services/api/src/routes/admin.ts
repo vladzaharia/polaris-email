@@ -40,9 +40,15 @@ import { zones } from './admin/zones.js';
 export const admin = new Hono<{ Bindings: Env }>();
 
 // /v1/admin/bootstrap signs with POLARIS_SECRET_A, not an api key — bypass hmacAuth there.
+// /v1/admin/setup/webauthn/* uses the unguessable one-time code as its
+// auth boundary (GET poll is public; POST .../complete verifies inline
+// with the freshly minted admin key, since the key won't be in
+// api_keys for the global hmacAuth lookup until *after* the genesis
+// row settles).
 const adminHmac = hmacAuth('polaris-api');
 admin.use('/v1/admin/*', async (c, next) => {
   if (c.req.path === '/v1/admin/bootstrap') return next();
+  if (c.req.path.startsWith('/v1/admin/setup/webauthn/')) return next();
   return adminHmac(c, next);
 });
 // /v1/bridge/* uses the same api-key HMAC.

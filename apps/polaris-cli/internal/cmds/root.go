@@ -70,7 +70,6 @@ func NewRoot() *cobra.Command {
 		newStatusCmd(),
 		newAuditCmd(),
 		newAuthCmd(),
-		newBootstrapCmd(),
 		newSuppressionCmd(),
 		newPolicyCmd(),
 		setupcmd.NewSetupCmd(setupcmd.Options{

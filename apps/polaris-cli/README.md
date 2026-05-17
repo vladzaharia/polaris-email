@@ -28,16 +28,56 @@ includes the `polaris-email` binary; create a `pml` symlink in your path:
 ln -sf polaris-email pml
 ```
 
-## First run
+## First run — cold start
 
 ```sh
-polaris-email bootstrap --webauthn-token "<token>"
+polaris-email setup infra
 ```
 
-This runs the one-time control-plane initialization: anchors the genesis audit
-entry, enrols WebAuthn for the operator account, and seeds the
-`bootstrap_completed` row. Subsequent invocations refuse unless the prior
-bootstrap is provably destroyed.
+`setup infra` (no leaf) drives the full happy path end-to-end:
+
+1. **preflight** — verify tooling + `.env.deploy`
+2. **configure** — validate (or interactively rebuild) `.env.deploy`
+3. **plan + apply** — provision Cloudflare resources (D1, R2, KV, Queues)
+4. **render** — generate `wrangler.local.jsonc` for every Worker
+5. **migrate** — apply D1 migrations
+6. **secrets seed** — generate + push `POLARIS_SECRET_A`, `ARGON2_PEPPER`, etc. (values stay in-memory)
+7. **deploy** — `wrangler deploy` every Worker
+8. **genesis-seal** — sign `POST /v1/admin/bootstrap` with the freshly seeded
+   `POLARIS_SECRET_A`, capture the minted admin key into
+   `.bootstrap-output.json` (mode 0600), open the operator's browser for
+   WebAuthn enrolment, poll for completion
+9. **smoke** — healthz + signed status + synthetic outbound
+
+Each phase records its completion to `.deploy-state.json` so
+`--resume` short-circuits past completed phases on retry:
+
+```sh
+polaris-email setup infra --resume                 # pick up after a partial run
+polaris-email setup infra --phase smoke            # jump straight to smoke
+polaris-email setup infra --webauthn-token "<jwt>" # headless (CI) genesis-seal
+polaris-email setup infra --no-browser             # print enrolment URL only
+polaris-email setup infra --skip-smoke             # skip the final probe
+```
+
+Individual phases can also be invoked directly:
+
+```sh
+polaris-email setup infra preflight
+polaris-email setup infra configure
+polaris-email setup infra plan
+polaris-email setup infra apply
+polaris-email setup infra render
+polaris-email setup infra migrate
+polaris-email setup infra secrets seed
+polaris-email setup infra deploy all
+polaris-email setup infra genesis-seal
+polaris-email setup infra smoke
+```
+
+The legacy `make bootstrap` shell path remains authoritative during the
+soak window; once PR 14 retires `bin/*.sh`, `setup infra` is the only
+cold-start path.
 
 After bootstrap, write your config file at
 `~/.config/polaris-email/config.toml`:
