@@ -1,0 +1,21 @@
+{
+  "name": "@polaris-email/cli-installer",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.server.json --noEmit",
+    "lint": "oxlint .",
+    "test": "vitest run",
+    "dev": "wrangler dev",
+    "deploy": "../../bin/deploy.sh apps/cli-installer"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.16.0",
+    "@cloudflare/workers-types": "^4.20260511.1",
+    "typescript": "^5.5.0",
+    "vitest": "^4.1.0",
+    "wrangler": "^4.90.1"
+  }
+}
