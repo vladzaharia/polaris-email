@@ -35,11 +35,11 @@ Install the [Oxc extension](https://marketplace.visualstudio.com/items?itemName=
 
 Documented in `.oxlintrc.json`:
 
-| Scope                                                     | Rule changes                                           | Reason                                                                                          |
-| --------------------------------------------------------- | ------------------------------------------------------ | ----------------------------------------------------------------------------------------------- |
-| `**/test/**`, `**/*.test.ts`                              | `typescript/no-explicit-any` → off, `no-console` → off | Tests routinely cast to `any` for mocks and log to aid debugging.                               |
-| `services/in/**`, `services/fanout/**`, `services/out/**` | `typescript/no-floating-promises` → warn               | Workers handlers commonly fire-and-forget logging / metrics via `ctx.waitUntil`-adjacent paths. |
-| `**/generated/**`                                         | all rules empty (no extra constraints)                 | Generated code is not hand-edited; do not noise diffs.                                          |
+| Scope                               | Rule changes                                           | Reason                                                                                          |
+| ----------------------------------- | ------------------------------------------------------ | ----------------------------------------------------------------------------------------------- |
+| `**/test/**`, `**/*.test.ts`        | `typescript/no-explicit-any` → off, `no-console` → off | Tests routinely cast to `any` for mocks and log to aid debugging.                               |
+| `services/in/**`, `services/out/**` | `typescript/no-floating-promises` → warn               | Workers handlers commonly fire-and-forget logging / metrics via `ctx.waitUntil`-adjacent paths. |
+| `**/generated/**`                   | all rules empty (no extra constraints)                 | Generated code is not hand-edited; do not noise diffs.                                          |
 
 ## Per-rule notes
 
@@ -50,7 +50,7 @@ Documented in `.oxlintrc.json`:
 
 ## Currently allowed warnings
 
-Run `pnpm lint`; warnings are tolerated and not blocking. As of Phase M:
+Run `pnpm lint`; warnings are tolerated and not blocking. Current warnings:
 
 - `services/api/src/auth.ts` — two `typescript/no-explicit-any` warnings on
   `c.req as any` body caching shim; planned cleanup once Hono types expose a

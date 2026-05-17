@@ -11,7 +11,7 @@
    only (no STARTTLS) on SMTPS, per-bridge `BRIDGE_ID` + HMAC key, SQLite credential
    mirror polled from the control plane behind a Cloudflare Access service-token,
    bcrypt-only client auth on both ports (no bearer tokens — JMAP and its
-   bearer-token model were deleted in phase C1), TLS cert hot-reload so renewals
+   bearer-token model were deleted), TLS cert hot-reload so renewals
    do not require a restart, audit log of every authenticated session. Two
    deployment modes are supported equally: tailnet-fronted (Tailscale sidecar)
    and local / host-network (operator-managed TLS).
@@ -23,21 +23,25 @@
    cache), `api_key_usage` log records every IP/UA/Ray.
 
 4. **Panel session → admin endpoints** — adversary has a stolen panel session.
-   Mitigated by: better-auth with OIDC group gating (`polaris-admins`, default IdP
-   is Cloudflare Access), the two-person `withApproval(action)` middleware in
-   `apps/panel/src/server/auth/approvals.ts` for destructive ops (DKIM
-   rotation, mass revoke, anchor key rotation, bridge deregister, mailbox-
-   credential rotate), every mutation audited with hash chain. Sessions are
-   stored in D1. The earlier WebAuthn step-up flow was removed in pre-launch
-   hardening — destructive operations now require a second admin's approval,
-   not a self-elevating token, so a single compromised session cannot escalate.
+   Mitigated by: better-auth with OIDC group gating (`polaris-admins`, default
+   IdP is Cloudflare Access), client-side `DestructiveActionDialog`
+   confirmation (the operator must type the resource name) on every
+   destructive op (DKIM rotation, mass revoke, anchor key rotation, bridge
+   deregister, mailbox-credential rotate, webhook secret rotate), and every
+   mutation audited via the chained-hash `audit_log` table anchored hourly to
+   Backblaze B2. Sessions are stored in D1. The earlier two-person
+   `withApproval` flow was removed — real deployments are single-operator
+   and the second-admin co-sign step was unusable; type-the-name +
+   audit-log + anchored chain replaces it. The OIDC `groups` claim is
+   capped at 200 entries so a hostile or misconfigured IdP can't DoS the
+   sign-in path with a megabyte-sized array.
 
 5. **`services/out` ↔ `services/api`** — `send_email` bindings are
    CF-account-scoped. `services/out` is invoked from `services/api` only
    via a Service Binding (not a public fetch), so a stolen API key cannot
    directly invoke the outbound provider. Note: the previous multi-account
    topology that gave `services/out` its own Cloudflare account was
-   collapsed in phase O1 — tamper-evidence is now anchored externally via
+   collapsed — tamper-evidence is now anchored externally via
    Backblaze B2 (see the "Audit anchors" section below) rather than via
    account separation.
 
@@ -59,7 +63,7 @@
 - **Recipient recovery after submission** — by design, plaintext recipients are
   not retained server-side; see [`CONSUMER-CONTRACT.md`](CONSUMER-CONTRACT.md).
 
-## R2 public custom domain (B5)
+## R2 public custom domain
 
 Message bodies and per-attachment R2 objects are served from the public
 custom domain `r2.mail.plrs.im`. Object keys are content-addressed
@@ -148,7 +152,7 @@ manual and gated:
    `services/api`. The cron picks it up on the next anchor write and
    signs the new anchor with both keys (overlap window).
 3. Confirm the next anchor lands in B2 with both signatures (`polaris-email
-   audit anchors --verify`).
+audit anchors --verify`).
 4. Promote: rename `ANCHOR_SIGNING_KEY_NEXT` → `ANCHOR_SIGNING_KEY`,
    delete the old `ANCHOR_SIGNING_KEY` secret. The next anchor is signed
    only with the new key.
@@ -188,7 +192,7 @@ in audit rows. The panel surfaces this via `SecretRevealDialog`
 (`apps/panel/src/components/SecretRevealDialog.tsx`) — a single modal
 the operator must copy out of before dismissing.
 
-## Audit anchors (O1)
+## Audit anchors
 
 Tamper-evidence is anchored to **Backblaze B2** (external to Cloudflare):
 
@@ -215,7 +219,7 @@ diverging from the latest B2 anchor is the tamper-evidence signal — see
 
 ## Cryptographic notes
 
-- **HMAC** SHA-256, 256-bit keys, **un-versioned** (phase B3) and
+- **HMAC** SHA-256, 256-bit keys, **un-versioned** and
   domain-separated (`polaris-api` for HTTP requests, `polaris-webhook`
   for outgoing webhook deliveries — no `.v1` suffix). Canonical-string
   is `direction\nmethod\npath\ncanonical-query\nts\nnonce\nsha256-hex-of-body`.

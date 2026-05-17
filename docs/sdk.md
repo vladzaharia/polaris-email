@@ -76,7 +76,7 @@ const envelope = JSON.parse(rawBodyBuffer.toString('utf8'));
 ```
 
 The signature header is the **un-versioned** `X-Polaris-Sig: <hex>` — there
-is no `v1=` / `v2=` prefix. The HMAC was un-versioned in phase B3; both the
+is no `v1=` / `v2=` prefix. The HMAC was un-versioned; both the
 API direction (`polaris-api`) and the webhook direction (`polaris-webhook`)
 sign with the same un-versioned format. See
 [`docs/hmac-reference.md`](hmac-reference.md) for the canonical spec.
@@ -161,7 +161,7 @@ if !res.OK { http.Error(w, "bad sig", 401); return }
 env, err := polarissdkgo.ParseWebhookEnvelope(in.RawBody)
 ```
 
-The header tag is the **un-versioned** `X-Polaris-Sig: <hex>` — phase B3
+The header tag is the **un-versioned** `X-Polaris-Sig: <hex>`
 removed `v1=` / `v2=` prefixes.
 
 ### Typed API errors (Phase 7a)

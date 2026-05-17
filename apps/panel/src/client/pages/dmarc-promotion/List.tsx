@@ -1,7 +1,6 @@
-// W8 — Fleet view of DMARC promotion state across all domains.
-//
-// Pause/resume/claim-management/run-now actions are approval-gated through
-// the panel proxy (W8 endpoints all require admin:rotate).
+// Fleet view of DMARC promotion state across all domains.
+// Pause/resume/claim-management/run-now actions are gated client-side via
+// DestructiveActionDialog; every mutation writes an audit_log row.
 import { Link } from '@tanstack/react-router';
 import { useState } from 'react';
 import { PageCard } from '../../layouts/PageCard.js';

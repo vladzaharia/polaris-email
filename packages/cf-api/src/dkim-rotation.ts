@@ -1,4 +1,4 @@
-// DKIM key state machine for rotation overlap (A10).
+// DKIM key state machine for rotation overlap.
 //
 // Real-world DKIM rotation requires two selectors live simultaneously during a
 // flush window so verifiers that have cached the old key can still validate

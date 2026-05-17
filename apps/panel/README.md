@@ -56,11 +56,11 @@ Bindings (declared in `wrangler.jsonc`):
 Vars (committed defaults in `wrangler.jsonc`, override in
 `wrangler.local.jsonc`):
 
-| Var             | Default          | Purpose                                                                    |
-| --------------- | ---------------- | -------------------------------------------------------------------------- |
-| `ADMIN_GROUP`   | `polaris-admins` | OIDC `groups` claim required for admin role-sync.                          |
-| `COOKIE_PATH`   | `/panel`         | Session cookie `Path`. Override to `/` for subdomain deployment mode.      |
-| `COOKIE_DOMAIN` | _(unset)_        | Set to `.example.com` when the panel and API live on different subdomains. |
+| Var             | Default          | Purpose                                                                                   |
+| --------------- | ---------------- | ----------------------------------------------------------------------------------------- |
+| `ADMIN_GROUP`   | `polaris-admins` | OIDC `groups` claim required for admin role-sync.                                         |
+| `COOKIE_PATH`   | `/panel`         | Session cookie `Path`. Override to `/` for subdomain deployment mode.                     |
+| `COOKIE_DOMAIN` | _(unset)_        | Set to `.example.com` when the panel and API live on different subdomains.                |
 | `DEV_MODE`      | _(unset)_        | When `"1"`, relaxes secure-cookie checks and enables `/api/dev/login` for local dev only. |
 
 Secrets (`wrangler secret put`):
@@ -96,7 +96,7 @@ disable, webhook subscription delete, …) are wrapped in
 `428 Precondition Required` with `{ code: 'approval_required', action }`
 unless the request carries an `x-polaris-approval-id` header pointing at
 an `approved` row in the `approvals` table that was approved by a
-*different* admin than the caller.
+_different_ admin than the caller.
 
 ## Route inventory
 

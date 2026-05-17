@@ -9,7 +9,7 @@
 //
 // Held messages stay in D1 with status='held', a row in held_messages
 // pointing at the existing R2 MIME blob, and the policy_decisions row
-// recording why. The panel moderation queue (P4) drives release/drop.
+// recording why. The panel moderation queue drives release/drop.
 // The original POST /v1/messages 202 message_id doubles as the future
 // hold_id — no synchronous API surface change needed.
 //
@@ -66,23 +66,11 @@ function asPromotionState(
   return undefined;
 }
 
-function headersMap(parsed: ParsedMime): Record<string, string> {
-  const map: Record<string, string> = {};
-  for (const h of parsed.headers) {
-    if (!(h.nameLc in map)) map[h.nameLc] = h.value;
-  }
-  return map;
-}
-
-function rawHeadersString(parsed: ParsedMime): string {
-  return parsed.headers.map((h) => `${h.name}: ${h.value}`).join('\r\n');
-}
-
-function bodyPreviewOf(parsed: ParsedMime, maxLen = 4000): string {
-  return new TextDecoder('utf-8', { fatal: false, ignoreBOM: true })
-    .decode(parsed.body)
-    .slice(0, maxLen);
-}
+import {
+  headersMap,
+  rawHeadersString,
+  bodyPreviewOf,
+} from '@polaris-email/policy-engine/mime-helpers';
 
 function isSoakActive(env: Env): boolean {
   return (

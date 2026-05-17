@@ -74,7 +74,7 @@ export const PROTECTED_BRANDS: ReadonlyArray<{
   { brand: 'irs', domains: ['irs.gov'] },
 ];
 
-/** Damerau-Levenshtein distance. Hot path on every inbound message —
+/** Damerau-Levenshtein distance. Hot path on every inbound message
  *  kept iterative + early-exit-friendly. */
 export function damerauLevenshtein(a: string, b: string, max = Infinity): number {
   if (a === b) return 0;

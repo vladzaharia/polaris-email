@@ -1,4 +1,4 @@
-// Phase B.8 — pool-workers integration test for services/api's send path.
+// pool-workers integration test for services/api's send path.
 //
 // Drives the real Hono Worker (`worker.fetch`) end-to-end against the
 // Miniflare-simulated D1/R2/KV/Queue bindings provided by
@@ -24,7 +24,7 @@
 //     can assert the canonical OutboundQueueMessage shape that downstream
 //     `services/out` consumes.
 //   - Migrations are loaded in Node (via `global-setup.ts`) and forwarded
-//     into the worker isolate through vitest's `inject()` channel —
+//     into the worker isolate through vitest's `inject()` channel
 //     importing `@cloudflare/vitest-pool-workers` directly from a test
 //     file that runs inside workerd crashes the runtime.
 import { applyD1Migrations, createExecutionContext } from 'cloudflare:test';

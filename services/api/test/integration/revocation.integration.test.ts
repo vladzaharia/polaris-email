@@ -1,6 +1,6 @@
 // A12 integration test — revocation propagation.
 //
-// Catches the F1-class bug (A1) where revocation could fail open silently.
+// Catches the F1-class bug where revocation could fail open silently.
 // Flow:
 //   1. Bootstrap; create a mailbox + verified domain.
 //   2. Issue an API key via POST /v1/admin/api-keys.

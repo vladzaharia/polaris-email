@@ -40,7 +40,7 @@ type testFixture struct {
 	api     *httptest.Server
 
 	// hashedPassword is bcrypt(good-password) at cost 4. cost 4 keeps the
-	// unit tests fast; production uses cost 12 (A5).
+	// unit tests fast; production uses cost 12.
 	hashedPassword string
 
 	// patchCalls / deleteCalls capture API mutations issued by the backend.

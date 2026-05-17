@@ -3,7 +3,7 @@
 // `routes/messages-state.ts`, the fanout envelope builder).
 //
 // The two route files used to maintain identical local copies; consolidating
-// here keeps the projection in lockstep with the `messages` table schema —
+// here keeps the projection in lockstep with the `messages` table schema
 // any new column the wire response cares about is added in exactly one
 // place.
 

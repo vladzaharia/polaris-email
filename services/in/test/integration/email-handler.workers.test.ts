@@ -1,4 +1,4 @@
-// Phase B.5 — pool-workers integration test for the services/in Email Routing
+// pool-workers integration test for the services/in Email Routing
 // handler. Imports the worker module directly (which works because
 // pool-workers runs tests inside the same isolate as the worker) and invokes
 // `worker.email(message, env, ctx)` with a forged ForwardableEmailMessage.

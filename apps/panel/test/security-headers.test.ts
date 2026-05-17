@@ -28,11 +28,7 @@ function mkEnv(overrides: Partial<Env> = {}): Env {
 
 describe('secure headers (panel worker)', () => {
   it('sets X-Content-Type-Options: nosniff and a Content-Security-Policy on /healthz', async () => {
-    const res = await worker.fetch(
-      new Request('https://panel.example/healthz'),
-      mkEnv(),
-      ctx,
-    );
+    const res = await worker.fetch(new Request('https://panel.example/healthz'), mkEnv(), ctx);
     expect(res.status).toBe(200);
     expect(res.headers.get('x-content-type-options')).toBe('nosniff');
     const csp = res.headers.get('content-security-policy');

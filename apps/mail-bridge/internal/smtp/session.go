@@ -52,6 +52,10 @@ type Session struct {
 	// bytes of buffer in memory for the full ReadTimeout window. May be
 	// nil in unit tests that construct Session directly.
 	conn net.Conn
+	// releaseConn is called from Logout so the per-IP connection counter
+	// drops when the session ends. Nil-safe; tests that construct Session
+	// directly can leave it unset.
+	releaseConn func()
 
 	authedUser   string
 	authedCred   *credstore.Credential
@@ -73,6 +77,12 @@ func (s *Session) Auth(mech string) (gosmtpServerAuth, error) {
 
 // authPlain performs constant-time bcrypt comparison.
 func (s *Session) authPlain(username, password string) error {
+	// Lockout check happens BEFORE the bcrypt comparison so a locked-out
+	// attacker doesn't consume CPU on every retry. The check is keyed on
+	// `username` so a misconfigured client doesn't poison every account.
+	if s.deps.Lockout != nil && s.deps.Lockout.CheckLocked(username, time.Now()) {
+		return &gosmtp.SMTPError{Code: 454, Message: "account temporarily locked"}
+	}
 	cred, err := s.deps.Store.Lookup(username)
 	if err != nil {
 		// Still burn time so a DB error doesn't leak via timing.
@@ -98,7 +108,13 @@ func (s *Session) authPlain(username, password string) error {
 		matchByte = 1
 	}
 	if subtle.ConstantTimeByteEq(haveByte&matchByte, 1) != 1 {
+		if s.deps.Lockout != nil {
+			s.deps.Lockout.RecordFailure(username, time.Now())
+		}
 		return &gosmtp.SMTPError{Code: 535, Message: "authentication failed"}
+	}
+	if s.deps.Lockout != nil {
+		s.deps.Lockout.RecordSuccess(username)
 	}
 
 	s.authedUser = username
@@ -221,7 +237,13 @@ func (s *Session) Reset() {
 }
 
 // Logout is a no-op.
-func (s *Session) Logout() error { return nil }
+func (s *Session) Logout() error {
+	if s.releaseConn != nil {
+		s.releaseConn()
+		s.releaseConn = nil
+	}
+	return nil
+}
 
 func (s *Session) writeAudit(accepted bool, status, size int, errStr string) {
 	if s.deps.Audit == nil {

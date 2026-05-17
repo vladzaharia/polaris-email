@@ -83,8 +83,9 @@ func (b *Bootstrap) Run(ctx context.Context, mailboxes []string) ([]Result, erro
 // FirstSecret returns the first non-empty secret from a slice of bootstrap
 // results, or nil if every result was either reused (no secret returned) or
 // empty. main.go uses this to seed the Handler's HMAC secret on bridges
-// that serve a single mailbox; multi-mailbox deployments will need a richer
-// per-subscription secret mapping (TODO when that case materializes).
+// that serve a single mailbox; multi-mailbox deployments will need a
+// per-subscription secret map (none of the current deployments have
+// multiple subs feeding one bridge, so the single-secret model holds).
 func FirstSecret(results []Result) []byte {
 	for _, r := range results {
 		if r.Secret != "" {

@@ -3,10 +3,11 @@
   "$schema": "https://json-schema.org/draft-07/schema",
   "name": "polaris-email-out",
   "main": "src/index.ts",
-  "compatibility_date": "2025-01-01",
-  "compatibility_flags": ["nodejs_compat"],
+  "compatibility_date": "2026-04-15",
+  "compatibility_flags": ["nodejs_compat_v2"],
   "observability": { "enabled": true },
   "logpush": true,
+  "placement": { "mode": "smart" },
   "d1_databases": [
     { "binding": "DB", "database_name": "polaris-email", "database_id": "REPLACE_WITH_LOCAL" },
   ],

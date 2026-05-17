@@ -327,7 +327,9 @@ describe('out worker', () => {
       mode: 'live',
     });
     await worker.queue(batch, env as unknown as Parameters<typeof worker.queue>[1]);
-    const sent = (env.FANOUT_QUEUE as unknown as FakeQueue<{ event: string; data: { reason?: string } }>).sent;
+    const sent = (
+      env.FANOUT_QUEUE as unknown as FakeQueue<{ event: string; data: { reason?: string } }>
+    ).sent;
     expect(db.statuses.get('NB')?.status).toBe('failed');
     expect(sent[0]?.event).toBe('message.failed');
     expect(sent[0]?.data?.reason).toBe('no_binding');
@@ -350,7 +352,9 @@ describe('out worker', () => {
       mode: 'live',
     });
     await worker.queue(batch, env as unknown as Parameters<typeof worker.queue>[1]);
-    const sent = (env.FANOUT_QUEUE as unknown as FakeQueue<{ event: string; data: { reason?: string } }>).sent;
+    const sent = (
+      env.FANOUT_QUEUE as unknown as FakeQueue<{ event: string; data: { reason?: string } }>
+    ).sent;
     expect(db.statuses.get('R2-miss')?.status).toBe('failed');
     expect(sent[0]?.event).toBe('message.failed');
     expect(sent[0]?.data?.reason).toBe('r2_body_missing');
@@ -378,7 +382,9 @@ describe('out worker', () => {
       mode: 'live',
     });
     await worker.queue(batch, env as unknown as Parameters<typeof worker.queue>[1]);
-    const sent = (env.FANOUT_QUEUE as unknown as FakeQueue<{ event: string; data: { reason?: string } }>).sent;
+    const sent = (
+      env.FANOUT_QUEUE as unknown as FakeQueue<{ event: string; data: { reason?: string } }>
+    ).sent;
     expect(db.statuses.get('FQ')?.status).toBe('failed');
     expect(sent[0]?.event).toBe('message.failed');
     expect(sent[0]?.data?.reason).toBe('invalid_from_domain');
@@ -394,17 +400,20 @@ describe('out worker', () => {
     db.domains.set('example.com', { id: 'D1', name: 'example.com' });
     r2.map.set('k', rfc822Bytes());
     db.statuses.set('I-sent', { status: 'sent', last_error: null, bounce_metadata: null });
-    const batch = mkBatch({
-      messageId: 'I-sent',
-      source: 'raw',
-      r2KeyOrInline: 'k',
-      fromDomain: 'example.com',
-      fromAddress: 'a@example.com',
-      envelopeTo: ['b@x.com'],
-      mailboxId: 'svc',
-      domainId: 'D1',
-      mode: 'live',
-    }, 2 /* second attempt */);
+    const batch = mkBatch(
+      {
+        messageId: 'I-sent',
+        source: 'raw',
+        r2KeyOrInline: 'k',
+        fromDomain: 'example.com',
+        fromAddress: 'a@example.com',
+        envelopeTo: ['b@x.com'],
+        mailboxId: 'svc',
+        domainId: 'D1',
+        mode: 'live',
+      },
+      2 /* second attempt */,
+    );
     await worker.queue(batch, env as unknown as Parameters<typeof worker.queue>[1]);
     expect(binding.lastTo).toBeUndefined();
     // Status unchanged.
@@ -423,19 +432,27 @@ describe('out worker', () => {
     db.domains.set('example.com', { id: 'D1', name: 'example.com' });
     r2.map.set('k', rfc822Bytes());
     seedQueued(env, 'EX');
-    const batch = mkBatch({
-      messageId: 'EX',
-      source: 'raw',
-      r2KeyOrInline: 'k',
-      fromDomain: 'example.com',
-      fromAddress: 'a@example.com',
-      envelopeTo: ['b@x.com'],
-      mailboxId: 'svc',
-      domainId: 'D1',
-      mode: 'live',
-    }, 5 /* attempts === MAX_DELIVERY_ATTEMPTS */);
+    const batch = mkBatch(
+      {
+        messageId: 'EX',
+        source: 'raw',
+        r2KeyOrInline: 'k',
+        fromDomain: 'example.com',
+        fromAddress: 'a@example.com',
+        envelopeTo: ['b@x.com'],
+        mailboxId: 'svc',
+        domainId: 'D1',
+        mode: 'live',
+      },
+      5 /* attempts === MAX_DELIVERY_ATTEMPTS */,
+    );
     await worker.queue(batch, env as unknown as Parameters<typeof worker.queue>[1]);
-    const sent = (env.FANOUT_QUEUE as unknown as FakeQueue<{ event: string; data: { reason?: string; attempts?: number } }>).sent;
+    const sent = (
+      env.FANOUT_QUEUE as unknown as FakeQueue<{
+        event: string;
+        data: { reason?: string; attempts?: number };
+      }>
+    ).sent;
     expect(db.statuses.get('EX')?.status).toBe('failed');
     expect(sent[0]?.event).toBe('message.failed');
     expect(sent[0]?.data?.attempts).toBe(5);
@@ -453,17 +470,20 @@ describe('out worker', () => {
     // attempts=1 → should rethrow; outer try/catch in worker.queue logs and
     // calls m.retry(). The status is `sending` mid-throw, then the outer
     // catch flips it back to failed (so the row is reconcilable).
-    const batch = mkBatch({
-      messageId: 'RT',
-      source: 'raw',
-      r2KeyOrInline: 'k',
-      fromDomain: 'example.com',
-      fromAddress: 'a@example.com',
-      envelopeTo: ['b@x.com'],
-      mailboxId: 'svc',
-      domainId: 'D1',
-      mode: 'live',
-    }, 1);
+    const batch = mkBatch(
+      {
+        messageId: 'RT',
+        source: 'raw',
+        r2KeyOrInline: 'k',
+        fromDomain: 'example.com',
+        fromAddress: 'a@example.com',
+        envelopeTo: ['b@x.com'],
+        mailboxId: 'svc',
+        domainId: 'D1',
+        mode: 'live',
+      },
+      1,
+    );
     await worker.queue(batch, env as unknown as Parameters<typeof worker.queue>[1]);
     // Outer catch in worker.queue flips sending → failed (P0 #3 recovery).
     expect(db.statuses.get('RT')?.status).toBe('failed');
@@ -471,10 +491,10 @@ describe('out worker', () => {
     expect(m.retried).toBe(true);
     expect(m.acked).toBe(false);
   });
-  it('oversized raw body rejected before binding.send (Phase A.7)', async () => {
+  it('oversized raw body rejected before binding.send', async () => {
     // Belt-and-suspenders: a 26 MiB R2 object (above the 25 MiB CF cap) must
     // fail with a typed `message_too_large:<bytes>` last_error and never reach
-    // binding.send. The API-layer pre-enqueue check (Phase A.6) is the
+    // binding.send. The API-layer pre-enqueue check is the
     // authoritative gate; this guards against stale enqueues or bugs.
     const binding = new FakeBinding();
     const env = mkEnv(binding);

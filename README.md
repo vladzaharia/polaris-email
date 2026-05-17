@@ -15,7 +15,7 @@ See [`docs/architecture.md`](docs/architecture.md) for the system view,
 Cloudflare Workers (control plane — three Workers + the panel):
 
 - `services/api` — REST surface, admin API, audit chain, idempotency, key auth.
-  **Also** hosts the webhook fan-out queue consumer (signed webhook delivery —
+  **Also** hosts the webhook fan-out queue consumer (signed webhook delivery
   external + tailnet, retry + DLQ; v2 envelope inlines the full `Message`,
   signed with the un-versioned `X-Polaris-Sig: <hex>`) and the cron triggers
   (hourly audit anchor, weekly secret staleness check, per-minute `/healthz`

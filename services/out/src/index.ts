@@ -6,8 +6,8 @@
 // event.
 //
 // The `delivered` transition is the responsibility of the FANOUT_QUEUE
-// consumer hosted in services/api (see services/api/src/queue/fanout.ts —
-// folded in during phase B1). That consumer flips messages.status to
+// consumer hosted in services/api (see services/api/src/queue/fanout.ts
+// folded in during). That consumer flips messages.status to
 // 'delivered' on the last successful webhook delivery. This worker only
 // handles received → sending → sent | bounced | failed.
 //
@@ -70,7 +70,8 @@ async function setStatus(
   id: string,
   status: 'sending' | 'sent' | 'bounced' | 'failed' | 'held',
   meta: { last_error?: string; bounce_metadata?: string } = {},
-): Promise<void> {
+  expectedFrom?: ReadonlyArray<'queued' | 'sending' | 'sent'>,
+): Promise<{ changed: boolean }> {
   const nowIso = new Date().toISOString();
   const tsCol =
     status === 'sending'
@@ -82,19 +83,31 @@ async function setStatus(
           : status === 'failed'
             ? 'failed_at'
             : null;
+  // CAS predicate: when expectedFrom is set, refuse the write unless the
+  // current status is one of the listed values. This prevents a stuck
+  // late-success from overwriting an authoritative `failed` (or vice
+  // versa). Without it, a binding.send() that completes after the row
+  // was marked `failed` could flip the row back to `sent`.
+  const casFragment = expectedFrom?.length
+    ? ` AND status IN (${expectedFrom.map(() => '?').join(',')})`
+    : '';
+  const casBinds = expectedFrom ?? [];
   if (tsCol) {
-    await env.DB.prepare(
-      `UPDATE messages SET status = ?, ${tsCol} = ?, last_error = ?, bounce_metadata = ? WHERE id = ?`,
+    const r = await env.DB.prepare(
+      `UPDATE messages SET status = ?, ${tsCol} = ?, last_error = ?, bounce_metadata = ?
+        WHERE id = ?${casFragment}`,
     )
-      .bind(status, nowIso, meta.last_error ?? null, meta.bounce_metadata ?? null, id)
+      .bind(status, nowIso, meta.last_error ?? null, meta.bounce_metadata ?? null, id, ...casBinds)
       .run();
-  } else {
-    await env.DB.prepare(
-      `UPDATE messages SET status = ?, last_error = ?, bounce_metadata = ? WHERE id = ?`,
-    )
-      .bind(status, meta.last_error ?? null, meta.bounce_metadata ?? null, id)
-      .run();
+    return { changed: (r.meta.changes ?? 0) > 0 };
   }
+  const r = await env.DB.prepare(
+    `UPDATE messages SET status = ?, last_error = ?, bounce_metadata = ?
+      WHERE id = ?${casFragment}`,
+  )
+    .bind(status, meta.last_error ?? null, meta.bounce_metadata ?? null, id, ...casBinds)
+    .run();
+  return { changed: (r.meta.changes ?? 0) > 0 };
 }
 
 async function fanout(env: Env, ev: FanoutEvent): Promise<void> {
@@ -104,7 +117,7 @@ async function fanout(env: Env, ev: FanoutEvent): Promise<void> {
 /**
  * Read the message's current status. Used as the idempotency check before
  * `binding.send()`: if the row is no longer `queued`, this delivery has
- * already been (at minimum) attempted. We then ack without re-sending —
+ * already been (at minimum) attempted. We then ack without re-sending
  * the alternative (a second send_email call to the upstream provider)
  * would deliver the same message twice.
  */
@@ -261,7 +274,7 @@ async function handleOne(env: Env, msg: OutboundQueueMessage, attempts: number):
     return;
   }
 
-  // Phase A.7 — belt-and-suspenders: reject before binding.send to avoid
+  // belt-and-suspenders: reject before binding.send to avoid
   // surfacing E_CONTENT_TOO_LARGE from CF after we've already claimed the
   // 'sending' status. The cap matches the API-layer's pre-enqueue check
   // (services/api/src/routes/messages.ts) so a queue message that somehow
@@ -448,8 +461,10 @@ async function handleOne(env: Env, msg: OutboundQueueMessage, attempts: number):
   // Mark sending BEFORE the binding.send() call. Combined with the
   // idempotency check at the top of handleOne, this serves as the
   // in-flight claim: a second invocation will see status != 'queued' and
-  // skip re-sending.
-  await setStatus(env, msg.messageId, 'sending');
+  // skip re-sending. CAS on `queued` so we don't overwrite an already-
+  // terminal state (failed/bounced) that won a concurrent race.
+  const enter = await setStatus(env, msg.messageId, 'sending', {}, ['queued', 'sending']);
+  if (!enter.changed) return;
   try {
     const result = await binding.send({
       from: msg.fromAddress,
@@ -457,10 +472,17 @@ async function handleOne(env: Env, msg: OutboundQueueMessage, attempts: number):
       raw: raw.buffer.slice(raw.byteOffset, raw.byteOffset + raw.byteLength) as ArrayBuffer,
     });
     if (result.permanent_bounces.length) {
-      await setStatus(env, msg.messageId, 'bounced', {
-        last_error: 'permanent_bounce',
-        bounce_metadata: JSON.stringify({ permanent_bounces: result.permanent_bounces }),
-      });
+      const flipped = await setStatus(
+        env,
+        msg.messageId,
+        'bounced',
+        {
+          last_error: 'permanent_bounce',
+          bounce_metadata: JSON.stringify({ permanent_bounces: result.permanent_bounces }),
+        },
+        ['sending'],
+      );
+      if (!flipped.changed) return;
       await fanout(env, {
         event_id: ulid(),
         event: 'message.bounced',
@@ -471,7 +493,8 @@ async function handleOne(env: Env, msg: OutboundQueueMessage, attempts: number):
         data: { permanent_bounces: result.permanent_bounces },
       });
     } else {
-      await setStatus(env, msg.messageId, 'sent');
+      const flipped = await setStatus(env, msg.messageId, 'sent', {}, ['sending']);
+      if (!flipped.changed) return;
       await fanout(env, {
         event_id: ulid(),
         event: 'message.sent',

@@ -1,7 +1,7 @@
 // Diagnostics page — operator-facing system health overview.
 //
 // Cards:
-//  - Panel-side health checks (api healthz, audit chain, tenants listable —
+//  - Panel-side health checks (api healthz, audit chain, tenants listable
 //    backed by the existing GET /api/diagnostics route on the panel server).
 //  - DLQ depth / recent failures (24h) from the dashboard's stats overview,
 //    linking into the DLQ browser.

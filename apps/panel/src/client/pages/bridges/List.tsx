@@ -89,10 +89,7 @@ export function BridgesList() {
               key: 'status',
               header: 'Status',
               cell: (d) => (
-                <StatusBadge
-                  kind="bridge"
-                  value={d.disabled_at ? 'deregistered' : 'registered'}
-                />
+                <StatusBadge kind="bridge" value={d.disabled_at ? 'deregistered' : 'registered'} />
               ),
             },
           ]}

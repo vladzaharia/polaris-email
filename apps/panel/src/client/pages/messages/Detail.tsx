@@ -1,6 +1,6 @@
 // Message detail — renders the canonical Message JSON via MessageJsonView,
 // plus an attachments table whose Download buttons link straight to the R2
-// public custom domain (B5). No signed-URL mint round-trip.
+// public custom domain. No signed-URL mint round-trip.
 import { useParams } from '@tanstack/react-router';
 import { PageCard } from '../../layouts/PageCard.js';
 import { Skeleton } from '../../components/ui/skeleton.js';
@@ -32,7 +32,7 @@ interface MessagePayload {
   subject?: string;
   text?: string;
   html?: string;
-  // Public R2 URL for the raw RFC822 body (B5).
+  // Public R2 URL for the raw RFC822 body.
   body_url?: string;
   headers?: Record<string, string>;
   // Bridge-style payload shape for back-compat — kept as a fallback while
@@ -46,7 +46,7 @@ interface MessagePayload {
     content_type: string;
     size_bytes?: number;
     bytes?: number;
-    // Public R2 URL for the attachment bytes (B5).
+    // Public R2 URL for the attachment bytes.
     url?: string;
   }>;
 }

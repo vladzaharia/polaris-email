@@ -8,7 +8,7 @@ deployment. Pairs with `docs/runbook.md` (incident response) and
 
 - Cloudflare account on the **Workers Paid** plan with Email Routing and Email
   Service available. Single account: `polaris-prod` (the previous
-  three-account topology was collapsed in phase O1; audit anchors moved
+  three-account topology was collapsed; audit anchors moved
   off-Cloudflare to Backblaze B2).
 - A **Backblaze B2 bucket** with Object Lock COMPLIANCE for audit anchors,
   plus a write-only Application Key. Setup steps live in
@@ -70,7 +70,7 @@ Either way the flow is:
 4. Deploys the four Workers (`services/api`, `services/out`,
    `services/in`) and the panel (`apps/panel`). The previous separate
    `services/fanout` + `services/cron` Workers were folded into
-   `services/api` in phase B1.
+   `services/api`.
 5. Mints the first operator API key with `admin:read` + `admin:audit:rotate`
    scopes, anchored as the genesis audit entry.
 6. (CLI wizard only) Saves a `terraform.tfvars` skeleton you can fill in for
@@ -260,7 +260,7 @@ polaris-email domain rotate-dkim acme.com
 polaris-email zone rotate-dkim acme.com
 ```
 
-Rotation flow (A10):
+Rotation flow:
 
 1. New key generated; `dkim_keys` row inserted with `state='pending'`.
 2. New DKIM CNAME published; `published → seen_via_authoritative → seen_via_three_resolvers`.

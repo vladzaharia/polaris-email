@@ -60,7 +60,7 @@ export async function revocationCheck(env: RevocationEnv, principalId: string): 
  * same call. The mapping `principal_id → key_id(s)` is not stored in this
  * package so the caller must compute the list, but routing every
  * cache-bust through `revoke()` removes the easy-to-forget second step.
- * Failures of individual cache deletes are swallowed (logged at warn) —
+ * Failures of individual cache deletes are swallowed (logged at warn)
  * the KV_REVOCATIONS write is the authoritative signal and revoking with
  * a stale cache entry is a soft failure (the next revocationCheck
  * within 60 s catches it).

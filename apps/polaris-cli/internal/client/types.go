@@ -136,11 +136,9 @@ type WebhookDLQEntry struct {
 	UpdatedAt     time.Time `json:"updated_at"`
 }
 
-// WebhookDLQDropRequest carries the two-person-rule confirmation.
+// WebhookDLQDropRequest carries the destructive-action confirmation.
 type WebhookDLQDropRequest struct {
-	Confirm        string `json:"confirm"`         // must equal entry id
-	OperatorTokenA string `json:"operator_token_a"`
-	OperatorTokenB string `json:"operator_token_b,omitempty"`
+	Confirm string `json:"confirm"` // must equal entry id
 }
 
 // LogEntry is a generic activity-log row.

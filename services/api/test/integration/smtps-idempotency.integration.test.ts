@@ -1,13 +1,13 @@
 // A12 integration test — SMTPS idempotency dedup.
 //
-// Catches the F1-class bug (A2) where the SMTPS forwarder did not pass
+// Catches the F1-class bug where the SMTPS forwarder did not pass
 // Idempotency-Key from the inbound Message-ID, causing client-retried
 // SMTPS submissions to duplicate-enqueue downstream.
 //
 // Flow:
 //   1. Bootstrap; create mailbox, verified domain, sender, smtp-credential
 //      (so the `submission_credentials` row exists for the bridge path).
-//   2. Register a bridge to mint a per-bridge HMAC secret (Phase 2h —
+//   2. Register a bridge to mint a per-bridge HMAC secret (Phase 2h
 //      no global BRIDGE_HMAC_KEY anymore; each bridge has its own).
 //   3. POST /v1/messages twice with:
 //        Content-Type: message/rfc822

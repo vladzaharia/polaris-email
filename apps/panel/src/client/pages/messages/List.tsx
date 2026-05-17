@@ -22,6 +22,8 @@ import {
   SelectValue,
 } from '../../components/ui/select.js';
 import { StatusBadge } from '../../components/StatusBadge.js';
+import { EmptyState } from '../../components/EmptyState.js';
+import { ErrorText } from '../../components/ErrorText.js';
 import { useAdminQuery } from '../../hooks/useAdminApi.js';
 import { messageKeys } from '../../queryKeys.js';
 
@@ -128,15 +130,18 @@ export function MessagesList() {
       {query.isLoading ? (
         <Skeleton className="h-32 w-full" />
       ) : query.error ? (
-        <p className="text-sm text-[var(--color-destructive)]">{query.error.message}</p>
+        <ErrorText error={query.error} />
       ) : (query.data?.data ?? []).length === 0 ? (
-        <p className="text-sm text-[var(--color-muted-foreground)]">No messages found.</p>
+        <EmptyState
+          title="No messages match these filters"
+          description="Try clearing filters or expanding the time range."
+        />
       ) : (
         <>
           {/* The messages list scrolls horizontally on narrow viewports
               because the Subject column is unbounded. The first column (ID)
               gets `sticky left-0` so the row identity stays visible while
-              the operator scrolls right. (Phase 6b.5) */}
+              the operator scrolls right. */}
           <div className="overflow-x-auto">
             <Table>
               <caption className="sr-only">

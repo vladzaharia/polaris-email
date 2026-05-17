@@ -247,7 +247,7 @@ export default {
         // eslint-disable-next-line no-console
         console.error(
           'in: dmarc ingest error',
-          envelopeTo,
+          `domain=${domainPart || 'unknown'}`,
           e instanceof Error ? e.message : 'unknown',
         );
       }
@@ -272,7 +272,7 @@ export default {
         // eslint-disable-next-line no-console
         console.error(
           'in: tls-rpt ingest error',
-          envelopeTo,
+          `domain=${domainPart || 'unknown'}`,
           e instanceof Error ? e.message : 'unknown',
         );
       }
@@ -301,7 +301,7 @@ export default {
         // eslint-disable-next-line no-console
         console.error(
           'in: complaint ingest error',
-          envelopeTo,
+          `domain=${domainPart || 'unknown'}`,
           e instanceof Error ? e.message : 'unknown',
         );
         // Don't reject — accepting the complaint message even when our

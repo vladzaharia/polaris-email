@@ -75,8 +75,8 @@ and consumer-visible highlights:
 - **MIME walker dedup**: `walkPartsWithHeaders` and
   `walkExtractAttachments` in `packages/mime/src/json.ts` now delegate to
   a single `walkParts(body, ct, xfer, visitor)` helper. Boundary-splitting
-  + recursion-cap logic lives in one place; the two outer functions are
-  visitor adapters.
+  - recursion-cap logic lives in one place; the two outer functions are
+    visitor adapters.
 - **`FORBIDDEN_HEADERS` partial consolidation**: `packages/mime` exports
   `TRANSPORT_FORBIDDEN_HEADERS` (the relay/MTA-owned set);
   `packages/schema` builds its broader JSON-API set as the union of the
@@ -96,7 +96,7 @@ and consumer-visible highlights:
   (`services/api/src/scheduled/janitor.ts`). The empty for-loop and
   always-zero counter are gone; the gap is documented inline as
   `TODO(retention)` (proper fix needs a `mailboxes.retention_days` column
-  + per-mailbox sweep — out of scope for hardening).
+  - per-mailbox sweep — out of scope for hardening).
 
 ## 2026-05-14 — Cleanup plan implementation (Phases M, N, O)
 

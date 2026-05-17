@@ -5,9 +5,9 @@
 //
 //   * `fetch`     — Hono router (HTTP requests).
 //   * `scheduled` — cron dispatcher absorbed from the standalone `cron`
-//                   Worker in phase B1. Routes on `event.cron`.
+//                   Worker. Routes on `event.cron`.
 //   * `queue`     — FANOUT_QUEUE consumer absorbed from the standalone
-//                   `fanout` Worker in phase B1. Bounded concurrency keeps
+//                   `fanout` Worker. Bounded concurrency keeps
 //                   webhook POST latency out of the HTTP request path.
 import { Hono } from 'hono';
 import { secureHeaders } from 'hono/secure-headers';
@@ -41,7 +41,7 @@ app.use('*', async (c, next) => {
 
 app.get('/healthz', (c) => c.json({ ok: true }));
 
-// Phase C.9 — public, unauthenticated MTA-STS policy origin.
+// public, unauthenticated MTA-STS policy origin.
 // MUST be mounted BEFORE any auth-bearing routes: sender MTAs fetch this
 // anonymously per RFC 8461 §3.3. The handler itself short-circuits to
 // `c.notFound()` for any Host that does not start with `mta-sts.`, so
@@ -61,9 +61,19 @@ app.notFound((c) =>
 
 app.onError((err, c) => {
   // Workers logpush + tail captures console.error; this is the only
-  // observability surface for unhandled errors in production.
+  // observability surface for unhandled errors in production. Emit
+  // structured JSON so log queries can group by error class; deliberately
+  // do NOT log the full stack (paths leak source layout).
   // eslint-disable-next-line no-console
-  console.error('unhandled', err.stack);
+  console.error(
+    JSON.stringify({
+      event: 'unhandled_error',
+      name: err.name,
+      message: err.message,
+      method: c.req.method,
+      path: new URL(c.req.url).pathname,
+    }),
+  );
   return buildError(c, 'degraded', 'unhandled error');
 });
 

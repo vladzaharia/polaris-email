@@ -51,7 +51,7 @@ testSendRoutes.post('/api/test-send', async (c) => {
 // delivered, failed, bounced) or hit the 60s ceiling.
 //
 // Lifetime semantics (Phase 6d.1):
-//   The Worker stays alive as long as this Response's body stream is open —
+//   The Worker stays alive as long as this Response's body stream is open
 //   that's the standard CF Workers contract for streaming responses. We do
 //   NOT need `c.executionCtx.waitUntil`; that pattern is for fire-and-forget
 //   side effects AFTER the response is returned, but here the stream IS the

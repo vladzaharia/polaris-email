@@ -70,70 +70,72 @@ export function DlqBrowser() {
         // First column gets `sticky left-0` so the DLQ id stays visible as
         // the row scrolls horizontally on narrow viewports. (Phase 6b.5)
         <div className="overflow-x-auto">
-        <Table>
-          <caption className="sr-only">
-            Failed webhook deliveries with retry counters and per-row Replay or Drop actions.
-          </caption>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="sticky left-0 z-10 bg-[var(--color-card)]">DLQ id</TableHead>
-              <TableHead>Webhook sub</TableHead>
-              <TableHead>Attempts</TableHead>
-              <TableHead>Last status</TableHead>
-              <TableHead>Age</TableHead>
-              <TableHead>Message</TableHead>
-              <TableHead></TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {rows.map((r) => (
-              <TableRow key={r.id}>
-                <TableCell className="sticky left-0 z-10 bg-[var(--color-card)] font-mono text-xs">{r.id}</TableCell>
-                <TableCell className="font-mono text-xs">{r.webhook_sub_id}</TableCell>
-                <TableCell>{r.attempts}</TableCell>
-                <TableCell>
-                  {r.last_status_code ? (
-                    <Badge variant="destructive">{r.last_status_code}</Badge>
-                  ) : (
-                    '—'
-                  )}
-                </TableCell>
-                <TableCell className="text-xs" title={formatDate(r.dlq_at)}>
-                  {formatRelative(r.dlq_at)}
-                </TableCell>
-                <TableCell className="font-mono text-xs">
-                  {r.message_id ? (
-                    <Link to="/messages/$id" params={{ id: r.message_id }} className="underline">
-                      {r.message_id.slice(0, 10)}…
-                    </Link>
-                  ) : (
-                    '—'
-                  )}
-                </TableCell>
-                <TableCell>
-                  <div className="flex gap-2">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => replay.mutate({ id: r.id })}
-                      disabled={replay.isPending}
-                    >
-                      Replay
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="destructive"
-                      onClick={() => setDropTarget(r)}
-                      disabled={drop.isPending}
-                    >
-                      Drop
-                    </Button>
-                  </div>
-                </TableCell>
+          <Table>
+            <caption className="sr-only">
+              Failed webhook deliveries with retry counters and per-row Replay or Drop actions.
+            </caption>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="sticky left-0 z-10 bg-[var(--color-card)]">DLQ id</TableHead>
+                <TableHead>Webhook sub</TableHead>
+                <TableHead>Attempts</TableHead>
+                <TableHead>Last status</TableHead>
+                <TableHead>Age</TableHead>
+                <TableHead>Message</TableHead>
+                <TableHead></TableHead>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+            </TableHeader>
+            <TableBody>
+              {rows.map((r) => (
+                <TableRow key={r.id}>
+                  <TableCell className="sticky left-0 z-10 bg-[var(--color-card)] font-mono text-xs">
+                    {r.id}
+                  </TableCell>
+                  <TableCell className="font-mono text-xs">{r.webhook_sub_id}</TableCell>
+                  <TableCell>{r.attempts}</TableCell>
+                  <TableCell>
+                    {r.last_status_code ? (
+                      <Badge variant="destructive">{r.last_status_code}</Badge>
+                    ) : (
+                      '—'
+                    )}
+                  </TableCell>
+                  <TableCell className="text-xs" title={formatDate(r.dlq_at)}>
+                    {formatRelative(r.dlq_at)}
+                  </TableCell>
+                  <TableCell className="font-mono text-xs">
+                    {r.message_id ? (
+                      <Link to="/messages/$id" params={{ id: r.message_id }} className="underline">
+                        {r.message_id.slice(0, 10)}…
+                      </Link>
+                    ) : (
+                      '—'
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => replay.mutate({ id: r.id })}
+                        disabled={replay.isPending}
+                      >
+                        Replay
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        onClick={() => setDropTarget(r)}
+                        disabled={drop.isPending}
+                      >
+                        Drop
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
         </div>
       )}
 

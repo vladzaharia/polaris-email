@@ -144,12 +144,19 @@ func isDuplicateColumnErr(err error) bool {
 func (m *Mirror) Close() error { return m.DB.Close() }
 
 // GetMessageMeta returns the cached metadata row, or sql.ErrNoRows.
-func (m *Mirror) GetMessageMeta(ctx context.Context, messageID string) (*MessageMeta, error) {
+// mailboxID scopes the lookup; a fetch for a message in a different
+// mailbox returns sql.ErrNoRows even if the message exists in the mirror.
+// This prevents cross-mailbox metadata leaks if a session ever ends up
+// holding a message id that doesn't belong to its selected mailbox.
+func (m *Mirror) GetMessageMeta(
+	ctx context.Context,
+	mailboxID, messageID string,
+) (*MessageMeta, error) {
 	row := m.DB.QueryRowContext(ctx,
 		`SELECT id, mailbox_id, COALESCE(from_addr,''), COALESCE(subject,''),
 		        COALESCE(header_message_id,''), COALESCE(body_bytes,0),
 		        COALESCE(attachments_total_bytes,0), COALESCE(created_at,'')
-		 FROM messages WHERE id = ?`, messageID)
+		 FROM messages WHERE id = ? AND mailbox_id = ?`, messageID, mailboxID)
 	mm := &MessageMeta{}
 	if err := row.Scan(&mm.ID, &mm.MailboxID, &mm.FromAddr, &mm.Subject,
 		&mm.HeaderMessageID, &mm.BodyBytes, &mm.AttachmentsTotalBytes, &mm.CreatedAt); err != nil {
@@ -181,7 +188,7 @@ func (m *Mirror) UpsertMessageMeta(ctx context.Context, mm MessageMeta) error {
 
 // GetMailboxState returns the aggregate mailbox summary (EXISTS, UIDNEXT, etc).
 //
-// UIDValidity is sourced exclusively from `mailbox_meta.uid_validity` —
+// UIDValidity is sourced exclusively from `mailbox_meta.uid_validity`
 // previously this query computed `MAX(uid_validity)` over `mailbox_state`
 // rows which would silently mask a UIDVALIDITY transition (control-plane
 // renumber that hasn't reached every row yet). The IMAP RFC requires

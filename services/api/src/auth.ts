@@ -204,6 +204,18 @@ export function hmacAuth(direction: 'polaris-api'): MiddlewareHandler<{ Bindings
       secret: plaintext,
     });
     if (!result.ok) {
+      // Structured log so observability backends can alert on per-principal
+      // failure rates without re-parsing the freeform error message.
+      // eslint-disable-next-line no-console
+      console.warn(
+        JSON.stringify({
+          event: 'hmac_verification_failed',
+          code: result.code,
+          key_id: keyId,
+          method: c.req.method,
+          path: new URL(c.req.url).pathname,
+        }),
+      );
       if (result.code === 'clock_skew') return buildError(c, 'clock_skew', result.message);
       if (result.code === 'missing_header' || result.code === 'header_invalid')
         return buildError(c, 'bad_request', result.message);
@@ -211,12 +223,17 @@ export function hmacAuth(direction: 'polaris-api'): MiddlewareHandler<{ Bindings
     }
 
     // Nonce dedup (namespaced by key_id to prevent cross-mailbox pollution).
+    // Writing synchronously (rather than via waitUntil) closes a race where
+    // two concurrent requests on different isolates both pass the GET check
+    // before either's deferred PUT lands. Synchronous KV writes add ≤50ms
+    // to the request path; on the auth hot path that's an acceptable trade
+    // for not relying on best-effort replay protection.
     const nonceKey = `nonce:${keyId}:${result.nonce}`;
     const seen = await env.KV_NONCE.get(nonceKey);
     if (seen) {
       return buildError(c, 'nonce_replay', 'nonce already used for this key');
     }
-    c.executionCtx.waitUntil(env.KV_NONCE.put(nonceKey, '1', { expirationTtl: NONCE_TTL_SECONDS }));
+    await env.KV_NONCE.put(nonceKey, '1', { expirationTtl: NONCE_TTL_SECONDS });
 
     c.set('apiKey', {
       key_id: row.id,

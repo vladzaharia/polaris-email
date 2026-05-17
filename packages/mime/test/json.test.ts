@@ -69,9 +69,7 @@ describe('4a.12: composeFromJson base64 validation', () => {
       to: ['c@d.com'],
       subject: 's',
       text: 'hi',
-      attachments: [
-        { filename: 'x.txt', content_type: 'text/plain', content_base64: 'aGVsbG8=' },
-      ],
+      attachments: [{ filename: 'x.txt', content_type: 'text/plain', content_base64: 'aGVsbG8=' }],
     });
     // Just smoke-check that the encoded payload made it through.
     const raw = new TextDecoder().decode(out);

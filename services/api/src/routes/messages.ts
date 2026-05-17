@@ -10,7 +10,7 @@
 // share a path. The shared `processMessage()` pipeline performs idempotency,
 // R2 PUT, D1 INSERT, and enqueue.
 //
-// Attachment downloads are no longer minted as signed URLs (B5). Bodies +
+// Attachment downloads are no longer minted as signed URLs. Bodies +
 // attachments are published on the R2 custom domain `r2.mail.plrs.im`; the
 // `url` on each attachment + the `body_url` on the message point directly
 // there. The previous `GET /v1/messages/:id/attachments/:n` handler is
@@ -20,7 +20,6 @@ import { Hono, type Context } from 'hono';
 import type { z } from 'zod';
 import { SendRequest, type ErrorCode } from '@polaris-email/schema';
 import { verify, sha256Hex } from '@polaris-email/hmac';
-import { ulid } from '@polaris-email/ids';
 import {
   composeFromJson,
   enforceSenderPolicy,
@@ -49,11 +48,13 @@ export const messages = new Hono<{ Bindings: Env }>();
 
 const DEFAULT_INLINE_BODY_BYTES = 65536;
 const DEFAULT_INLINE_ATTACHMENTS_BYTES = 262144;
+// Per-bridge rate limit. The bridges table doesn't carry a per-row cap
+// today, so every bridge gets this uniform allowance. A future migration
+// could add `bridges.rate_limit_per_min` and the lookup here would
+// switch to per-bridge rows.
 const BRIDGE_DEFAULT_RATE_PER_MIN = 600;
-// TODO(bridge-rate-limit): `bridges.rate_limit_per_min` column is not in
-// 0001_init.sql; the bridge path falls back to this constant.
 
-// Phase A.5 — allowlist of typed ErrorCodes that the SendRequest superRefine
+// allowlist of typed ErrorCodes that the SendRequest superRefine
 // is permitted to surface via its `"<code>:<detail>"` issue.message convention.
 // Adding to this set is a deliberate act and must be paired with a matching
 // entry in ERROR_HTTP / ERROR_RETRYABLE (see errors.ts). Anything outside this
@@ -72,7 +73,7 @@ export const CF_TYPED_CODES = new Set<ErrorCode>([
 /**
  * Classify a zod issue into a typed ErrorCode + human-readable message.
  *
- * Contract (Phase A): SendRequest.superRefine emits issues whose `message` is
+ * Contract: SendRequest.superRefine emits issues whose `message` is
  * shaped as `"<error_code>:<detail>"` (e.g., `"too_many_recipients:51 exceeds 50"`).
  * This function splits on the first colon and, if the prefix is in
  * `CF_TYPED_CODES`, returns the typed code with the detail portion as the
@@ -291,7 +292,7 @@ async function renderMessageBodies(
   }
 
   // Re-extract per-attachment bytes so we can compute the content-addressed
-  // SHA-256 and stamp a public URL (B5). The pipeline also wrote each
+  // SHA-256 and stamp a public URL. The pipeline also wrote each
   // attachment to R2 under the same `att/<sha256>/<filename>` key on
   // ingest, so the URL is durable.
   const parts = extractAttachmentParts(raw);
@@ -358,7 +359,7 @@ messages.post('/v1/messages', async (c) => {
       return buildError(c, 'key_revoked', 'principal revoked');
     }
 
-    // Phase A.5: parse + validate in two steps so we can distinguish JSON
+    // parse + validate in two steps so we can distinguish JSON
     // syntax errors (always `bad_request`) from zod validation issues that may
     // map to typed CF error codes via the `"<code>:<detail>"` convention.
     let parsedBody: unknown;
@@ -406,7 +407,7 @@ messages.post('/v1/messages', async (c) => {
     // guidance to keep header size bounded.
     const reqWithThreading = await synthesizeReplyHeaders(env, req);
     const rawMime = composeFromJson(reqWithThreading);
-    // Phase A.6 — reject before parseStrict (and before enqueue) so callers see
+    // reject before parseStrict (and before enqueue) so callers see
     // a typed `message_too_large` (HTTP 413) rather than a generic MIME error.
     // The 25 MiB cap is the CF Email Service verified-domain ceiling; it is a
     // separate contract from the canonicalizer's 64 KiB header cap, so the
@@ -425,8 +426,18 @@ messages.post('/v1/messages', async (c) => {
       throw e;
     }
 
-    const idempotencyKey =
-      c.req.header('idempotency-key') ?? req.idempotency_key ?? `rest-${ulid()}`;
+    // REST callers MUST supply an idempotency key (header or body field).
+    // Silently synthesizing one would make retries deliver duplicates, since
+    // a fresh ULID never matches a prior attempt. Reject with a clear error
+    // pointing to the missing field.
+    const idempotencyKey = c.req.header('idempotency-key') ?? req.idempotency_key;
+    if (!idempotencyKey) {
+      return buildError(
+        c,
+        'bad_request',
+        'idempotency key required: send `Idempotency-Key` header or `idempotency_key` body field',
+      );
+    }
 
     try {
       const envelopeTo = [...req.to, ...(req.cc ?? []), ...(req.bcc ?? [])];
@@ -470,7 +481,7 @@ messages.post('/v1/messages', async (c) => {
       });
     }
 
-    // Phase A.6 — reject oversized bodies before parseStrict (and before any
+    // reject oversized bodies before parseStrict (and before any
     // pipeline work) so the bridge submitter sees a typed `message_too_large`.
     // The check sits after HMAC auth so we don't leak the rejection to
     // unauthenticated callers, but before any parsing per the contract.
@@ -705,7 +716,7 @@ messages.get('/v1/messages', async (c) => {
 });
 
 // The previous `GET /v1/messages/:id/attachments/:n` handler that minted
-// signed URLs has been removed (B5). Attachment bytes are now served by the
+// signed URLs has been removed. Attachment bytes are now served by the
 // R2 public custom domain `r2.mail.plrs.im`; `attachment.url` in the
 // `GET /v1/messages/:id` response points there directly.
 

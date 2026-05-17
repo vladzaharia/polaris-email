@@ -103,6 +103,40 @@ webhookSubs.patch('/v1/admin/webhook-subs/:id', requireScope('admin:rotate'), as
   return c.json({ id, updated_at: Date.now() });
 });
 
+// Rotate the signing secret. The previous secret moves to `secret_prev`
+// so subscribers within the grace window can verify against either key
+// during their own rotation. A subsequent rotation overwrites
+// `secret_prev` — there is no permanent multi-secret state.
+webhookSubs.post(
+  '/v1/admin/webhook-subs/:id/rotate-secret',
+  requireScope('admin:rotate'),
+  async (c) => {
+    const key = c.get('apiKey');
+    const id = c.req.param('id');
+    const buf = new Uint8Array(32);
+    crypto.getRandomValues(buf);
+    const newSecret = Array.from(buf, (b) => b.toString(16).padStart(2, '0')).join('');
+    const nowIso = new Date().toISOString();
+    const r = await c.env.DB.prepare(
+      `UPDATE webhook_subs
+        SET secret_prev = secret,
+            secret = ?,
+            secret_rotated_at = ?
+      WHERE id = ? AND disabled_at IS NULL`,
+    )
+      .bind(newSecret, nowIso, id)
+      .run();
+    if (r.meta.changes === 0) return buildError(c, 'not_found', 'not found or disabled');
+    await audit(c.env, {
+      actor: `key:${key.key_id}`,
+      action: 'webhook_sub.rotate',
+      target: id,
+      meta: { rotated_at: nowIso },
+    });
+    return c.json({ id, secret: newSecret, rotated_at: nowIso });
+  },
+);
+
 webhookSubs.delete('/v1/admin/webhook-subs/:id', requireScope('admin:rotate'), async (c) => {
   const key = c.get('apiKey');
   const id = c.req.param('id');
@@ -124,7 +158,7 @@ webhookSubs.delete('/v1/admin/webhook-subs/:id', requireScope('admin:rotate'), a
 
 // Synthetic test: records an audit row tagged as a panel-initiated test;
 // the FANOUT_QUEUE consumer (services/api/src/queue/fanout.ts, folded in
-// during phase B1) pollutes this branch with a real fire-and-forget delivery
+// during) pollutes this branch with a real fire-and-forget delivery
 // once it's wired against the same row. The panel uses this as a green/red
 // indicator that the row is reachable from the admin plane.
 webhookSubs.post('/v1/admin/webhook-subs/:id/test', requireScope('admin:rotate'), async (c) => {

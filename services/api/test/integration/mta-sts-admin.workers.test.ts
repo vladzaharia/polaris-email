@@ -1,4 +1,4 @@
-// Phase C.10 — pool-workers integration test for the MTA-STS + TLS-RPT
+// pool-workers integration test for the MTA-STS + TLS-RPT
 // admin endpoints in services/api/src/routes/admin/domains-mta-sts.ts.
 //
 // What this test exercises:

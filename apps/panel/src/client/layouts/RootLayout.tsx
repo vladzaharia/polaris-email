@@ -7,12 +7,6 @@
 //   success/error feedback through this.
 // - ErrorBoundary: catches uncaught render errors so the whole app doesn't
 //   white-screen on a single misbehaving page.
-//
-// Note: the panel does not implement a self-elevation step-up flow. The
-// backend gates destructive actions on the two-person `withApproval` flow
-// and returns 428 with `{ code: 'approval_required' }` when an approved
-// approval-id header is missing. The mutation toast wiring in
-// `useAdminApi.ts` renders the friendly message.
 import { Component, createContext, useContext, useEffect, useState } from 'react';
 import type { ErrorInfo, ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';

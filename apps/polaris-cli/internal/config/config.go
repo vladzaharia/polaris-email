@@ -38,13 +38,29 @@ func DefaultPath() (string, error) {
 	return filepath.Join(home, ".config", "polaris-email", "config.toml"), nil
 }
 
-// Load reads the config file at path. A missing file returns an empty File.
+// Load reads the config file at path. A missing file returns an empty
+// File. If the file exists, we require permissions of 0600 (owner-only)
+// — the config holds API tokens, and a world-readable file is a real
+// foot-gun for shared dev hosts.
 func Load(path string) (*File, error) {
-	data, err := os.ReadFile(path)
+	info, err := os.Stat(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return &File{Profiles: map[string]Profile{}}, nil
 		}
+		return nil, err
+	}
+	// Skip the permission check on Windows (mode bits don't carry the
+	// same meaning). On POSIX, refuse anything broader than 0600.
+	if mode := info.Mode().Perm(); mode != 0 && (mode&0o077) != 0 {
+		return nil, fmt.Errorf(
+			"polaris-email config %s has permissions %o; require 0600 "+
+				"(run: chmod 600 %s)",
+			path, mode, path,
+		)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
 		return nil, err
 	}
 	return Parse(string(data))

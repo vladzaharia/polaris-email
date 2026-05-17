@@ -14,10 +14,11 @@
 //
 // Release semantics:
 //   - Inbound held → re-inject the stored R2 MIME via processMessage()
-//     using the original receiver mailbox. (V1: the held_messages row
+//     using the original receiver mailbox. Today the held_messages row
 //     doesn't preserve the original receiver address, so release just
 //     marks released_action='released' and an operator must manually
-//     forward — see TODO at bottom of file.)
+//     forward. A future migration that adds recipient_mailbox_id to
+//     held_messages will let release re-inject end-to-end.
 //   - Outbound held → re-enqueue to OUTBOUND_QUEUE so services/out
 //     sends normally on the next attempt. The messages row is bumped
 //     back to status='queued'.

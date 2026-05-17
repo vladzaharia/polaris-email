@@ -145,8 +145,7 @@ wrangler tail polaris-email-api --status error --since 1h
 wrangler tail polaris-email-out --status ok   # full Workers log stream
 polaris-email status
 polaris-email webhook dlq list
-polaris-email webhook dlq drop <id> \
-  --confirm <id> --operator-token-a <op1-token> --operator-token-b <op2-token>
+polaris-email webhook dlq drop <id> --confirm <id>
 ```
 
 ### E. Register a mail bridge

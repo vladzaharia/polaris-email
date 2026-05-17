@@ -1,7 +1,7 @@
 // Mailboxes-list smoke test.
 //
 // Same constraint as `dashboard.test.ts`: no DOM environment available. We
-// assert the empty-state shape the page reads — an envelope `{ data: [] }` —
+// assert the empty-state shape the page reads — an envelope `{ data: [] }`
 // flows through the panel proxy unmodified, so the list page's "no mailboxes
 // yet" branch is reachable end-to-end.
 import { describe, expect, it } from 'vitest';

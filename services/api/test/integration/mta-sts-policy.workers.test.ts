@@ -1,4 +1,4 @@
-// Phase C.9 — pool-workers integration test for the public MTA-STS
+// pool-workers integration test for the public MTA-STS
 // policy handler at `https://mta-sts.{tenant}/.well-known/mta-sts.txt`.
 //
 // The route is intentionally PUBLIC (unauthenticated) — sender MTAs fetch

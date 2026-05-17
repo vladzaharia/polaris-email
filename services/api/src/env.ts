@@ -11,12 +11,16 @@ export interface Env {
   KV_REVOCATIONS: KVNamespace;
 
   OUTBOUND_QUEUE: Queue<OutboundQueueMessage>;
+  /** Producer binding into the webhook fan-out queue. Used by DLQ replay
+   *  to re-enqueue a fresh FanoutEvent for a single subscriber. The same
+   *  queue is consumed by this Worker's `queue` handler (see queue/fanout.ts). */
+  FANOUT_QUEUE: Queue<import('./queue/fanout.js').FanoutEvent>;
 
   API_BASE_URL: string;
 
   /**
    * Public host that serves the `polaris-email` R2 bucket. Bodies +
-   * attachments are surfaced at `https://${R2_PUBLIC_HOST}/<key>` (B5).
+   * attachments are surfaced at `https://${R2_PUBLIC_HOST}/<key>`.
    * Defaults to `r2.mail.plrs.im` in deployed configs.
    */
   R2_PUBLIC_HOST: string;
@@ -31,7 +35,7 @@ export interface Env {
   /** HMAC signing key (base64) used by the `anchor` cron. */
   ANCHOR_SIGNING_KEY?: string;
   /**
-   * External Object-Lock target for audit anchors (Phase O1). Replaces the
+   * External Object-Lock target for audit anchors. Replaces the
    * prior `R2_ANCHORS` binding. Endpoint + bucket + region live in `vars`;
    * the access key / secret are set via `wrangler secret put`. Default
    * vendor: Backblaze B2 (`https://s3.<region>.backblazeb2.com`). See
@@ -51,7 +55,7 @@ export interface Env {
    *  (the webhook channel echoes them so an email-adapter on the receiving
    *  end can route correctly). Defaults to hey@vlad.gg. */
   ADMIN_ALERT_RECIPIENTS?: string;
-  /** Dedup TTL in seconds for admin alerts (W2d). Default 3600. */
+  /** Dedup TTL in seconds for admin alerts. Default 3600. */
   ADMIN_ALERT_DEDUP_TTL_SECONDS?: string;
   /** KV namespace used by W2d for dedupe lookups. Optional — when absent,
    *  every alert fires every time (the admin_alerts table itself still
@@ -106,7 +110,7 @@ export interface Env {
   /**
    * Cloudflare API token + account id used for DNS / Email Routing /
    * Workers Routes provisioning. Required for the domain-verify path and
-   * all MTA-STS / TLS-RPT admin endpoints (Phase C). Wrangler-secret pair.
+   * all MTA-STS / TLS-RPT admin endpoints. Wrangler-secret pair.
    */
   CF_API_TOKEN?: string;
   CF_ACCOUNT_ID?: string;
@@ -127,6 +131,10 @@ export interface Env {
 }
 
 export interface OutboundQueueMessage {
+  /** Queue message envelope version. Consumers MUST accept any value
+   *  ≤ their compiled-in maximum and fall through on unknown future
+   *  versions. Producers always emit the current version. */
+  version?: 1;
   messageId: string;
   /** Pre-rendered RFC822 stored in R2; outbound is always raw. */
   source: 'raw';
@@ -138,6 +146,6 @@ export interface OutboundQueueMessage {
   mailboxId: string;
   domainId: string | null;
   mode: 'live' | 'test';
-  // `retries` removed in Phase 2b — services/out reads CF Workers Queues'
-  // native `m.attempts` counter instead of trusting the queue body.
+  // services/out reads CF Workers Queues' native `m.attempts` counter
+  // instead of trusting the queue body, so retries are not in the shape.
 }

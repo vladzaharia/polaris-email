@@ -34,7 +34,7 @@ describe('classifyBand with default bands', () => {
 
 describe('bandToVerdict', () => {
   it('uncertain band defaults to hold on both directions', () => {
-    // For inbound the engine *may* override after LLM tiebreaker —
+    // For inbound the engine *may* override after LLM tiebreaker
     // bandToVerdict itself returns the heuristic-only default.
     expect(bandToVerdict('uncertain', 'inbound')).toBe('hold');
     expect(bandToVerdict('uncertain', 'outbound')).toBe('hold');

@@ -3,6 +3,7 @@
 import { PageCard } from '../../layouts/PageCard.js';
 import { Badge } from '../../components/ui/badge.js';
 import { Skeleton } from '../../components/ui/skeleton.js';
+import { EmptyState } from '../../components/EmptyState.js';
 import {
   Table,
   TableBody,
@@ -32,10 +33,10 @@ interface AuditEntry {
 
 export function Account() {
   const me = useAdminQuery<Me>(['me'] as const, '/api/me');
-  // Phase 6d.7: cap the chain pull at 200 entries so the panel doesn't fetch
-  // an unbounded payload. Filtering happens client-side because services/api
-  // does not yet accept `?actor=`. TODO: when services/api adds an `actor`
-  // filter, request it here and remove the client-side filter.
+  // Cap the chain pull at 200 entries so the panel doesn't fetch an
+  // unbounded payload. Filtering happens client-side because services/api
+  // doesn't accept `?actor=` today; once it does, request it here and
+  // remove the local filter.
   const audit = useAdminQuery<{ data: AuditEntry[] }>(
     auditKeys.chain(),
     '/api/admin/audit/chain?limit=200',
@@ -71,9 +72,7 @@ export function Account() {
         {audit.isLoading ? (
           <Skeleton className="h-16 w-full" />
         ) : myEntries.length === 0 ? (
-          <p className="text-sm text-[var(--color-muted-foreground)]">
-            No entries for this account.
-          </p>
+          <EmptyState title="No entries for this account" />
         ) : (
           <Table>
             <TableHeader>

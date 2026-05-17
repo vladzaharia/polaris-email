@@ -1,10 +1,6 @@
 // Thin /api/me + logout endpoints. The heavy lifting lives in better-auth's
 // mounted handler at /api/auth/*; this file exposes the panel-friendly shape
 // the React client expects.
-//
-// Note: there is no `/api/step-up` endpoint. Sensitive actions are gated on
-// the two-person `withApproval(action)` flow in `../auth/approvals.ts`, not
-// on a self-elevation token. See `../auth/middleware.ts` for the rationale.
 import { Hono } from 'hono';
 import type { Env } from '../env.js';
 import { makeAuth } from '../auth/index.js';

@@ -81,7 +81,7 @@ bridges.post('/v1/admin/bridges', requireScope('admin:rotate'), async (c) => {
 bridges.get('/v1/admin/bridges/lookup', requireScope('admin:read'), async (c) => {
   const name = c.req.query('name');
   if (!name) return buildError(c, 'bad_request', 'name required');
-  // Hash column omitted from GET responses (A11).
+  // Hash column omitted from GET responses.
   const row = await c.env.DB.prepare(
     `SELECT id, name, access_token_id,
             last_seen_at, created_at, disabled_at
@@ -95,7 +95,7 @@ bridges.get('/v1/admin/bridges/lookup', requireScope('admin:read'), async (c) =>
 
 bridges.get('/v1/admin/bridges/:id', requireScope('admin:read'), async (c) => {
   const id = c.req.param('id');
-  // Hash column omitted from GET responses (A11).
+  // Hash column omitted from GET responses.
   const row = await c.env.DB.prepare(
     `SELECT id, name, access_token_id,
             last_seen_at, created_at, disabled_at

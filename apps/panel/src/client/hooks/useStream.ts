@@ -5,7 +5,7 @@
 // events, but the test-send stream emits NAMED events (`event: queued`,
 // `event: sending`, `event: sent`, `event: delivered`, `event: failed`,
 // `event: bounced`, `event: error`, `event: close`). To receive them we
-// register a `addEventListener(name, handler)` for each known name —
+// register a `addEventListener(name, handler)` for each known name
 // the dispatcher in the platform routes the SSE `event: foo\n` line to
 // the handler keyed on `'foo'`.
 import { useEffect, useRef, useState } from 'react';

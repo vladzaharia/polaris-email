@@ -50,6 +50,8 @@ function isValidResponse(obj: unknown): obj is ParsedResponse {
   );
 }
 
+const DEFAULT_PER_SECOND_BURST = 10;
+
 async function checkBudget(env: PolicyEnv): Promise<{
   ok: boolean;
   key: string;
@@ -60,6 +62,22 @@ async function checkBudget(env: PolicyEnv): Promise<{
   const current = Number((await env.KV.get(key)) ?? '0');
   const cap = Number(env.POLICY_AI_DAILY_BUDGET ?? '') || DEFAULT_DAILY_BUDGET;
   return { ok: current < cap, key, current };
+}
+
+/**
+ * Per-second burst cap on the LLM call. The daily budget alone permits a
+ * spike to exhaust the entire budget in seconds (e.g. a flood of inbound
+ * mail). This second bucket smooths the curve so a steady-state day still
+ * has budget left for the messages that actually need a tiebreaker. The
+ * caller falls back to the heuristic verdict when this returns false.
+ */
+async function checkBurst(env: PolicyEnv): Promise<boolean> {
+  const sec = Math.floor(Date.now() / 1000);
+  const key = `policy:burst:${sec}`;
+  const current = Number((await env.KV.get(key)) ?? '0');
+  if (current >= DEFAULT_PER_SECOND_BURST) return false;
+  await env.KV.put(key, String(current + 1), { expirationTtl: 10 });
+  return true;
 }
 
 async function bumpBudget(env: PolicyEnv, key: string, current: number): Promise<void> {
@@ -148,6 +166,11 @@ export async function tiebreak(input: PolicyInput): Promise<LlmOutcome> {
 
   const budget = await checkBudget(input.env);
   if (!budget.ok) {
+    return { invoked: false, budget_state: 'over_budget' };
+  }
+  if (!(await checkBurst(input.env))) {
+    // Steady-state daily budget is fine, but we just hit the per-second
+    // burst cap. Skip the LLM call and let the heuristic verdict stand.
     return { invoked: false, budget_state: 'over_budget' };
   }
 

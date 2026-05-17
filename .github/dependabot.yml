@@ -1,0 +1,62 @@
+# Weekly automated dependency updates.
+#
+# Scope:
+#   - github-actions: workflow action versions in .github/workflows/*.
+#   - npm: the root pnpm workspace + each workspace package (one entry per
+#     subdir Dependabot can scan).
+#   - gomod: each Go module that has its own go.mod (mail-bridge, polaris-cli).
+#     packages/sdk-go is pure-stdlib (no go.sum) — Dependabot skips it.
+#
+# Open-PRs cap per ecosystem keeps the queue manageable; Dependabot drops
+# older ungrouped PRs on rebases automatically.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      actions:
+        patterns:
+          - '*'
+
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      typescript-tooling:
+        patterns:
+          - 'typescript'
+          - '@types/*'
+          - 'vitest'
+          - '@vitest/*'
+          - '@cloudflare/vitest-pool-workers'
+      hono:
+        patterns:
+          - 'hono'
+          - '@hono/*'
+      react:
+        patterns:
+          - 'react'
+          - 'react-dom'
+          - '@tanstack/*'
+      cloudflare:
+        patterns:
+          - 'wrangler'
+          - '@cloudflare/*'
+          - 'miniflare'
+
+  - package-ecosystem: gomod
+    directory: /apps/mail-bridge
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+
+  - package-ecosystem: gomod
+    directory: /apps/polaris-cli
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3

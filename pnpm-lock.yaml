@@ -261,6 +261,9 @@ importers:
 
   packages/policy-engine:
     dependencies:
+      '@polaris-email/mime':
+        specifier: workspace:*
+        version: link:../mime
       '@polaris-email/suppressions':
         specifier: workspace:*
         version: link:../suppressions

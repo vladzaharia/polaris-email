@@ -1,9 +1,8 @@
 // Thin TanStack Query wrappers around the panel's /api/admin/* proxy.
 //
-// The generated @polaris/sdk/react hooks aren't ready for every endpoint yet
-// (the codegen output is currently empty); these hand-rolled hooks fill the
-// gap. Once the codegen catches up, replace each one and update the
-// import-callsite (see `// TODO: replace with generated hook`).
+// Hand-rolled rather than codegen-driven: the `@polaris/sdk/react` hook
+// generator isn't wired up, and these wrappers are thin enough that
+// hand-rolling stays cheaper than maintaining a generator template.
 //
 // Errors:
 //  - `apiFetch` now throws a typed `ApiError` on non-2xx responses
@@ -21,7 +20,6 @@ import type { UseQueryResult } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { apiFetch, ApiError } from '../lib/api.js';
 
-// TODO: replace with generated hook
 export interface Envelope<T> {
   data: T;
 }
@@ -97,13 +95,7 @@ export function useAdminMutation<T, V = unknown>(
     },
     onError: (err) => {
       if (options.silent) return;
-      // Prefer the typed code for nicer messages on well-known errors.
-      let message = err.message || 'Something went wrong';
-      if (err instanceof ApiError) {
-        if (err.code === 'approval_required') {
-          message = 'Another admin must approve this action.';
-        }
-      }
+      const message = err.message || 'Something went wrong';
       toast.error(message);
     },
   });

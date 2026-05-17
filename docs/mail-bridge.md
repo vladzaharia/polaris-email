@@ -2,14 +2,13 @@
 
 A single Go binary (`apps/mail-bridge/`) that consolidates the two on-prem
 mail protocols polaris supports: **SMTPS submission and IMAP4rev2
-retrieval**. (No JMAP — the hand-rolled JMAP listener was deleted in
-phase C1.) Replaces the old `apps/submission-bridge`; the SMTPS code path
+retrieval**. (No JMAP — the hand-rolled JMAP listener was deleted.) Replaces the old `apps/submission-bridge`; the SMTPS code path
 is the same, joined by an IMAP listener and a bridge-local SQLite mirror.
 
 The IMAP listener runs on
 [`github.com/emersion/go-imap/v2`](https://github.com/emersion/go-imap)
 (sibling of `go-smtp` and `go-sasl` already in use). The migration off the
-hand-rolled handler landed in phase O2; the on-the-wire protocol the
+hand-rolled handler landed; the on-the-wire protocol the
 operator sees did not change. Pre-launch hardening additionally fixed
 STORE / EXPUNGE / `BODY[]` correctness paths in this listener.
 
@@ -134,16 +133,23 @@ parse this doc as the authoritative capability list. The wire
 behaviour and supported `CAPABILITY` extensions are determined by the
 library version in `apps/mail-bridge/go.mod`.
 
-## Roadmap — what this iteration leaves as TODO
+## Roadmap
 
-- **L.5 — bridge-local mirror reactive refresh**: react to incoming
-  webhooks to invalidate / refresh affected mailbox state in
-  `mirror.db`. Today the mirror does a 30s baseline pull.
-- **L.6 — multi-region notes**: the bridge runs single-region against a
-  single-region D1; multi-region R2 is enabled at the bucket level so
-  body FETCH hits the nearest replica. Documented operational notes for
-  region-pair latency (target: < 10ms intra-region for FETCH metadata,
-  < 100ms cross-region for body bytes).
+Implemented:
+
+- **Reactive mirror refresh** — incoming webhooks call
+  `Refresher.RefreshMailbox` BEFORE broadcasting `* n EXISTS`, so IDLE
+  clients that race the FETCH find the new row already present.
+- **Per-IP connection cap** — 10 concurrent SMTPS conns per remote IP.
+- **Auth lockout** — 5 fails / 60s → 5 min cooldown, per-credential.
+- **TLS 1.3 minimum** (with `BRIDGE_TLS_MIN_VERSION` escape hatch).
+
+Forward-looking, not deferrals:
+
+- **Multi-region operational notes** — the bridge runs single-region
+  against a single-region D1; multi-region R2 is enabled at the bucket
+  level so body FETCH hits the nearest replica. Target: < 10ms
+  intra-region for FETCH metadata, < 100ms cross-region for body bytes.
 
 Out of polaris-mail-bridge product scope (deliberate cuts, not deferrals):
 
@@ -151,6 +157,9 @@ Out of polaris-mail-bridge product scope (deliberate cuts, not deferrals):
 - IMAP `MOVE` / `COPY` / `APPEND` / `LSUB` / `QRESYNC`.
 - IMAP body-text SEARCH (no FTS5).
 - Drafts folder and `\Draft` flag.
+- Full `BODYSTRUCTURE` MIME-tree walk for multipart messages (the stub
+  returns a single-part text/plain envelope which is good enough for
+  the IMAP clients the bridge targets).
 
 ## Troubleshooting
 
@@ -163,6 +172,6 @@ Symptoms → check:
   sidecar; MagicDNS certs auto-renew but require `tailscale up
 --hostname=...` to have run successfully first.
 - TLS errors in local mode → verify `BRIDGE_TLS_CERT_PATH` and
-  `BRIDGE_TLS_KEY_PATH` are readable inside the container and that
-  fsnotify can watch the directory (some bind-mount strategies on
-  macOS do not propagate inotify events).
+  `BRIDGE_TLS_KEY_PATH` are readable inside the container. Cert reloads
+  use a 30s per-accept cadence (no fsnotify dependency); rotated certs
+  pick up within 30s of an ACME renewal.

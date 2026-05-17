@@ -173,8 +173,9 @@ export async function purgeMessageRow(
   env: { DB: D1Database; R2: { delete: (key: string) => Promise<unknown> } },
   row: { id: string; r2_key: string },
 ): Promise<{ r2_deleted: boolean }> {
-  const other = await env.DB
-    .prepare(`SELECT 1 AS one FROM messages WHERE r2_key = ?1 AND id <> ?2 LIMIT 1`)
+  const other = await env.DB.prepare(
+    `SELECT 1 AS one FROM messages WHERE r2_key = ?1 AND id <> ?2 LIMIT 1`,
+  )
     .bind(row.r2_key, row.id)
     .first<{ one: number }>()
     .catch(() => null);

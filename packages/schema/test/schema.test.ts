@@ -306,7 +306,7 @@ describe('Phase A — CF compliance', () => {
     });
 
     it('rejects a 26 MiB text body with message_too_large (pre-compose estimate)', () => {
-      // Phase A.I3 — defense-in-depth: the zod boundary rejects an obvious
+      // defense-in-depth: the zod boundary rejects an obvious
       // overrun before composeFromJson allocates a 26 MiB ArrayBuffer.
       // The route layer's post-compose check (services/api/src/routes/
       // messages.ts) remains the authoritative gate; this one trades

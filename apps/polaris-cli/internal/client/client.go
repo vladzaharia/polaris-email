@@ -1,7 +1,7 @@
 // Package client wraps polaris-sdk-go for the polaris-email admin CLI.
 //
 // The CLI used to carry its own copy of the HMAC scheme (see the deleted
-// `internal/client/hmac.go`). After cleanup phase D2 the canonical helpers
+// `internal/client/hmac.go`). After cleanup the canonical helpers
 // live in `github.com/polaris-email/polaris-sdk-go`; this package just wraps
 // the SDK with the CLI's HTTP transport + dry-run sink.
 package client
@@ -132,7 +132,13 @@ func (c *Client) Do(ctx context.Context, method, path string, query url.Values, 
 		return nil, err
 	}
 	if resp.StatusCode >= 300 {
-		return nil, &HTTPError{Status: resp.StatusCode, Body: string(rb), Method: method, Path: path}
+		return nil, &HTTPError{
+			Status:    resp.StatusCode,
+			Body:      string(rb),
+			Method:    method,
+			Path:      path,
+			RequestID: resp.Header.Get("X-Request-Id"),
+		}
 	}
 	return rb, nil
 }
@@ -160,16 +166,26 @@ func (c *Client) DoJSON(ctx context.Context, method, path string, query url.Valu
 	return json.Unmarshal(resp, out)
 }
 
-// HTTPError is returned for non-2xx responses.
+// HTTPError is returned for non-2xx responses. RequestID echoes the
+// server's X-Request-Id header so operators can correlate failures back
+// to service logs.
 type HTTPError struct {
-	Status int
-	Body   string
-	Method string
-	Path   string
+	Status    int
+	Body      string
+	Method    string
+	Path      string
+	RequestID string
 }
 
 func (e *HTTPError) Error() string {
-	return fmt.Sprintf("polaris-email API %s %s: HTTP %d: %s", e.Method, e.Path, e.Status, strings.TrimSpace(e.Body))
+	suffix := ""
+	if e.RequestID != "" {
+		suffix = " (request-id: " + e.RequestID + ")"
+	}
+	return fmt.Sprintf(
+		"polaris-email API %s %s: HTTP %d: %s%s",
+		e.Method, e.Path, e.Status, strings.TrimSpace(e.Body), suffix,
+	)
 }
 
 func printDryRun(w io.Writer, req *http.Request, body []byte) {

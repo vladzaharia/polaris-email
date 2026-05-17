@@ -1,11 +1,10 @@
-// W1 — Suppressions list page.
+// Suppressions list page.
 //
 // Two tabs (Recipients / Senders) drive a server-side filter on `entity_type`.
 // Additional client-side filters (reason / source / severity / scope / address
 // search) push into the same query path. Mutations:
-//   - "Add suppression" dialog → POST /api/admin/suppressions (panel proxy
-//     gates this through withApproval; the server enforces dual-admin via 428).
-//   - Per-row "Remove" → DELETE /api/admin/suppressions/:id (approval-gated).
+//   - "Add suppression" dialog → POST /api/admin/suppressions
+//   - Per-row "Remove" → DELETE /api/admin/suppressions/:id
 //
 // Pagination is cursor-based (`next_cursor` returned by the API is the
 // `created_at` of the last row); "Load more" appends.
@@ -102,7 +101,6 @@ function CreateSuppressionDialog({ entityType }: { entityType: 'recipient' | 'se
   const [scopeTarget, setScopeTarget] = useState('');
   const [severity, setSeverity] = useState<(typeof SEVERITIES)[number]>('warn');
   const [notes, setNotes] = useState('');
-  const [needsApproval, setNeedsApproval] = useState(false);
 
   const create = useAdminMutation<
     { id: string },
@@ -120,13 +118,6 @@ function CreateSuppressionDialog({ entityType }: { entityType: 'recipient' | 'se
     invalidateKeys: [suppressionKeys.all],
     silent: true,
   });
-  if (
-    create.error &&
-    (create.error as { code?: string }).code === 'approval_required' &&
-    !needsApproval
-  ) {
-    setNeedsApproval(true);
-  }
 
   const reset = () => {
     setAddress('');
@@ -135,7 +126,6 @@ function CreateSuppressionDialog({ entityType }: { entityType: 'recipient' | 'se
     setScopeTarget('');
     setSeverity('warn');
     setNotes('');
-    setNeedsApproval(false);
     create.reset();
   };
 
@@ -247,11 +237,7 @@ function CreateSuppressionDialog({ entityType }: { entityType: 'recipient' | 'se
               placeholder="reason this row was added"
             />
           </div>
-          {needsApproval ? (
-            <ErrorText error="Approval required — another admin must co-sign this action." />
-          ) : (
-            <ErrorText error={create.error} />
-          )}
+          <ErrorText error={create.error} />
         </div>
         <DialogFooter>
           <Button
@@ -466,7 +452,7 @@ function SuppressionsTable({ entityType }: { entityType: 'recipient' | 'sender' 
                 <TableCell className="font-mono text-xs">{r.source}</TableCell>
                 <TableCell title={r.created_at}>{formatRelative(r.created_at)}</TableCell>
                 <TableCell title={r.expires_at ?? ''}>
-                  {r.expires_at ? formatRelative(r.expires_at) : 'never'}
+                  <ExpiresCell expiresAt={r.expires_at} />
                 </TableCell>
                 <TableCell>
                   {r.disabled_at ? (
@@ -507,4 +493,19 @@ export function SuppressionsList() {
       </Tabs>
     </PageCard>
   );
+}
+
+// Expires-at column. Highlights rows that expire within the next 24h so
+// operators see an imminent rollover at a glance.
+function ExpiresCell({ expiresAt }: { expiresAt: string | null }) {
+  if (!expiresAt) return <span className="text-[var(--color-muted-foreground)]">never</span>;
+  const ms = new Date(expiresAt).getTime() - Date.now();
+  const imminent = ms > 0 && ms < 24 * 60 * 60 * 1000;
+  const expired = ms <= 0;
+  const className = expired
+    ? 'text-[var(--color-muted-foreground)]'
+    : imminent
+      ? 'text-[var(--color-destructive)] font-medium'
+      : '';
+  return <span className={className}>{formatRelative(expiresAt)}</span>;
 }

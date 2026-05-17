@@ -85,13 +85,13 @@ export const cfZoneKeys = {
   detail: (name: string) => [...cfZoneKeys.all, 'detail', name] as const,
 };
 
-// Synthetic monitoring runs (W11) — per-check status feed for diagnostics.
+// Synthetic monitoring runs — per-check status feed for diagnostics.
 export const syntheticKeys = {
   all: ['synthetic-runs'] as const,
   summary: () => [...syntheticKeys.all, 'summary'] as const,
 };
 
-// LLM triage events (W2b) — Workers AI classifications of unstructured mail.
+// LLM triage events — Workers AI classifications of unstructured mail.
 export const triageKeys = {
   all: ['triage-events'] as const,
   list: (filters?: Record<string, string | undefined>) =>
@@ -99,13 +99,13 @@ export const triageKeys = {
   detail: (id: string) => [...triageKeys.all, 'detail', id] as const,
 };
 
-// DMARC promotion (W8) — fleet view of the auto-promotion state machine.
+// DMARC promotion — fleet view of the auto-promotion state machine.
 export const dmarcPromotionKeys = {
   all: ['dmarc-promotion'] as const,
   list: () => [...dmarcPromotionKeys.all, 'list'] as const,
 };
 
-// DMARC aggregate reports (W6) — per-domain alignment ledger + rollup.
+// DMARC aggregate reports — per-domain alignment ledger + rollup.
 export const dmarcKeys = {
   all: ['dmarc-reports'] as const,
   list: (filters?: Record<string, string | undefined>) =>
@@ -114,7 +114,7 @@ export const dmarcKeys = {
   summary: (domain: string) => [...dmarcKeys.all, 'summary', domain] as const,
 };
 
-// TLS-RPT reports (W5) — ingested per-domain TLS report ledger + rollup.
+// TLS-RPT reports — ingested per-domain TLS report ledger + rollup.
 export const tlsRptKeys = {
   all: ['tls-rpt-reports'] as const,
   list: (filters?: Record<string, string | undefined>) =>
@@ -123,7 +123,7 @@ export const tlsRptKeys = {
   summary: (domain: string) => [...tlsRptKeys.all, 'summary', domain] as const,
 };
 
-// Sender abuse profiles (W2c) — per-principal tier + lifetime counters.
+// Sender abuse profiles — per-principal tier + lifetime counters.
 export const senderAbuseKeys = {
   all: ['sender-abuse'] as const,
   list: (filters?: Record<string, string | undefined>) =>
@@ -131,7 +131,7 @@ export const senderAbuseKeys = {
   detail: (type: string, id: string) => [...senderAbuseKeys.all, 'detail', type, id] as const,
 };
 
-// Admin alerts (W2d) — operator-facing alert history.
+// Admin alerts — operator-facing alert history.
 export const adminAlertKeys = {
   all: ['admin-alerts'] as const,
   list: (filters?: Record<string, string | undefined>) =>
@@ -139,7 +139,7 @@ export const adminAlertKeys = {
   detail: (id: string) => [...adminAlertKeys.all, 'detail', id] as const,
 };
 
-// Abuse events (W2) — append-only ledger of complaint events.
+// Abuse events — append-only ledger of complaint events.
 export const abuseEventKeys = {
   all: ['abuse-events'] as const,
   list: (filters?: Record<string, string | undefined>) =>
@@ -148,7 +148,7 @@ export const abuseEventKeys = {
   summary: (sender: string) => [...abuseEventKeys.all, 'summary', sender] as const,
 };
 
-// Suppressions (W1) — bi-directional do-not-send list. Two tabs in the panel
+// Suppressions — bi-directional do-not-send list. Two tabs in the panel
 // (Recipients / Senders), each filterable; detail page shows the source
 // evidence + lifetime stats.
 export const suppressionKeys = {

@@ -1,8 +1,7 @@
-// 0019 — Moderation queue. The centrepiece of the policy-engine panel
-// surface: every held message (inbound or outbound, status='open') shows
-// up here with its decision reasons. Per-row release / drop / reclassify
-// actions write moderation_feedback rows that feed the inbound LLM's
-// few-shot context on the next daily KV refresh.
+// Moderation queue. Every held message (inbound or outbound, status='open')
+// shows up here with its decision reasons. Per-row release / drop /
+// reclassify actions write moderation_feedback rows that feed the inbound
+// LLM's few-shot context on the next daily KV refresh.
 import { useMemo, useState } from 'react';
 import { PageCard } from '../../layouts/PageCard.js';
 import {
@@ -16,6 +15,7 @@ import {
 import { Skeleton } from '../../components/ui/skeleton.js';
 import { Button } from '../../components/ui/button.js';
 import { Badge } from '../../components/ui/badge.js';
+import { DestructiveActionDialog } from '../../components/DestructiveActionDialog.js';
 import {
   Select,
   SelectContent,
@@ -163,32 +163,13 @@ export function PolicyModeration() {
                 </TableCell>
                 <TableCell>
                   {r.released_action ? null : (
-                    <div className="flex flex-wrap gap-2">
-                      <Button
-                        size="sm"
-                        variant="default"
-                        disabled={release.isPending}
-                        onClick={() => release.mutate({ id: r.id })}
-                      >
-                        Release
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="destructive"
-                        disabled={drop.isPending}
-                        onClick={() => drop.mutate({ id: r.id, action: 'dropped_as_phishing' })}
-                      >
-                        Drop (phish)
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        disabled={drop.isPending}
-                        onClick={() => drop.mutate({ id: r.id, action: 'dropped_as_spam' })}
-                      >
-                        Drop (spam)
-                      </Button>
-                    </div>
+                    <ModerationRowActions
+                      id={r.id}
+                      releasePending={release.isPending}
+                      dropPending={drop.isPending}
+                      onRelease={() => release.mutate({ id: r.id })}
+                      onDrop={(action) => drop.mutate({ id: r.id, action })}
+                    />
                   )}
                 </TableCell>
               </TableRow>
@@ -197,5 +178,55 @@ export function PolicyModeration() {
         </Table>
       )}
     </PageCard>
+  );
+}
+
+type DropAction = 'dropped_as_phishing' | 'dropped_as_spam';
+
+function ModerationRowActions(props: {
+  id: string;
+  releasePending: boolean;
+  dropPending: boolean;
+  onRelease: () => void;
+  onDrop: (action: DropAction) => void;
+}) {
+  const [confirm, setConfirm] = useState<DropAction | null>(null);
+  return (
+    <div className="flex flex-wrap gap-2">
+      <Button size="sm" variant="default" disabled={props.releasePending} onClick={props.onRelease}>
+        Release
+      </Button>
+      <Button
+        size="sm"
+        variant="destructive"
+        disabled={props.dropPending}
+        onClick={() => setConfirm('dropped_as_phishing')}
+      >
+        Drop (phish)
+      </Button>
+      <Button
+        size="sm"
+        variant="outline"
+        disabled={props.dropPending}
+        onClick={() => setConfirm('dropped_as_spam')}
+      >
+        Drop (spam)
+      </Button>
+      <DestructiveActionDialog
+        open={confirm !== null}
+        onOpenChange={(o) => !o && setConfirm(null)}
+        action={confirm === 'dropped_as_phishing' ? 'Drop as phishing' : 'Drop as spam'}
+        name={props.id}
+        blastRadius={[
+          'Recipient never receives this message.',
+          'Decision is recorded in moderation_feedback and influences future LLM verdicts.',
+        ]}
+        isPending={props.dropPending}
+        onConfirm={() => {
+          if (confirm) props.onDrop(confirm);
+          setConfirm(null);
+        }}
+      />
+    </div>
   );
 }

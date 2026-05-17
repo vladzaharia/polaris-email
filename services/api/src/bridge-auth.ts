@@ -60,13 +60,8 @@ export type BridgeSecretLookup = BridgeSecretLookupOk | BridgeSecretLookupErr;
  *     active but the plaintext is missing from KV. The stored argon2 hash
  *     can't be reversed, so the operator must rotate to repopulate KV.
  */
-export async function lookupBridgeSecret(
-  env: Env,
-  bridgeId: string,
-): Promise<BridgeSecretLookup> {
-  const row = await env.DB.prepare(
-    `SELECT id, disabled_at FROM bridges WHERE id = ? LIMIT 1`,
-  )
+export async function lookupBridgeSecret(env: Env, bridgeId: string): Promise<BridgeSecretLookup> {
+  const row = await env.DB.prepare(`SELECT id, disabled_at FROM bridges WHERE id = ? LIMIT 1`)
     .bind(bridgeId)
     .first<{ id: string; disabled_at: string | null }>();
   if (!row) return { ok: false, code: 'unknown_bridge' };
@@ -92,9 +87,14 @@ export function bridgeHmacAuth(): MiddlewareHandler<{ Bindings: Env }> {
     const lookup = await lookupBridgeSecret(env, bridgeId);
     if (!lookup.ok) {
       if (lookup.code === 'key_propagating') {
-        return buildError(c, 'key_propagating', 'bridge plaintext not in cache; rotate to repopulate', {
-          'retry-after': '2',
-        });
+        return buildError(
+          c,
+          'key_propagating',
+          'bridge plaintext not in cache; rotate to repopulate',
+          {
+            'retry-after': '2',
+          },
+        );
       }
       // unknown_bridge / disabled both look like an unauthorized identity.
       return buildError(c, 'unauthorized', `bridge: ${lookup.code}`);

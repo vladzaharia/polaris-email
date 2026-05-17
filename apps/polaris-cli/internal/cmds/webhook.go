@@ -82,10 +82,10 @@ func dlqReplayCmd() *cobra.Command {
 }
 
 func dlqDropCmd() *cobra.Command {
-	var confirm, opA, opB string
+	var confirm string
 	c := &cobra.Command{
 		Use:   "drop <id>",
-		Short: "Permanently drop a DLQ entry (TWO-PERSON RULE)",
+		Short: "Permanently drop a DLQ entry",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			cl, err := MakeClient()
@@ -95,10 +95,7 @@ func dlqDropCmd() *cobra.Command {
 			if confirm != args[0] {
 				return fmt.Errorf("--confirm must equal the DLQ entry id")
 			}
-			if opA == "" {
-				return fmt.Errorf("--operator-token-a is required (first operator's WebAuthn-stamped token)")
-			}
-			req := client.WebhookDLQDropRequest{Confirm: confirm, OperatorTokenA: opA, OperatorTokenB: opB}
+			req := client.WebhookDLQDropRequest{Confirm: confirm}
 			path := fmt.Sprintf("/v1/admin/webhook-dlq/%s/drop", url.PathEscape(args[0]))
 			var out map[string]any
 			if err := cl.DoJSON(CtxBackground(), "POST", path, nil, req, &out); err != nil {
@@ -108,7 +105,5 @@ func dlqDropCmd() *cobra.Command {
 		},
 	}
 	c.Flags().StringVar(&confirm, "confirm", "", "must equal the DLQ entry id")
-	c.Flags().StringVar(&opA, "operator-token-a", "", "first operator's WebAuthn-stamped token")
-	c.Flags().StringVar(&opB, "operator-token-b", "", "second operator's WebAuthn-stamped token (collected here, validated API-side)")
 	return c
 }

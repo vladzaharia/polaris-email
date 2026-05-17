@@ -26,15 +26,20 @@ func TestUpsertAndGetMessageMeta(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	got, err := m.GetMessageMeta(ctx, "m1")
+	got, err := m.GetMessageMeta(ctx, "mb1", "m1")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got.Subject != "hi" || got.BodyBytes != 10 {
 		t.Fatalf("got %+v", got)
 	}
-	if _, err := m.GetMessageMeta(ctx, "nope"); !errors.Is(err, sql.ErrNoRows) {
+	if _, err := m.GetMessageMeta(ctx, "mb1", "nope"); !errors.Is(err, sql.ErrNoRows) {
 		t.Fatalf("expected ErrNoRows, got %v", err)
+	}
+	// Cross-mailbox lookup must not surface the row even when the message
+	// id matches.
+	if _, err := m.GetMessageMeta(ctx, "mb-other", "m1"); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("expected ErrNoRows for cross-mailbox lookup, got %v", err)
 	}
 }
 

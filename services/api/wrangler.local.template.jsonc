@@ -21,11 +21,11 @@
   ],
   "vars": {
     "API_BASE_URL": "https://${POLARIS_API_HOSTNAME}",
-    // R2 public custom domain (B5). The R2 bucket `polaris-email` is fronted
+    // R2 public custom domain. The R2 bucket `polaris-email` is fronted
     // by this hostname; both inbound and outbound message bodies/attachments
     // are served from it. See infra/terraform for the DNS + bucket config.
     "R2_PUBLIC_HOST": "${R2_PUBLIC_HOST}",
-    // External anchor target (Phase O1). Non-secret config only; the
+    // External anchor target. Non-secret config only; the
     // access-key id + secret are pushed via `wrangler secret put`.
     "ANCHOR_S3_ENDPOINT": "${ANCHOR_S3_ENDPOINT}",
     "ANCHOR_S3_BUCKET": "${ANCHOR_S3_BUCKET}",

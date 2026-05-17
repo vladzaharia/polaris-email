@@ -17,12 +17,7 @@ export interface ActionBarProps {
 
 export function ActionBar({ children, actions, className }: ActionBarProps) {
   return (
-    <div
-      className={cn(
-        'mb-4 flex flex-wrap items-end justify-between gap-2',
-        className,
-      )}
-    >
+    <div className={cn('mb-4 flex flex-wrap items-end justify-between gap-2', className)}>
       <div className="flex flex-wrap items-end gap-2">{children}</div>
       {actions ? <div className="flex flex-wrap items-end gap-2">{actions}</div> : null}
     </div>

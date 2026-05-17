@@ -14,7 +14,7 @@
 //     it cleanly would require a multi-day rework of `vitest.config.ts`,
 //     a Wrangler-driven migration runner against in-memory SQLite, and
 //     binding-override plumbing that the cleanup plan explicitly scopes out
-//     of phase A.
+//     of.
 //   - The in-memory mocks honour the actual D1/KV semantics that A1 (revocation
 //     propagation), A8 (composite idempotency PK), and A11 (read-once secrets)
 //     depend on: KV.get/put with TTLs, D1 INSERT OR IGNORE, MockQueue.send.

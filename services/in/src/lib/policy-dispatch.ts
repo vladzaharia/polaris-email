@@ -71,60 +71,14 @@ export interface InboundPolicyInput {
   };
 }
 
-function headersMap(parsed: ParsedMime): Record<string, string> {
-  const map: Record<string, string> = {};
-  for (const h of parsed.headers) {
-    if (!(h.nameLc in map)) map[h.nameLc] = h.value;
-  }
-  return map;
-}
-
-function rawHeadersString(parsed: ParsedMime): string {
-  return parsed.headers.map((h) => `${h.name}: ${h.value}`).join('\r\n');
-}
-
-function bodyPreview(parsed: ParsedMime, maxLen = 4000): string {
-  return new TextDecoder('utf-8', { fatal: false, ignoreBOM: true })
-    .decode(parsed.body)
-    .slice(0, maxLen);
-}
-
-function asSpf(value: string | undefined): PolicyInput['auth']['spf'] {
-  if (
-    value === 'pass' ||
-    value === 'fail' ||
-    value === 'softfail' ||
-    value === 'neutral' ||
-    value === 'none' ||
-    value === 'temperror' ||
-    value === 'permerror'
-  ) {
-    return value;
-  }
-  return undefined;
-}
-
-function asDkimResult(
-  value: string | undefined,
-): 'pass' | 'fail' | 'none' | 'policy' | 'neutral' | 'temperror' | 'permerror' | undefined {
-  if (
-    value === 'pass' ||
-    value === 'fail' ||
-    value === 'none' ||
-    value === 'policy' ||
-    value === 'neutral' ||
-    value === 'temperror' ||
-    value === 'permerror'
-  ) {
-    return value;
-  }
-  return undefined;
-}
-
-function asDmarc(value: string | undefined): 'pass' | 'fail' | 'none' | undefined {
-  if (value === 'pass' || value === 'fail' || value === 'none') return value;
-  return undefined;
-}
+import {
+  headersMap,
+  rawHeadersString,
+  bodyPreviewOf as bodyPreview,
+  asSpf,
+  asDkimResult,
+  asDmarc,
+} from '@polaris-email/policy-engine/mime-helpers';
 
 async function persistDecision(
   env: InboundPolicyEnv,

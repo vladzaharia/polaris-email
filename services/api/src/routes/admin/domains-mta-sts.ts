@@ -1,4 +1,4 @@
-// Phase C.10 — Admin REST routes for MTA-STS + TLS-RPT lifecycle.
+// Admin REST routes for MTA-STS + TLS-RPT lifecycle.
 //
 // Five POST endpoints, all `admin:rotate`-scoped and HMAC-authed via the
 // parent `admin` Hono instance:
@@ -162,7 +162,7 @@ domainsMtaSts.post(
     }
 
     // First enable → 'testing'. Subsequent re-enables (mode already
-    // 'testing' or 'enforce') preserve whatever the operator set last —
+    // 'testing' or 'enforce') preserve whatever the operator set last
     // this endpoint is safe to call on a healthy domain to re-publish.
     const newMode = pre.row.mta_sts_mode === 'none' ? 'testing' : pre.row.mta_sts_mode;
     const nowIso = new Date().toISOString();

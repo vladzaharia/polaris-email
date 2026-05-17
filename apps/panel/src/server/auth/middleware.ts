@@ -2,17 +2,16 @@
 //
 // `sessionMiddleware()` reads better-auth's session cookie and stamps the
 // resolved subject onto `c.var.session` for downstream handlers. The session
-// shape (`PanelSession`) is intentionally narrow — userId, email, admin —
+// shape (`PanelSession`) is intentionally narrow — userId, email, admin
 // because that's all the panel routes ever need.
 //
 // `requireAuth()` and `requireAdmin()` are the two coarse gates we layer on
 // top: any authenticated user vs. an authenticated user with the OIDC-synced
-// `admin` flag set. Truly sensitive actions (credential rotate/revoke, bridge
-// rotate, DKIM rotate, mailbox/receiver delete, webhook DLQ drop, …) sit
-// behind the two-person `withApproval(action)` middleware in `./approvals.ts`
-// rather than a self-elevating step-up token. That way no single signed-in
-// admin (or session-thief) can perform a destructive action without a second
-// admin approving the operation in the panel.
+// `admin` flag set. Destructive actions (credential rotate/revoke, bridge
+// rotate, DKIM rotate, mailbox/receiver delete, webhook DLQ drop, …) are
+// gated client-side via `DestructiveActionDialog` (type-the-resource-name
+// confirmation); every mutation writes an audit_log row, and the audit chain
+// is anchored hourly to Backblaze B2 with Object Lock.
 import type { MiddlewareHandler } from 'hono';
 import type { Env } from '../env.js';
 import { makeAuth } from './index.js';

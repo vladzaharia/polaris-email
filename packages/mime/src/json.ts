@@ -25,7 +25,7 @@ export interface MessageAttachmentMeta {
   content_base64?: string;
   /**
    * Public, content-addressed URL on the R2 custom domain
-   * `r2.mail.plrs.im` (B5). Replaces the signed-URL pattern.
+   * `r2.mail.plrs.im`. Replaces the signed-URL pattern.
    */
   url?: string;
   /**
@@ -49,7 +49,7 @@ export interface UnifiedMessage {
   html?: string;
   /**
    * Public, content-addressed URL for the raw RFC822 body on the R2 custom
-   * domain `r2.mail.plrs.im` (B5). Absolute, no expiry.
+   * domain `r2.mail.plrs.im`. Absolute, no expiry.
    */
   body_url?: string;
   headers?: Record<string, string>;
@@ -228,10 +228,7 @@ function walkParts(
   depth = 0,
 ): void {
   if (depth > MAX_MULTIPART_DEPTH) {
-    throw new MimeError(
-      `multipart nesting exceeds ${MAX_MULTIPART_DEPTH}`,
-      'multipart_too_deep',
-    );
+    throw new MimeError(`multipart nesting exceeds ${MAX_MULTIPART_DEPTH}`, 'multipart_too_deep');
   }
   const ct = parseContentType(topContentType);
   if (!(ct.type.startsWith('multipart/') && ct.boundary)) {
@@ -332,7 +329,7 @@ function walkPartsWithHeaders(
 /**
  * Decoded attachment part returned by `extractAttachmentParts()`. Used by
  * `processMessage()` to write per-attachment R2 objects keyed by SHA-256 of
- * the decoded bytes (B5). The order matches `summarizeMime().attachments`
+ * the decoded bytes. The order matches `summarizeMime().attachments`
  * so the i-th element of one lines up with the i-th element of the other.
  */
 export interface ExtractedAttachment {
@@ -381,7 +378,7 @@ function walkExtractAttachments(
  * `summarizeMime().attachments` exactly, so callers can zip the two
  * arrays by index. Body parts (`text/*`) are skipped.
  *
- * Used by `processMessage()` to write per-attachment R2 objects (B5).
+ * Used by `processMessage()` to write per-attachment R2 objects.
  */
 export function extractAttachmentParts(raw: Uint8Array): ExtractedAttachment[] {
   const parsed: ParsedMime = parseStrict(raw);
@@ -628,7 +625,7 @@ export function composeFromJson(req: SendRequestLike): Uint8Array {
     });
     // Top-level Content-Transfer-Encoding intentionally omitted: CF's
     // send_email binding generates it from content analysis (per CF docs),
-    // and parseStrict (Phase A.2) treats CTE as a platform-controlled
+    // and parseStrict treats CTE as a platform-controlled
     // forbidden header. Multipart branches above keep part-level CTE
     // (inside the body, not inspected by parseStrict).
     body = new TextEncoder().encode(req.html ?? '');

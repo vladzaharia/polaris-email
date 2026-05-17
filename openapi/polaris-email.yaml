@@ -90,7 +90,7 @@ components:
                 - unauthorized
                 - forbidden
                 - conflict
-                # Phase A — CF Email Service compliance
+                # CF Email Service compliance
                 - too_many_recipients
                 - subject_too_long
                 - message_too_large
@@ -114,7 +114,7 @@ components:
           format: uri
           description: |
             Public, content-addressed URL on the R2 custom domain
-            `r2.mail.plrs.im` (B5). Absolute, no expiry. SHA-256 in the
+            `r2.mail.plrs.im`. Absolute, no expiry. SHA-256 in the
             path provides unguessability — treat the URL as a capability
             token. Fetch directly without HMAC.
     MessageAuth:
@@ -153,7 +153,7 @@ components:
           format: uri
           description: |
             Public, content-addressed URL for the raw RFC822 body on the R2
-            custom domain `r2.mail.plrs.im` (B5). Absolute, no expiry. SHA-256
+            custom domain `r2.mail.plrs.im`. Absolute, no expiry. SHA-256
             in the path provides unguessability — treat the URL as a
             capability token. Fetch directly without HMAC.
         headers:
@@ -373,7 +373,7 @@ components:
         verified_at: { type: string, nullable: true }
         last_verify_check_at: { type: string, nullable: true }
         disabled_at: { type: string, nullable: true }
-        # Phase C — MTA-STS (RFC 8461) + TLS-RPT (RFC 8460).
+        # MTA-STS (RFC 8461) + TLS-RPT (RFC 8460).
         mta_sts_mode:
           type: string
           enum: [none, testing, enforce]
@@ -414,7 +414,7 @@ components:
       description: |
         Generic patch surface for a mail domain. Note: switching MTA-STS state
         end-to-end (DNS + KV + DB) is normally routed through the dedicated
-        lifecycle endpoints — `POST .../mta-sts/{enable,disable,promote}` —
+        lifecycle endpoints — `POST .../mta-sts/{enable,disable,promote}`
         so the publish side-effects fire. The fields here are accepted by
         bulk operator scripts that have already manually staged the records.
       properties:
@@ -945,7 +945,7 @@ paths:
         Returns the current set of active SMTP submission credentials plus
         the set of disabled credentials to remove. Polled by the
         mail-bridge to keep its local SQLite mirror current. (Renamed from
-        `/v1/daemon/credentials` in phase B4 — the legacy alias is gone.)
+        `/v1/daemon/credentials` — the legacy alias is gone.)
       parameters:
         - { $ref: '#/components/parameters/KeyId' }
         - { $ref: '#/components/parameters/Ts' }

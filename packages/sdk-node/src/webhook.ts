@@ -9,8 +9,8 @@
 // Thin wrapper around `@polaris-email/hmac`'s strict canonical-string verifier.
 // Historical context: this file once carried its own hand-written HMAC
 // implementation alongside the canonical TS package; the duplication was
-// collapsed in cleanup phase D2. The HMAC scheme itself was un-versioned in
-// phase B3 — direction tags are `polaris-api` / `polaris-webhook` (no `.v1`),
+// collapsed in cleanup. The HMAC scheme itself was un-versioned in
+// — direction tags are `polaris-api` / `polaris-webhook` (no `.v1`),
 // and the `X-Polaris-Sig` header is bare lowercase hex (no `v1=`/`v2=` prefix).
 
 import { verify, type Direction, type VerifyResult } from '@polaris-email/hmac';

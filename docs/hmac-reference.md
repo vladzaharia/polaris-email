@@ -2,8 +2,7 @@
 
 polaris-email HMAC signatures are **un-versioned**. There is one canonical
 string format, two domain-separation tags, and one signature header. The
-historical `v1=` / `v2=` envelope tags and `.v1` suffixes were removed in
-phase B3 — this document is the source of truth for the current shape.
+historical `v1=` / `v2=` envelope tags and `.v1` suffixes were removed — this document is the source of truth for the current shape.
 
 The machine-readable source of truth is
 [`packages/test-vectors/vectors.json`](../packages/test-vectors/vectors.json);

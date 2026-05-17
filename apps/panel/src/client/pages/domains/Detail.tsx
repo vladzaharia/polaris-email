@@ -193,7 +193,7 @@ interface DomainPayload {
   dkim_selector: string | null;
   inbound_enabled?: number;
   outbound_enabled?: number;
-  // Phase C — MTA-STS + TLS-RPT
+  // MTA-STS + TLS-RPT
   mta_sts_mode?: 'none' | 'testing' | 'enforce';
   mta_sts_policy_id?: string | null;
   mta_sts_max_age?: number;

@@ -127,13 +127,23 @@ export async function afterSignInRoleSync(
 // ----------------------------------------------------------------------------
 // Helpers
 
+// Cap the OIDC `groups` claim at a reasonable number of entries. A hostile
+// or misconfigured IdP can emit megabyte-sized arrays and we'd spend the
+// rest of the sign-in turning them into strings. 200 is well above any
+// realistic group membership for a single user.
+const MAX_GROUPS = 200;
+
 function extractGroups(claims: Record<string, unknown>): string[] {
   for (const claim of GROUP_CLAIMS) {
     const v = claims[claim];
-    if (Array.isArray(v)) return v.map((x) => String(x));
+    if (Array.isArray(v)) {
+      if (v.length > MAX_GROUPS) return [];
+      return v.map((x) => String(x));
+    }
     if (typeof v === 'string') {
-      // Space- or comma-separated.
-      return v.split(/[\s,]+/).filter(Boolean);
+      const parts = v.split(/[\s,]+/).filter(Boolean);
+      if (parts.length > MAX_GROUPS) return [];
+      return parts;
     }
   }
   return [];

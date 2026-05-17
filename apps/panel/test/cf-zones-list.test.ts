@@ -8,15 +8,9 @@
 import { describe, expect, it } from 'vitest';
 import { makePolaris } from '../src/server/polaris.js';
 import type { Env } from '../src/server/env.js';
-import type {
-  CfZoneListResponse,
-  ZoneDomainStatus,
-} from '../src/client/pages/cf-zones/types.js';
+import type { CfZoneListResponse, ZoneDomainStatus } from '../src/client/pages/cf-zones/types.js';
 
-function fakeZone(
-  name: string,
-  partial: Partial<ZoneDomainStatus> = {},
-): ZoneDomainStatus {
+function fakeZone(name: string, partial: Partial<ZoneDomainStatus> = {}): ZoneDomainStatus {
   return {
     zone: { id: 'cf-' + name, name, status: 'active' },
     routing_enabled: true,

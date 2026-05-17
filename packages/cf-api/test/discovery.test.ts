@@ -63,8 +63,7 @@ function dohResolverFor(domain: string): typeof fetch {
     const type = params.get('type') ?? '';
     const data = (() => {
       // Wildcard DKIM CNAME points at the cf._domainkey record.
-      if (type === 'CNAME' && name === `*._domainkey.${domain}`)
-        return `cf._domainkey.${domain}`;
+      if (type === 'CNAME' && name === `*._domainkey.${domain}`) return `cf._domainkey.${domain}`;
       // Primary DKIM CNAME points at CF's hosted DKIM target.
       if (type === 'CNAME' && name === `cf._domainkey.${domain}`)
         return `cf.${domain}.dkim.cfemail.net`;
@@ -94,13 +93,18 @@ const inboundWorkerName = 'polaris-email-in';
 describe('inspectZone — fully configured', () => {
   it('reports overall=ok when every check passes', async () => {
     const client = makeClient({
-      'GET /zones/z1/email/routing': () =>
-        ok({ enabled: true, status: 'ready', name: 'plrs.im' }),
+      'GET /zones/z1/email/routing': () => ok({ enabled: true, status: 'ready', name: 'plrs.im' }),
       'GET /zones/z1/email/routing/dns': () =>
         ok({
           errors: [],
           records: [
-            { type: 'MX', name: 'plrs.im', content: 'route1.mx.cloudflare.net', required: true, locked: true },
+            {
+              type: 'MX',
+              name: 'plrs.im',
+              content: 'route1.mx.cloudflare.net',
+              required: true,
+              locked: true,
+            },
             { type: 'TXT', name: 'plrs.im', content: 'v=spf1 ...', required: true, locked: true },
           ],
         }),
@@ -186,9 +190,7 @@ describe('inspectZone — partially configured', () => {
       'GET /zones/z1/email/routing/dns': () =>
         ok({
           errors: [],
-          records: [
-            { type: 'MX', name: 'plrs.im', content: 'r.mx', required: true, locked: true },
-          ],
+          records: [{ type: 'MX', name: 'plrs.im', content: 'r.mx', required: true, locked: true }],
         }),
       'GET /zones/z1/email/routing/rules': () => ok([]),
       'GET /zones/z1/email/routing/rules/catch_all': () =>

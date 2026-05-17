@@ -28,7 +28,7 @@ infra/terraform/
 There is one Cloudflare account: **`polaris-prod`**. It owns every Polaris
 runtime — Workers, D1, KV, R2, Queues, DNS, Email Routing, Email Service,
 Access. The previous three-account layout (`polaris-staging`, `polaris-anchors`)
-was retired in Phase O1: `polaris-staging` was an empty stub, and audit
+was retired in `polaris-staging` was an empty stub, and audit
 anchors moved off-Cloudflare entirely to an external Object-Lock target (see
 **Audit anchors** below).
 

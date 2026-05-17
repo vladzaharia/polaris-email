@@ -13,6 +13,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -98,30 +99,57 @@ func (f *Forwarder) Forward(ctx context.Context, in ForwardRequest) (*ForwardRes
 
 // idempotencyKey derives a stable idempotency key for a ForwardRequest.
 //
-//   - If the RFC822 carries a `Message-ID:` header, that value is used verbatim
-//     (clients retrying a submission preserve their Message-ID, so the API
-//     will dedupe even across reconnects).
-//   - Otherwise we derive a hash of submission-identity bits that stay stable
-//     across retries of the same logical submission:
-//     sha256_hex("polaris-smtp/" + envelope_from + "/" + envelope_to[0] +
-//     "/" + date_header + "/" + sha256(rfc822_body)[:16])
+//   - If the RFC822 carries a syntactically-valid `Message-ID:` header
+//     (RFC 5322 form `<local@domain>`), that value is used verbatim. Clients
+//     retrying a submission preserve their Message-ID, so the API will
+//     dedupe even across reconnects.
+//   - Otherwise (no header, malformed, or suspicious shape) we derive a
+//     hash of submission-identity bits that stay stable across retries of
+//     the same logical submission, including a canonical (sorted) recipient
+//     list so reordering RCPT TO doesn't produce a different key.
 //
-// Note: SubmissionID is intentionally NOT part of the key — it changes on every
-// inbound SMTP session, so including it would defeat retry-dedupe.
+// Note: SubmissionID is intentionally NOT part of the key — it changes on
+// every inbound SMTP session, so including it would defeat retry-dedupe.
 func idempotencyKey(req ForwardRequest) string {
-	if mid := extractMessageID(req.RFC822); mid != "" {
+	if mid := extractMessageID(req.RFC822); mid != "" && isValidMessageID(mid) {
 		return mid
 	}
 	date := extractHeader(req.RFC822, "Date")
-	to := ""
-	if len(req.EnvelopeTo) > 0 {
-		to = req.EnvelopeTo[0]
-	}
+	tos := append([]string(nil), req.EnvelopeTo...)
+	sort.Strings(tos)
+	toJoined := strings.Join(tos, ",")
 	bodyHash := sha256.Sum256(req.RFC822)
 	bodyHashShort := hex.EncodeToString(bodyHash[:])[:16]
-	canonical := "polaris-smtp/" + req.EnvelopeFrom + "/" + to + "/" + date + "/" + bodyHashShort
+	canonical := "polaris-smtp/" + req.EnvelopeFrom + "/" + toJoined + "/" + date + "/" + bodyHashShort
 	sum := sha256.Sum256([]byte(canonical))
 	return hex.EncodeToString(sum[:])
+}
+
+// isValidMessageID accepts RFC 5322 §3.6.4 shape `<local@domain>` with no
+// control characters or whitespace and a reasonable size cap. The header
+// value is user-controlled (a hostile sender can put anything there), and
+// we forward it verbatim as an HTTP header, so the validator rejects values
+// that could break header framing or be confused for a routing token.
+func isValidMessageID(mid string) bool {
+	if len(mid) < 3 || len(mid) > 998 {
+		return false
+	}
+	if mid[0] != '<' || mid[len(mid)-1] != '>' {
+		return false
+	}
+	inner := mid[1 : len(mid)-1]
+	if !strings.Contains(inner, "@") {
+		return false
+	}
+	for _, r := range inner {
+		if r <= 0x20 || r == 0x7f {
+			return false
+		}
+		if r == '<' || r == '>' || r == ',' || r == '\\' || r == '"' {
+			return false
+		}
+	}
+	return true
 }
 
 // extractMessageID returns the value of the first `Message-ID:` header found

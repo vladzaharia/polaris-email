@@ -11,9 +11,13 @@ import { ulid } from '@polaris-email/ids';
 
 export const PLATFORM_DMARC_REPORTS_MAILBOX_ID = '01HXPLATFORMDMARCREPORTS00';
 
+interface D1RunResult {
+  meta?: { changes?: number; rows_written?: number };
+  success?: boolean;
+}
 interface D1Stmt {
   bind(...params: unknown[]): D1Stmt;
-  run(): Promise<unknown>;
+  run(): Promise<D1RunResult>;
 }
 interface D1 {
   prepare(sql: string): D1Stmt;
@@ -108,12 +112,16 @@ async function writeReport(
   db: D1,
   report: DmarcReport,
   sourceMessageId: string | null,
-): Promise<{ id: string; domain: string | null }> {
+): Promise<{ id: string; domain: string | null; deduped: boolean }> {
   const id = ulid();
   const nowIso = new Date().toISOString();
-  await db
+  // INSERT OR IGNORE absorbs replays of the same (domain, report_id) — the
+  // partial unique index added in 0020_polish.sql is the dedup key. If
+  // report_id is NULL the index doesn't apply and the insert always lands;
+  // callers tolerate occasional duplicates from providers that omit report-id.
+  const result = await db
     .prepare(
-      `INSERT INTO dmarc_aggregate_reports
+      `INSERT OR IGNORE INTO dmarc_aggregate_reports
          (id, domain, org_name, org_email, report_id,
           date_range_begin, date_range_end,
           policy_p, policy_sp, policy_pct, policy_adkim, policy_aspf,
@@ -143,7 +151,8 @@ async function writeReport(
       nowIso,
     )
     .run();
-  return { id, domain: report.policyDomain };
+  const changes = result.meta?.changes ?? result.meta?.rows_written ?? 1;
+  return { id, domain: report.policyDomain, deduped: changes === 0 };
 }
 
 async function updateRollup(
@@ -202,12 +211,13 @@ export async function handleDmarcReport(
     xml = new TextDecoder('utf-8').decode(part.part.body);
   }
   const report = parseDmarcReportXml(xml);
-  const { id, domain } = await writeReport(db, report, sourceMessageId);
-  const rollupDay = await updateRollup(db, domain, report);
+  const { id, domain, deduped } = await writeReport(db, report, sourceMessageId);
+  // Skip rollup updates on dedup hits — replaying a report must not double-count.
+  const rollupDay = deduped ? null : await updateRollup(db, domain, report);
   return {
-    reportRowId: id,
+    reportRowId: deduped ? null : id,
     domain,
-    totalCount: report.totalCount,
+    totalCount: deduped ? 0 : report.totalCount,
     rollupDay,
   };
 }

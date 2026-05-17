@@ -91,6 +91,6 @@ export {
 // served from the R2 public custom domain `r2.mail.plrs.im` directly. The
 // URL builder lives in `services/api/src/lib/r2-public-url.ts`.
 
-// Phase C — MTA-STS + TLS-RPT provisioning and verification.
+// MTA-STS + TLS-RPT provisioning and verification.
 export * from './mta-sts.js';
 export * from './workers-routes.js';

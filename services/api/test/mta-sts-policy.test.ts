@@ -1,4 +1,4 @@
-// Phase C.9 — fast-feedback unit test for the public MTA-STS policy
+// fast-feedback unit test for the public MTA-STS policy
 // handler. Drives `app.fetch()` against the in-memory MockD1 from
 // `./mocks.ts` so the dispatch-by-Host logic, body format, and 404
 // fall-through paths can be exercised in milliseconds without booting

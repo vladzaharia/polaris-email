@@ -2,8 +2,8 @@
 
 > **Status**: archived — features shipped in commits L.3a/L.3b/L.4 (2026).
 
-**Prepared:** May 2026  
-**Status:** Feasibility assessment (pre-execution)  
+**Prepared:** May 2026
+**Status:** Feasibility assessment (pre-execution)
 **Scope:** Bridge architecture, backend prerequisites, protocol analysis, effort estimate, decision points.
 
 ---
@@ -292,7 +292,7 @@ JMAP is architecturally cleaner (HTTP, JSON, async) but has higher bridge implem
   - Alternative: Rust + imap-proto (fewer users; mature but less ecosystem).
   - **Recommendation:** Go + go-imap/server. Proven, small footprint, easy to containerize.
 
-**Binary size:** ~20 MB (statically linked, no CGO).  
+**Binary size:** ~20 MB (statically linked, no CGO).
 **Container base:** `golang:1.23-alpine` → `alpine:latest` for runtime (multi-stage build).
 
 ### 5.2 Stateless vs. stateful

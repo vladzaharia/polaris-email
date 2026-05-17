@@ -29,7 +29,7 @@ unsub.post('/v1/unsub/:token', async (c) => {
   const token = decodeURIComponent(c.req.param('token'));
   const v = await verifyUnsubToken(token, secret);
   if (!v.ok) {
-    // Return 400 rather than 401 so RFC 8058 clients don't loop on retry —
+    // Return 400 rather than 401 so RFC 8058 clients don't loop on retry
     // an invalid token is a client error, not a transient auth failure.
     return buildError(c, 'bad_request', `unsub token invalid: ${v.reason}`);
   }

@@ -131,24 +131,45 @@ async function tryClaim(
   principalId: string,
 ): Promise<IdemClaim> {
   // Composite PK (principal_id, key) — see migration 0004. principal_id is
-  // mandatory for the outbound path that calls this helper.
+  // mandatory for the outbound path that calls this helper. Insert with
+  // claim_locked=1 so a concurrent claimant can distinguish "first writer
+  // mid-flight" (spin a few times) from "first writer finished" (use the
+  // recorded message_id).
   if (!principalId) {
     throw new Error('principal id required for idempotency claim');
   }
   const insert = await env.DB.prepare(
-    `INSERT OR IGNORE INTO idempotency_keys (key, mailbox_id, principal_id, message_id, created_at)
-     VALUES (?1, ?2, ?3, NULL, ?4)
+    `INSERT OR IGNORE INTO idempotency_keys
+       (key, mailbox_id, principal_id, message_id, claim_locked, created_at)
+     VALUES (?1, ?2, ?3, NULL, 1, ?4)
      RETURNING key`,
   )
     .bind(key, mailboxId, principalId, new Date().toISOString())
     .first<{ key: string }>();
   if (insert?.key === key) return { first: true };
-  const row = await env.DB.prepare(
-    `SELECT message_id FROM idempotency_keys WHERE principal_id = ?1 AND key = ?2`,
-  )
-    .bind(principalId, key)
-    .first<{ message_id: string | null }>();
-  return { first: false, messageId: row?.message_id ?? undefined };
+
+  // Lost the race. Briefly poll for the winner's message_id before giving
+  // up — the winner usually finishes within a few hundred milliseconds.
+  // Five 200ms attempts ≈ 1s total wall-clock, well under any caller
+  // timeout. A genuinely-stuck claim still surfaces as 425.
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const row = await env.DB.prepare(
+      `SELECT message_id, claim_locked FROM idempotency_keys
+        WHERE principal_id = ?1 AND key = ?2`,
+    )
+      .bind(principalId, key)
+      .first<{ message_id: string | null; claim_locked: number }>();
+    if (row?.message_id) {
+      return { first: false, messageId: row.message_id };
+    }
+    if (row && row.claim_locked === 0) {
+      // Winner finished without recording a message_id — treat as resolved
+      // failure; caller falls through to the in-progress error path.
+      return { first: false };
+    }
+    await new Promise((r) => setTimeout(r, 200));
+  }
+  return { first: false };
 }
 
 /**
@@ -265,15 +286,58 @@ async function allocateInboundState(
     .run();
 }
 
+// Resolve receivers for an inbound message and return the fanout-enqueue
+// list. Called both on first delivery and on dedup hits — the queue
+// consumer's INSERT OR IGNORE on (message_id, webhook_sub_id) absorbs
+// duplicate enqueues from a true replay.
+async function resolveInboundFanout(
+  env: PipelineEnv,
+  args: ProcessMessageArgs,
+): Promise<FanoutEnqueue[]> {
+  if (!args.recipientAddress) return [];
+  const domainPart = args.recipientAddress.split('@')[1] ?? '';
+  const domain = await env.DB.prepare(`SELECT id FROM mail_domains WHERE name = ?1 LIMIT 1`)
+    .bind(domainPart)
+    .first<{ id: string }>()
+    .catch(() => null);
+  if (!domain) return [];
+  const receivers = await env.DB.prepare(
+    `SELECT id, action, webhook_sub_id, forward_to, address_pattern
+       FROM mailbox_receivers
+      WHERE domain_id = ? AND mailbox_id = ? AND enabled = 1
+      ORDER BY priority ASC LIMIT 100`,
+  )
+    .bind(domain.id, args.mailboxId)
+    .all<{
+      id: string;
+      action: string;
+      webhook_sub_id: string | null;
+      forward_to: string | null;
+      address_pattern: string;
+    }>()
+    .catch(() => ({ results: [] as never[] }));
+  const out: FanoutEnqueue[] = [];
+  for (const r of receivers.results) {
+    if (!addressMatches(r.address_pattern, args.recipientAddress)) continue;
+    if (r.action === 'webhook' && r.webhook_sub_id) {
+      out.push({ webhookSubId: r.webhook_sub_id, event: 'message.received' });
+    }
+  }
+  return out;
+}
+
 async function recordClaim(
   env: PipelineEnv,
   principalId: string,
   key: string,
   messageId: string,
 ): Promise<void> {
+  // Clear claim_locked alongside writing message_id so spin-waiting peers
+  // can detect "winner is done" in one read.
   await env.DB.prepare(
-    `UPDATE idempotency_keys SET message_id = ?3
-       WHERE principal_id = ?1 AND key = ?2 AND message_id IS NULL`,
+    `UPDATE idempotency_keys
+        SET message_id = ?3, claim_locked = 0
+      WHERE principal_id = ?1 AND key = ?2 AND message_id IS NULL`,
   )
     .bind(principalId, key, messageId)
     .run();
@@ -371,7 +435,18 @@ export async function processMessage(
       .first<{ id: string; status: string }>()
       .catch(() => null);
     if (existing) {
-      return { messageId: existing.id, status: 'received', fresh: false };
+      // Re-resolve fanout targets on dedup hits so a retried inbound
+      // delivery still enqueues webhooks. The queue consumer uses
+      // INSERT OR IGNORE on `message_deliveries` keyed by
+      // (message_id, webhook_sub_id), so a true duplicate delivery from
+      // a subscriber's perspective is absorbed without double-delivery.
+      const fanoutEnqueues = await resolveInboundFanout(env, args);
+      return {
+        messageId: existing.id,
+        status: 'received',
+        fresh: false,
+        fanoutEnqueues,
+      };
     }
   }
 
@@ -591,41 +666,7 @@ export async function processMessage(
   }
 
   // Inbound: resolve receivers + collect fanout list.
-  const fanoutEnqueues: FanoutEnqueue[] = [];
-  if (args.recipientAddress) {
-    const domainPart = args.recipientAddress.split('@')[1] ?? '';
-    const domain = await env.DB.prepare(`SELECT id FROM mail_domains WHERE name = ?1 LIMIT 1`)
-      .bind(domainPart)
-      .first<{ id: string }>()
-      .catch(() => null);
-    if (domain) {
-      const receivers = await env.DB.prepare(
-        `SELECT id, action, webhook_sub_id, forward_to, address_pattern
-         FROM mailbox_receivers
-         WHERE domain_id = ? AND mailbox_id = ? AND enabled = 1
-         ORDER BY priority ASC LIMIT 100`,
-      )
-        .bind(domain.id, args.mailboxId)
-        .all<{
-          id: string;
-          action: string;
-          webhook_sub_id: string | null;
-          forward_to: string | null;
-          address_pattern: string;
-        }>()
-        .catch(() => ({ results: [] as never[] }));
-      for (const r of receivers.results) {
-        if (!addressMatches(r.address_pattern, args.recipientAddress)) continue;
-        if (r.action === 'webhook' && r.webhook_sub_id) {
-          fanoutEnqueues.push({
-            webhookSubId: r.webhook_sub_id,
-            event: 'message.received',
-          });
-        }
-        // 'forward' and 'drop' are handled outside processMessage today.
-      }
-    }
-  }
+  const fanoutEnqueues = await resolveInboundFanout(env, args);
 
   await audit(env, {
     actor: args.principalId ?? args.bridgeId ?? 'system',

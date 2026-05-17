@@ -5,6 +5,13 @@ on:
     branches: [main]
   pull_request:
 
+# Cancel an in-flight run when a new commit is pushed to the same ref.
+# github.ref is a builtin (refs/heads/main or refs/pull/N/merge) — never
+# user-supplied text — so it's safe to interpolate directly here.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   lint:
     runs-on: ubuntu-latest

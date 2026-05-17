@@ -92,9 +92,7 @@ function makeApplyEnv(env: Env): ApplyEnv {
       const nowIso = new Date().toISOString();
       const cfPlaceholder = `cf-${id}`; // configure caller has the real cf_zone_id but
       // doesn't thread it through; ensureZone resolves by name later if needed.
-      const zoneRow = await env.DB.prepare(
-        `SELECT id FROM zones WHERE name = ? LIMIT 1`,
-      )
+      const zoneRow = await env.DB.prepare(`SELECT id FROM zones WHERE name = ? LIMIT 1`)
         .bind(zoneName)
         .first<{ id: string }>();
       let zoneId: string;
@@ -165,9 +163,9 @@ cfZones.get('/v1/admin/cf-zones/:name', requireScope('admin:read'), async (c) =>
 // ---------- POST /v1/admin/cf-zones/:name/configure ----------
 // Body: { dry_run?: boolean (default true), op_kinds?: ZoneConfigureOpKind[] }
 // dry_run=true → return the diff without applying.
-// dry_run=false → apply the diff (or just the listed op_kinds). Two-person
-// approval is handled by panel-side `withApproval` middleware before the
-// request reaches us; the CLI/SDK callers use the admin key directly.
+// dry_run=false → apply the diff (or just the listed op_kinds). The panel
+// gates this client-side via DestructiveActionDialog; CLI/SDK callers use
+// the admin key directly.
 cfZones.post('/v1/admin/cf-zones/:name/configure', requireScope('admin:rotate'), async (c) => {
   const key = c.get('apiKey');
   const made = makeClient(c.env);

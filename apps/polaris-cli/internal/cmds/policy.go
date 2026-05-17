@@ -14,7 +14,6 @@
 package cmds
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/url"
 	"time"
@@ -212,9 +211,7 @@ func policyHeldShowCmd() *cobra.Command {
 			}
 			// Always pretty-print the decision for the operator-readable
 			// reason vector — there's no useful table form for the JSON.
-			pretty, _ := json.MarshalIndent(out, "", "  ")
-			fmt.Println(string(pretty))
-			return nil
+			return Emit(out)
 		},
 	}
 }
@@ -243,9 +240,7 @@ func policyHeldReleaseCmd() *cobra.Command {
 			if err := cl.DoJSON(CtxBackground(), "POST", path, nil, body, &out); err != nil {
 				return err
 			}
-			pretty, _ := json.MarshalIndent(out, "", "  ")
-			fmt.Println(string(pretty))
-			return nil
+			return Emit(out)
 		},
 	}
 	cmd.Flags().StringVar(&asLabel, "as", "legit", "released_as_legit|reclassified")
@@ -282,9 +277,7 @@ func policyHeldDropCmd() *cobra.Command {
 			if err := cl.DoJSON(CtxBackground(), "POST", path, nil, body, &out); err != nil {
 				return err
 			}
-			pretty, _ := json.MarshalIndent(out, "", "  ")
-			fmt.Println(string(pretty))
-			return nil
+			return Emit(out)
 		},
 	}
 	cmd.Flags().StringVar(&asLabel, "as", "phishing", "phishing|spam|marketing")
@@ -315,9 +308,7 @@ func policyHeldReclassifyCmd() *cobra.Command {
 			if err := cl.DoJSON(CtxBackground(), "POST", path, nil, body, &out); err != nil {
 				return err
 			}
-			pretty, _ := json.MarshalIndent(out, "", "  ")
-			fmt.Println(string(pretty))
-			return nil
+			return Emit(out)
 		},
 	}
 	cmd.Flags().StringVar(&verdict, "verdict", "", "corrected verdict")

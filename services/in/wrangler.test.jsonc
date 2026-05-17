@@ -12,7 +12,10 @@
     { "binding": "DB", "database_name": "polaris-email", "database_id": "test-local" },
   ],
   "r2_buckets": [{ "binding": "R2", "bucket_name": "polaris-email" }],
-  "kv_namespaces": [{ "binding": "KV_RATE_LIMIT", "id": "test-local-kv-rate-limit" }],
+  "kv_namespaces": [
+    { "binding": "KV_RATE_LIMIT", "id": "test-local-kv-rate-limit" },
+    { "binding": "KV_IDEMPOTENCY", "id": "test-local-kv-idempotency" },
+  ],
   "queues": {
     "producers": [{ "binding": "FANOUT_QUEUE", "queue": "polaris-email-fanout" }],
   },

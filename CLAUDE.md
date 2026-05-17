@@ -19,7 +19,7 @@ anchors, or HMAC).
 - `services/{api,in,out}` — Cloudflare Workers (TypeScript + Hono).
   `services/api` ALSO hosts the webhook fan-out queue consumer and all cron
   triggers; the previous `services/fanout` and `services/cron` Workers were
-  folded into it (phase B1). The previous `services/forensic` Worker was
+  folded into it. The previous `services/forensic` Worker was
   removed when the schema went zero-payload-by-default. Don't reintroduce
   any of these.
 - `apps/panel` — Hono + React 19 + TanStack Router admin UI; deployed as a
@@ -28,7 +28,7 @@ anchors, or HMAC).
   one binary. Its own `go.mod` + `Makefile`.
 - `apps/polaris-cli` — Go 1.22, operator CLI (`polaris-email`, alias `pml`).
   Own `go.mod`.
-- `packages/{hmac,schema,pipeline,ids,mime,cf-api,revocation,object-lock,test-vectors,sdk-node}` —
+- `packages/{hmac,schema,pipeline,ids,mime,cf-api,revocation,object-lock,test-vectors,sdk-node}`
   TypeScript libs published as workspace packages.
 - `packages/sdk-go` — the only Go package under `packages/` (its own
   `go.mod`, **no `go.sum`** — pure-stdlib). CI disables module cache for
@@ -115,12 +115,12 @@ not the Makefile. See `apps/polaris-cli/README.md`.
    (warn-only in the CLI).
 
 2. **One unified pipeline.** `packages/pipeline/src/process-message.ts`
-   exports `processMessage()` — the *single* path mail takes through the
+   exports `processMessage()` — the _single_ path mail takes through the
    system. Both `services/in` (Email Routing inbound) and `services/api`
    (REST submission, JSON or RFC822) call it. Don't fork it — the previous
    parallel implementations are exactly the bug unification fixed.
 
-3. **HMAC is un-versioned (post-B3).** Header is `X-Polaris-Sig: <hex>`
+3. **HMAC is un-versioned ().** Header is `X-Polaris-Sig: <hex>`
    with no `v2=` prefix. Domain tags: `polaris-api` (API requests),
    `polaris-webhook` (outgoing webhook signing). See
    `docs/hmac-reference.md`.
@@ -141,7 +141,7 @@ not the Makefile. See `apps/polaris-cli/README.md`.
    writes inside CF.
 
 7. **R2 public domain `r2.mail.plrs.im` is intentionally unauthenticated.**
-   SHA-256 keys are the unguessability boundary (per phase B5). Don't add
+   SHA-256 keys are the unguessability boundary (per). Don't add
    a CDN or per-object signed-URL layer in front — read `SECURITY.md` first.
 
 8. **Credential revocation is KV-backed.** `packages/revocation` queries
@@ -182,13 +182,17 @@ were the canonical one.
   (shares the `polaris-email` DB with `services/api`).
 - Talks to the API via a **service binding** (`API`), not public fetch.
   No HMAC key needed in the happy path.
-- Destructive actions return `428 Precondition Required` with
-  `{ code: 'approval_required', action }` until an
-  `x-polaris-approval-id` header points at an `approved` row in the
-  `approvals` table approved by a *different* admin than the caller.
+- Destructive actions are gated **client-side** via
+  `DestructiveActionDialog` (type-the-resource-name confirmation). The
+  prior two-person `withApproval(...)` flow and `approvals` D1 table
+  were removed — real deployments are single-operator and the second
+  admin co-sign was unusable. The `audit_log` chained-hash table
+  (anchored hourly to Backblaze B2 with Object Lock) remains the
+  canonical record of who did what.
 - Auth flow: Cloudflare Access → Worker → better-auth `genericOAuth` →
   OIDC. The `databaseHooks.user.create.after` hook role-syncs from the
-  OIDC `groups` claim against the `ADMIN_GROUP` var.
+  OIDC `groups` claim against the `ADMIN_GROUP` var. The claim is
+  capped at 200 entries to bound the sign-in path.
 
 ## Things to avoid
 

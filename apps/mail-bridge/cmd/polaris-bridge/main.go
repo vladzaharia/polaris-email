@@ -98,7 +98,7 @@ func main() {
 	//
 	// Phase 4b.4: when the webhook receiver is enabled, BRIDGE_PUBLIC_URL
 	// MUST be a routable URL polaris can reach. The previous default of
-	// "https://localhost" silently registered an unreachable subscription —
+	// "https://localhost" silently registered an unreachable subscription
 	// polaris would queue every event into a delivery loop that never
 	// succeeded. Fail fast at startup so the operator notices immediately.
 	publicURL := os.Getenv("BRIDGE_PUBLIC_URL")
@@ -196,12 +196,17 @@ func main() {
 	// and the next successful poll will heal auth).
 	if enabled("BRIDGE_SMTPS_ENABLED", true) {
 		waitForCredstore(ctx, poller, 30*time.Second)
-		be := &dsmtp.Backend{Deps: dsmtp.Deps{
-			Store:          store,
-			Forwarder:      fwd,
-			Audit:          auditLog,
-			MaxMessageSize: cfg.MaxMessageSize,
-		}}
+		authLockout := credstore.NewLockout()
+		be := &dsmtp.Backend{
+			Deps: dsmtp.Deps{
+				Store:          store,
+				Forwarder:      fwd,
+				Audit:          auditLog,
+				MaxMessageSize: cfg.MaxMessageSize,
+				Lockout:        authLockout,
+			},
+			RootContext: ctx,
+		}
 		smtpSrv := dsmtp.New(dsmtp.ServerOptions{
 			ListenAddr:     getenvDefault("BRIDGE_SMTPS_LISTEN_ADDR", cfg.ListenAddr),
 			Domain:         cfg.BridgeName,
@@ -267,6 +272,10 @@ func main() {
 		}()
 		go func() {
 			<-ctx.Done()
+			// Close the listener explicitly so the underlying TCP socket
+			// + file descriptor is released; imapSrv.Close() alone is not
+			// guaranteed to release it on every emersion/go-imap version.
+			_ = imapLn.Close()
 			_ = imapSrv.Close()
 		}()
 	}

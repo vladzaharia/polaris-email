@@ -324,7 +324,7 @@ async function fireOne(
   ];
   await env.DB.batch(stmts);
 
-  // Fire an admin alert (W2d) — best effort. We don't fail the cron run if
+  // Fire an admin alert — best effort. We don't fail the cron run if
   // the alert pipeline trips because the suppression already landed.
   try {
     await sendAlert(env, {

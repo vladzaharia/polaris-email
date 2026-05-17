@@ -19,7 +19,7 @@ import (
 // Attachment is the inline attachment shape returned by UnifiedMessage.
 //
 // `URL` is the public, content-addressed URL on the R2 custom domain
-// `r2.mail.plrs.im` (B5). Absolute, no expiry. SHA-256 in the URL provides
+// `r2.mail.plrs.im`. Absolute, no expiry. SHA-256 in the URL provides
 // unguessability — treat the URL itself as a capability token. The previous
 // `ContentURL` (signed, short-lived) is gone.
 type Attachment struct {
@@ -33,29 +33,43 @@ type Attachment struct {
 // Message is a subset of the polaris `UnifiedMessage` shape — enough for the
 // bridge to render IMAP responses.
 type Message struct {
-	ID                    string       `json:"id"`
-	MailboxID             string       `json:"mailbox_id"`
-	Direction             string       `json:"direction"`
-	Status                string       `json:"status"`
-	From                  string       `json:"from,omitempty"`
-	FromAddr              string       `json:"from_addr,omitempty"`
-	To                    []string     `json:"to,omitempty"`
-	Subject               string       `json:"subject,omitempty"`
-	ThreadID              string       `json:"thread_id,omitempty"`
-	HeaderMessageID       string       `json:"header_message_id,omitempty"`
-	BodyBytes             int64        `json:"body_bytes,omitempty"`
-	AttachmentsTotalBytes int64        `json:"attachments_total_bytes,omitempty"`
-	Text                  string       `json:"text,omitempty"`
-	HTML                  string       `json:"html,omitempty"`
+	ID                    string                 `json:"id"`
+	MailboxID             string                 `json:"mailbox_id"`
+	Direction             string                 `json:"direction"`
+	Status                string                 `json:"status"`
+	From                  string                 `json:"from,omitempty"`
+	FromAddr              string                 `json:"from_addr,omitempty"`
+	To                    []string               `json:"to,omitempty"`
+	CC                    []string               `json:"cc,omitempty"`
+	BCC                   []string               `json:"bcc,omitempty"`
+	Subject               string                 `json:"subject,omitempty"`
+	ThreadID              string                 `json:"thread_id,omitempty"`
+	HeaderMessageID       string                 `json:"header_message_id,omitempty"`
+	BodyBytes             int64                  `json:"body_bytes,omitempty"`
+	AttachmentsTotalBytes int64                  `json:"attachments_total_bytes,omitempty"`
+	Text                  string                 `json:"text,omitempty"`
+	HTML                  string                 `json:"html,omitempty"`
 	// BodyURL is the public, content-addressed URL for the raw RFC822 body
-	// on the R2 custom domain `r2.mail.plrs.im` (B5). Absolute, no expiry.
-	BodyURL               string       `json:"body_url,omitempty"`
-	Attachments           []Attachment `json:"attachments,omitempty"`
-	CreatedAt             string       `json:"created_at,omitempty"`
-	ReceivedAtAPI         string       `json:"received_at_api,omitempty"`
-	Flags                 []string     `json:"flags,omitempty"`
-	ReadAt                string       `json:"read_at,omitempty"`
-	ChangeID              int64        `json:"change_id,omitempty"`
+	// on the R2 custom domain `r2.mail.plrs.im`. Absolute, no expiry.
+	BodyURL        string                 `json:"body_url,omitempty"`
+	Attachments    []Attachment           `json:"attachments,omitempty"`
+	Auth           *MessageAuth           `json:"auth,omitempty"`
+	BounceMetadata map[string]any         `json:"bounce_metadata,omitempty"`
+	LastError      string                 `json:"last_error,omitempty"`
+	CreatedAt      string                 `json:"created_at,omitempty"`
+	ReceivedAtAPI  string                 `json:"received_at_api,omitempty"`
+	Flags          []string               `json:"flags,omitempty"`
+	ReadAt         string                 `json:"read_at,omitempty"`
+	ChangeID       int64                  `json:"change_id,omitempty"`
+}
+
+// MessageAuth carries DKIM/SPF/DMARC verdicts for an inbound message.
+// The shape mirrors UnifiedMessage's auth field on the TypeScript side;
+// fields are optional so older API versions decode cleanly.
+type MessageAuth struct {
+	SPF   string `json:"spf,omitempty"`
+	DKIM  string `json:"dkim,omitempty"`
+	DMARC string `json:"dmarc,omitempty"`
 }
 
 // BulkGetResponse is the body of POST /v1/messages/get.

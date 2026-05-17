@@ -126,7 +126,7 @@ function executeSql<T>(
     if (!m) throw new Error('mock: bad insert ' + trimmed);
     const conflict = m[1]?.toLowerCase();
     const table = m[2]!;
-    // Phase A7: support `INSERT INTO tbl (cols) SELECT ?,?,... WHERE (SELECT IFNULL(MAX(id),-1) FROM tbl) = ?`
+    // support `INSERT INTO tbl (cols) SELECT ?,?,... WHERE (SELECT IFNULL(MAX(id),-1) FROM tbl) = ?`
     // — a CAS form used by audit() to serialise hash-chain writes without a
     // schema-level unique index. The trailing `?` is the expected MAX(id);
     // if it doesn't match, the insert writes zero rows and the caller retries.
@@ -392,8 +392,7 @@ function executeSql<T>(
               const arith = expr.match(/^(\w+)\s*([+-])\s*(\d+)$/);
               if (arith && arith[1]! in row) {
                 const cur = Number(row[arith[1]!] ?? 0);
-                out[alias] =
-                  arith[2] === '+' ? cur + Number(arith[3]) : cur - Number(arith[3]);
+                out[alias] = arith[2] === '+' ? cur + Number(arith[3]) : cur - Number(arith[3]);
               } else {
                 out[alias] = null;
               }
@@ -630,7 +629,7 @@ export function mkEnv(overrides: Partial<Env> = {}): Env {
     OUTBOUND_QUEUE: new MockQueue<OutboundQueueMessage>() as unknown as Queue<OutboundQueueMessage>,
     API_BASE_URL: 'https://polaris-email-api.workers.dev',
     R2_PUBLIC_HOST: 'r2.mail.plrs.im',
-    // External Object-Lock target test values (Phase O1). The anchor cron
+    // External Object-Lock target test values. The anchor cron
     // hits putObjectWithLock with these; specific tests mock global fetch
     // to capture the signed PUT.
     ANCHOR_S3_ENDPOINT: 'https://s3.us-west-005.backblazeb2.com',

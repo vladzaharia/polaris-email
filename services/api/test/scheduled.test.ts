@@ -25,7 +25,7 @@ afterEach(() => {
 
 describe('scheduled dispatch', () => {
   it('hourly cron runs the anchor handler (writes via SigV4 PUT to B2)', async () => {
-    // Phase O1: anchors are written via packages/object-lock against an
+    // anchors are written via packages/object-lock against an
     // external S3 endpoint. Capture the signed PUT by mocking global fetch.
     const fetched: Request[] = [];
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {

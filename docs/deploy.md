@@ -62,11 +62,11 @@ make bootstrap       # runs preflight, then bin/bootstrap.sh end-to-end
 `make bootstrap` performs the following, idempotently:
 
 1. `pnpm install --frozen-lockfile` and `pnpm -r run build`.
-2. Creates **D1** (`polaris-email`), **R2** (`polaris-email`, EU jurisdiction, 90d compliance lock), **5 KV namespaces** (nonce, idempotency, rate-limit, key-cache, **revocations**), **5 Queues** (outbound, inbound, fanout, + 2 DLQs). All IDs are captured into `.deploy-state.json` (gitignored). Reruns skip already-known resources. (`KV_REVOCATIONS` was added in phase A1 to back the synchronous credential-revocation path; the previous Durable Object that owned this state was deleted.)
+2. Creates **D1** (`polaris-email`), **R2** (`polaris-email`, EU jurisdiction, 90d compliance lock), **5 KV namespaces** (nonce, idempotency, rate-limit, key-cache, **revocations**), and **3 Queues + 2 DLQs**: the inbound and outbound queues each have their own dead-letter queue, plus `polaris-email-fanout` for webhook delivery (consumed by `services/api`). All IDs are captured into `.deploy-state.json` (gitignored). Reruns skip already-known resources. (`KV_REVOCATIONS` was added to back the synchronous credential-revocation path; the previous Durable Object that owned this state was deleted.)
 3. Renders `services/*/wrangler.local.jsonc` from each `wrangler.local.template.jsonc` using `.deploy-state.json` + `.env.deploy`.
 4. Applies D1 migrations remotely.
 5. Seeds master secrets: `POLARIS_SECRET_A`, `ARGON2_PEPPER`, `ANCHOR_SIGNING_KEY`. Creation timestamps go to `secrets.created.json` (no values).
-6. `bin/deploy.sh --all` deploys the four Workers in dependency order: `polaris-email-api` → `polaris-email-out` → `polaris-email-in` → `polaris-email-panel`. (The previous `services/fanout` and `services/cron` Workers were folded into `services/api` in phase B1.)
+6. `bin/deploy.sh --all` deploys the four Workers in dependency order: `polaris-email-api` → `polaris-email-out` → `polaris-email-in` → `polaris-email-panel`. (The previous `services/fanout` and `services/cron` Workers were folded into `services/api`.)
 7. HMAC-signs `POST /v1/admin/bootstrap`, captures the returned `admin_key_id` + `admin_key_secret` into `.bootstrap-output.json` (gitignored, mode 0600) **and** prints them once.
 
 **Copy the admin key into your password manager immediately.** It is not recoverable.

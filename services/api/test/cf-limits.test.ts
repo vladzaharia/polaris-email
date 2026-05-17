@@ -1,11 +1,11 @@
-// Phase A.4 — verifies that every ErrorCode in @polaris-email/schema has a
+// verifies that every ErrorCode in @polaris-email/schema has a
 // corresponding HTTP status and retryable flag mapping in errors.ts. This
 // catches the typical drift where the schema enum is extended but the
 // `Record<ErrorCode, …>` maps in errors.ts are not, which TypeScript would
 // also block at compile time — the runtime assertion below is a belt-and-
 // braces guard against `as` casts or future widening.
 //
-// Phase A.5 — additionally covers the zod-issue → typed-ErrorCode translator
+// additionally covers the zod-issue → typed-ErrorCode translator
 // used at POST /v1/messages.
 import { describe, expect, it } from 'vitest';
 import type { z } from 'zod';
@@ -46,7 +46,7 @@ describe('Phase A CF compliance error code mapping', () => {
   });
 });
 
-// Phase A.5 — POST /v1/messages translates the first zod issue from
+// POST /v1/messages translates the first zod issue from
 // SendRequest.safeParse() into a typed ErrorCode + human-readable detail.
 // The contract between schema and API is: issue.message === "<code>:<detail>"
 // for codes in CF_TYPED_CODES, otherwise we fall back to bad_request and

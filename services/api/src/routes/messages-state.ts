@@ -16,11 +16,7 @@
 import { Hono, type Context } from 'hono';
 import { MessageFlag, type Message } from '@polaris-email/schema';
 import { verify, sha256Hex } from '@polaris-email/hmac';
-import {
-  extractAttachmentParts,
-  mimeToMessage,
-  type UnifiedMessage,
-} from '@polaris-email/mime';
+import { extractAttachmentParts, mimeToMessage, type UnifiedMessage } from '@polaris-email/mime';
 import type { Env } from '../env.js';
 import { buildError } from '../errors.js';
 import { audit } from '../audit.js';
@@ -415,10 +411,7 @@ messagesState.post('/v1/mailboxes/:id/expunge', async (c) => {
       .bind(s.message_id)
       .first<{ id: string; r2_key: string }>();
     if (!msgRow) continue;
-    const { r2_deleted } = await purgeMessageRow(
-      { DB: c.env.DB, R2: c.env.R2 },
-      msgRow,
-    );
+    const { r2_deleted } = await purgeMessageRow({ DB: c.env.DB, R2: c.env.R2 }, msgRow);
     if (r2_deleted) r2Freed += 1;
   }
 

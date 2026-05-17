@@ -4,7 +4,7 @@
 // Reference-counted R2 deletion
 // ==============================
 // `messages.r2_key` is content-addressed (`mime/XX/YY/SHA256`), so two
-// different `messages` rows can legitimately reference the same R2 object —
+// different `messages` rows can legitimately reference the same R2 object
 // e.g. inbound dedup or two clients submitting the identical RFC822. Before
 // we delete the R2 object we MUST verify no other `messages` row points at
 // the same key. The check is a single SELECT EXISTS guarded by the message id
@@ -26,14 +26,11 @@ interface MessageRow {
 }
 
 export async function janitor(env: Env): Promise<void> {
-  // TODO(retention): per-mailbox message retention is not yet implemented.
-  // The schema would need a `mailboxes.retention_days` column plus a sweep
-  // that walks `messages WHERE mailbox_id = ? AND created_at < cutoff`,
-  // batches the deletes (D1 row caps), and re-uses the reference-counted
-  // `purgeMessage()` below for R2. The previous implementation walked
-  // every mailbox row but did no work and logged a misleading
-  // `deletedMessages: 0` field; that has been removed so the log isn't
-  // claiming a feature that isn't shipping. Tracked for post-launch.
+  // Note: per-mailbox message retention is intentionally not automated.
+  // Operator-driven pruning is documented in docs/runbooks/retention-
+  // and-cleanup.md; a future schema migration may add
+  // `mailboxes.retention_days` and a sweep here that reuses the
+  // reference-counted `purgeMessage()` helper below.
 
   // Sweep expired idempotency_keys.
   const nowIso = new Date().toISOString();

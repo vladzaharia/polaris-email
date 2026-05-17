@@ -28,7 +28,7 @@
 //      bounce_metadata).
 //   3. Insert an `abuse_events` row tagged 'hard_bounce' / 'spam_complaint'.
 //   4. Insert a recipient `suppressions` row (when hard_bounce / complaint).
-//   5. Fire an admin alert (W2d) when severity warrants (we don't alert on
+//   5. Fire an admin alert when severity warrants (we don't alert on
 //      every bounce — only on bursts; the W2c sender-threshold cron will
 //      pick up sustained bounce volume).
 
@@ -134,7 +134,7 @@ internalCfEvents.post('/v1/internal/cf-events/bounce', async (c) => {
   // 2. Resolve the sender principal for this message so abuse_events credits
   //    the right party. Best-effort: when the messages row is missing or the
   //    from_addr doesn't map to a known mail_domains row, we still write a
-  //    sender-anonymous event. messages doesn't carry a domain_id column —
+  //    sender-anonymous event. messages doesn't carry a domain_id column
   //    we derive it from `from_addr` via mail_domains.
   const msgRow = await c.env.DB.prepare(
     `SELECT mailbox_id, from_addr FROM messages WHERE id = ? LIMIT 1`,

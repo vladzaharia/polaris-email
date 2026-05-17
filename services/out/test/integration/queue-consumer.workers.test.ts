@@ -1,4 +1,4 @@
-// Phase B.7 — pool-workers integration test for the services/out queue
+// pool-workers integration test for the services/out queue
 // consumer. We import the worker module directly (the B.5 spike showed that
 // `SELF.fetch()` does NOT route the cdn-cgi handlers correctly in
 // pool-workers; for queue handlers we similarly invoke `worker.queue` with

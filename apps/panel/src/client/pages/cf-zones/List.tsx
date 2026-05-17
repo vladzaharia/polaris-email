@@ -19,11 +19,7 @@ import { useAdminQuery } from '../../hooks/useAdminApi.js';
 import { apiFetch, ApiError } from '../../lib/api.js';
 import { formatDate } from '../../lib/format.js';
 import { cfZoneKeys } from '../../queryKeys.js';
-import type {
-  CfZoneListResponse,
-  ZoneDomainStatus,
-  ZoneOverall,
-} from './types.js';
+import type { CfZoneListResponse, ZoneDomainStatus, ZoneOverall } from './types.js';
 
 // Single-source truth for the six column-level checks. Each entry maps a
 // `ZoneDomainStatus` row → tri-state ('ok' | 'warn' | 'bad') + an explanatory
@@ -46,11 +42,7 @@ const CHECKS: CheckSpec[] = [
   {
     label: 'DNS Locked',
     check: (z) => ({
-      state: z.dns_records_locked
-        ? z.dns_record_errors.length === 0
-          ? 'ok'
-          : 'warn'
-        : 'bad',
+      state: z.dns_records_locked ? (z.dns_record_errors.length === 0 ? 'ok' : 'warn') : 'bad',
       title: z.dns_records_locked
         ? z.dns_record_errors.length === 0
           ? 'CF owns MX/SPF; no errors reported.'
@@ -180,12 +172,7 @@ export function CfZonesList() {
             'Loading…'
           )}
         </div>
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={() => void refresh()}
-          disabled={refreshing}
-        >
+        <Button size="sm" variant="outline" onClick={() => void refresh()} disabled={refreshing}>
           <RefreshCw className={'mr-1 h-3 w-3' + (refreshing ? ' animate-spin' : '')} />
           {refreshing ? 'Refreshing…' : 'Refresh'}
         </Button>

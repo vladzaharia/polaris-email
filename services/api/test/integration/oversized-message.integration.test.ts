@@ -33,7 +33,6 @@ import {
   signedRequest,
 } from './setup.js';
 
-
 interface MockQueueLike {
   sent: unknown[];
 }

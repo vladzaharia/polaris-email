@@ -12,14 +12,11 @@
 // mailbox + earlier sub-resources intact; the operator can finish setup from
 // the detail page.
 //
-// TODO(phase-6a.3): refactor to buffer-and-commit. Today the wizard POSTs the
-// mailbox at step-1→2, so a user who clicks "Create + Next" then closes the
-// dialog leaves a half-configured mailbox in the registry. The proper fix is
-// to keep all four steps in component state and commit only at "Finish",
-// using a single batched flow (mailbox → sender → receiver → credential) on
-// confirm. Allows true Back navigation between every step. Deferred from
-// Phase 6a because the batched-commit needs a transactional admin endpoint
-// (or per-step rollback) to leave no partial state on a failure mid-flow.
+// Known limitation: the wizard POSTs the mailbox at step-1→2, so a user
+// who clicks "Create + Next" then closes the dialog leaves a half-
+// configured mailbox in the registry. A future refactor will keep all four
+// steps in component state and commit only at "Finish" once services/api
+// exposes a transactional bulk-create admin endpoint (or per-step rollback).
 import { useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import { PageCard } from '../../layouts/PageCard.js';

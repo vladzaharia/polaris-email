@@ -83,7 +83,7 @@ const TABLE: Partial<Record<DispatchKey, OutcomeSpec>> = {
     credit_sender_abuse: false,
   }),
 
-  // Outbound marketing — block credits sender abuse profile (W2c).
+  // Outbound marketing — block credits sender abuse profile.
   'outbound:marketing:pass': ENTRY({
     outcome: 'send',
     alert: false,

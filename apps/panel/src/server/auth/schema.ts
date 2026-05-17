@@ -2,16 +2,12 @@
 //
 // Better-auth's `drizzleAdapter` requires Drizzle table definitions; these
 // match the shape better-auth expects for its core (user/session/account) plus
-// the SSO plugin (sso_provider). The panel-specific `approvals` table lives
-// alongside.
+// the SSO plugin (sso_provider).
 //
 // All tables live in the same `polaris-email` D1 as services/api. Better-auth
-// owns the user/session/account/verification/sso_provider tables; the panel
-// owns the `approvals` table for the two-person sensitive-action flow.
-//
-// The `step_ups` table that previously backed a self-elevation flow has been
-// dropped — destructive actions are now exclusively gated on two-person
-// approvals. See `migrations/0001_drop_step_ups.sql` for the D1 drop.
+// owns the user/session/account/verification/sso_provider tables. Destructive
+// admin actions are gated client-side via DestructiveActionDialog; the
+// audit_log chained-hash table is the canonical record of who did what.
 import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core';
 
 export const user = sqliteTable('user', {
@@ -78,18 +74,4 @@ export const ssoProvider = sqliteTable('sso_provider', {
   organizationId: text('organization_id'),
   createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
   updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull(),
-});
-
-// Panel-specific: two-person approvals.
-export const approvals = sqliteTable('approvals', {
-  id: text('id').primaryKey(),
-  requesterUserId: text('requester_user_id').notNull(),
-  approverUserId: text('approver_user_id'),
-  action: text('action').notNull(), // e.g. "api_key.revoke", "tenant.quarantine"
-  resourceId: text('resource_id').notNull(),
-  payload: text('payload').notNull(), // JSON
-  status: text('status').notNull().default('pending'), // pending | approved | rejected | expired
-  createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
-  decidedAt: integer('decided_at', { mode: 'timestamp_ms' }),
-  expiresAt: integer('expires_at', { mode: 'timestamp_ms' }).notNull(),
 });

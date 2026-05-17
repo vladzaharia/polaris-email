@@ -15,7 +15,7 @@
 // also flips `messages.status='delivered'` and stamps `delivered_at`
 // (terminal-success bookkeeping).
 //
-// Absorbed from the standalone `services/fanout` Worker in phase B1. The
+// Absorbed from the standalone `services/fanout` Worker. The
 // `polaris-email-api` Worker now binds the FANOUT_QUEUE consumer directly and
 // routes batches to `fanoutQueueConsumer` from its top-level `queue` export.
 import { sign, generateNonce, sha256Hex } from '@polaris-email/hmac';
@@ -26,6 +26,10 @@ import { r2PublicUrl, attachmentR2Key } from '../lib/r2-public-url.js';
 import { safeFetch } from './ssrf.js';
 
 export interface FanoutEvent {
+  /** Queue message envelope version. Consumers MUST accept any value
+   *  ≤ their compiled-in maximum and fall through on unknown future
+   *  versions. Producers always emit the current version. */
+  version?: 1;
   event_id: string;
   event:
     | 'message.received'
@@ -189,6 +193,9 @@ async function deliverToSub(env: Env, ev: FanoutEvent, sub: SubRow, body: string
   const u = new URL(sub.url);
   const ts = String(Date.now());
   const nonce = generateNonce();
+  // Per-attempt delivery_id lets subscribers dedupe at the
+  // (message_id, delivery_id) tuple even if the same event_id is retried.
+  const deliveryId = ulid();
   const sig = await sign(
     {
       direction: 'polaris-webhook',
@@ -208,7 +215,9 @@ async function deliverToSub(env: Env, ev: FanoutEvent, sub: SubRow, body: string
     'x-polaris-sig': sig,
     'x-polaris-event-id': ev.event_id,
     'x-polaris-event': ev.event,
+    'x-polaris-delivery-id': deliveryId,
   };
+  const t0 = Date.now();
   const result = await safeFetch(sub.url, sub.kind, {
     method: 'POST',
     headers,
@@ -216,6 +225,19 @@ async function deliverToSub(env: Env, ev: FanoutEvent, sub: SubRow, body: string
     timeoutMs: 10_000,
     maxResponseBytes: 1024 * 1024,
   });
+  const latencyMs = Date.now() - t0;
+  // eslint-disable-next-line no-console
+  console.log(
+    JSON.stringify({
+      event: 'webhook_delivery',
+      webhook_sub_id: sub.id,
+      message_id: ev.message_id,
+      delivery_id: deliveryId,
+      status: result.ok ? 'succeeded' : 'failed',
+      http_status: result.status,
+      latency_ms: latencyMs,
+    }),
+  );
   if (result.ok) {
     await env.DB.prepare(
       `UPDATE message_deliveries
@@ -311,4 +333,3 @@ async function maybeMarkDelivered(env: Env, messageId: string): Promise<void> {
     .bind(nowIso, messageId)
     .run();
 }
-

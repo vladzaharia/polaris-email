@@ -156,7 +156,7 @@ admin.post('/v1/admin/api-keys', requireScope('admin:rotate'), async (c) => {
   // is a deliberate trade-off: long enough to absorb client-side
   // propagation hiccups, short enough that a leaked KV snapshot doesn't
   // grant indefinite key-recovery.
-  await c.env.KV_KEY_CACHE.put(`plain:${id}`, secret, { expirationTtl: 60 * 60 });
+  await c.env.KV_KEY_CACHE.put(`plain:${id}`, secret, { expirationTtl: 15 * 60 });
   // Cache the row for warm lookups too.
   await c.env.KV_KEY_CACHE.put(
     `key:${id}`,
@@ -321,7 +321,7 @@ admin.post('/v1/admin/api-keys/:id/rotate', requireScope('admin:rotate'), async 
   stmts.push(auditInsert.statement);
   await c.env.DB.batch(stmts);
   await c.env.KV_KEY_CACHE.put(`plain:${newId}`, newSecret, {
-    expirationTtl: 60 * 60,
+    expirationTtl: 15 * 60,
   });
   if (body.mode !== 'planned') {
     await c.env.KV_KEY_CACHE.delete(`plain:${id}`);

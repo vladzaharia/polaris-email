@@ -47,7 +47,7 @@ operator-facing prose.
 submission (`POST /v1/messages` with `application/json` or `message/rfc822`).
 The pipeline is the same for both; only `direction` differs.
 
-## R2 access (B5) — public custom domain, content-addressed keys
+## R2 access — public custom domain, content-addressed keys
 
 The polaris-email R2 bucket is fronted by the public custom domain
 `r2.mail.plrs.im`. Object keys are content-addressed:
@@ -117,7 +117,7 @@ one driving them, so there is no event to fan out).
 Soft-delete decrements the `r2_refs` count on the message's body/attachment
 objects; hard-expunge is what eventually frees R2 storage. The retention
 janitor cron inside `services/api` tidies up nightly (the standalone
-`services/cron` Worker was folded into `services/api` in phase B1).
+`services/cron` Worker was folded into `services/api`).
 
 ## Webhook v2 envelope
 
@@ -147,7 +147,7 @@ X-Polaris-Sig: <lowercase-hex(HMAC-SHA256(secret, canonical))>
 ```
 
 The signature header carries the raw lowercase-hex MAC — no `v1=` /
-`v2=` prefix (HMAC is un-versioned per phase B3). The canonical-string
+`v2=` prefix (HMAC is un-versioned per). The canonical-string
 format and `polaris-webhook` domain tag are the same as for API
 requests; only the envelope shape (full `Message` inlined, no follow-up
 GET) differs. See [`docs/hmac-reference.md`](hmac-reference.md) for the
@@ -161,7 +161,7 @@ Events emitted:
 - `message.delivered` — terminal success state, set once the last
   subscribed webhook has confirmed delivery. Emitted by the webhook
   consumer inside `services/api` (the old `services/fanout` Worker was
-  folded into `services/api` in phase B1). `services/out` never sets this
+  folded into `services/api`). `services/out` never sets this
   directly.
 - `message.bounced` — permanent remote-side delivery failure (mailbox
   rejected the message).

@@ -8,7 +8,7 @@
 // This module normalizes addresses before comparison so encoded forms
 // (Punycode, mixed-case, trailing dots, IDN homograph variants) all
 // collapse to one canonical representation. Cyrillic 'а' (U+0430) and
-// Latin 'a' (U+0061) MUST NOT compare equal under this normalizer —
+// Latin 'a' (U+0061) MUST NOT compare equal under this normalizer
 // the two characters have different IDNA forms and we keep them
 // distinguishable to prevent homograph attacks.
 

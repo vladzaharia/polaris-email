@@ -156,8 +156,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if d.MailboxID != "" {
 		// Refresh the mirror BEFORE broadcasting so any IDLE client that
 		// races to FETCH after seeing `* n EXISTS` finds the new message
-		// row already present. Pre-A4 this was a TODO and clients would
-		// intermittently see the stale list.
+		// row already present.
 		//
 		// Refresh failure is logged but does not block the broadcast — the
 		// baseline poll will eventually heal stale state, and IMAP clients

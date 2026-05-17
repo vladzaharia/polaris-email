@@ -1,7 +1,7 @@
 // W2 — ARF (RFC 5965) and DSN (RFC 3464) MIME parsers.
 //
 // Goal: turn a raw inbound complaint email into a structured event the
-// suppression pipeline (W1) and the abuse_events table (W2c) can consume.
+// suppression pipeline and the abuse_events table can consume.
 //
 // We deliberately keep the parser tolerant: real-world ARF reports vary
 // wildly in formatting (especially the original-message third part).

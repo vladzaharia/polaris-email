@@ -2,20 +2,13 @@
 //
 // Thin layer over the panel server's /api/* surface (which itself proxies to
 // services/api over a Worker service binding). All requests go through
-// `apiFetch`, which now throws a typed `ApiError` on any non-2xx response. The
+// `apiFetch`, which throws a typed `ApiError` on any non-2xx response. The
 // backend speaks the standard polaris error envelope:
 //
 //   { error: { code, message, retryable, request_id } }
 //
 // `apiFetch` falls back gracefully when the body isn't JSON or doesn't match
 // the envelope shape — the raw status text becomes the message.
-//
-// 428 Precondition Required is reserved for the two-person approval flow:
-// the server returns `{ code: 'approval_required', action }` when a
-// destructive route needs an approved approval-id (see
-// `server/auth/approvals.ts`). The panel surfaces this as a regular
-// `ApiError` and the calling page is responsible for guiding the operator
-// through the approval workflow.
 
 /** Typed error thrown by `apiFetch` on any non-2xx response. */
 export class ApiError extends Error {

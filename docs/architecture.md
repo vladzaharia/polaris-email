@@ -16,7 +16,7 @@ cutover. Companion documents:
 | `services/out` | Outbound queue consumer. Drives the configured provider (Cloudflare `send_email` binding per domain).                                                                                                                                                                 |
 
 Three Workers total. The previous separate `services/fanout` and
-`services/cron` Workers were folded into `services/api` in phase B1 — at
+`services/cron` Workers were folded into `services/api` — at
 <10k msg/day the operational overhead of independent Workers outweighed
 their isolation benefit.
 
@@ -94,7 +94,7 @@ signs outgoing webhooks. The envelope is **v2** (`Message` inlined):
 ```
 
 Signed with `X-Polaris-Sig: <hex>` (no `v2=` prefix; HMAC is un-versioned
-post-B3), canonical-string uses the `polaris-webhook` HMAC domain tag.
+), canonical-string uses the `polaris-webhook` HMAC domain tag.
 See [`docs/hmac-reference.md`](hmac-reference.md).
 
 ## Storage
@@ -102,7 +102,7 @@ See [`docs/hmac-reference.md`](hmac-reference.md).
 - **D1 (`polaris-email`)** — single source of truth: mailboxes, senders,
   receivers, principals, messages, webhook subs, audit log, anchors,
   bookkeeping.
-- **R2 (`polaris-email`, jurisdiction `eu` by default)** —
+- **R2 (`polaris-email`, jurisdiction `eu` by default)**
   content-addressed bodies and attachments (`r2_refs` reference count).
   Served over the public custom domain `r2.mail.plrs.im`; SHA-256 keys are
   the unguessability boundary (per B5; see [`SECURITY.md`](../SECURITY.md)).
@@ -143,7 +143,7 @@ separately from `POLARIS_SECRET_A`; rotation procedure is in
 **One** Cloudflare account hosts the entire control plane: Workers, D1,
 KV, Queues, R2 (`polaris-email` bucket for message bodies / attachments).
 The previous separate `polaris-anchors` and `polaris-staging` accounts
-were collapsed in phase O1 — at internal-deployment scale the
+were collapsed — at internal-deployment scale the
 operational overhead of three accounts wasn't justified.
 
 Tamper-evidence is preserved by writing audit anchors to **Backblaze B2**

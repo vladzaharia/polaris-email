@@ -63,9 +63,7 @@ export function PaginatedTable<T>({
   if (rows.length === 0) {
     return <p className="text-sm text-[var(--color-muted-foreground)]">{empty ?? 'No rows.'}</p>;
   }
-  const stickyCls = stickyFirstCol
-    ? 'sticky left-0 z-10 bg-[var(--color-card)]'
-    : undefined;
+  const stickyCls = stickyFirstCol ? 'sticky left-0 z-10 bg-[var(--color-card)]' : undefined;
   return (
     <div className="space-y-3">
       <div className={stickyFirstCol ? 'overflow-x-auto' : undefined}>

@@ -41,7 +41,10 @@ export async function audit(env: Env, args: AuditArgs): Promise<void> {
  * See `packages/pipeline/src/audit.ts` for the CAS contract.
  */
 export async function buildAuditInsert(env: Env, args: AuditArgs) {
-  return pipelineBuildAuditInsert(env as unknown as AuditWriterEnv, args satisfies PipelineAuditArgs);
+  return pipelineBuildAuditInsert(
+    env as unknown as AuditWriterEnv,
+    args satisfies PipelineAuditArgs,
+  );
 }
 
 /**

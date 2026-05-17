@@ -20,7 +20,7 @@
 //       record name configured by each test.
 //     - HTTPS `mta-sts.{tenant}/.well-known/mta-sts.txt` — returns a
 //       canned policy body per test.
-//   The shape mirrors `mta-sts-admin.workers.test.ts` (Phase C.10) — see
+//   The shape mirrors `mta-sts-admin.workers.test.ts` — see
 //   the comments there for the broader rationale.
 import { applyD1Migrations, createExecutionContext } from 'cloudflare:test';
 import { env } from 'cloudflare:workers';
@@ -431,7 +431,7 @@ async function readDomainFull(id: string): Promise<{
   return row;
 }
 
-describe('services/api domain.create defaults (Phase C.11)', () => {
+describe('services/api domain.create defaults', () => {
   it('seeds mta_sts_mode=testing, fresh policy_id, tlsrpt_enabled=1, default rua', async () => {
     const admin = adminCreds;
     const name = `c11-create-${Date.now()}.example.test`;
@@ -509,7 +509,7 @@ describe('services/api domain.create defaults (Phase C.11)', () => {
   });
 });
 
-describe('services/api domain verify MTA-STS + TLS-RPT (Phase C.12)', () => {
+describe('services/api domain verify MTA-STS + TLS-RPT', () => {
   it('mode=testing with no published records → fail + operator-action hint', async () => {
     const stub = installVerifyFetchStub();
     const policyId = '20260515T120000Z';

@@ -29,7 +29,11 @@ class FakeStmt {
       return (row ?? null) as T | null;
     }
     // 4a.2: atomic UPDATE...RETURNING attempts increment.
-    if (/UPDATE message_deliveries[\s\S]+SET attempts = attempts \+ 1[\s\S]+RETURNING attempts/i.test(s)) {
+    if (
+      /UPDATE message_deliveries[\s\S]+SET attempts = attempts \+ 1[\s\S]+RETURNING attempts/i.test(
+        s,
+      )
+    ) {
       const [_lastErr, _code, mid, wid] = this.params;
       const r = this.db.deliveries.find(
         (d) => d['message_id'] === mid && d['webhook_sub_id'] === wid,
@@ -61,8 +65,7 @@ class FakeStmt {
       // Mirror production WHERE clause: paused_at IS NULL AND disabled_at IS NULL.
       return {
         results: this.db.subs.filter(
-          (x) =>
-            x['id'] === id && x['paused_at'] == null && x['disabled_at'] == null,
+          (x) => x['id'] === id && x['paused_at'] == null && x['disabled_at'] == null,
         ) as T[],
       };
     }
@@ -70,8 +73,7 @@ class FakeStmt {
       const mid = this.params[0] as string;
       return {
         results: this.db.subs.filter(
-          (x) =>
-            x['mailbox_id'] === mid && x['paused_at'] == null && x['disabled_at'] == null,
+          (x) => x['mailbox_id'] === mid && x['paused_at'] == null && x['disabled_at'] == null,
         ) as T[],
       };
     }
@@ -101,7 +103,10 @@ class FakeStmt {
       // delivered transition.
       const [ts, mid] = this.params;
       const r = this.db.messages.find((m) => m['id'] === mid);
-      if (r && (r['status'] === 'sent' || r['status'] === 'sending' || r['status'] === 'received')) {
+      if (
+        r &&
+        (r['status'] === 'sent' || r['status'] === 'sending' || r['status'] === 'received')
+      ) {
         r['status'] = 'delivered';
         r['delivered_at'] = ts;
         return { meta: { changes: 1 }, results: [] };

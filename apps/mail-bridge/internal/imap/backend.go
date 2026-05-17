@@ -23,6 +23,8 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -84,6 +86,12 @@ type Backend struct {
 	// defaultMaxBodyBytes. The cap defends the bridge against an oversized
 	// attachment turning a single FETCH into a multi-hundred-MB allocation.
 	MaxBodyBytes int64
+	// R2PublicHost is the expected host suffix for BodyURL values returned
+	// by the SDK. The SDK is generally trusted but BodyURL is technically
+	// server-controlled data we then fetch unauthenticated — pinning the
+	// host suffix prevents a misconfigured server from steering the bridge
+	// into fetching arbitrary endpoints. Empty value disables the check.
+	R2PublicHost string
 }
 
 // defaultHTTPClient is a 30-second-timeout client used when Backend.HTTP is
@@ -113,6 +121,29 @@ func (b *Backend) maxBodyBytes() int64 {
 		return b.MaxBodyBytes
 	}
 	return defaultMaxBodyBytes
+}
+
+// validateBodyURL checks that the SDK-supplied body URL points at the
+// expected R2 public host (when configured). Refusing unexpected hosts
+// keeps a misconfigured server from steering the bridge into fetching
+// arbitrary endpoints.
+func (b *Backend) validateBodyURL(raw string) error {
+	if b.R2PublicHost == "" {
+		return nil
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return fmt.Errorf("body url parse: %w", err)
+	}
+	if u.Scheme != "https" {
+		return fmt.Errorf("body url scheme %q not https", u.Scheme)
+	}
+	host := u.Hostname()
+	want := b.R2PublicHost
+	if host != want && !strings.HasSuffix(host, "."+want) {
+		return fmt.Errorf("body url host %q not under %q", host, want)
+	}
+	return nil
 }
 
 // NewSession is the imapserver.Backend constructor. The greeting carries
@@ -168,7 +199,7 @@ func (s *bridgeSession) Login(username, password string) error {
 		// Unknown user — burn a constant-time bcrypt comparison against a
 		// pre-baked dummy hash so timing is indistinguishable from a real
 		// user with a wrong password. The dummy hash is cost 12 to match
-		// production credentials (A5).
+		// production credentials.
 		_ = bcrypt.CompareHashAndPassword(dummyBcryptHash, []byte(password))
 		return imapserver.ErrAuthFailed
 	}
@@ -527,7 +558,7 @@ func (s *bridgeSession) Search(kind imapserver.NumKind, criteria *imap.SearchCri
 		if t, ok := dateCache[messageID]; ok {
 			return t
 		}
-		meta, err := s.backend.Mirror.GetMessageMeta(ctx, messageID)
+		meta, err := s.backend.Mirror.GetMessageMeta(ctx, mailboxID, messageID)
 		if err != nil {
 			dateCache[messageID] = time.Time{}
 			return time.Time{}
@@ -640,7 +671,7 @@ func (s *bridgeSession) Fetch(w *imapserver.FetchWriter, numSet imap.NumSet, opt
 		if !numSetContains(numSet, seqNum, imap.UID(uint32(st.UID))) {
 			continue
 		}
-		if err := s.writeMessage(ctx, w, seqNum, st, opts); err != nil {
+		if err := s.writeMessage(ctx, w, mailboxID, seqNum, st, opts); err != nil {
 			return err
 		}
 	}
@@ -648,8 +679,10 @@ func (s *bridgeSession) Fetch(w *imapserver.FetchWriter, numSet imap.NumSet, opt
 }
 
 // writeMessage emits one FETCH response. It batches Mirror metadata + body
-// fetches as needed so we only do the work the client asked for.
-func (s *bridgeSession) writeMessage(ctx context.Context, w *imapserver.FetchWriter, seqNum uint32, st store.MailboxState, opts *imap.FetchOptions) error {
+// fetches as needed so we only do the work the client asked for. mailboxID
+// scopes every metadata lookup so a stale `MailboxState.MessageID` cannot
+// surface metadata for a different mailbox.
+func (s *bridgeSession) writeMessage(ctx context.Context, w *imapserver.FetchWriter, mailboxID string, seqNum uint32, st store.MailboxState, opts *imap.FetchOptions) error {
 	msg := w.CreateMessage(seqNum)
 	defer msg.Close()
 
@@ -666,7 +699,7 @@ func (s *bridgeSession) writeMessage(ctx context.Context, w *imapserver.FetchWri
 	if !needMeta {
 		return nil
 	}
-	meta, err := s.backend.Mirror.GetMessageMeta(ctx, st.MessageID)
+	meta, err := s.backend.Mirror.GetMessageMeta(ctx, mailboxID, st.MessageID)
 	if err != nil {
 		s.backend.logger().Printf("imap: meta %s: %v", st.MessageID, err)
 		return nil
@@ -740,8 +773,12 @@ func (s *bridgeSession) fetchBody(ctx context.Context, messageID string, meta *s
 		// Synthesize a minimal RFC822 envelope so downstream slicing can
 		// still find the header/body separator. This is the "graceful
 		// degradation" branch for messages that haven't been promoted to
-		// R2 yet (very small messages or pre-B5 rows).
+		// R2 yet (very small messages or rows predating content-addressed
+		// storage).
 		return synthesizeRFC822(m, meta), nil
+	}
+	if err := s.backend.validateBodyURL(m.BodyURL); err != nil {
+		return nil, err
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, m.BodyURL, nil)
 	if err != nil {
@@ -970,12 +1007,9 @@ func applyStoreOp(current []imap.Flag, op *imap.StoreFlags) []imap.Flag {
 }
 
 func flagSliceContains(list []imap.Flag, want imap.Flag) bool {
-	for _, f := range list {
-		if strings.EqualFold(string(f), string(want)) {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(list, func(f imap.Flag) bool {
+		return strings.EqualFold(string(f), string(want))
+	})
 }
 
 // numSetContains returns true if either seqNum or uid is in numSet. The
@@ -1020,9 +1054,8 @@ func addressFrom(addr string) imap.Address {
 // The mirror doesn't hold the parsed MIME tree today; this is good enough
 // for clients that only need RFC822.SIZE and a basic envelope.
 //
-// TODO(Phase G / 4c.2 follow-up): walk the actual MIME tree.
-//
-// Plan:
+// Future work — walk the actual MIME tree to populate BODYSTRUCTURE for
+// multipart messages. Outline preserved below for whoever picks this up:
 //
 //   1. Parse the cached RFC822 bytes (or fetch them) using
 //      github.com/emersion/go-message (already a transitive dep). The
@@ -1065,7 +1098,8 @@ func bodyStructureFromMeta(meta *store.MessageMeta, extended bool) imap.BodyStru
 // sliceBodySection returns the requested chunk of a raw RFC822 body. We
 // support the most common section requests today: full body, HEADER, TEXT.
 // Anything else falls back to the full body (clients then ignore the rest).
-// TODO(production): wire HEADER.FIELDS / MIME / per-part fetches.
+// HEADER.FIELDS / MIME / per-part fetches are future work that depends on
+// the BODYSTRUCTURE MIME-tree walk above.
 func sliceBodySection(body []byte, section *imap.FetchItemBodySection) []byte {
 	if section == nil || len(body) == 0 {
 		return body

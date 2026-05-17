@@ -4,9 +4,6 @@
 //   1. Open → POST /api/admin/cf-zones/:name/configure with `{ dry_run: true }`.
 //   2. Render the diff (ops + warnings); operator picks which ops to apply.
 //   3. Apply → POST again with `{ dry_run: false, op_kinds: [selected] }`.
-//      The panel proxy gates this on `withApproval('cf_zone.configure')`, so
-//      the request returns 428 unless an approval id is attached. We surface
-//      that in-modal as an actionable error.
 //   4. After apply, the parent re-fetches the zone via the detail endpoint.
 //
 // `react-query` isn't used for the apply call because it's a one-shot inside
@@ -28,7 +25,7 @@ import { Button } from '../../components/ui/button.js';
 import { Checkbox } from '../../components/ui/checkbox.js';
 import { Skeleton } from '../../components/ui/skeleton.js';
 import { ErrorText } from '../../components/ErrorText.js';
-import { apiFetch, ApiError } from '../../lib/api.js';
+import { apiFetch } from '../../lib/api.js';
 import type {
   CfZoneConfigureApplyResponse,
   CfZoneConfigureDryRunResponse,
@@ -51,9 +48,9 @@ export function ConfigureModal({ zoneName, open, onOpenChange, onApplied }: Conf
   const [selected, setSelected] = useState<Set<ZoneConfigureOpKind>>(new Set());
   const [applying, setApplying] = useState(false);
   const [applyError, setApplyError] = useState<Error | null>(null);
-  const [applyResult, setApplyResult] = useState<
-    CfZoneConfigureApplyResponse['result'] | null
-  >(null);
+  const [applyResult, setApplyResult] = useState<CfZoneConfigureApplyResponse['result'] | null>(
+    null,
+  );
 
   // Reset state when the modal opens; pre-fetch the dry-run diff.
   useEffect(() => {
@@ -109,8 +106,6 @@ export function ConfigureModal({ zoneName, open, onOpenChange, onApplied }: Conf
       setApplyResult(r.body.result);
       onApplied?.();
     } catch (e) {
-      // 428 approval_required surfaces here too — ApiError carries the typed
-      // `code`, so a message helper can render a friendlier prompt.
       setApplyError(e as Error);
     } finally {
       setApplying(false);
@@ -118,8 +113,6 @@ export function ConfigureModal({ zoneName, open, onOpenChange, onApplied }: Conf
   }
 
   const hasOps = diff != null && diff.ops.length > 0;
-  const isApprovalRequired =
-    applyError instanceof ApiError && applyError.code === 'approval_required';
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -197,19 +190,7 @@ export function ConfigureModal({ zoneName, open, onOpenChange, onApplied }: Conf
 
           {applyResult ? <ApplyResultBlock result={applyResult} /> : null}
 
-          {applyError ? (
-            isApprovalRequired ? (
-              <Alert variant="warning">
-                <AlertTitle>Approval required</AlertTitle>
-                <AlertDescription>
-                  Another admin must approve <code>cf_zone.configure</code> before this apply can
-                  proceed. Open the approvals queue in another window, then retry.
-                </AlertDescription>
-              </Alert>
-            ) : (
-              <ErrorText error={applyError} />
-            )
-          ) : null}
+          {applyError ? <ErrorText error={applyError} /> : null}
         </div>
 
         <DialogFooter>
@@ -223,7 +204,9 @@ export function ConfigureModal({ zoneName, open, onOpenChange, onApplied }: Conf
                 applying || !hasOps || selected.size === 0 || diffLoading || diffError != null
               }
             >
-              {applying ? 'Applying…' : `Apply ${selected.size} op${selected.size === 1 ? '' : 's'}`}
+              {applying
+                ? 'Applying…'
+                : `Apply ${selected.size} op${selected.size === 1 ? '' : 's'}`}
             </Button>
           )}
         </DialogFooter>
@@ -232,11 +215,7 @@ export function ConfigureModal({ zoneName, open, onOpenChange, onApplied }: Conf
   );
 }
 
-function ApplyResultBlock({
-  result,
-}: {
-  result: CfZoneConfigureApplyResponse['result'];
-}) {
+function ApplyResultBlock({ result }: { result: CfZoneConfigureApplyResponse['result'] }) {
   return (
     <div className="space-y-2">
       <div className="flex items-center gap-2">

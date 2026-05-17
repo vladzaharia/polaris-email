@@ -1,4 +1,4 @@
-// Phase C.9 — public MTA-STS policy handler.
+// public MTA-STS policy handler.
 //
 // Sender MTAs fetch `https://mta-sts.{tenant}/.well-known/mta-sts.txt`
 // without credentials to learn the receiving domain's STS policy

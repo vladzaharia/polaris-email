@@ -64,10 +64,10 @@ polaris-email webhook dlq list
 ```
 
 Note: webhook fan-out runs **inside** `services/api` (folded in from the
-old `services/fanout` Worker in phase B1). There is no separate
+old `services/fanout` Worker). There is no separate
 `polaris-email-fanout` Worker to tail.
 
-Per-subscription circuit breaker (A8) marks a sub `paused` after 5
+Per-subscription circuit breaker marks a sub `paused` after 5
 consecutive failures. To bring a paused sub back online, update its row
 directly (no dedicated `resume` verb today):
 
@@ -157,8 +157,7 @@ wrangler d1 execute polaris-email --command \
 
 Single `polaris-email` D1; older message rows are archived to R2 by the
 nightly retention janitor cron, which runs **inside `services/api`** (the
-standalone `services/cron` Worker was folded into `services/api` in
-phase B1). There is no CLI verb for ad-hoc archival yet — drive it from D1
+standalone `services/cron` Worker was folded into `services/api`). There is no CLI verb for ad-hoc archival yet — drive it from D1
 directly. The retention job picks up soft-deleted (`expunged_at IS NOT
 NULL`) rows older than the configured window and removes them along with
 their R2 references:

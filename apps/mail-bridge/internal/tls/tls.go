@@ -1,15 +1,13 @@
 // Package tls assembles TLS sources for the mail-bridge listeners.
 //
-// Two first-class modes (per memory `feedback_tailscale_sidecar.md`):
+// Two first-class deployment modes (both supported equally — neither is
+// the canonical default; pick the one that matches your network model):
 //
-//   - mode = "local"      : load cert/key PEMs from disk, optional hot-reload
-//     via fsnotify watch (stubbed — see TODO below).
-//   - mode = "tailscale"  : delegate to `tsnet.Server.ListenTLS`.
-//
-// The tsnet path is intentionally stubbed in this slice: the dependency
-// pulls in a large chunk of the Tailscale daemon and is gated on
-// upstream-cert provisioning that varies per deployment. See
-// TODO(L.5) below.
+//   - mode = "local"      : load cert/key PEMs from disk; certs hot-reload
+//     on the per-accept 30s reload cadence in GetCertificate, which is
+//     sufficient for ACME rotations that happen at most monthly.
+//   - mode = "tailscale"  : delegate to `tsnet.Server.ListenTLS`. Not
+//     compiled into this build — see ErrTailscaleUnsupported.
 package tls
 
 import (
@@ -70,13 +68,12 @@ func New(cfg Config) (*Source, error) {
 		}
 		return s, nil
 	case ModeTailscale:
-		// tsnet.ListenTLS is a future enhancement (TODO(L.5)): the tsnet dep
-		// adds ~30MB to the binary and requires TS_AUTHKEY at runtime, so we
-		// keep it out of this build. We return ErrTailscaleUnsupported here;
-		// callers MUST treat it as fatal and abort startup, never silently
-		// fall back to plaintext (the Phase 2d audit caught a path where
-		// main.go logged the error and kept going, which left port 993 in
-		// `InsecureAuth` mode against the public internet).
+		// tsnet.ListenTLS is a future enhancement: the tsnet dependency adds
+		// ~30MB to the binary and requires TS_AUTHKEY at runtime, so it
+		// stays out of the default build. Callers MUST treat
+		// ErrTailscaleUnsupported as fatal and abort startup — never
+		// silently fall back to plaintext, which would leave SMTPS / IMAP
+		// AUTH credentials traversing the public internet in the clear.
 		return nil, ErrTailscaleUnsupported
 	default:
 		return nil, fmt.Errorf("tls: unknown mode %q", cfg.Mode)
@@ -84,11 +81,14 @@ func New(cfg Config) (*Source, error) {
 }
 
 // TLSConfig returns a *tls.Config wired to this source's GetCertificate.
+// MinVersion defaults to TLS 1.3 (matching the smtp.Server path); ALPN
+// is intentionally empty because the mail-bridge listeners are SMTP/IMAP,
+// not HTTP — advertising h2/http/1.1 invites protocol-confusion attempts.
 func (s *Source) TLSConfig() *tls.Config {
 	return &tls.Config{
-		MinVersion:     tls.VersionTLS12,
+		MinVersion:     tls.VersionTLS13,
 		GetCertificate: s.GetCertificate,
-		NextProtos:     []string{"h2", "http/1.1"},
+		NextProtos:     nil,
 	}
 }
 
@@ -127,6 +127,8 @@ func (s *Source) Listen(network, addr string) (net.Listener, error) {
 	return tls.NewListener(l, s.TLSConfig()), nil
 }
 
-// TODO(production): fsnotify watcher on CertPath/KeyPath that pre-emptively
-// calls loadLocked() on file change. For now the 30s reload cadence in
-// GetCertificate suffices for cert rotation.
+// Cert hot-reload uses the 30s cadence in GetCertificate rather than an
+// fsnotify watcher. ACME rotations happen on the order of months and the
+// 30s lazy reload is bounded by the cipher-suite handshake count, not a
+// real-time SLA — adding fsnotify here would burn a goroutine for the
+// rest of the bridge's life to save at most 30s on the rare rotation.

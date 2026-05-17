@@ -10,7 +10,6 @@ import { secureHeaders } from 'hono/secure-headers';
 import type { Env } from './env.js';
 import { makeAuth } from './auth/index.js';
 import { sessionMiddleware, requireAdmin } from './auth/middleware.js';
-import { approvalsRoutes } from './auth/approvals.js';
 import { sessionRoutes } from './routes/session.js';
 import { apiKeysRoutes } from './routes/api-keys.js';
 import { webhooksRoutes } from './routes/webhooks.js';
@@ -76,13 +75,10 @@ app.all('/api/auth/*', (c) => {
 app.use('/api/*', sessionMiddleware());
 app.route('/', sessionRoutes);
 
-// Admin-only surface. Phase 6d.3: approvalsRoutes mounted INSIDE `guarded`
-// so non-admin sessions can't list pending or self-elevate by spamming
-// POST /api/approvals (the per-handler admin checks remain as defence in
-// depth, but the gate now happens once at the routing boundary).
+// Admin-only surface. requireAdmin() enforces the role check once at the
+// routing boundary; downstream handlers can rely on c.get('session').admin.
 const guarded = new Hono<{ Bindings: Env }>();
 guarded.use('*', requireAdmin());
-guarded.route('/', approvalsRoutes);
 guarded.route('/', apiKeysRoutes);
 guarded.route('/', webhooksRoutes);
 guarded.route('/', auditRoutes);

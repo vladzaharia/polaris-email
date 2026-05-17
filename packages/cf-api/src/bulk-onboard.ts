@@ -1,4 +1,4 @@
-// Bulk subdomain provisioning (A5 — PaaS workflow).
+// Bulk subdomain provisioning (PaaS workflow).
 //
 // "create one domain row per tenant subdomain so each gets isolated DKIM" is a
 // per-row wizard run by default; that's a non-starter at scale. This helper

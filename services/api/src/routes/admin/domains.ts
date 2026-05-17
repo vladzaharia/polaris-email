@@ -94,7 +94,7 @@ async function ensureZone(c: { env: Env }, cfZoneId: string | null, name: string
 
 // ---------- create ----------
 //
-// MTA-STS / TLS-RPT defaults (Phase C.11):
+// MTA-STS / TLS-RPT defaults:
 //
 // We persist the *intent* to run MTA-STS in testing mode and TLS-RPT to the
 // configured aggregation address on every fresh domain row, but this does NOT
@@ -103,7 +103,7 @@ async function ensureZone(c: { env: Env }, cfZoneId: string | null, name: string
 // TXT plus the `mta-sts.{domain}` Worker custom domain) require an explicit
 // operator action via `POST /v1/admin/domains/:id/mta-sts/enable`.
 //
-// The verify endpoint (Phase C.12) compares this stored intent against what's
+// The verify endpoint compares this stored intent against what's
 // actually published and surfaces an operator-action hint when they diverge,
 // pointing the operator at the lifecycle endpoint they need to call.
 //
@@ -261,7 +261,7 @@ domains.post('/v1/admin/domains/bulk-onboard', requireScope('admin:rotate'), asy
   const results: { name: string; id?: string; error?: string }[] = [];
   const nowIso = new Date().toISOString();
   // Same MTA-STS / TLS-RPT intent defaults as the single-create handler
-  // (Phase C.11). Each row gets its own minted policy_id so bumping one
+  //. Each row gets its own minted policy_id so bumping one
   // tenant doesn't bust caches across the entire bulk-onboarded batch.
   const tlsrptRuaDefault = c.env.TLSRPT_DEFAULT_RUA ?? 'mailto:tlsrpt@plrs.im';
   for (const name of body.names) {
@@ -590,7 +590,7 @@ domains.post('/v1/admin/domains/:id/verify', requireScope('admin:rotate'), async
     actual: haveMxSet.join(',') || '(empty)',
   });
 
-  // ---------- MTA-STS sub-block (Phase C.12) ----------
+  // ---------- MTA-STS sub-block ----------
   //
   // Only runs when intent is non-`none`. The verifier calls DoH for the TXT
   // and HTTPS for the policy file; we surface its raw checks AND append an
@@ -624,7 +624,7 @@ domains.post('/v1/admin/domains/:id/verify', requireScope('admin:rotate'), async
     }
   }
 
-  // ---------- TLS-RPT sub-block (Phase C.12) ----------
+  // ---------- TLS-RPT sub-block ----------
   let tlsRptRanAndAllPassed = false;
   if (row.tlsrpt_enabled === 1) {
     const tlsrpt = await verifyTlsRpt(row.name, row.tlsrpt_rua ?? null);

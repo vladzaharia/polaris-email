@@ -270,7 +270,11 @@ export function CfZoneDetail() {
                       <TableCell className="font-mono text-xs">
                         {r.action_target ?? '—'}
                         {!r.routes_to_polaris ? (
-                          <Badge variant="warning" className="ml-2" title="Routes mail away from polaris-email-in.">
+                          <Badge
+                            variant="warning"
+                            className="ml-2"
+                            title="Routes mail away from polaris-email-in."
+                          >
                             <AlertTriangle className="h-3 w-3" aria-hidden />
                             <span>conflict</span>
                           </Badge>

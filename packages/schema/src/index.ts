@@ -79,7 +79,7 @@ export const ErrorCode = z.enum([
   'unauthorized',
   'forbidden',
   'conflict',
-  // Phase A: typed CF Email Service limit failures. Each is emitted by
+  // typed CF Email Service limit failures. Each is emitted by
   // SendRequest's superRefine (and downstream services) so the API layer
   // can render a precise error envelope without parsing free-form text.
   'too_many_recipients',
@@ -252,7 +252,7 @@ export const MailDomain = z.object({
   verified_at: z.string().nullable(),
   last_verify_check_at: z.string().nullable(),
   disabled_at: z.string().nullable(),
-  // Phase C — MTA-STS (RFC 8461) + TLS-RPT (RFC 8460). See
+  // MTA-STS (RFC 8461) + TLS-RPT (RFC 8460). See
   // services/api/migrations/0007_mta_sts.sql for the canonical D1 column
   // definitions. `tlsrpt_enabled` is stored as an INTEGER 0/1 to match the
   // existing inbound_enabled / outbound_enabled / default_for_mailbox pattern
@@ -281,7 +281,7 @@ export const UpdateMailDomainRequest = z.object({
   dmarc_policy: DmarcPolicy.optional(),
   dmarc_rua: z.string().max(320).optional(),
   dkim_selector: z.string().min(1).max(63).optional(),
-  // Phase C — MTA-STS + TLS-RPT toggles. `tlsrpt_enabled` is a boolean in
+  // MTA-STS + TLS-RPT toggles. `tlsrpt_enabled` is a boolean in
   // the request body but is persisted as INTEGER 0/1 in `mail_domains`; the
   // route layer (C.10) performs the coercion. Switching MTA-STS mode itself
   // is normally routed through the dedicated lifecycle endpoints
@@ -310,7 +310,7 @@ export const UpdateMailDomainRequest = z.object({
 //                     (e.g. "mode=testing (drift: published policy differs)")
 //   - "unreachable" — DoH / HTTPS fetch failed entirely
 // Per the user note for MTA-STS specifically: records require MANUAL
-// provisioning via the dedicated admin endpoints (Phase C.10), unlike DKIM /
+// provisioning via the dedicated admin endpoints, unlike DKIM /
 // SPF / DMARC which CF auto-publishes during Email Routing onboarding. The
 // flat string-actual encoding keeps the panel rendering simple while still
 // expressing this distinction.
@@ -587,7 +587,7 @@ export const Message = z.object({
   text: z.string().optional(),
   html: z.string().optional(),
   // Public, content-addressed URL for the raw RFC822 body on the R2 custom
-  // domain `r2.mail.plrs.im` (B5). Absolute, no expiry. Always populated for
+  // domain `r2.mail.plrs.im`. Absolute, no expiry. Always populated for
   // stored messages; consumers fetch the URL directly without HMAC.
   body_url: z.string().url().optional(),
   headers: z.record(z.string(), z.string()).optional(),
@@ -688,7 +688,7 @@ export const SendRequest = z
     in_reply_to_message_id: Ulid.optional(),
     thread_id: z.string().min(1).max(120).optional(),
   })
-  // Phase A: enforce CF Email Service caps. Each issue's `message` is
+  // enforce CF Email Service caps. Each issue's `message` is
   // shaped as `"<error_code>:<detail>"` so the API layer can extract the
   // typed code via `result.error.issues[i].message.split(':')[0]` and map
   // it to an `ErrorCode` without inspecting free-form text.
@@ -822,7 +822,7 @@ export const AuditAction = z.enum([
   'mailbox.update',
   'mailbox.disable',
   'mailbox.delete',
-  // mailbox bridge ops (Phase L)
+  // mailbox bridge ops
   'mailbox.expunge',
   // sender CRUD
   'mailbox_sender.create',
@@ -850,7 +850,7 @@ export const AuditAction = z.enum([
   'smtp_credential.issue',
   'smtp_credential.disable',
   'smtp_credential.rotate',
-  // unified mailbox credentials (Phase L)
+  // unified mailbox credentials
   'mailbox_credential.issue',
   'mailbox_credential.rotate',
   'mailbox_credential.disable',
@@ -881,6 +881,7 @@ export const AuditAction = z.enum([
   'webhook_sub.delete',
   'webhook_sub.replay',
   'webhook_sub.test',
+  'webhook_sub.rotate',
   // messages (submit/receive/lifecycle)
   'message.submitted',
   'message.received',
@@ -890,7 +891,7 @@ export const AuditAction = z.enum([
   'rate_limit.exceeded',
   // CF zone discover + configure (cf-zones.ts)
   'cf_zone.configure',
-  // MTA-STS + TLS-RPT (Phase C). Lifecycle audit hits for the dedicated
+  // MTA-STS + TLS-RPT. Lifecycle audit hits for the dedicated
   // policy-management endpoints; mirrors the additions to the audit_log
   // CHECK constraint in services/api/migrations/0009_mta_sts.sql.
   'mta_sts.enable',
@@ -1031,7 +1032,7 @@ export const CreateSmtpCredentialRequest = z.object({
   label: z.string().min(1).max(120).optional(),
 });
 
-// ---------- mail bridge (Phase L) ----------
+// ---------- mail bridge ----------
 //
 // IMAP system flags are RFC 9051 §2.3.2 ("backslash"-prefixed identifiers).
 // Custom keywords are any bare-string label the client stores. Polaris does
@@ -1120,7 +1121,7 @@ export const MailboxMessageState = z.object({
 });
 export type MailboxMessageState = z.infer<typeof MailboxMessageState>;
 
-// ---------- Suppressions (W1) ----------
+// ---------- Suppressions ----------
 //
 // Mirrors the CHECK enums on `suppressions` in
 // `services/api/migrations/0010_suppressions.sql`.

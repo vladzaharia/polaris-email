@@ -49,6 +49,13 @@ func NewRoot() *cobra.Command {
 	root.PersistentFlags().StringVar(&G.Token, "token", "", "override admin API token (HMAC secret)")
 	root.PersistentFlags().StringVar(&G.KeyID, "key-id", "", "override admin API key id")
 	root.PersistentFlags().StringVarP(&G.OutputFmt, "output", "o", "table", "output format: table|json|yaml")
+	var jsonAlias bool
+	root.PersistentFlags().BoolVar(&jsonAlias, "json", false, "shorthand for --output=json")
+	root.PersistentPreRun = func(_ *cobra.Command, _ []string) {
+		if jsonAlias {
+			G.OutputFmt = "json"
+		}
+	}
 	root.PersistentFlags().BoolVar(&G.DryRun, "dry-run", false, "print API calls without executing them")
 
 	root.AddCommand(
