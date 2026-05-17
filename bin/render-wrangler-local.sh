@@ -1,7 +1,17 @@
 #!/usr/bin/env bash
-# render-wrangler-local.sh — materialize services/*/wrangler.local.jsonc by substituting
-# ${VAR} placeholders in services/*/wrangler.local.template.jsonc using values from
+# render-wrangler-local.sh — materialize services/*/wrangler.local.jsonc by
+# expanding services/*/wrangler.local.template.jsonc with values from
 # .deploy-state.json (resource IDs) and .env.deploy (config).
+#
+# PR 4 introduced a Go-native renderer (apps/polaris-cli/internal/setup/
+# wranglercfg) that this script now prefers. The legacy envsubst path
+# remains as a fallback so a partial install can still render — but note:
+# the four service templates have been migrated to Go text/template
+# syntax (`{{ .X.Y }}`), so the envsubst path no longer produces correct
+# output for them. The fallback is genuinely only useful if either
+# (a) someone reverted the templates locally or
+# (b) the polaris-email binary is missing from PATH on a fresh checkout.
+# PR 14 retires the fallback once the Go path has soaked.
 set -euo pipefail
 # shellcheck source=bin/_lib.sh
 source "$(dirname "$0")/_lib.sh"
@@ -10,6 +20,27 @@ cd "$ROOT"
 [[ -f "$ENV_FILE" ]]   || die ".env.deploy missing — run \`make configure\`"
 [[ -f "$STATE_FILE" ]] || die ".deploy-state.json missing — run \`make bootstrap\` first"
 
+# --- Go-native renderer (preferred path) ----------------------------------
+# Look for the binary in PATH first (operator install) then fall back to
+# the in-repo build output, so a fresh `make build` is enough to enable it.
+GO_RENDERER=""
+if command -v polaris-email >/dev/null 2>&1; then
+  GO_RENDERER="$(command -v polaris-email)"
+elif [[ -x "$ROOT/apps/polaris-cli/bin/polaris-email" ]]; then
+  GO_RENDERER="$ROOT/apps/polaris-cli/bin/polaris-email"
+fi
+
+if [[ -n "$GO_RENDERER" ]]; then
+  if "$GO_RENDERER" setup infra render \
+       --state-path "$STATE_FILE" \
+       --env-path "$ENV_FILE"; then
+    log "rendered via Go: $GO_RENDERER"
+    exit 0
+  fi
+  warn "Go renderer failed; falling back to envsubst (template syntax mismatch likely — see render-wrangler-local.sh)"
+fi
+
+# --- envsubst fallback ----------------------------------------------------
 # Load env config.
 # shellcheck disable=SC1090
 set -a; source "$ENV_FILE"; set +a
@@ -49,4 +80,4 @@ for svc in "${POLARIS_SERVICES[@]}"; do
   rendered=$((rendered + 1))
   log "rendered $out"
 done
-log "rendered $rendered wrangler.local.jsonc files"
+log "rendered $rendered wrangler.local.jsonc files (envsubst fallback)"

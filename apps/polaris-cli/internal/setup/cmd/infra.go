@@ -30,5 +30,6 @@ func newInfraCmd() *cobra.Command {
 		},
 	}
 	c.AddCommand(newInfraStateCmd())
+	c.AddCommand(newInfraRenderCmd())
 	return c
 }

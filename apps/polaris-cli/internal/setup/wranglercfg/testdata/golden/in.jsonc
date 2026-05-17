@@ -4,14 +4,14 @@
 // .env.deploy. Do NOT hand-edit the materialized wrangler.local.jsonc —
 // re-run `polaris-email setup infra render`.
 {
-  "account_id": "{{ .Account.ID }}",
+  "account_id": "cf-account-id",
   "d1_databases": [
     {
       "binding": "DB",
       "database_name": "polaris-email",
-      "database_id": "{{ .D1.PolarisEmail.ID }}",
+      "database_id": "d1-id",
     },
   ],
   "r2_buckets": [{ "binding": "R2", "bucket_name": "polaris-email", "jurisdiction": "eu" }],
-  "kv_namespaces": [{ "binding": "KV_RATE_LIMIT", "id": "{{ .KV.RateLimit.ID }}" }],
+  "kv_namespaces": [{ "binding": "KV_RATE_LIMIT", "id": "kv-rl-id" }],
 }

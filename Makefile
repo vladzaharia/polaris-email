@@ -12,7 +12,7 @@ BIN  := $(ROOT)/bin
 .DEFAULT_GOAL := help
 
 .PHONY: help preflight configure bootstrap deploy deploy-all deploy-changed \
-        rollback smoke doctor tag-deployed state-rebuild
+        rollback smoke doctor tag-deployed state-rebuild compare-render
 
 help: ## Show this help.
 	@awk 'BEGIN {FS = ":.*##"; printf "Usage: make \033[36m<target>\033[0m [VAR=value...]\n\nTargets:\n"} \
@@ -56,3 +56,6 @@ tag-deployed: ## Move the deployed/main git tag to HEAD (used by CI after a succ
 
 state-rebuild: ## Reconstruct .deploy-state.json from live Cloudflare resources (DR). [--dry-run via DRY=1]
 	@$(BIN)/state-rebuild.sh $(if $(filter 1,$(DRY)),--dry-run)
+
+compare-render: ## Diff the Go renderer's output against the legacy envsubst path for every service (parity gate; PR 14 retires).
+	@$(BIN)/compare-render.sh
