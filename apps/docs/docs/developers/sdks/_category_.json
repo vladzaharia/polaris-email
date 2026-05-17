@@ -1,0 +1,10 @@
+{
+  "label": "SDKs",
+  "position": 5,
+  "link": {
+    "type": "generated-index",
+    "slug": "/developers/sdks",
+    "title": "SDKs",
+    "description": "First-party SDKs for Node and Go, plus a REST + curl reference for other languages. All three share the same HMAC scheme and canonical test vectors."
+  }
+}
