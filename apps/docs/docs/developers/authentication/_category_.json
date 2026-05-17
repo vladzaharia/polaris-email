@@ -1,0 +1,10 @@
+{
+  "label": "Authentication",
+  "position": 2,
+  "link": {
+    "type": "generated-index",
+    "slug": "/developers/authentication",
+    "title": "Authentication",
+    "description": "How polaris-email authenticates API callers and webhook receivers. HMAC-signed requests with a key_id, a ±5-minute timestamp window, a nonce, and a bare-hex signature header. The same scheme covers outgoing webhooks with a different domain tag."
+  }
+}
