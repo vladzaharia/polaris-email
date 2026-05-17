@@ -202,8 +202,8 @@ polaris-email auth verify \
 `auth verify` reproduces the HMAC verification path used by the control
 plane against a canonical-string + signature pair. Useful when a client
 reports `bad_signature` and you need to confirm whether the bug is on
-the signer or the verifier. See [Security](/security) → HMAC reference
-(lands in a later batch) for the canonical-string spec.
+the signer or the verifier. See the
+[HMAC reference](/security/hmac-reference) for the canonical-string spec.
 
 ## Next steps
 

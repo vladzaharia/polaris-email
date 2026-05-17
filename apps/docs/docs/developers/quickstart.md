@@ -28,7 +28,8 @@ The signing scheme is **identical** for outbound API calls and inbound
 webhooks. What differs is the domain tag in the canonical string
 (`polaris-api` vs `polaris-webhook`). The signature header is the
 un-versioned `X-Polaris-Sig: <hex>` (64 lowercase hex chars, no prefix).
-The full spec is in [HMAC reference](/security/overview).
+The full spec is in [HMAC reference](/security/hmac-reference); the
+narrative is at [HMAC concept](/developers/authentication/concept).
 
 `POST /v1/messages` accepts two content types:
 

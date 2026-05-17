@@ -123,14 +123,13 @@ polaris-email cred rotate <id> --planned --dry-run
 
 ## Related runbooks
 
-- [Operators](/operators) → Runbooks → `credential-rotation` — the
-  on-call playbook when a key is suspected leaked (lands in a later
-  batch).
-- [Operators](/operators) → Runbooks → `key-rotation` — the broader
-  control-plane key-rotation procedure for HMAC, anchor signing,
-  panel session, and the B2 anchor application key (lands in a later
-  batch).
 - [Control-plane rotation](/operators/runbooks/control-plane-rotation) —
-  end-to-end rotation across all credential surfaces.
+  the broader rotation procedure for `POLARIS_SECRET_A` (the
+  break-glass control-plane HMAC).
+- [Anchor maintenance](/operators/runbooks/anchor-maintenance) — the
+  rotation procedure for `ANCHOR_SIGNING_KEY` and the B2 application
+  key.
+- [Disaster recovery](/operators/runbooks/disaster-recovery) — the
+  escape hatch for a lost admin key or a leaked master secret.
 
 <!-- Verified against: docs/operator.md @ c3c1b5048dd5bfe92facdce24982141a07446042 -->

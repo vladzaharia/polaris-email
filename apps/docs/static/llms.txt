@@ -1,0 +1,93 @@
+# polaris-email
+
+> A managed email service for the `polaris-*` family of internal apps. Cloudflare Workers control plane (REST, webhook fan-out, cron) plus an on-prem Go mail-bridge serving SMTPS (:465) and IMAP4rev2 (:993). One HMAC-signed REST contract covers outbound submission and inbound retrieval; v2-envelope signed webhooks deliver inbound events. Mailbox-centric schema, zero-payload-by-default, audit anchors anchored off Cloudflare on Backblaze B2 with Object Lock COMPLIANCE.
+
+The site is organised by audience. Start at the section that matches your role; cross-links surface the spec pages when you need them.
+
+## Get started
+
+The first-deploy and first-send entry points.
+
+- [What is polaris-email?](https://docs.mail.plrs.im/) — one-page overview, moving parts, audience picker.
+- [Get started overview](https://docs.mail.plrs.im/get-started/overview) — two entry doors (operator vs developer) plus where to read next.
+- [30-minute first deploy](https://docs.mail.plrs.im/get-started/30-min-first-deploy) — the operator-side hero tutorial. Cold Cloudflare account to first authenticated send.
+
+## For developers
+
+SDKs, signing, webhooks, the unified Message model, error catalogue.
+
+- [Developer documentation overview](https://docs.mail.plrs.im/developers/overview) — entry index for the developer audience.
+- [Quickstart](https://docs.mail.plrs.im/developers/quickstart) — TypeScript, Go, and curl recipes for `POST /v1/messages` plus the webhook verifier.
+- [HMAC concept](https://docs.mail.plrs.im/developers/authentication/concept) — narrative: what gets signed, the four headers, the skew window, why the idempotency key is separate from the nonce.
+- [Node SDK](https://docs.mail.plrs.im/developers/sdks/node) — `@polaris/sdk` (signer, async-iterable pagination, typed errors, webhook verifier, React hooks).
+- [Go SDK](https://docs.mail.plrs.im/developers/sdks/go) — `polaris-sdk-go` (typed `*APIError`, `WebhookEnvelope`, `VerifyAndParseWebhook`).
+- [REST + curl](https://docs.mail.plrs.im/developers/sdks/rest-curl) — wire-level fallback for any other language.
+- [Unified Message model](https://docs.mail.plrs.im/developers/messages/unified-model) — the single `Message` shape that backs inbound and outbound mail.
+- [Webhook decision tree](https://docs.mail.plrs.im/developers/webhooks/decision-tree) — pick external HTTPS, tailnet, or bridge-proxied delivery.
+- [Subscription lifecycle](https://docs.mail.plrs.im/developers/webhooks/lifecycle) — create, scope, verify, retry, dedupe, rotate, disable.
+- [SMTP cookbook](https://docs.mail.plrs.im/developers/smtp-cookbook) — Nodemailer, PHPMailer, Go `net/smtp`, JavaMail, sendmail / msmtp.
+
+## For operators
+
+Cold-start, day-2 ops, incident response.
+
+- [Operator documentation overview](https://docs.mail.plrs.im/operators/overview) — entry index for the operator audience.
+- [Architecture](https://docs.mail.plrs.im/operators/concepts/architecture) — three Workers, one D1, mailbox-centric schema, off-Cloudflare audit anchors.
+- [Cost model](https://docs.mail.plrs.im/operators/concepts/cost-model) — forward bill projections at small/medium/large traffic.
+- [Mail bridge](https://docs.mail.plrs.im/operators/concepts/mail-bridge) — the on-prem Go binary, two equally-supported deployment modes.
+- [Deployment prerequisites](https://docs.mail.plrs.im/operators/deployment/prerequisites) — Cloudflare scopes, Backblaze B2 bucket, local tools.
+- [Cold-start bootstrap](https://docs.mail.plrs.im/operators/deployment/cold-start-bootstrap) — one-time setup that creates CF resources, seeds secrets, deploys, and mints the admin key.
+- [Cloudflare Access setup](https://docs.mail.plrs.im/operators/deployment/cloudflare-access) — OIDC IdP wiring, Terraform `access-app` module, group-based role sync.
+- [Custom domains](https://docs.mail.plrs.im/operators/deployment/custom-domains) — R2 public domain, panel, API, docs, per-tenant MTA-STS hostnames.
+- [CLI tour](https://docs.mail.plrs.im/operators/day-2/cli-tour) — `domain`, `cred`, `route`, `webhook`, `bridge`, `audit`, `suppression`, `status`, `auth`.
+- [Domain management](https://docs.mail.plrs.im/operators/day-2/domain-management) — CF zone discover/configure, declarative onboard, DKIM rotation, MTA-STS publishing.
+- [Mailbox management](https://docs.mail.plrs.im/operators/day-2/mailbox-management) — the unit everything else hangs off of.
+- [Credential management](https://docs.mail.plrs.im/operators/day-2/credential-management) — issue, list, rotate, revoke; read-once secrets policy.
+- [Routing and webhooks](https://docs.mail.plrs.im/operators/day-2/routing-and-webhooks) — inbound rules + webhook DLQ ops.
+- [Bridge management](https://docs.mail.plrs.im/operators/day-2/bridge-management) — register, rotate, deregister; per-bridge HMAC isolation.
+- [Bridge TLS](https://docs.mail.plrs.im/operators/day-2/bridge-tls) — mounted PEM, Lego ACME-DNS-01, Tailscale-issued.
+- [Monitoring](https://docs.mail.plrs.im/operators/day-2/monitoring) — Workers Analytics Engine, Logpush, `ALERT_WEBHOOK`, SLOs.
+- [Activity inspection](https://docs.mail.plrs.im/operators/day-2/activity-inspection) — red/yellow/green snapshot, queue depths, log tails, audit verify, suppression list.
+- [On-call runbook](https://docs.mail.plrs.im/operators/runbooks) — first commands and decision trees for common incidents.
+- [Troubleshooting decision matrix](https://docs.mail.plrs.im/operators/troubleshooting/decision-matrix) — symptom → cause → fix index.
+- [Anchor maintenance](https://docs.mail.plrs.im/operators/runbooks/anchor-maintenance) — detection and recovery for the hourly anchor cron.
+- [Bridge credential sync](https://docs.mail.plrs.im/operators/runbooks/bridge-credential-sync) — confirm drift, force resync, recover from HMAC key drift.
+- [CF account compromise](https://docs.mail.plrs.im/operators/runbooks/cf-account-compromise) — 15-minute containment, investigation, recovery.
+- [Control-plane rotation](https://docs.mail.plrs.im/operators/runbooks/control-plane-rotation) — `POLARIS_SECRET_A` A/B rotation dance.
+- [D1 recovery](https://docs.mail.plrs.im/operators/runbooks/d1-recovery) — PITR restore drill (quarterly).
+- [Disaster recovery](https://docs.mail.plrs.im/operators/runbooks/disaster-recovery) — escape hatches: lost state, lost admin key, bad deploy, leaked secret, bad phase marker.
+- [Webhook DLQ](https://docs.mail.plrs.im/operators/runbooks/webhook-dlq) — inspect, replay, drop, subscriber-outage cascade.
+- [Retention and cleanup](https://docs.mail.plrs.im/operators/runbooks/retention-and-cleanup) — what each retention class needs.
+- [Data residency](https://docs.mail.plrs.im/operators/runbooks/data-residency) — where each class of stored data lives.
+
+## For security reviewers
+
+Threat model, HMAC spec, email authentication.
+
+- [Security documentation overview](https://docs.mail.plrs.im/security/overview) — entry index for the security audience.
+- [Threat model](https://docs.mail.plrs.im/security/threat-model) — trust boundaries, in-scope adversaries, mitigations, R2 capability semantics, audit-anchor integrity fence.
+- [HMAC reference](https://docs.mail.plrs.im/security/hmac-reference) — byte-exact canonical-string, bare-hex header, domain tags, test vectors, verifier error codes.
+- [DKIM / DMARC / SPF](https://docs.mail.plrs.im/security/dkim-dmarc-spf) — what polaris-email publishes per outbound domain, alignment rules, triage table, MTA-STS / TLS-RPT for inbound TLS.
+
+## Reference
+
+Generated and machine-readable surfaces.
+
+- [Reference overview](https://docs.mail.plrs.im/reference/overview) — entry index for the reference section.
+- [REST API](https://docs.mail.plrs.im/reference/api/polaris-email-api) — generated from `openapi/polaris-email.yaml` on every build.
+- [CLI vocabulary](https://docs.mail.plrs.im/reference/cli) — the four state-change verbs (`revoke`, `deregister`, `disable`, `delete`).
+- [Error catalog](https://docs.mail.plrs.im/reference/errors) — every wire error code with HTTP status and retryability.
+- [Consumer contract](https://docs.mail.plrs.im/reference/consumer-contract) — the stability promises polaris-email makes to integrators.
+
+## Contributing
+
+Codebase orientation and toolchain.
+
+- [Contributing overview](https://docs.mail.plrs.im/contributing/overview) — toolchain, common commands, integration test tiers, PR gates.
+- [Repo orientation](https://docs.mail.plrs.im/contributing/repo-orientation) — the polyglot monorepo, three Workers, four apps, shared packages.
+- [Architecture deep-dive](https://docs.mail.plrs.im/contributing/architecture-deep-dive) — the codebase tour with internal paths.
+- [Linting & formatting](https://docs.mail.plrs.im/contributing/linting) — Oxc-only policy, scoped rule overrides, pre-commit hooks.
+
+## Changelog
+
+- [Changelog](https://docs.mail.plrs.im/changelog) — notable architectural changes, hardening passes, cleanup phases.

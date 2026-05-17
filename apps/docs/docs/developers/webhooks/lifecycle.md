@@ -105,10 +105,9 @@ The fanout consumer signs every delivery before POST. Headers:
 | `X-Polaris-Delivery-Id` | Per-attempt ULID. Different on every retry, even for the same `event_id`.                            |
 
 Canonical-string and HMAC domain tag (`polaris-webhook`) are the same
-shape the API uses for request signing — the full HMAC spec lands
-under [Developers](/developers) → Authentication in a later batch;
-in the meantime the canonical-string definition lives in
-`docs/hmac-reference.md` in the repo root.
+shape the API uses for request signing — see the
+[HMAC concept](/developers/authentication/concept) for the narrative and
+the [HMAC reference](/security/hmac-reference) for the byte-exact spec.
 
 Use the published SDKs to verify rather than rolling your own:
 
@@ -202,9 +201,9 @@ URL.
 - **Replay strategies** (e.g. driving the DLQ back through a different
   URL after a consumer outage). Replay is the operator side of this
   contract and lives in the [webhook DLQ runbook](/operators/runbooks/webhook-dlq).
-- **HMAC canonical-string spec.** Full canonical-string + domain-tag
-  rules land under [Developers](/developers) → Authentication in a
-  later batch. The webhooks endpoint reuses that spec verbatim with
+- **HMAC canonical-string spec.** The byte-exact canonical-string +
+  domain-tag rules live in the [HMAC reference](/security/hmac-reference).
+  The webhooks endpoint reuses that spec verbatim with
   `direction = polaris-webhook`.
 
 <!-- Verified against: services/api/src/routes/admin/webhook-subs.ts, services/api/src/queue/fanout.ts, services/api/src/routes/admin.ts (POST /v1/admin/webhook-subs), packages/schema/src/index.ts (CreateWebhookSubRequest, WebhookEventType), docs/architecture.md (v2 envelope) @ eeee222cdf8359f8f2bf1013a103abdb3c705f06 -->

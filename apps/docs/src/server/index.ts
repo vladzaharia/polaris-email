@@ -58,21 +58,45 @@ const REDIRECTS: Record<string, string> = {
   '/decision-matrix': '/operators/troubleshooting/decision-matrix',
   '/runbook': '/operators/runbooks',
   '/runbooks': '/operators/runbooks',
+  // Each runbook redirect targets the MD file that actually exists in
+  // the new IA. Legacy URLs whose canonical target was retired during
+  // migration are remapped to the closest superset page (the on-call
+  // runbook for incident-response, the disaster-recovery page for
+  // rollback / key-rotation, the webhook DLQ runbook for dlq-replay).
   '/runbooks/anchor-maintenance': '/operators/runbooks/anchor-maintenance',
-  '/runbooks/credential-rotation': '/operators/runbooks/credential-rotation',
+  '/runbooks/bridge-credential-sync': '/operators/runbooks/bridge-credential-sync',
+  '/runbooks/cf-account-compromise': '/operators/runbooks/cf-account-compromise',
+  '/runbooks/control-plane-rotation': '/operators/runbooks/control-plane-rotation',
+  '/runbooks/credential-rotation': '/operators/day-2/credential-management',
+  '/runbooks/d1-recovery': '/operators/runbooks/d1-recovery',
+  '/runbooks/data-residency': '/operators/runbooks/data-residency',
   '/runbooks/disaster-recovery': '/operators/runbooks/disaster-recovery',
-  '/runbooks/dlq-replay': '/operators/runbooks/dlq-replay',
-  '/runbooks/domain-onboarding': '/operators/runbooks/domain-onboarding',
-  '/runbooks/incident-response': '/operators/runbooks/incident-response',
-  '/runbooks/key-rotation': '/operators/runbooks/key-rotation',
-  '/runbooks/killswitch': '/operators/runbooks/killswitch',
-  '/runbooks/rollback': '/operators/runbooks/rollback',
-  '/runbooks/smoke-test': '/operators/runbooks/smoke-test',
+  '/runbooks/dlq-replay': '/operators/runbooks/webhook-dlq',
+  '/runbooks/domain-onboarding': '/operators/day-2/domain-management',
+  '/runbooks/incident-response': '/operators/runbooks',
+  '/runbooks/key-rotation': '/operators/runbooks/control-plane-rotation',
+  '/runbooks/killswitch': '/operators/runbooks/cf-account-compromise',
+  '/runbooks/retention-and-cleanup': '/operators/runbooks/retention-and-cleanup',
+  '/runbooks/rollback': '/operators/runbooks/disaster-recovery',
+  '/runbooks/smoke-test': '/operators/deployment/cold-start-bootstrap',
+  '/runbooks/webhook-dlq': '/operators/runbooks/webhook-dlq',
 
   // ----- Reference --------------------------------------------------
   '/cli': '/reference/cli',
   '/errors': '/reference/errors',
-  '/api': '/reference/api',
+  '/api': '/reference/api/polaris-email-api',
+  '/consumer-contract': '/reference/consumer-contract',
+
+  // ----- Security ---------------------------------------------------
+  '/threat-model': '/security/threat-model',
+  '/security': '/security/threat-model',
+  '/dkim': '/security/dkim-dmarc-spf',
+  '/dmarc': '/security/dkim-dmarc-spf',
+  '/spf': '/security/dkim-dmarc-spf',
+
+  // ----- Contributing -----------------------------------------------
+  '/contributing': '/contributing/overview',
+  '/linting': '/contributing/linting',
 };
 
 const app = new Hono<{ Bindings: Env }>();

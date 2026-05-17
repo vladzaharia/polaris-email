@@ -8,9 +8,8 @@ sidebar_position: 2
 # `polaris-sdk-go` (Go)
 
 Hand-written Go SDK for the polaris-email control plane. Used internally
-by the `polaris-email` CLI, the `mail-bridge` binary, and the
-`submission-daemon`. The import path is
-`github.com/polaris-email/polaris-sdk-go`.
+by the `polaris-email` CLI and the `mail-bridge` binary. The import path
+is `github.com/polaris-email/polaris-sdk-go`.
 
 This package is **internal-only** within the polaris-\* service family. It
 is not published to the Go public proxy.

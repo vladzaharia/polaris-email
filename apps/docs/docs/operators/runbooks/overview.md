@@ -8,7 +8,8 @@ sidebar_position: 1
 # polaris-email on-call runbook
 
 First commands and decision trees for common incidents. Pairs with the
-[Operators](/operators) workflows and the cost model (lands in a later batch).
+[Operators](/operators) workflows and the
+[cost model](/operators/concepts/cost-model).
 
 If you'd rather scan a symptom → cause → fix index than walk the
 decision trees below, jump to the
