@@ -32,7 +32,7 @@ mailboxes.get('/v1/admin/mailboxes', requireScope('admin:read'), async (c) => {
   let rows = await c.env.DB.prepare(
     `SELECT id, name, description, default_sender_id, created_at, updated_at,
             disabled_at, active_sender_count, active_receiver_count
-     FROM v_mailbox_summary WHERE id != '01J0000000000000000000PLRS'
+     FROM v_mailbox_summary WHERE id <> '01J0000000000000000000PLRS'
      ORDER BY name ASC`,
   )
     .all()
@@ -40,7 +40,7 @@ mailboxes.get('/v1/admin/mailboxes', requireScope('admin:read'), async (c) => {
   if (!rows.results || rows.results.length === 0) {
     rows = await c.env.DB.prepare(
       `SELECT id, name, description, default_sender_id, created_at, updated_at, disabled_at
-       FROM mailboxes WHERE id != '01J0000000000000000000PLRS'
+       FROM mailboxes WHERE id <> '01J0000000000000000000PLRS'
        ORDER BY name ASC`,
     ).all();
   }

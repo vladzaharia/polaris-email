@@ -182,4 +182,7 @@ jobs:
       - run: pnpm --filter @polaris-email/docs run typecheck
       - run: pnpm --filter @polaris-email/docs run build:client
       - name: link-check
-        run: pnpm dlx lychee --no-progress --exclude-mail 'apps/docs/build/**/*.html'
+        uses: lycheeverse/lychee-action@v2
+        with:
+          args: --no-progress --exclude-mail 'apps/docs/build/**/*.html'
+          fail: true
