@@ -264,8 +264,9 @@ meantime.
 
 ## Related runbooks
 
-- [Operators](/operators) → Runbooks → `domain-onboarding` — on-call
-  triage for failed onboards (lands in a later batch).
+- [DKIM / DMARC / SPF reference](/security/dkim-dmarc-spf) — what each
+  record is, why the defaults are what they are, and how to triage
+  auth failures.
 - [Data residency](/operators/runbooks/data-residency) — what
   per-domain data actually crosses borders.
 

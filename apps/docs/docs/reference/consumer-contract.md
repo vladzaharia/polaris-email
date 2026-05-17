@@ -19,13 +19,14 @@ The `X-Polaris-Sig: v2=…` prefix above is stale. The signature header is
 **un-versioned**: `X-Polaris-Sig: <lowercase-hex>` (64 hex chars, no `v1=` /
 `v2=` prefix). The domain-tag separation (`polaris-api` vs
 `polaris-webhook`) and the v2 webhook envelope (full `Message` inlined)
-both remain correct. See the [Security](/security) section's HMAC
-reference (lands in a later batch) for the canonical spec.
+both remain correct. See the [HMAC reference](/security/hmac-reference)
+for the canonical spec.
 :::
 
 ## What you must do
 
-- Sign every request per the HMAC reference under the [Security](/security) section (lands in a later batch). Use one of the published verifier libraries on the receive side.
+- Sign every request per the [HMAC reference](/security/hmac-reference).
+  Use one of the published verifier libraries on the receive side.
 - Honour `Retry-After` and `retryable: true/false`. Never retry `bad_signature`, `scope_violation`, `key_revoked`, `nonce_replay`, `idempotency_conflict`, `domain_not_verified`, `recipient_rejected`.
 - Treat `key_propagating` as transient — retry once after `Retry-After` (~2 s).
 - Hold **both** primary and secondary key pairs during planned rotation. Either pair is valid for the 24 h grace.

@@ -34,7 +34,8 @@ un-versioned `X-Polaris-Sig: <hex>` — 64 lowercase hex chars, no prefix.
 | `sha256-hex-of-body`    | SHA-256 of the exact body bytes on the wire, lowercase hex.      |
 
 HMAC is SHA-256, 256-bit keys, constant-time compare. The full spec is in
-[Security overview](/security/overview).
+[HMAC reference](/security/hmac-reference); the narrative is at
+[HMAC concept](/developers/authentication/concept).
 
 ## Sign and POST `/v1/messages` (curl)
 
@@ -126,7 +127,8 @@ The webhook body is the v2 envelope:
 ```
 
 The full `Message` is inlined; no follow-up `GET /v1/messages/:id` is
-required. See [Messages](/developers/overview) for the full shape.
+required. See the [unified Message model](/developers/messages/unified-model)
+for the full shape.
 
 ## Retry semantics
 

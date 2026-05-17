@@ -30,8 +30,8 @@ Each mailbox row hangs off four child tables:
 Per-mailbox `mail_domains` rows also live on the mailbox (an
 operator-owned domain can be claimed by exactly one mailbox).
 
-See [Operators](/operators) → Concepts → Architecture (lands in a
-later batch) for the schema diagram.
+See [Architecture](/operators/concepts/architecture) for the schema
+diagram.
 
 ## Create, list, show, delete
 
@@ -64,10 +64,10 @@ curl -X GET "$API/v1/admin/mailboxes" \
     -H "X-Polaris-Sig: $(polaris-email auth sign --method GET --path /v1/admin/mailboxes)"
 ```
 
-See [Reference](/reference) → API for full request / response shapes
-and required headers; the signing canonical-string is the same one
-documented in [Security](/security) → HMAC reference (lands in a
-later batch).
+See the [REST API reference](/reference/api/polaris-email-api) for full
+request / response shapes and required headers; the signing
+canonical-string is documented in the
+[HMAC reference](/security/hmac-reference).
 
 ## Once a mailbox exists
 
@@ -104,9 +104,10 @@ what we now call a mailbox.
 
 ## Related runbooks
 
-- [Operators](/operators) → Runbooks → `credential-rotation` — the
-  on-call playbook when a mailbox's keys are compromised (lands in a
-  later batch).
+- [Credential management](/operators/day-2/credential-management) —
+  rotating or revoking a mailbox's keys.
+- [Disaster recovery](/operators/runbooks/disaster-recovery) — the
+  escape hatch for lost admin keys + leaked secrets.
 - [Retention and cleanup](/operators/runbooks/retention-and-cleanup) —
   what a mailbox-scoped retention bucket actually deletes.
 

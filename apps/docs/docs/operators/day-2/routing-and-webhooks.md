@@ -85,12 +85,13 @@ through the admin REST surface or the panel. CLI parity is intentional
 follow-up.
 :::
 
-Each subscription has its own HMAC secret (used to sign outgoing
-webhook deliveries with the `polaris-webhook` domain tag — see
-[Security](/security) → HMAC reference (lands in a later batch)) and
-an optional event filter. The queue consumer in `services/api`
-(`src/queue/fanout.ts`) is the **only place outgoing webhooks are
-signed**; the webhook envelope is v2 (the full `Message` is inlined).
+Each subscription has its own HMAC secret used to sign outgoing webhook
+deliveries with the `polaris-webhook` domain tag — see the
+[HMAC reference](/security/hmac-reference) for the canonical spec.
+Subscriptions also carry an optional event filter. The queue consumer
+in `services/api` (`src/queue/fanout.ts`) is the **only place outgoing
+webhooks are signed**; the webhook envelope is v2 (the full `Message`
+is inlined).
 
 ## Webhook DLQ
 
@@ -138,15 +139,13 @@ Constant-time compare on the receiving side.
 The Node SDK (`@polaris/sdk/webhook`) and Go SDK (`polaris-sdk-go`)
 both ship verifiers that match the test vectors under
 [`packages/test-vectors/vectors.json`](https://github.com/vladzaharia/polaris-email/blob/main/packages/test-vectors/vectors.json).
-See [Security](/security) → HMAC reference (lands in a later batch)
-for the full spec.
+See the [HMAC reference](/security/hmac-reference) for the full spec.
 
 ## Related runbooks
 
 - [Webhook DLQ](/operators/runbooks/webhook-dlq) — on-call response to
   DLQ growth.
-- [Operators](/operators) → Runbooks → `domain-onboarding` — when
-  inbound routes fail because the domain isn't fully onboarded (lands
-  in a later batch).
+- [Domain management](/operators/day-2/domain-management) — when
+  inbound routes fail because the domain isn't fully onboarded.
 
 <!-- Verified against: docs/operator.md @ c3c1b5048dd5bfe92facdce24982141a07446042 -->

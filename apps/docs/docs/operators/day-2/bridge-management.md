@@ -136,14 +136,9 @@ at `/etc/polaris-bridge/tls/` (cert + key) and the bridge will pick
 it up at start. The bridge supports TLS cert hot-reload — renewing
 the PEM in place does not require a container restart.
 
-:::info Bridge TLS renewal — full procedure
-A dedicated TLS renewal runbook covering Lego DNS-01 setup, hot-reload
-verification, and cert-expiry alerts lands in a later batch. Until
-then, follow your existing ACME client's documentation for the renewal
-schedule and use the bridge's hot-reload behaviour to avoid downtime.
-The bridge's `/healthz/tls` endpoint reports the active cert's
-expiry — wire it into your monitoring as the renewal alert source.
-:::
+The full procedure — three TLS source modes (mounted PEM, Lego
+ACME-DNS-01, Tailscale-issued), hot-reload cadence, rotation steps, and
+the two alerts to wire — lives at [Bridge TLS](/operators/day-2/bridge-tls).
 
 ## Audit trail
 

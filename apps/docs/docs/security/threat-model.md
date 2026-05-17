@@ -65,8 +65,10 @@ sidebar_position: 2
 
 ## Out of scope
 
-- **Fully compromised Cloudflare root API token** — mitigated by Logpush mirror +
-  kill-switch runbook (lands under [Operators](/operators) → Runbooks → Killswitch), not prevented.
+- **Fully compromised Cloudflare root API token** — mitigated by the
+  Logpush mirror and the
+  [CF account compromise runbook](/operators/runbooks/cf-account-compromise),
+  not prevented.
 - **Recipient recovery after submission** — by design, plaintext recipients are
   not retained server-side; see [the consumer contract](/reference/consumer-contract).
 
@@ -241,9 +243,9 @@ the audit-verify scheduled job under `services/api/src/scheduled/audit-verify.ts
   for outgoing webhook deliveries — no `.v1` suffix). Canonical-string
   is `direction\nmethod\npath\ncanonical-query\nts\nnonce\nsha256-hex-of-body`.
   Signature header is `X-Polaris-Sig: <lowercase-hex>` — no `v1=` / `v2=`
-  prefix. Constant-time compare. Full spec under
-  [Developers](/developers) → Authentication and
-  [Security](/security) → HMAC reference (both land in later batches).
+  prefix. Constant-time compare. Full spec at the
+  [HMAC reference](/security/hmac-reference); the narrative is at the
+  [HMAC concept](/developers/authentication/concept) page.
 - **Audit chain** SHA-256 `prev_hash` linking; hourly anchor signed and
   pushed to **Backblaze B2** (Object Lock COMPLIANCE mode, ~7-year
   retention) — see the "Audit anchors" section above. Anchor signing
@@ -274,10 +276,10 @@ the audit-verify scheduled job under `services/api/src/scheduled/audit-verify.ts
 
 ## GA gating
 
-GA additionally requires: D1 PITR drill executed; CF-account-compromise kill switch
-drill executed in a sandbox; documented runbook for every alert under
-[Operators](/operators) → Runbooks (lands in a later batch).
+GA additionally requires: D1 PITR drill executed; CF-account-compromise
+kill switch drill executed in a sandbox; documented runbook for every
+alert under [Operators → Runbooks](/operators/runbooks).
 
-See [Operators](/operators) → Runbooks for procedures.
+See [Operators → Runbooks](/operators/runbooks) for procedures.
 
 <!-- Verified against: SECURITY.md @ 022520fd49a135eaf4685a09668439d58257ec95 -->

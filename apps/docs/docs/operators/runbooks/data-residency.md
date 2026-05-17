@@ -22,9 +22,9 @@ polaris-email's stored data:
 Use the polaris-email CLI to inventory the stack:
 
 ```sh
-polaris-email domain list           # mail_domains, including jurisdiction hints
-polaris-email cred list --tenant T  # api keys + smtp credentials for tenant T
-polaris-email status                # high-level counts
+polaris-email domain list            # mail_domains, including jurisdiction hints
+polaris-email cred list --mailbox M  # api keys + smtp credentials for mailbox M
+polaris-email status                 # high-level counts
 ```
 
 For deeper jurisdiction inspection, query the bindings directly via `wrangler d1
