@@ -73,7 +73,10 @@ func NewRoot() *cobra.Command {
 		newBootstrapCmd(),
 		newSuppressionCmd(),
 		newPolicyCmd(),
-		setupcmd.NewSetupCmd(),
+		setupcmd.NewSetupCmd(setupcmd.Options{
+			CLIVersion: Version,
+			MakeClient: MakeClient,
+		}),
 		newVersionCmd(),
 	)
 	return root
