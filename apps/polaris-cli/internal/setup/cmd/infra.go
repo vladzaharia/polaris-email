@@ -35,5 +35,8 @@ func newInfraCmd() *cobra.Command {
 	// PR 1 leaf: state subtree.
 	c.AddCommand(newInfraStateCmd())
 	c.AddCommand(newInfraRenderCmd())
+	// PR 3 leaves: plan + apply.
+	c.AddCommand(newInfraPlanCmd())
+	c.AddCommand(newInfraApplyCmd())
 	return c
 }
