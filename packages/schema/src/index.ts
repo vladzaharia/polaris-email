@@ -344,10 +344,11 @@ export type VerifyResponse = z.infer<typeof VerifyResponse>;
 
 // ---------- credential plane ----------
 
-// `operator` kind is added by migration 0024 — operator principals anchor
-// to the sentinel `_polaris_operators` mailbox and own the api_key that
-// `polaris-email login` stores in the credstore.
-export const PrincipalKind = z.enum(['api_key', 'smtp_cred', 'operator']);
+// Operator principals (migration 0024) reuse the `'api_key'` kind —
+// they behave identically and anchor to the sentinel `_polaris_operators`
+// mailbox. The disambiguation lives in the `operators.api_key_id` FK,
+// not in the principals schema.
+export const PrincipalKind = z.enum(['api_key', 'smtp_cred']);
 export type PrincipalKind = z.infer<typeof PrincipalKind>;
 
 export const Principal = z.object({

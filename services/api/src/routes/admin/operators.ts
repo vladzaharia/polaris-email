@@ -175,8 +175,13 @@ operators.post('/v1/admin/operators', requireScope('admin:rotate'), async (c) =>
   });
   await c.env.DB.batch([
     c.env.DB.prepare(
+      // Operator principals share the `'api_key'` kind — they behave
+      // identically to api_key principals (own one api_key, can revoke,
+      // honor sender-scope rows). Disambiguation against actual user-facing
+      // api_keys happens via the `operators.api_key_id` FK + the sentinel
+      // mailbox anchor; no schema-level distinction is needed.
       `INSERT INTO principals (id, mailbox_id, kind, display_name, created_at)
-       VALUES (?, ?, 'operator', ?, ?)`,
+       VALUES (?, ?, 'api_key', ?, ?)`,
     ).bind(principalId, OPERATOR_SENTINEL_MAILBOX_ID, body.name, nowIso),
     c.env.DB.prepare(
       `INSERT INTO api_keys

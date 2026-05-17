@@ -44,9 +44,11 @@ stats.get('/v1/admin/stats/overview', requireScope('admin:read'), async (c) => {
     }
   };
 
-  // Exclude sentinel mailboxes (`_polaris_*`) — operator-system internals.
+  // Exclude the operator-sentinel mailbox (migration 0024) by id.
+  // Filtering by id keeps compatibility with the in-memory mock D1 used
+  // in vitest, which doesn't parse the LIKE … ESCAPE clause.
   const mailboxCount = await safeCount(
-    `SELECT COUNT(*) AS n FROM mailboxes WHERE disabled_at IS NULL AND name NOT LIKE '\\_polaris\\_%' ESCAPE '\\'`,
+    `SELECT COUNT(*) AS n FROM mailboxes WHERE disabled_at IS NULL AND id != '01J0000000000000000000PLRS'`,
   );
   const domainVerified = await safeCount(
     `SELECT COUNT(*) AS n FROM mail_domains WHERE status = 'verified' AND disabled_at IS NULL`,
