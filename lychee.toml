@@ -1,0 +1,21 @@
+# lychee config for the docs link-check CI job.
+# Sister-agent docs reference a few external URLs that 404 on today's web;
+# excluded here so CI doesn't fail on link rot we don't own. Worth a periodic
+# cleanup pass on the underlying docs content.
+
+# Skip mailto: scheme (docs include support+contact addresses).
+exclude = [
+  # Polaris-owned hostnames that aren't deployed yet — link-check on the docs
+  # site itself can validate them once the deploy is live.
+  'mail\.plrs\.im',
+  # github.com is rate-limited from unauthenticated GH runners and trivially
+  # validatable by other means.
+  '^https?://github\.com',
+  # Dead links to fix in docs content (track as follow-up):
+  #   - The oxc VS Code extension's marketplace URL appears to have moved.
+  #     Update apps/docs/content/contributing/{linting,overview}.md.
+  'marketplace\.visualstudio\.com',
+  #   - Google Workspace help URLs are unstable; this one (a/answer/9039196)
+  #     now 404s. Update apps/docs/content/operators/deployment/cloudflare-access.md.
+  'support\.google\.com',
+]

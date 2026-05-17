@@ -184,5 +184,5 @@ jobs:
       - name: link-check
         uses: lycheeverse/lychee-action@v2
         with:
-          args: --no-progress --root-dir ${{ github.workspace }}/apps/docs/build --exclude '^mailto:' --exclude 'mail\.plrs\.im' --exclude '^https?://github\.com' --accept '200,206,429' 'apps/docs/build/**/*.html'
+          args: --no-progress --root-dir ${{ github.workspace }}/apps/docs/build --config lychee.toml --accept '200,206,429' 'apps/docs/build/**/*.html'
           fail: true
