@@ -107,8 +107,8 @@ The `CF_API_TOKEN` secret on `services/api` needs:
 - **Zone → Zone → Edit** (manual-DNS fallback)
 - **Zone → DNS → Edit** (same fallback)
 
-`make preflight` checks the Email Routing and Zone:Read scopes and
-fails loudly if either is missing.
+`polaris-email setup infra preflight` checks the Email Routing and
+Zone:Read scopes and fails loudly if either is missing.
 
 ## Legacy: declarative `domain onboard`
 

@@ -6,9 +6,22 @@ v2-envelope signed webhooks for inbound events, an on-prem Go mail bridge
 (SMTPS + IMAP) for legacy clients, and a managed admin panel for
 mailboxes, API keys, routing, secrets, and operations.
 
-See [`docs/architecture.md`](docs/architecture.md) for the system view,
-[`docs/messages.md`](docs/messages.md) for the data model, and
-[`docs/sdk.md`](docs/sdk.md) for the three first-party SDKs.
+Documentation lives at <https://docs.mail.plrs.im>.
+
+## Quick start
+
+```sh
+# Install the polaris-email Go CLI.
+curl -fsSL cli.mail.plrs.im | sh
+
+# Cold-start from zero: preflight → configure → plan → apply → render →
+# migrate → secrets seed → deploy → genesis-seal → smoke.
+polaris-email setup infra
+```
+
+`polaris-email setup infra --resume` picks up after a partial run; each
+phase records to `.deploy-state.json`. See `apps/polaris-cli/README.md`
+for the full subcommand tree.
 
 ## Architecture
 
@@ -32,7 +45,8 @@ On-prem (per host):
 
 - `apps/mail-bridge` — single Go binary serving SMTPS (:465) and IMAP4rev2 (:993).
   Renamed and absorbed from the old `apps/submission-daemon`. See
-  `apps/mail-bridge/README.md` and [`docs/mail-bridge.md`](docs/mail-bridge.md).
+  `apps/mail-bridge/README.md` and the mail-bridge guide at
+  <https://docs.mail.plrs.im/operators/concepts/mail-bridge>.
 
   Two equally-supported deployment modes (neither is "the default"):
   - **Tailnet-fronted** — `tailscale/tailscale` sidecar; MagicDNS hostname; TLS via
@@ -54,7 +68,7 @@ Shared packages:
 
 - `packages/hmac`, `packages/schema`, `packages/test-vectors` — signing primitives + types.
 - `packages/sdk-node`, `packages/sdk-go` — first-party SDKs (hand-written REST client
-  - embedded webhook verifier). See [`docs/sdk.md`](docs/sdk.md).
+  - embedded webhook verifier). See <https://docs.mail.plrs.im/developers/sdks/>.
 - `packages/pipeline` — the unified `processMessage` pipeline shared by
   `services/in` and `services/api`.
 - `packages/ids` — ULID + request-id generator (shared between services).
@@ -102,8 +116,9 @@ pnpm -r build
 Each Worker has a `wrangler.jsonc` (committed, placeholder IDs) and expects a gitignored
 `wrangler.local.jsonc` with real D1/R2/KV/Queue IDs. Those are generated from
 `services/*/wrangler.local.template.jsonc` + `.deploy-state.json` by
-`bin/render-wrangler-local.sh`; `bin/deploy.sh` then merges the public + local configs
-before `wrangler deploy`. Do not hand-edit the materialised files.
+`polaris-email setup infra render`; `polaris-email setup infra deploy` then merges
+the public + local configs before `wrangler deploy`. Do not hand-edit the materialised
+files.
 
 The panel (`apps/panel`) is a Worker too. For local panel dev:
 
@@ -111,26 +126,27 @@ The panel (`apps/panel`) is a Worker too. For local panel dev:
 pnpm --filter @polaris-email/panel wrangler-dev
 ```
 
-## Quick start
+## Operator workflows
 
-See [`docs/operator.md`](docs/operator.md) for day-to-day workflows. The cold-start
-bootstrap + infra runbook lives in [`docs/deploy.md`](docs/deploy.md).
+Day-to-day operator workflows (cold-start, deploy, smoke, rollback, issue
+api keys, onboard domains, register bridges, rotate credentials, replay
+webhook DLQ entries, …) all run through the `polaris-email` CLI.
 
 ```sh
-make preflight      # verify required tools and env
-make configure      # write .env.deploy interactively
-make bootstrap      # cold-start: create CF resources, deploy, mint admin key
-make smoke          # end-to-end health probe
-make deploy-changed # deploy only services whose code (or deps) changed
-make rollback SERVICE=api
+polaris-email setup infra preflight          # verify required tools and env
+polaris-email setup infra configure          # write .env.deploy interactively
+polaris-email setup infra                    # cold-start: create CF resources, deploy, mint admin key
+polaris-email setup infra smoke              # end-to-end health probe
+polaris-email setup infra deploy changed     # deploy only services whose code (or deps) changed
+polaris-email setup infra rollback api       # roll one Worker back to its previous version
 ```
 
-Day-to-day operator workflows (issue api keys, onboard domains, register bridges,
-rotate credentials, replay webhook DLQ entries, …) run through the `polaris-email`
-CLI — see `apps/polaris-cli/README.md` for the subcommand tree.
+See `apps/polaris-cli/README.md` for the full subcommand tree, and
+<https://docs.mail.plrs.im> for the full operator + developer guides.
 
 ## Security
 
-See [`SECURITY.md`](SECURITY.md) for the threat model,
-[`docs/runbooks/cf-account-compromise.md`](docs/runbooks/cf-account-compromise.md) for the kill
-switch, and [`docs/runbook.md`](docs/runbook.md) for incident response.
+See [`SECURITY.md`](SECURITY.md) for the threat model and
+<https://docs.mail.plrs.im/operators/runbooks/> for incident-response
+runbooks (account compromise, on-call triage, DLQ replay, anchor
+maintenance).

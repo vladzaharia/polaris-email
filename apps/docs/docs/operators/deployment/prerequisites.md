@@ -51,8 +51,8 @@ you want the panel, mint a client up-front and capture:
 - `OIDC_CLIENT_ID`
 - `OIDC_CLIENT_SECRET`
 
-Leave them blank during `make configure` to skip the panel — the API
-and the CLI still work without it.
+Leave them blank during `polaris-email setup infra configure` to skip
+the panel — the API and the CLI still work without it.
 
 ## Backblaze B2 anchor target (required)
 
@@ -103,18 +103,18 @@ You also need the **`polaris-email` Go CLI** on `$PATH`. Pick one of:
 - `brew install vladzaharia/tap/polaris-email`
 - Grab a release binary from the GitHub releases page.
 
-The CLI signs admin requests, registers bridges, and drives the smoke
-checks. It is the operator surface — `make` targets and shell scripts
-are the cold-start orchestration layer, not the day-2 surface.
+The CLI is the entire operator surface: cold-start, deploy, rollback,
+smoke, and every day-2 workflow live in `polaris-email setup infra` and
+the other `polaris-email` subcommands.
 
 ## Validate
 
-Run these two commands. `make preflight` is a hard gate; each failing
-check prints its remediation on the next line.
+Run these two commands. `polaris-email setup infra preflight` is a hard
+gate; each failing check prints its remediation on the next line.
 
 ```sh
 wrangler login
-make preflight
+polaris-email setup infra preflight
 ```
 
 When `preflight` is green you are ready to start the
@@ -122,10 +122,10 @@ When `preflight` is green you are ready to start the
 
 ## Terraform sequencing (optional but recommended)
 
-The cold-start CLI (and `bin/bootstrap.sh`) makes the minimum Cloudflare
-API calls needed to spin up Workers, D1, KV, R2, and Queues. It is **not**
-the same surface as `infra/terraform/`, which manages the slow-moving,
-state-shaped resources inside the same account:
+The cold-start CLI (`polaris-email setup infra`) makes the minimum
+Cloudflare API calls needed to spin up Workers, D1, KV, R2, and Queues.
+It is **not** the same surface as `infra/terraform/`, which manages the
+slow-moving, state-shaped resources inside the same account:
 
 - DNS records
 - Email Routing rules

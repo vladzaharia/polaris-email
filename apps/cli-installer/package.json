@@ -8,7 +8,7 @@
     "lint": "oxlint .",
     "test": "vitest run",
     "dev": "wrangler dev",
-    "deploy": "../../bin/deploy.sh apps/cli-installer"
+    "deploy": "polaris-email setup infra deploy service cli-installer"
   },
   "dependencies": {},
   "devDependencies": {

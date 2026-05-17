@@ -56,10 +56,10 @@ bin/killswitch-freeze.sh
 #    binding's `database_name` to the new id.
 
 # 4. Deploy:
-make deploy SERVICE=services/api
+polaris-email setup infra deploy service api
 
 # 5. Verify with the smoke test:
-make smoke
+polaris-email setup infra smoke
 
 # 6. Lift maintenance:
 bin/killswitch-freeze.sh --restore

@@ -12,7 +12,7 @@
     "lint": "oxlint .",
     "dev:server": "wrangler dev",
     "dev:client": "vite",
-    "deploy": "../../bin/deploy.sh apps/panel"
+    "deploy": "polaris-email setup infra deploy service panel"
   },
   "dependencies": {
     "@cloudflare/workers-types": "^4.20260511.1",

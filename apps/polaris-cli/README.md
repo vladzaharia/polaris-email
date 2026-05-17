@@ -75,9 +75,8 @@ polaris-email setup infra genesis-seal
 polaris-email setup infra smoke
 ```
 
-The legacy `make bootstrap` shell path remains authoritative during the
-soak window; once PR 14 retires `bin/*.sh`, `setup infra` is the only
-cold-start path.
+`polaris-email setup infra` is the only cold-start path; the legacy
+`make bootstrap` shell flow was retired in PR 14.
 
 After bootstrap, write your config file at
 `~/.config/polaris-email/config.toml`:

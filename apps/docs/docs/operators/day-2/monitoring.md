@@ -157,9 +157,8 @@ the operator can pattern-match on:
 ## `ALERT_WEBHOOK` integration
 
 `ALERT_WEBHOOK` is a single URL the control plane POSTs to on
-failure. It's configured via `polaris-email setup infra configure`
-([`bin/configure.sh`](https://github.com/vladzaharia/polaris-email/blob/main/bin/configure.sh)
-declares it among the env vars) and surfaces in three places:
+failure. It's configured via `polaris-email setup infra configure` and
+surfaces in three places:
 
 | Caller | When |
 | --- | --- |

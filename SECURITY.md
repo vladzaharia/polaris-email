@@ -59,7 +59,8 @@
 ## Out of scope
 
 - **Fully compromised Cloudflare root API token** — mitigated by Logpush mirror +
-  kill-switch runbook (`docs/runbooks/cf-account-compromise.md`), not prevented.
+  kill-switch runbook (<https://docs.mail.plrs.im/operators/runbooks/cf-account-compromise>),
+  not prevented.
 - **Recipient recovery after submission** — by design, plaintext recipients are
   not retained server-side; see [`CONSUMER-CONTRACT.md`](CONSUMER-CONTRACT.md).
 
@@ -225,7 +226,7 @@ diverging from the latest B2 anchor is the tamper-evidence signal — see
   is `direction\nmethod\npath\ncanonical-query\nts\nnonce\nsha256-hex-of-body`.
   Signature header is `X-Polaris-Sig: <lowercase-hex>` — no `v1=` / `v2=`
   prefix. Constant-time compare. Full spec:
-  [`docs/hmac-reference.md`](docs/hmac-reference.md).
+  <https://docs.mail.plrs.im/security/hmac-reference>.
 - **Audit chain** SHA-256 `prev_hash` linking; hourly anchor signed and
   pushed to **Backblaze B2** (Object Lock COMPLIANCE mode, ~7-year
   retention) — see the "Audit anchors" section above. Anchor signing
@@ -257,7 +258,7 @@ diverging from the latest B2 anchor is the tamper-evidence signal — see
 ## GA gating
 
 GA additionally requires: D1 PITR drill executed; CF-account-compromise kill switch
-drill executed in a sandbox; documented runbook for every alert in
-`docs/runbook.md`.
+drill executed in a sandbox; documented runbook for every alert in the
+operator runbooks at <https://docs.mail.plrs.im/operators/runbooks/>.
 
-See `docs/runbooks/` and `docs/runbook.md` for procedures.
+See <https://docs.mail.plrs.im/operators/runbooks/> for procedures.
