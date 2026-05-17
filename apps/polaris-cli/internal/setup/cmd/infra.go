@@ -29,6 +29,10 @@ func newInfraCmd() *cobra.Command {
 			return nil
 		},
 	}
+	// PR 2 leaves: preflight + configure.
+	c.AddCommand(newInfraPreflightCmd())
+	c.AddCommand(newInfraConfigureCmd())
+	// PR 1 leaf: state subtree.
 	c.AddCommand(newInfraStateCmd())
 	return c
 }
