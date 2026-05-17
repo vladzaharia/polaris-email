@@ -12,6 +12,7 @@ import (
 	"github.com/vladzaharia/polaris-email/apps/polaris-cli/internal/client"
 	"github.com/vladzaharia/polaris-email/apps/polaris-cli/internal/config"
 	"github.com/vladzaharia/polaris-email/apps/polaris-cli/internal/output"
+	setupcmd "github.com/vladzaharia/polaris-email/apps/polaris-cli/internal/setup/cmd"
 )
 
 // Globals holds flags shared across every subcommand.
@@ -72,6 +73,7 @@ func NewRoot() *cobra.Command {
 		newBootstrapCmd(),
 		newSuppressionCmd(),
 		newPolicyCmd(),
+		setupcmd.NewSetupCmd(),
 		newVersionCmd(),
 	)
 	return root
