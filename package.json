@@ -37,6 +37,10 @@
       "@docusaurus/core>webpack": "5.105.0",
       "@types/react": "^19.2.14",
       "@types/react-dom": "^19.2.3"
-    }
+    },
+    "neverBuiltDependencies-//": "postman-code-generators runs `yarn install` on its sub-codegens during postinstall. That fails on a yarn-less runner (CI) and isn't needed — docusaurus-theme-openapi-docs only consumes its `convert()` function, not the codegen sub-packages.",
+    "neverBuiltDependencies": [
+      "postman-code-generators"
+    ]
   }
 }
