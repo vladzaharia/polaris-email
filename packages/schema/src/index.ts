@@ -79,6 +79,11 @@ export const ErrorCode = z.enum([
   'unauthorized',
   'forbidden',
   'conflict',
+  // `already_bootstrapped` is a specialised `conflict` returned only by
+  // POST /v1/admin/bootstrap when the genesis admin key already exists.
+  // Distinct from `conflict` so the Go CLI's genesis-seal flow can map
+  // it to an idempotent skip instead of an operator-visible failure.
+  'already_bootstrapped',
   // typed CF Email Service limit failures. Each is emitted by
   // SendRequest's superRefine (and downstream services) so the API layer
   // can render a precise error envelope without parsing free-form text.
@@ -817,6 +822,7 @@ export type IdempotencyClaim = z.infer<typeof IdempotencyClaim>;
 export const AuditAction = z.enum([
   // bootstrap
   'bootstrap.consume',
+  'bootstrap.webauthn_enrolled',
   // mailbox CRUD
   'mailbox.create',
   'mailbox.update',

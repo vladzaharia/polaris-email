@@ -23,6 +23,7 @@ export const ERROR_HTTP: Record<ErrorCode, number> = {
   unauthorized: 401,
   forbidden: 403,
   conflict: 409,
+  already_bootstrapped: 409,
   // CF Email Service compliance
   too_many_recipients: 400,
   subject_too_long: 400,
@@ -53,6 +54,7 @@ export const ERROR_RETRYABLE: Record<ErrorCode, boolean> = {
   unauthorized: false,
   forbidden: false,
   conflict: false,
+  already_bootstrapped: false,
   // CF Email Service compliance
   too_many_recipients: false,
   subject_too_long: false,

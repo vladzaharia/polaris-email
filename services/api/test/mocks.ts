@@ -333,17 +333,24 @@ function executeSql<T>(
       for (const cond of whereClause.split(/\s+and\s+/i)) {
         const cTrim = cond.trim();
         const numMatch = cTrim.match(/^(\w+)\s*=\s*\?(\d+)$/);
+        const numLitMatch = cTrim.match(/^(\w+)\s*=\s*(-?\d+(?:\.\d+)?)$/);
         const cm =
           cTrim.match(/^(\w+)\s*=\s*\?$/) ??
           cTrim.match(/^(\w+)\s*<>\s*'([^']+)'$/) ??
           cTrim.match(/^(\w+)\s+IS NOT NULL$/i) ??
           cTrim.match(/^(\w+)\s+IS NULL$/i) ??
           cTrim.match(/^(\w+)\s*=\s*'([^']+)'$/);
-        if (!cm && !numMatch) throw new Error('mock: where part ' + cond);
+        if (!cm && !numMatch && !numLitMatch) throw new Error('mock: where part ' + cond);
         if (numMatch) {
           const col = numMatch[1]!;
           const want = params[Number(numMatch[2]) - 1];
           if (row[col] != want) return false;
+          continue;
+        }
+        if (numLitMatch) {
+          const col = numLitMatch[1]!;
+          const want = Number(numLitMatch[2]);
+          if (Number(row[col]) != want) return false;
           continue;
         }
         const col = cm![1]!;
@@ -441,6 +448,7 @@ function executeSql<T>(
           } else {
             const eq = t.match(/^(\w+)\s*=\s*\?$/);
             const eqN = t.match(/^(\w+)\s*=\s*\?(\d+)$/);
+            const eqLit = t.match(/^(\w+)\s*=\s*'([^']+)'$/);
             const neq = t.match(/^(\w+)\s*<>\s*'([^']+)'$/);
             const like = t.match(/^(\w+)\s+LIKE\s+\?$/i);
             const likeN = t.match(/^(\w+)\s+LIKE\s+\?(\d+)$/i);
@@ -453,6 +461,8 @@ function executeSql<T>(
             } else if (eqN) {
               const idx = Number(eqN[2]) - 1;
               if (row[eqN[1]!] != params[idx]) return false;
+            } else if (eqLit) {
+              if (row[eqLit[1]!] != eqLit[2]) return false;
             } else if (neq) {
               if (row[neq[1]!] == neq[2]) return false;
             } else if (like) {

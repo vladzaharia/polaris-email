@@ -73,7 +73,22 @@ cd apps/polaris-cli && make build test vet   # builds bin/polaris-email + bin/pm
 cd packages/sdk-go  && go test ./...         # needs test-vectors generated first
 ```
 
-Orchestration (root `Makefile` — runbook-style, not day-to-day):
+Cold-start (Go CLI — canonical from PR 7 onwards):
+
+```sh
+polaris-email setup infra            # full happy path: preflight → configure →
+                                     # plan → apply → render → migrate →
+                                     # secrets seed → deploy → genesis-seal →
+                                     # smoke. Each phase records to
+                                     # .deploy-state.json so --resume short-
+                                     # circuits past completed phases.
+polaris-email setup infra --resume   # pick up after a partial run
+polaris-email setup infra --phase migrate    # start at a specific phase
+polaris-email setup infra <leaf>     # run one phase ad-hoc (e.g.
+                                     # `setup infra migrate`)
+```
+
+Orchestration (root `Makefile` — soak-window fallback, retired in PR 14):
 
 ```sh
 make preflight                    # verify tooling + .env.deploy
