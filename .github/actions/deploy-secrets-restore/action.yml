@@ -1,0 +1,45 @@
+name: 'Restore deploy config from GitHub secrets'
+description: 'Materialise .env.deploy, .deploy-state.json, .bootstrap-output.json with 0600 perms from secret/var inputs.'
+
+inputs:
+  cf-account-id: { required: true }
+  cf-api-token: { required: true }
+  synthetic-monitor-domain: { required: true }
+  polaris-api-hostname: { required: true }
+  bridge-host: { required: true }
+  alert-webhook: { required: true }
+  synthetic-from: { required: true }
+  synthetic-to: { required: true }
+  deploy-state-json: { required: true }
+  bootstrap-output-json: { required: true }
+
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        CF_ACCOUNT_ID: ${{ inputs.cf-account-id }}
+        CF_API_TOKEN: ${{ inputs.cf-api-token }}
+        SYNTHETIC_MONITOR_DOMAIN: ${{ inputs.synthetic-monitor-domain }}
+        POLARIS_API_HOSTNAME: ${{ inputs.polaris-api-hostname }}
+        BRIDGE_HOST: ${{ inputs.bridge-host }}
+        ALERT_WEBHOOK: ${{ inputs.alert-webhook }}
+        SYNTHETIC_FROM: ${{ inputs.synthetic-from }}
+        SYNTHETIC_TO: ${{ inputs.synthetic-to }}
+        DEPLOY_STATE_JSON: ${{ inputs.deploy-state-json }}
+        BOOTSTRAP_OUTPUT_JSON: ${{ inputs.bootstrap-output-json }}
+      run: |
+        umask 077
+        cat > .env.deploy <<EOF
+        CF_ACCOUNT_ID="$CF_ACCOUNT_ID"
+        CF_API_TOKEN="$CF_API_TOKEN"
+        SYNTHETIC_MONITOR_DOMAIN="$SYNTHETIC_MONITOR_DOMAIN"
+        POLARIS_API_HOSTNAME="$POLARIS_API_HOSTNAME"
+        BRIDGE_HOST="$BRIDGE_HOST"
+        ALERT_WEBHOOK="$ALERT_WEBHOOK"
+        SYNTHETIC_FROM="$SYNTHETIC_FROM"
+        SYNTHETIC_TO="$SYNTHETIC_TO"
+        EOF
+        printf '%s' "$DEPLOY_STATE_JSON"     > .deploy-state.json
+        printf '%s' "$BOOTSTRAP_OUTPUT_JSON" > .bootstrap-output.json
+        chmod 0600 .env.deploy .deploy-state.json .bootstrap-output.json
