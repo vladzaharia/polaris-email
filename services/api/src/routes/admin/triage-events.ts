@@ -4,7 +4,7 @@
 // disagreement with the LLM's verdict so we can iterate on the prompt
 // using the panel feedback set.
 import { Hono } from 'hono';
-import { audit } from '../../audit.js';
+import { actorOf, audit } from '../../audit.js';
 import { bodyText, requireScope } from '../../auth.js';
 import type { Env } from '../../env.js';
 import { buildError } from '../../errors.js';
@@ -114,7 +114,6 @@ triageEvents.post(
   '/v1/admin/triage-events/:id/override',
   requireScope('admin:rotate'),
   async (c) => {
-    const key = c.get('apiKey');
     const id = c.req.param('id');
     let body: { verdict: string; rationale?: string; disable_suppression?: boolean };
     try {
@@ -154,7 +153,7 @@ triageEvents.post(
     }
 
     await audit(c.env, {
-      actor: `key:${key.key_id}`,
+      actor: actorOf(c),
       action: 'triage.operator_override',
       target: id,
       meta: {

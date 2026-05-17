@@ -3,7 +3,7 @@
 // delivery failure; operators replay or drop them.
 import { Hono } from 'hono';
 import { ulid } from '@polaris-email/ids';
-import { audit } from '../../audit.js';
+import { actorOf, audit } from '../../audit.js';
 import { requireScope } from '../../auth.js';
 import type { Env } from '../../env.js';
 import { buildError } from '../../errors.js';
@@ -114,7 +114,7 @@ webhookDlq.post('/v1/admin/webhook-dlq/:id/replay', requireScope('admin:rotate')
     .bind(nowIso, id)
     .run();
   await audit(c.env, {
-    actor: `key:${key.key_id}`,
+    actor: actorOf(c),
     action: 'webhook_sub.replay',
     target: id,
     meta: { event_id: event.event_id, webhook_sub_id: dlqRow.webhook_sub_id },
@@ -123,7 +123,6 @@ webhookDlq.post('/v1/admin/webhook-dlq/:id/replay', requireScope('admin:rotate')
 });
 
 webhookDlq.post('/v1/admin/webhook-dlq/:id/drop', requireScope('admin:rotate'), async (c) => {
-  const key = c.get('apiKey');
   const id = c.req.param('id');
   const nowIso = new Date().toISOString();
   const r = await c.env.DB.prepare(
@@ -134,7 +133,7 @@ webhookDlq.post('/v1/admin/webhook-dlq/:id/drop', requireScope('admin:rotate'), 
     .run();
   if (r.meta.changes === 0) return buildError(c, 'not_found', 'not found or already settled');
   await audit(c.env, {
-    actor: `key:${key.key_id}`,
+    actor: actorOf(c),
     action: 'webhook_sub.delete',
     target: id,
     meta: { via: 'dlq_drop' },

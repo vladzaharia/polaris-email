@@ -7,6 +7,7 @@
 // scheduled handlers) keep working unchanged.
 //
 // Concurrency model is documented in `packages/pipeline/src/audit.ts`.
+import type { Context } from 'hono';
 import type { AuditAction } from '@polaris-email/schema';
 import {
   audit as pipelineAudit,
@@ -23,6 +24,24 @@ export interface AuditArgs {
   target?: string | null;
   meta?: Record<string, unknown>;
   at?: number;
+}
+
+/**
+ * Returns the audit-log actor for the current request. Reads
+ * `c.get('actor')` which is set by `hmacAuth` (`key:<id>` normally,
+ * `operator:<id>` when impersonating). Falls back gracefully for paths
+ * that haven't wired the binding yet so existing call sites can't crash
+ * on a missing variable.
+ *
+ * ALWAYS prefer this helper over building actor strings inline; an
+ * impersonated request must record the operator id, not the bootstrap key.
+ */
+export function actorOf(c: Context): string {
+  const a = c.get('actor');
+  if (typeof a === 'string' && a.length > 0) return a;
+  const k = c.get('apiKey');
+  if (k && typeof k.key_id === 'string') return `key:${k.key_id}`;
+  return 'system';
 }
 
 /**

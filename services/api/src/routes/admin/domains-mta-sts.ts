@@ -36,7 +36,7 @@ import {
   unprovisionMtaSts,
   unprovisionTlsRpt,
 } from '@polaris-email/cf-api';
-import { audit } from '../../audit.js';
+import { actorOf, audit } from '../../audit.js';
 import { bodyText, requireScope } from '../../auth.js';
 import type { Env } from '../../env.js';
 import { buildError } from '../../errors.js';
@@ -135,7 +135,6 @@ domainsMtaSts.post(
   '/v1/admin/domains/:id/mta-sts/enable',
   requireScope('admin:rotate'),
   async (c) => {
-    const key = c.get('apiKey');
     const id = c.req.param('id');
     const row = await loadDomain(c.env, id);
     const pre = preflight(c, row);
@@ -175,7 +174,7 @@ domainsMtaSts.post(
       .run();
 
     await audit(c.env, {
-      actor: `key:${key.key_id}`,
+      actor: actorOf(c),
       action: 'mta_sts.enable',
       target: id,
       meta: {
@@ -200,7 +199,6 @@ domainsMtaSts.post(
   '/v1/admin/domains/:id/mta-sts/disable',
   requireScope('admin:rotate'),
   async (c) => {
-    const key = c.get('apiKey');
     const id = c.req.param('id');
     const row = await loadDomain(c.env, id);
     const pre = preflight(c, row);
@@ -232,7 +230,7 @@ domainsMtaSts.post(
       .run();
 
     await audit(c.env, {
-      actor: `key:${key.key_id}`,
+      actor: actorOf(c),
       action: 'mta_sts.disable',
       target: id,
       meta: {
@@ -256,7 +254,6 @@ domainsMtaSts.post(
   '/v1/admin/domains/:id/mta-sts/promote',
   requireScope('admin:rotate'),
   async (c) => {
-    const key = c.get('apiKey');
     const id = c.req.param('id');
     const row = await loadDomain(c.env, id);
     const pre = preflight(c, row);
@@ -303,7 +300,7 @@ domainsMtaSts.post(
       .run();
 
     await audit(c.env, {
-      actor: `key:${key.key_id}`,
+      actor: actorOf(c),
       action: 'mta_sts.promote',
       target: id,
       meta: {
@@ -328,7 +325,6 @@ domainsMtaSts.post(
   '/v1/admin/domains/:id/tls-rpt/enable',
   requireScope('admin:rotate'),
   async (c) => {
-    const key = c.get('apiKey');
     const id = c.req.param('id');
     const row = await loadDomain(c.env, id);
     const pre = preflight(c, row);
@@ -377,7 +373,7 @@ domainsMtaSts.post(
       .run();
 
     await audit(c.env, {
-      actor: `key:${key.key_id}`,
+      actor: actorOf(c),
       action: 'tls_rpt.enable',
       target: id,
       meta: {
@@ -402,7 +398,6 @@ domainsMtaSts.post(
   '/v1/admin/domains/:id/tls-rpt/disable',
   requireScope('admin:rotate'),
   async (c) => {
-    const key = c.get('apiKey');
     const id = c.req.param('id');
     const row = await loadDomain(c.env, id);
     const pre = preflight(c, row);
@@ -434,7 +429,7 @@ domainsMtaSts.post(
       .run();
 
     await audit(c.env, {
-      actor: `key:${key.key_id}`,
+      actor: actorOf(c),
       action: 'tls_rpt.disable',
       target: id,
       meta: {

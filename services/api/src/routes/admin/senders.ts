@@ -9,7 +9,7 @@
 import { Hono } from 'hono';
 import { CreateMailboxSenderRequest, CreateSmtpCredentialRequest } from '@polaris-email/schema';
 import { generateSecret } from '@polaris-email/hmac';
-import { audit } from '../../audit.js';
+import { actorOf, audit } from '../../audit.js';
 import { bodyText, requireScope } from '../../auth.js';
 import type { Env } from '../../env.js';
 import { buildError } from '../../errors.js';
@@ -33,7 +33,6 @@ interface SenderRow {
 // The request body MUST carry `mailbox_id` (the sender's owning mailbox);
 // `domain_id` is sourced from the URL path.
 senders.post('/v1/admin/domains/:domainId/senders', requireScope('admin:rotate'), async (c) => {
-  const key = c.get('apiKey');
   const domainId = c.req.param('domainId');
   let body: ReturnType<typeof CreateMailboxSenderRequest.parse> & { mailbox_id?: string };
   try {
@@ -83,7 +82,7 @@ senders.post('/v1/admin/domains/:domainId/senders', requireScope('admin:rotate')
     throw e;
   }
   await audit(c.env, {
-    actor: `key:${key.key_id}`,
+    actor: actorOf(c),
     action: 'mailbox_sender.create',
     target: id,
     meta: {
@@ -122,7 +121,6 @@ senders.get('/v1/admin/domains/:domainId/senders', requireScope('admin:read'), a
 
 // ---------- soft-disable sender ----------
 senders.delete('/v1/admin/senders/:id', requireScope('admin:rotate'), async (c) => {
-  const key = c.get('apiKey');
   const id = c.req.param('id');
   const nowIso = new Date().toISOString();
   const r = await c.env.DB.prepare(
@@ -134,7 +132,7 @@ senders.delete('/v1/admin/senders/:id', requireScope('admin:rotate'), async (c) 
     return buildError(c, 'not_found', 'not found or already disabled');
   }
   await audit(c.env, {
-    actor: `key:${key.key_id}`,
+    actor: actorOf(c),
     action: 'mailbox_sender.disable',
     target: id,
     meta: {},
@@ -148,7 +146,6 @@ senders.delete('/v1/admin/senders/:id', requireScope('admin:rotate'), async (c) 
 // `submission_credentials.sender_id` column makes the principal↔sender binding
 // explicit (1:1, replacing the old principal_sender_scopes junction).
 senders.post('/v1/admin/senders/:id/smtp-credentials', requireScope('admin:rotate'), async (c) => {
-  const key = c.get('apiKey');
   const senderId = c.req.param('id');
   try {
     CreateSmtpCredentialRequest.parse(JSON.parse(bodyText(c) || '{}'));
@@ -198,7 +195,7 @@ senders.post('/v1/admin/senders/:id/smtp-credentials', requireScope('admin:rotat
     throw e;
   }
   await audit(c.env, {
-    actor: `key:${key.key_id}`,
+    actor: actorOf(c),
     action: 'smtp_credential.issue',
     target: id,
     meta: {
@@ -222,7 +219,6 @@ senders.post('/v1/admin/senders/:id/smtp-credentials', requireScope('admin:rotat
 
 // ---------- soft-disable submission credential ----------
 senders.delete('/v1/admin/smtp-credentials/:id', requireScope('admin:rotate'), async (c) => {
-  const key = c.get('apiKey');
   const id = c.req.param('id');
   const nowIso = new Date().toISOString();
   const r = await c.env.DB.prepare(
@@ -232,7 +228,7 @@ senders.delete('/v1/admin/smtp-credentials/:id', requireScope('admin:rotate'), a
     .run();
   if (r.meta.changes === 0) return buildError(c, 'not_found', 'not found or already disabled');
   await audit(c.env, {
-    actor: `key:${key.key_id}`,
+    actor: actorOf(c),
     action: 'smtp_credential.disable',
     target: id,
     meta: {},

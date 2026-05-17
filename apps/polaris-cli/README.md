@@ -30,8 +30,15 @@ ln -sf polaris-email pml
 
 ## First run — cold start
 
+The CLI is **dual-mode**: with no args (and a TTY on stdout) it opens the
+fullscreen tabbed TUI; with subcommands it operates non-interactively for
+scripting.
+
 ```sh
-polaris-email setup infra
+polaris-email setup infra        # admin: cold-start (preflight → … → smoke)
+polaris-email                    # operator: no args + TTY ⇒ fullscreen tabbed TUI
+polaris-email tui --theme=mocha  # operator: explicit TUI launch
+polaris-email status             # operator: non-interactive subcommand
 ```
 
 `setup infra` (no leaf) drives the full happy path end-to-end:
@@ -73,38 +80,59 @@ polaris-email setup infra secrets seed
 polaris-email setup infra deploy all
 polaris-email setup infra genesis-seal
 polaris-email setup infra smoke
+polaris-email setup infra ssh-bootstrap            # mint admin:impersonate key + SSH host key for `serve --ssh`
 ```
 
 `polaris-email setup infra` is the only cold-start path; the legacy
 `make bootstrap` shell flow was retired in PR 14.
 
-After bootstrap, write your config file at
-`~/.config/polaris-email/config.toml`:
+### Login (operator-side, after cold-start)
 
-```toml
-default = "prod"
+`polaris-email login` is the recommended way to provide credentials. It
+takes the bundled bearer printed by `polaris-email operator add`
+(`polaris_<key_id>.<secret>`) and stores it encrypted in the OS keychain
+(macOS Keychain, Linux Secret Service / KWallet, Windows Credential
+Manager). Headless hosts fall back to a passphrase-encrypted file in
+`~/.config/polaris-email/keyring/`.
 
-[profiles.prod]
-api_url    = "https://api.polaris-email.example.com"
-token      = "<HMAC secret>"
-key_id     = "<API key id>"
-account_id = "<CF account id>"
-
-[profiles.staging]
-api_url    = "https://staging-api.polaris-email.example.com"
-token      = "<staging secret>"
-key_id     = "<staging key id>"
+```sh
+polaris-email login              # interactive paste
+polaris-email login --method=stdin < /tmp/token   # for CI
+polaris-email whoami             # cached operator identity
+polaris-email logout
+polaris-email profile list       # all stored profiles
 ```
 
-Select a profile with `--profile staging` (default is `prod`). The
-resolution order for `--api-url`, `--token`, and `--key-id` is:
+### Credential resolution order
+
+`MakeClient()` checks these in order; the first that yields a complete
+triple (api-url + key-id + secret) wins:
 
 1. CLI flag (`--api-url`, `--token`, `--key-id`)
 2. Environment variable (`POLARIS_API_URL`, `POLARIS_TOKEN`, `POLARIS_KEY_ID`)
-3. Profile in the config file
+3. OS keychain credstore entry for the active `--profile` (or "default")
+4. Legacy `~/.config/polaris-email/config.toml` profile
 
-This means `POLARIS_TOKEN=$(op read …) polaris-email status` works even when
-no config file is present — the env vars carry the credentials.
+`--token` and `$POLARIS_TOKEN` accept either the bundled bearer
+(`polaris_<key_id>.<secret>`) or the raw secret with `--key-id` supplied
+separately. The bundled form is preferred: it carries both halves in one
+string.
+
+### Operator enrollment
+
+Any operator with `admin:rotate` scope can enroll new operators (it's not
+gated to the bootstrap key):
+
+```sh
+polaris-email operator add                       # interactive huh wizard
+polaris-email operator add --from-file ops.yaml  # CI / batch onboarding
+polaris-email operator list
+polaris-email operator rotate-key <id>           # returns a new login_token ONCE
+polaris-email operator disable <id> --confirm-id <id>
+```
+
+The wizard returns a one-shot `polaris_<id>.<secret>` token. Hand it to
+the new operator; they paste it into their own `polaris-email login`.
 
 ## Workflows
 

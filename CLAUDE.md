@@ -100,8 +100,22 @@ is now a thin migration banner — see `make help` for the mapping from the
 old `make bootstrap` / `make deploy` targets to the CLI verbs.
 
 Day-to-day operator workflows (issue keys, onboard domains, rotate creds,
-replay DLQ) also live in the `polaris-email` Go CLI. See
-`apps/polaris-cli/README.md`.
+replay DLQ) all live in the `polaris-email` Go binary. The same binary is
+dual-mode: with no args (and a TTY) it opens the fullscreen tabbed admin
+TUI; with subcommands it operates non-interactively for scripting.
+
+```sh
+polaris-email                       # no args + TTY ⇒ fullscreen tabbed TUI
+polaris-email tui --theme=mocha     # explicit subcommand
+polaris-email login                 # paste a `polaris_{kid}.{secret}` token, store in OS keychain
+polaris-email whoami                # cached operator identity
+polaris-email operator add          # mint a new operator (huh wizard or --from-file)
+polaris-email serve --ssh           # publish the TUI over SSH for Wish/Wishlist
+polaris-email <cobra subcommand>    # domain/credential/bridge/webhook/audit/... (scripting surface)
+```
+
+See `apps/polaris-cli/README.md` and `apps/docs/docs/operators/day-2/tui.md`
+for the full surface.
 
 ## Lint, format, hooks
 
@@ -120,6 +134,17 @@ replay DLQ) also live in the `polaris-email` Go CLI. See
   `mail-bridge-test`, `openapi-validate`, `sql-validate`.
 
 ## Architecture seams to know before editing
+
+0. **Operator identity is unified.** Every authenticated session in the
+   system — CLI cobra calls, the local TUI, and SSH sessions via Wish —
+   flows through the same `operators` D1 table (one row per human,
+   each owning exactly one `api_keys` row, fingerprinted by SSH pubkey).
+   The bootstrap key keeps its own scope (`admin:impersonate`) and is
+   used ONLY by the Wish server to attach `X-Polaris-On-Behalf-Of`
+   headers; never log in with it. Audit log records `operator:<id>` as
+   actor regardless of which key signed the request (see
+   `services/api/src/auth.ts`'s impersonation block + `actorOf(c)` in
+   `services/api/src/audit.ts`).
 
 1. **Mailbox-centric, not tenant-centric.** Schema is rooted at
    `mailboxes`; `principals`, `mailbox_senders`, `mailbox_receivers`,

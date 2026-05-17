@@ -4,7 +4,7 @@
 // add list/detail/patch/delete/test here so the panel can manage existing
 // rows. All routes are admin:* scoped (parent middleware handles HMAC).
 import { Hono } from 'hono';
-import { audit } from '../../audit.js';
+import { actorOf, audit } from '../../audit.js';
 import { bodyText, requireScope } from '../../auth.js';
 import type { Env } from '../../env.js';
 import { buildError } from '../../errors.js';
@@ -53,7 +53,6 @@ webhookSubs.get('/v1/admin/webhook-subs/:id', requireScope('admin:read'), async 
 });
 
 webhookSubs.patch('/v1/admin/webhook-subs/:id', requireScope('admin:rotate'), async (c) => {
-  const key = c.get('apiKey');
   const id = c.req.param('id');
   let body: { url?: string; events?: string[]; paused?: boolean };
   try {
@@ -95,7 +94,7 @@ webhookSubs.patch('/v1/admin/webhook-subs/:id', requireScope('admin:rotate'), as
     .run();
   if (r.meta.changes === 0) return buildError(c, 'not_found', 'webhook_sub not found');
   await audit(c.env, {
-    actor: `key:${key.key_id}`,
+    actor: actorOf(c),
     action: 'webhook_sub.update',
     target: id,
     meta: { fields: Object.keys(body) },
@@ -111,7 +110,6 @@ webhookSubs.post(
   '/v1/admin/webhook-subs/:id/rotate-secret',
   requireScope('admin:rotate'),
   async (c) => {
-    const key = c.get('apiKey');
     const id = c.req.param('id');
     const buf = new Uint8Array(32);
     crypto.getRandomValues(buf);
@@ -128,7 +126,7 @@ webhookSubs.post(
       .run();
     if (r.meta.changes === 0) return buildError(c, 'not_found', 'not found or disabled');
     await audit(c.env, {
-      actor: `key:${key.key_id}`,
+      actor: actorOf(c),
       action: 'webhook_sub.rotate',
       target: id,
       meta: { rotated_at: nowIso },
@@ -138,7 +136,6 @@ webhookSubs.post(
 );
 
 webhookSubs.delete('/v1/admin/webhook-subs/:id', requireScope('admin:rotate'), async (c) => {
-  const key = c.get('apiKey');
   const id = c.req.param('id');
   const nowIso = new Date().toISOString();
   const r = await c.env.DB.prepare(
@@ -148,7 +145,7 @@ webhookSubs.delete('/v1/admin/webhook-subs/:id', requireScope('admin:rotate'), a
     .run();
   if (r.meta.changes === 0) return buildError(c, 'not_found', 'not found or already disabled');
   await audit(c.env, {
-    actor: `key:${key.key_id}`,
+    actor: actorOf(c),
     action: 'webhook_sub.delete',
     target: id,
     meta: {},
@@ -162,14 +159,13 @@ webhookSubs.delete('/v1/admin/webhook-subs/:id', requireScope('admin:rotate'), a
 // once it's wired against the same row. The panel uses this as a green/red
 // indicator that the row is reachable from the admin plane.
 webhookSubs.post('/v1/admin/webhook-subs/:id/test', requireScope('admin:rotate'), async (c) => {
-  const key = c.get('apiKey');
   const id = c.req.param('id');
   const row = await c.env.DB.prepare(`SELECT id, url FROM webhook_subs WHERE id = ?`)
     .bind(id)
     .first<{ id: string; url: string }>();
   if (!row) return buildError(c, 'not_found', 'webhook_sub not found');
   await audit(c.env, {
-    actor: `key:${key.key_id}`,
+    actor: actorOf(c),
     action: 'webhook_sub.test',
     target: id,
     meta: { url_host: new URL(row.url).hostname },

@@ -60,6 +60,81 @@ components:
         - 'imap_bridge:read'
         - 'admin:rotate'
         - 'admin:read'
+        - 'admin:impersonate'
+    Operator:
+      type: object
+      required: [id, name, email, ssh_pubkey_fp_sha256, api_key_id, role, created_at, updated_at]
+      properties:
+        id: { $ref: '#/components/schemas/Ulid' }
+        name: { type: string, minLength: 1, maxLength: 120 }
+        email: { type: string, format: email }
+        ssh_pubkey:
+          type: string
+          description: Full authorized_keys line. Omitted from list responses.
+        ssh_pubkey_fp_sha256:
+          type: string
+          pattern: '^SHA256:[A-Za-z0-9+/]{43}$'
+          description: SHA256 fingerprint matching `ssh-keygen -E sha256 -lf`.
+        api_key_id: { $ref: '#/components/schemas/Ulid' }
+        role: { type: string, enum: [admin, operator, readonly] }
+        disabled_at: { type: string, format: date-time, nullable: true }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        last_seen_at: { type: string, format: date-time, nullable: true }
+    OperatorCreateRequest:
+      type: object
+      required: [name, email, ssh_pubkey, ssh_pubkey_fp_sha256]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 120 }
+        email: { type: string, format: email }
+        ssh_pubkey: { type: string }
+        ssh_pubkey_fp_sha256:
+          type: string
+          pattern: '^SHA256:[A-Za-z0-9+/]{43}$'
+        role: { type: string, enum: [admin, operator, readonly], default: operator }
+        scopes:
+          type: array
+          items: { $ref: '#/components/schemas/KeyScope' }
+          minItems: 1
+          default: ['admin:read']
+        rate_limit_per_min: { type: integer, minimum: 1, maximum: 100000, default: 600 }
+    OperatorIssueResponse:
+      type: object
+      required: [api_key_id, api_key_prefix, api_key_secret, login_token]
+      properties:
+        operator: { $ref: '#/components/schemas/Operator' }
+        api_key_id: { $ref: '#/components/schemas/Ulid' }
+        api_key_prefix: { type: string }
+        api_key_secret: { type: string, description: 'Returned ONCE — store via polaris-email login.' }
+        login_token:
+          type: string
+          pattern: '^polaris_[0-9A-HJKMNP-TV-Z]{26}\..+$'
+          description: 'Convenience bundle (polaris_{key_id}.{secret}) for `polaris-email login`.'
+    OperatorUpdateRequest:
+      type: object
+      properties:
+        name: { type: string, minLength: 1, maxLength: 120 }
+        role: { type: string, enum: [admin, operator, readonly] }
+        disabled: { type: boolean }
+    OperatorRotatePubkeyRequest:
+      type: object
+      required: [ssh_pubkey, ssh_pubkey_fp_sha256]
+      properties:
+        ssh_pubkey: { type: string }
+        ssh_pubkey_fp_sha256: { type: string, pattern: '^SHA256:[A-Za-z0-9+/]{43}$' }
+    LoginResponse:
+      type: object
+      required: [operator]
+      properties:
+        operator:
+          type: object
+          required: [id, name, email, role, api_key_id]
+          properties:
+            id: { $ref: '#/components/schemas/Ulid' }
+            name: { type: string }
+            email: { type: string }
+            role: { type: string, enum: [admin, operator, readonly] }
+            api_key_id: { $ref: '#/components/schemas/Ulid' }
     Error:
       type: object
       required: [error]
@@ -976,6 +1051,108 @@ paths:
           description: seeded
         '409':
           description: already consumed
+  /v1/admin/operators:
+    get:
+      summary: List operators
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Operator' }
+    post:
+      summary: 'Create operator (atomically: principals + api_keys + operators rows)'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OperatorCreateRequest' }
+      responses:
+        '201':
+          description: created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OperatorIssueResponse' }
+        '409':
+          description: email or fingerprint already in use
+  /v1/admin/operators/lookup:
+    get:
+      summary: Lookup operator by SSH pubkey fingerprint (Wish hot path)
+      parameters:
+        - name: fingerprint
+          in: query
+          required: true
+          schema: { type: string, pattern: '^SHA256:[A-Za-z0-9+/]{43}$' }
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  operator: { $ref: '#/components/schemas/Operator' }
+        '404': { description: not found }
+  /v1/admin/operators/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/Ulid' } }
+    get:
+      summary: Show one operator (includes full SSH pubkey)
+      responses: { '200': { description: ok } }
+    patch:
+      summary: Update operator name / role / disabled flag
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OperatorUpdateRequest' }
+      responses: { '200': { description: ok } }
+    delete:
+      summary: 'Soft-disable operator (alias for PATCH with disabled=true)'
+      responses: { '200': { description: ok } }
+  /v1/admin/operators/{id}/rotate-key:
+    post:
+      summary: Rotate the operator's underlying api_key (returns new bearer once)
+      parameters:
+        - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/Ulid' } }
+      responses:
+        '200':
+          description: rotated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OperatorIssueResponse' }
+  /v1/admin/operators/{id}/rotate-pubkey:
+    post:
+      summary: Replace the operator's SSH pubkey (api_key unchanged)
+      parameters:
+        - { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/Ulid' } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OperatorRotatePubkeyRequest' }
+      responses: { '200': { description: ok } }
+  /v1/auth/login:
+    post:
+      summary: Validate an operator bearer and return cached operator profile (CLI login)
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LoginResponse' }
+        '403':
+          description: not an operator token
+  /v1/auth/logout:
+    post:
+      summary: Audit-only logout signal (writes auth.logout row; no server-side revocation)
+      responses:
+        '200': { description: ok }
 webhooks:
   message:
     post:

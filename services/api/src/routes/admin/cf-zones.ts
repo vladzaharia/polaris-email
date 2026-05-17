@@ -24,7 +24,7 @@ import {
   type ZoneDomainStatus,
 } from '@polaris-email/cf-api';
 import { ulid } from '@polaris-email/ids';
-import { audit } from '../../audit.js';
+import { actorOf, audit } from '../../audit.js';
 import { bodyText, requireScope } from '../../auth.js';
 import type { Env } from '../../env.js';
 import { buildError } from '../../errors.js';
@@ -167,7 +167,6 @@ cfZones.get('/v1/admin/cf-zones/:name', requireScope('admin:read'), async (c) =>
 // gates this client-side via DestructiveActionDialog; CLI/SDK callers use
 // the admin key directly.
 cfZones.post('/v1/admin/cf-zones/:name/configure', requireScope('admin:rotate'), async (c) => {
-  const key = c.get('apiKey');
   const made = makeClient(c.env);
   if ('error' in made) return made.error;
   const name = c.req.param('name');
@@ -207,7 +206,7 @@ cfZones.post('/v1/admin/cf-zones/:name/configure', requireScope('admin:rotate'),
 
   const result = await applyDiff(made, diff, makeApplyEnv(c.env));
   await audit(c.env, {
-    actor: `key:${key.key_id}`,
+    actor: actorOf(c),
     action: 'cf_zone.configure',
     target: name,
     meta: {

@@ -8,7 +8,7 @@
 //   POST   /v1/admin/dmarc-promotion/run       — manual cron trigger (approval-gated)
 import { Hono } from 'hono';
 import { requireScope } from '../../auth.js';
-import { audit } from '../../audit.js';
+import { actorOf, audit } from '../../audit.js';
 import { dmarcPromoteRun } from '../../scheduled/dmarc-promote.js';
 import type { Env } from '../../env.js';
 import { buildError } from '../../errors.js';
@@ -39,7 +39,6 @@ dmarcPromotion.post(
   requireScope('admin:rotate'),
   async (c) => {
     const id = c.req.param('id');
-    const key = c.get('apiKey');
     const r = await c.env.DB.prepare(
       `UPDATE mail_domains SET dmarc_promotion_mode = 'paused', updated_at = ? WHERE id = ?`,
     )
@@ -47,7 +46,7 @@ dmarcPromotion.post(
       .run();
     if (r.meta.changes === 0) return buildError(c, 'not_found', 'domain not found');
     await audit(c.env, {
-      actor: `key:${key.key_id}`,
+      actor: actorOf(c),
       action: 'dmarc.pause',
       target: id,
       meta: { source: 'operator' },
@@ -61,7 +60,6 @@ dmarcPromotion.post(
   requireScope('admin:rotate'),
   async (c) => {
     const id = c.req.param('id');
-    const key = c.get('apiKey');
     const r = await c.env.DB.prepare(
       `UPDATE mail_domains SET dmarc_promotion_mode = 'auto', updated_at = ? WHERE id = ?`,
     )
@@ -69,7 +67,7 @@ dmarcPromotion.post(
       .run();
     if (r.meta.changes === 0) return buildError(c, 'not_found', 'domain not found');
     await audit(c.env, {
-      actor: `key:${key.key_id}`,
+      actor: actorOf(c),
       action: 'dmarc.promote',
       target: id,
       meta: { source: 'resume', new_mode: 'auto' },
@@ -83,7 +81,6 @@ dmarcPromotion.post(
   requireScope('admin:rotate'),
   async (c) => {
     const id = c.req.param('id');
-    const key = c.get('apiKey');
     const r = await c.env.DB.prepare(
       `UPDATE mail_domains SET dmarc_record_managed_by_polaris = 1, updated_at = ? WHERE id = ?`,
     )
@@ -91,7 +88,7 @@ dmarcPromotion.post(
       .run();
     if (r.meta.changes === 0) return buildError(c, 'not_found', 'domain not found');
     await audit(c.env, {
-      actor: `key:${key.key_id}`,
+      actor: actorOf(c),
       action: 'dmarc.claim_management',
       target: id,
       meta: { source: 'operator' },

@@ -3,7 +3,7 @@
 // without the operator caring.
 import { Hono } from 'hono';
 import { revoke } from '@polaris-email/revocation';
-import { audit } from '../../audit.js';
+import { actorOf, audit } from '../../audit.js';
 import { requireScope } from '../../auth.js';
 import type { Env } from '../../env.js';
 import { buildError } from '../../errors.js';
@@ -96,7 +96,6 @@ async function resolveCredential(
 }
 
 credentials.post('/v1/admin/credentials/:id/revoke', requireScope('admin:rotate'), async (c) => {
-  const key = c.get('apiKey');
   const id = c.req.param('id');
   const resolved = await resolveCredential(c, id);
   if (!resolved) return buildError(c, 'not_found', 'credential not found');
@@ -122,7 +121,7 @@ credentials.post('/v1/admin/credentials/:id/revoke', requireScope('admin:rotate'
   // submission cred) — both authenticate via principal_id.
   await revoke(c.env, resolved.principal_id, cacheKeysToBust);
   await audit(c.env, {
-    actor: `key:${key.key_id}`,
+    actor: actorOf(c),
     action: resolved.kind === 'api_key' ? 'api_key.revoke' : 'smtp_credential.disable',
     target: id,
     meta: { principal_id: resolved.principal_id, via: 'credentials_facade' },

@@ -1,7 +1,7 @@
 // Admin zones routes. zones rows hold the (id, cf_zone_id, name) for each
 // Cloudflare zone we manage; mail_domains.zone_id FKs into it.
 import { Hono } from 'hono';
-import { audit } from '../../audit.js';
+import { actorOf, audit } from '../../audit.js';
 import { requireScope } from '../../auth.js';
 import type { Env } from '../../env.js';
 import { buildError } from '../../errors.js';
@@ -40,7 +40,6 @@ zones.get('/v1/admin/zones/lookup', requireScope('admin:read'), async (c) => {
 });
 
 zones.post('/v1/admin/zones/:id/rotate-dkim', requireScope('admin:rotate'), async (c) => {
-  const key = c.get('apiKey');
   const id = c.req.param('id');
   const row = await c.env.DB.prepare(`SELECT id, name FROM zones WHERE id = ?`)
     .bind(id)
@@ -51,7 +50,7 @@ zones.post('/v1/admin/zones/:id/rotate-dkim', requireScope('admin:rotate'), asyn
   // here we record the request and emit an audit row. The cron handler
   // picks up the actual CF API call.
   await audit(c.env, {
-    actor: `key:${key.key_id}`,
+    actor: actorOf(c),
     action: 'domain.dkim_rotate',
     target: id,
     meta: { zone: row.name, scope: 'zone' },

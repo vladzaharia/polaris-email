@@ -53,6 +53,12 @@ export const KeyScope = z.enum([
   'imap_bridge:read',
   'admin:rotate',
   'admin:read',
+  // `admin:impersonate` gates the Wish/SSH server's bootstrap key:
+  //   * use of the `X-Polaris-On-Behalf-Of` header,
+  //   * the `GET /v1/admin/operators/lookup` route used by the Wish server.
+  // The bootstrap key is expected to hold ONLY this scope; impersonation
+  // grants the *operator's* scopes for the request, not the bootstrap key's.
+  'admin:impersonate',
 ]);
 export type KeyScope = z.infer<typeof KeyScope>;
 export const KeyScopes = z.array(KeyScope).min(1);
@@ -946,6 +952,19 @@ export const AuditAction = z.enum([
   'moderation.feedback_recorded',
   'inbound_sender_block.create',
   'inbound_sender_block.delete',
+  // Operator lifecycle (migration 0024). `operator.*` covers admin actions
+  // managing the operator roster; `auth.*` covers per-session events
+  // (CLI login/logout); `operator.ssh.*` covers Wish-fronted SSH sessions.
+  'operator.create',
+  'operator.update',
+  'operator.disable',
+  'operator.delete',
+  'operator.rotate_key',
+  'operator.rotate_pubkey',
+  'auth.login',
+  'auth.logout',
+  'operator.ssh.connect',
+  'operator.ssh.disconnect',
 ]);
 export type AuditAction = z.infer<typeof AuditAction>;
 

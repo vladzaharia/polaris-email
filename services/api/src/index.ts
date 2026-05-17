@@ -12,6 +12,7 @@
 import { Hono } from 'hono';
 import { secureHeaders } from 'hono/secure-headers';
 import { admin } from './routes/admin.js';
+import { auth } from './routes/auth.js';
 import { bootstrap } from './routes/bootstrap.js';
 import type { Env } from './env.js';
 import { messages } from './routes/messages.js';
@@ -53,6 +54,7 @@ app.route('/', messagesState);
 app.route('/', internalCfEvents);
 app.route('/', unsub);
 app.route('/', admin);
+app.route('/', auth);
 app.route('/', bootstrap);
 
 app.notFound((c) =>

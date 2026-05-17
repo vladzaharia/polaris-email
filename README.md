@@ -58,9 +58,14 @@ On-prem (per host):
 
 Operator tooling:
 
-- `apps/polaris-cli` — Go CLI (`polaris-email`, aliased `pml`) for mailboxes, domains,
-  zones, routes, credentials, bridges, webhooks, audit, status, bootstrap. See
-  `apps/polaris-cli/README.md`.
+- `apps/polaris-cli` — Go CLI (`polaris-email`, aliased `pml`). Day-2 ops
+  surface: the same binary ships a **fullscreen tabbed TUI** (`polaris-email
+  tui` or `polaris-email` with no args), an SSH-fronted server
+  (`polaris-email serve --ssh` via Wish), unified auth (`polaris-email
+  login` stores tokens in the OS keychain), and an operator-identity
+  registry (`polaris-email operator add`). Cobra subcommands for mailboxes,
+  domains, zones, routes, credentials, bridges, webhooks, audit, status,
+  setup. See `apps/polaris-cli/README.md` and [`docs/tui.md`](docs/tui.md).
 - `apps/panel` — Hono + React admin UI deployed as a Cloudflare Worker. better-auth
   with OIDC (Cloudflare Access by default); sessions in D1.
 
@@ -139,6 +144,19 @@ polaris-email setup infra                    # cold-start: create CF resources, 
 polaris-email setup infra smoke              # end-to-end health probe
 polaris-email setup infra deploy changed     # deploy only services whose code (or deps) changed
 polaris-email setup infra rollback api       # roll one Worker back to its previous version
+```
+
+The same binary is dual-mode — with no args (and a TTY) it opens the
+fullscreen tabbed admin TUI; with subcommands it operates non-interactively
+for scripting. It also ships an SSH-fronted server so the same TUI can be
+published over Wish/Wishlist:
+
+```sh
+polaris-email login                                 # one-time: paste your operator login token
+polaris-email                                       # → fullscreen TUI
+polaris-email tui --theme=mocha                     # explicit subcommand + theme override
+polaris-email operator add                          # mint a new operator (huh wizard)
+polaris-email serve --ssh --bootstrap-token …       # publish the TUI over SSH
 ```
 
 See `apps/polaris-cli/README.md` for the full subcommand tree, and

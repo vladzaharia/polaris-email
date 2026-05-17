@@ -4,7 +4,7 @@
 // All HMAC-auth + `admin:*` scope.
 import { Hono } from 'hono';
 import { CreateWebhookSubRequest, IssueApiKeyRequest, RotateRequest } from '@polaris-email/schema';
-import { audit, buildAuditInsert } from '../audit.js';
+import { actorOf, audit, buildAuditInsert } from '../audit.js';
 import { bodyText, hmacAuth, requireScope } from '../auth.js';
 import type { Env } from '../env.js';
 import { buildError } from '../errors.js';
@@ -30,6 +30,7 @@ import { alerts as adminAlerts } from './admin/alerts.js';
 import { dmarcReports } from './admin/dmarc-reports.js';
 import { dmarcPromotion } from './admin/dmarc-promotion.js';
 import { moderation } from './admin/moderation.js';
+import { operators } from './admin/operators.js';
 import { senderAbuse } from './admin/sender-abuse.js';
 import { suppressions } from './admin/suppressions.js';
 import { tlsRptReports } from './admin/tls-rpt-reports.js';
@@ -78,11 +79,11 @@ admin.route('/', tlsRptReports);
 admin.route('/', dmarcReports);
 admin.route('/', dmarcPromotion);
 admin.route('/', moderation);
+admin.route('/', operators);
 
 // ---------- api keys ----------
 
 admin.post('/v1/admin/api-keys', requireScope('admin:rotate'), async (c) => {
-  const key = c.get('apiKey');
   let body;
   try {
     body = IssueApiKeyRequest.parse(JSON.parse(bodyText(c)));
@@ -115,7 +116,7 @@ admin.post('/v1/admin/api-keys', requireScope('admin:rotate'), async (c) => {
   // the audit row doesn't, the chain has a hole the issuance can never
   // re-fill. Batching makes them atomic at the D1 layer.
   const auditInsert = await buildAuditInsert(c.env, {
-    actor: `key:${key.key_id}`,
+    actor: actorOf(c),
     action: 'api_key.issue',
     target: id,
     meta: {
@@ -227,7 +228,7 @@ admin.post('/v1/admin/api-keys/:id/rotate', requireScope('admin:rotate'), async 
     const prev = await c.env.KV_IDEMPOTENCY.get(k);
     if (prev) {
       await audit(c.env, {
-        actor: `key:${key.key_id}`,
+        actor: actorOf(c),
         action: 'api_key.rotate',
         target: id,
         meta: { replay: true, idem: idemHeader },
@@ -243,7 +244,7 @@ admin.post('/v1/admin/api-keys/:id/rotate', requireScope('admin:rotate'), async 
 
   if (dryRun) {
     await audit(c.env, {
-      actor: `key:${key.key_id}`,
+      actor: actorOf(c),
       action: 'dry_run_rotate',
       target: id,
       meta: { mode: body.mode },
@@ -276,7 +277,7 @@ admin.post('/v1/admin/api-keys/:id/rotate', requireScope('admin:rotate'), async 
     .catch(() => ({ results: [] as { sender_id: string }[] }));
   // Build the audit insert before the batch; CAS guard runs inside the batch.
   const auditInsert = await buildAuditInsert(c.env, {
-    actor: `key:${key.key_id}`,
+    actor: actorOf(c),
     action: body.mode === 'planned' ? 'api_key.rotate' : 'api_key.rotate.emergency',
     target: id,
     meta:
@@ -342,7 +343,6 @@ admin.post('/v1/admin/api-keys/:id/rotate', requireScope('admin:rotate'), async 
 });
 
 admin.post('/v1/admin/api-keys/:id/revoke', requireScope('admin:rotate'), async (c) => {
-  const key = c.get('apiKey');
   const id = c.req.param('id');
   let body;
   try {
@@ -353,7 +353,7 @@ admin.post('/v1/admin/api-keys/:id/revoke', requireScope('admin:rotate'), async 
   const dryRun = c.req.query('dry_run') === '1';
   if (dryRun) {
     await audit(c.env, {
-      actor: `key:${key.key_id}`,
+      actor: actorOf(c),
       action: 'dry_run_rotate',
       target: id,
       meta: { mode: body.mode, op: 'revoke' },
@@ -379,7 +379,7 @@ admin.post('/v1/admin/api-keys/:id/revoke', requireScope('admin:rotate'), async 
   // Fold the api_keys UPDATE + audit_log INSERT into one batch so a Worker
   // eviction between them can't leave a revoked key without an audit row.
   const auditInsert = await buildAuditInsert(c.env, {
-    actor: `key:${key.key_id}`,
+    actor: actorOf(c),
     action: body.mode === 'emergency' ? 'api_key.revoke.emergency' : 'api_key.revoke',
     target: id,
     meta: { reason: body.reason ?? null, principal_id: keyRow?.principal_id ?? null },
@@ -409,7 +409,6 @@ admin.post('/v1/admin/api-keys/:id/revoke', requireScope('admin:rotate'), async 
 // ---------- webhook subs ----------
 
 admin.post('/v1/admin/webhook-subs', requireScope('admin:rotate'), async (c) => {
-  const key = c.get('apiKey');
   let body;
   try {
     body = CreateWebhookSubRequest.parse(JSON.parse(bodyText(c)));
@@ -432,7 +431,7 @@ admin.post('/v1/admin/webhook-subs', requireScope('admin:rotate'), async (c) => 
     .bind(id, body.mailbox_id, body.url, body.kind, secret, JSON.stringify(body.events), nowIso)
     .run();
   await audit(c.env, {
-    actor: `key:${key.key_id}`,
+    actor: actorOf(c),
     action: 'webhook_sub.create',
     target: id,
     meta: {

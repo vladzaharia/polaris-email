@@ -18,12 +18,29 @@ export interface AuthenticatedKey {
   rate_limit_per_min: number;
   status: 'primary' | 'secondary' | 'revoked';
   revoked_at: number | null;
+  /**
+   * Set when the request carried `X-Polaris-On-Behalf-Of: operator:<id>`
+   * AND the signing key has `admin:impersonate`. The audit log records the
+   * operator id as actor; `requireScope` evaluates against the *operator's*
+   * scopes (not the bootstrap key's), so impersonation cannot grant a
+   * privilege the operator does not already have.
+   */
+  operator_id?: string | null;
 }
 
 declare module 'hono' {
   interface ContextVariableMap {
     requestId: string;
     apiKey: AuthenticatedKey;
+    /**
+     * Audit actor for the current request. One of:
+     *   * `key:<api_key_id>`   — normal HMAC auth
+     *   * `operator:<id>`      — impersonation header honored
+     *   * `bridge:<bridge_id>` — bridge HMAC auth (set in bridge-auth.ts)
+     *   * `system:<service>`   — scheduled jobs (set by the cron dispatcher)
+     * Use `actorOf(c)` from `./audit.js` to read this with a safe fallback.
+     */
+    actor: string;
   }
 }
 
@@ -235,16 +252,94 @@ export function hmacAuth(direction: 'polaris-api'): MiddlewareHandler<{ Bindings
     }
     await env.KV_NONCE.put(nonceKey, '1', { expirationTtl: NONCE_TTL_SECONDS });
 
+    // Impersonation (`X-Polaris-On-Behalf-Of`): when the signing key holds
+    // `admin:impersonate`, it may attribute this request to an operator in
+    // the `operators` table. The Wish/SSH server uses this to record each
+    // SSH-fronted action under the connecting operator's identity instead
+    // of the shared host's bootstrap key.
+    //
+    // Invariants:
+    //   * The header is OUTSIDE the HMAC canonical string. Spoofing it
+    //     requires breaking TLS, in which case the body is also game-over.
+    //     The trade-off lets us avoid forking `packages/hmac`.
+    //   * After successful impersonation, `requireScope()` runs against
+    //     the OPERATOR'S scopes — not the bootstrap key's.
+    const obo = c.req.header('x-polaris-on-behalf-of');
+    let effectiveScopesRaw = row.scopes;
+    let effectiveOperatorId: string | null = null;
+    if (obo) {
+      if (!obo.startsWith('operator:')) {
+        return buildError(c, 'bad_request', 'unsupported impersonation subject');
+      }
+      const opId = obo.slice('operator:'.length);
+      if (!/^[0-9A-HJKMNP-TV-Z]{26}$/.test(opId)) {
+        return buildError(c, 'bad_request', 'operator id format');
+      }
+      let bootstrapScopes: string[];
+      try {
+        bootstrapScopes = JSON.parse(row.scopes);
+      } catch {
+        return buildError(c, 'forbidden', 'scopes parse failed');
+      }
+      if (!bootstrapScopes.includes('admin:impersonate')) {
+        return buildError(c, 'scope_violation', 'missing scope admin:impersonate');
+      }
+      const opRow = await env.DB.prepare(
+        `SELECT id, api_key_id, disabled_at FROM operators WHERE id = ?`,
+      )
+        .bind(opId)
+        .first<{ id: string; api_key_id: string; disabled_at: string | null }>();
+      if (!opRow) {
+        return buildError(c, 'not_found', 'operator not found');
+      }
+      if (opRow.disabled_at) {
+        return buildError(c, 'key_revoked', 'operator disabled');
+      }
+      const opKey = await env.DB.prepare(
+        `SELECT id, principal_id, scopes, status, revoked_at FROM api_keys WHERE id = ?`,
+      )
+        .bind(opRow.api_key_id)
+        .first<{
+          id: string;
+          principal_id: string | null;
+          scopes: string;
+          status: 'primary' | 'secondary' | 'revoked';
+          revoked_at: number | null;
+        }>();
+      if (!opKey || opKey.status === 'revoked' || opKey.revoked_at != null) {
+        return buildError(c, 'key_revoked', 'operator key revoked');
+      }
+      if (opKey.principal_id) {
+        const revokedOp = await revocationCheck(env, opKey.principal_id).catch(() => false);
+        if (revokedOp) {
+          return buildError(c, 'key_revoked', 'operator principal revoked');
+        }
+      }
+      effectiveScopesRaw = opKey.scopes;
+      effectiveOperatorId = opId;
+      c.executionCtx.waitUntil(
+        env.DB.prepare(`UPDATE operators SET last_seen_at = ? WHERE id = ?`)
+          .bind(new Date().toISOString(), opId)
+          .run()
+          .catch(() => undefined),
+      );
+    }
+
     c.set('apiKey', {
       key_id: row.id,
       mailbox_id: row.mailbox_id,
       principal_id: row.principal_id,
       sender_scope_ids: row.sender_scope_ids,
-      scopes_raw: row.scopes,
+      // `scopes_raw` is what `requireScope` reads. When impersonating, we
+      // splice the operator's scopes so per-route `admin:rotate` etc. checks
+      // evaluate against the operator's grant.
+      scopes_raw: effectiveScopesRaw,
       rate_limit_per_min: row.rate_limit_per_min,
       status: row.status,
       revoked_at: row.revoked_at,
+      operator_id: effectiveOperatorId,
     });
+    c.set('actor', effectiveOperatorId ? `operator:${effectiveOperatorId}` : `key:${row.id}`);
 
     await next();
   };

@@ -129,6 +129,8 @@ func newInfraCmd() *cobra.Command {
 	// PR 13 leaves: rollback + rotate-admin-key.
 	c.AddCommand(newInfraRollbackCmd())
 	c.AddCommand(newInfraRotateAdminKeyCmd())
+	// TUI/SSH slice leaf: SSH bootstrap (mint admin:impersonate api_key + host key).
+	c.AddCommand(newInfraSSHBootstrapCmd())
 	return c
 }
 

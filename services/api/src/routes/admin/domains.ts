@@ -3,7 +3,7 @@
 import { Hono } from 'hono';
 import { CreateMailDomainRequest, UpdateMailDomainRequest } from '@polaris-email/schema';
 import { generatePolicyId, verifyMtaSts, verifyTlsRpt } from '@polaris-email/cf-api';
-import { audit } from '../../audit.js';
+import { actorOf, audit } from '../../audit.js';
 import { bodyText, requireScope } from '../../auth.js';
 import type { Env } from '../../env.js';
 import { buildError } from '../../errors.js';
@@ -112,7 +112,6 @@ async function ensureZone(c: { env: Env }, cfZoneId: string | null, name: string
 // /mta-sts/enable — the intent column has no on-disk side effects until that
 // happens.
 domains.post('/v1/admin/domains', requireScope('admin:rotate'), async (c) => {
-  const key = c.get('apiKey');
   let body;
   try {
     body = CreateMailDomainRequest.parse(JSON.parse(bodyText(c)));
@@ -186,7 +185,7 @@ domains.post('/v1/admin/domains', requireScope('admin:rotate'), async (c) => {
     console.warn('domain.create: failed to provision complaint receivers', e);
   }
   await audit(c.env, {
-    actor: `key:${key.key_id}`,
+    actor: actorOf(c),
     action: 'domain.create',
     target: id,
     meta: {
@@ -248,7 +247,6 @@ domains.get('/v1/admin/domains/lookup', requireScope('admin:read'), async (c) =>
 
 // ---------- bulk onboard ----------
 domains.post('/v1/admin/domains/bulk-onboard', requireScope('admin:rotate'), async (c) => {
-  const key = c.get('apiKey');
   let body: { names?: string[] };
   try {
     body = JSON.parse(bodyText(c) || '{}');
@@ -302,7 +300,7 @@ domains.post('/v1/admin/domains/bulk-onboard', requireScope('admin:rotate'), asy
       }
       results.push({ name, id });
       await audit(c.env, {
-        actor: `key:${key.key_id}`,
+        actor: actorOf(c),
         action: 'domain.create',
         target: id,
         meta: {
@@ -327,7 +325,6 @@ domains.post('/v1/admin/domains/bulk-onboard', requireScope('admin:rotate'), asy
 
 // ---------- rotate DKIM ----------
 domains.post('/v1/admin/domains/:id/rotate-dkim', requireScope('admin:rotate'), async (c) => {
-  const key = c.get('apiKey');
   const id = c.req.param('id');
   const row = await c.env.DB.prepare(
     `SELECT id, name, dkim_selector FROM mail_domains WHERE id = ?`,
@@ -345,7 +342,7 @@ domains.post('/v1/admin/domains/:id/rotate-dkim', requireScope('admin:rotate'), 
     .bind(next, nowIso, id)
     .run();
   await audit(c.env, {
-    actor: `key:${key.key_id}`,
+    actor: actorOf(c),
     action: 'domain.dkim_rotate',
     target: id,
     meta: { name: row.name, prev: current, next },
@@ -369,7 +366,6 @@ domains.get('/v1/admin/domains/:id', requireScope('admin:read'), async (c) => {
 
 // ---------- patch ----------
 domains.patch('/v1/admin/domains/:id', requireScope('admin:rotate'), async (c) => {
-  const key = c.get('apiKey');
   const id = c.req.param('id');
   let body;
   try {
@@ -413,7 +409,7 @@ domains.patch('/v1/admin/domains/:id', requireScope('admin:rotate'), async (c) =
     .bind(...binds)
     .run();
   await audit(c.env, {
-    actor: `key:${key.key_id}`,
+    actor: actorOf(c),
     action: 'domain.update',
     target: id,
     meta: { fields: Object.keys(body) },
@@ -504,7 +500,6 @@ interface VerifyDomainRow {
 }
 
 domains.post('/v1/admin/domains/:id/verify', requireScope('admin:rotate'), async (c) => {
-  const key = c.get('apiKey');
   const id = c.req.param('id');
   const row = await c.env.DB.prepare(
     `SELECT id, name, status, cf_zone_id,
@@ -531,7 +526,7 @@ domains.post('/v1/admin/domains/:id/verify', requireScope('admin:rotate'), async
       actual: 'missing CF_API_TOKEN, CF_ACCOUNT_ID or cf_zone_id',
     });
     await audit(c.env, {
-      actor: `key:${key.key_id}`,
+      actor: actorOf(c),
       action: 'domain.verify_incomplete',
       target: id,
       meta: { name: row.name, reason: 'no-cf-creds' },
@@ -671,7 +666,7 @@ domains.post('/v1/admin/domains/:id/verify', requireScope('admin:rotate'), async
       .bind(...fullBinds)
       .run();
     await audit(c.env, {
-      actor: `key:${key.key_id}`,
+      actor: actorOf(c),
       action: 'domain.verify',
       target: id,
       meta: { name: row.name, checks: checks.map((c2) => c2.name) },
@@ -691,7 +686,7 @@ domains.post('/v1/admin/domains/:id/verify', requireScope('admin:rotate'), async
   }
 
   await audit(c.env, {
-    actor: `key:${key.key_id}`,
+    actor: actorOf(c),
     action: 'domain.verify_incomplete',
     target: id,
     meta: {
@@ -752,7 +747,6 @@ const TOGGLES: readonly FlagSpec[] = [
 
 for (const spec of TOGGLES) {
   domains.post(spec.path, requireScope('admin:rotate'), async (c) => {
-    const key = c.get('apiKey');
     const id = c.req.param('id');
     const row = await c.env.DB.prepare(`SELECT id, name FROM mail_domains WHERE id = ?`)
       .bind(id)
@@ -765,7 +759,7 @@ for (const spec of TOGGLES) {
       .bind(spec.enabled ? 1 : 0, nowIso, id)
       .run();
     await audit(c.env, {
-      actor: `key:${key.key_id}`,
+      actor: actorOf(c),
       action: spec.action,
       target: id,
       meta: { name: row.name },
@@ -776,7 +770,6 @@ for (const spec of TOGGLES) {
 
 // ---------- soft-disable ----------
 domains.delete('/v1/admin/domains/:id', requireScope('admin:rotate'), async (c) => {
-  const key = c.get('apiKey');
   const id = c.req.param('id');
   const nowIso = new Date().toISOString();
   const r = await c.env.DB.prepare(
@@ -788,7 +781,7 @@ domains.delete('/v1/admin/domains/:id', requireScope('admin:rotate'), async (c) 
     .run();
   if (r.meta.changes === 0) return buildError(c, 'not_found', 'not found or already disabled');
   await audit(c.env, {
-    actor: `key:${key.key_id}`,
+    actor: actorOf(c),
     action: 'domain.disable',
     target: id,
     meta: {},

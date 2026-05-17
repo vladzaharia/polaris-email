@@ -10,7 +10,7 @@ import {
   CreateMailboxSenderRequest,
   MailboxReceiverAction,
 } from '@polaris-email/schema';
-import { audit } from '../../audit.js';
+import { actorOf, audit } from '../../audit.js';
 import { bodyText, requireScope } from '../../auth.js';
 import type { Env } from '../../env.js';
 import { buildError } from '../../errors.js';
@@ -86,7 +86,6 @@ mailboxes.get('/v1/admin/mailboxes/:id', requireScope('admin:read'), async (c) =
 
 // ---------- create mailbox ----------
 mailboxes.post('/v1/admin/mailboxes', requireScope('admin:rotate'), async (c) => {
-  const key = c.get('apiKey');
   let body;
   try {
     body = CreateMailboxRequest.parse(JSON.parse(bodyText(c)));
@@ -107,7 +106,7 @@ mailboxes.post('/v1/admin/mailboxes', requireScope('admin:rotate'), async (c) =>
     throw e;
   }
   await audit(c.env, {
-    actor: `key:${key.key_id}`,
+    actor: actorOf(c),
     action: 'mailbox.create',
     target: id,
     meta: { name: body.name },
@@ -117,7 +116,6 @@ mailboxes.post('/v1/admin/mailboxes', requireScope('admin:rotate'), async (c) =>
 
 // ---------- patch (name/description/default_sender_id) ----------
 mailboxes.patch('/v1/admin/mailboxes/:id', requireScope('admin:rotate'), async (c) => {
-  const key = c.get('apiKey');
   const id = c.req.param('id');
   let body: { name?: string; description?: string | null; default_sender_id?: string | null };
   try {
@@ -149,7 +147,7 @@ mailboxes.patch('/v1/admin/mailboxes/:id', requireScope('admin:rotate'), async (
     .run();
   if (r.meta.changes === 0) return buildError(c, 'not_found', 'mailbox not found');
   await audit(c.env, {
-    actor: `key:${key.key_id}`,
+    actor: actorOf(c),
     action: 'mailbox.update',
     target: id,
     meta: { fields: Object.keys(body) },
@@ -159,7 +157,6 @@ mailboxes.patch('/v1/admin/mailboxes/:id', requireScope('admin:rotate'), async (
 
 // ---------- disable / enable ----------
 mailboxes.post('/v1/admin/mailboxes/:id/disable', requireScope('admin:rotate'), async (c) => {
-  const key = c.get('apiKey');
   const id = c.req.param('id');
   const nowIso = new Date().toISOString();
   const r = await c.env.DB.prepare(
@@ -169,7 +166,7 @@ mailboxes.post('/v1/admin/mailboxes/:id/disable', requireScope('admin:rotate'), 
     .run();
   if (r.meta.changes === 0) return buildError(c, 'not_found', 'not found or already disabled');
   await audit(c.env, {
-    actor: `key:${key.key_id}`,
+    actor: actorOf(c),
     action: 'mailbox.disable',
     target: id,
     meta: {},
@@ -178,7 +175,6 @@ mailboxes.post('/v1/admin/mailboxes/:id/disable', requireScope('admin:rotate'), 
 });
 
 mailboxes.post('/v1/admin/mailboxes/:id/enable', requireScope('admin:rotate'), async (c) => {
-  const key = c.get('apiKey');
   const id = c.req.param('id');
   const nowIso = new Date().toISOString();
   const r = await c.env.DB.prepare(
@@ -188,7 +184,7 @@ mailboxes.post('/v1/admin/mailboxes/:id/enable', requireScope('admin:rotate'), a
     .run();
   if (r.meta.changes === 0) return buildError(c, 'not_found', 'not found or already enabled');
   await audit(c.env, {
-    actor: `key:${key.key_id}`,
+    actor: actorOf(c),
     action: 'mailbox.update',
     target: id,
     meta: { enable: true },
@@ -198,7 +194,6 @@ mailboxes.post('/v1/admin/mailboxes/:id/enable', requireScope('admin:rotate'), a
 
 // ---------- create mailbox_sender ----------
 mailboxes.post('/v1/admin/mailboxes/:id/senders', requireScope('admin:rotate'), async (c) => {
-  const key = c.get('apiKey');
   const mailboxId = c.req.param('id');
   let body;
   try {
@@ -250,7 +245,7 @@ mailboxes.post('/v1/admin/mailboxes/:id/senders', requireScope('admin:rotate'), 
     throw e;
   }
   await audit(c.env, {
-    actor: `key:${key.key_id}`,
+    actor: actorOf(c),
     action: 'mailbox_sender.create',
     target: id,
     meta: { mailbox_id: mailboxId, domain_id: body.domain_id, address },
@@ -275,7 +270,6 @@ mailboxes.delete(
   '/v1/admin/mailboxes/:id/senders/:senderId',
   requireScope('admin:rotate'),
   async (c) => {
-    const key = c.get('apiKey');
     const senderId = c.req.param('senderId');
     const nowIso = new Date().toISOString();
     const r = await c.env.DB.prepare(
@@ -285,7 +279,7 @@ mailboxes.delete(
       .run();
     if (r.meta.changes === 0) return buildError(c, 'not_found', 'not found or already disabled');
     await audit(c.env, {
-      actor: `key:${key.key_id}`,
+      actor: actorOf(c),
       action: 'mailbox_sender.disable',
       target: senderId,
       meta: { mailbox_id: c.req.param('id') },
@@ -296,7 +290,6 @@ mailboxes.delete(
 
 // ---------- create mailbox_receiver ----------
 mailboxes.post('/v1/admin/mailboxes/:id/receivers', requireScope('admin:rotate'), async (c) => {
-  const key = c.get('apiKey');
   const mailboxId = c.req.param('id');
   let body;
   try {
@@ -328,7 +321,7 @@ mailboxes.post('/v1/admin/mailboxes/:id/receivers', requireScope('admin:rotate')
     )
     .run();
   await audit(c.env, {
-    actor: `key:${key.key_id}`,
+    actor: actorOf(c),
     action: 'mailbox_receiver.create',
     target: id,
     meta: {
@@ -346,7 +339,6 @@ mailboxes.patch(
   '/v1/admin/mailboxes/:id/receivers/:receiverId',
   requireScope('admin:rotate'),
   async (c) => {
-    const key = c.get('apiKey');
     const mailboxId = c.req.param('id');
     const receiverId = c.req.param('receiverId');
     let body: {
@@ -397,7 +389,7 @@ mailboxes.patch(
       .run();
     if (r.meta.changes === 0) return buildError(c, 'not_found', 'mailbox_receiver not found');
     await audit(c.env, {
-      actor: `key:${key.key_id}`,
+      actor: actorOf(c),
       action: 'mailbox_receiver.update',
       target: receiverId,
       meta: { mailbox_id: mailboxId, fields: Object.keys(body) },
@@ -411,7 +403,6 @@ mailboxes.delete(
   '/v1/admin/mailboxes/:id/receivers/:receiverId',
   requireScope('admin:rotate'),
   async (c) => {
-    const key = c.get('apiKey');
     const mailboxId = c.req.param('id');
     const receiverId = c.req.param('receiverId');
     const nowIso = new Date().toISOString();
@@ -423,7 +414,7 @@ mailboxes.delete(
       .run();
     if (r.meta.changes === 0) return buildError(c, 'not_found', 'not found or already disabled');
     await audit(c.env, {
-      actor: `key:${key.key_id}`,
+      actor: actorOf(c),
       action: 'mailbox_receiver.disable',
       target: receiverId,
       meta: { mailbox_id: mailboxId },

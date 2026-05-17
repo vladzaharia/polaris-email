@@ -6,7 +6,7 @@
 //   * POST /v1/admin/bridges/:id/rotate returns the new key ONCE.
 //   * GET responses omit the stored hash column entirely.
 import { Hono } from 'hono';
-import { audit } from '../../audit.js';
+import { actorOf, audit } from '../../audit.js';
 import { bodyText, requireScope } from '../../auth.js';
 import type { Env } from '../../env.js';
 import { buildError } from '../../errors.js';
@@ -39,7 +39,6 @@ bridges.get('/v1/admin/bridges', requireScope('admin:read'), async (c) => {
 });
 
 bridges.post('/v1/admin/bridges', requireScope('admin:rotate'), async (c) => {
-  const key = c.get('apiKey');
   let body: { name?: string };
   try {
     body = JSON.parse(bodyText(c) || '{}') as { name?: string };
@@ -70,7 +69,7 @@ bridges.post('/v1/admin/bridges', requireScope('admin:rotate'), async (c) => {
     expirationTtl: BRIDGE_PLAIN_KV_TTL_SECONDS,
   });
   await audit(c.env, {
-    actor: `key:${key.key_id}`,
+    actor: actorOf(c),
     action: 'bridge.register',
     target: id,
     meta: { name: body.name },
@@ -108,7 +107,6 @@ bridges.get('/v1/admin/bridges/:id', requireScope('admin:read'), async (c) => {
 });
 
 bridges.post('/v1/admin/bridges/:id/rotate', requireScope('admin:rotate'), async (c) => {
-  const key = c.get('apiKey');
   const id = c.req.param('id');
   const existing = await c.env.DB.prepare(`SELECT id, name FROM bridges WHERE id = ?`)
     .bind(id)
@@ -125,7 +123,7 @@ bridges.post('/v1/admin/bridges/:id/rotate', requireScope('admin:rotate'), async
     expirationTtl: BRIDGE_PLAIN_KV_TTL_SECONDS,
   });
   await audit(c.env, {
-    actor: `key:${key.key_id}`,
+    actor: actorOf(c),
     action: 'bridge.rotate',
     target: id,
     meta: { name: existing.name },
@@ -134,7 +132,6 @@ bridges.post('/v1/admin/bridges/:id/rotate', requireScope('admin:rotate'), async
 });
 
 bridges.delete('/v1/admin/bridges/:id', requireScope('admin:rotate'), async (c) => {
-  const key = c.get('apiKey');
   const id = c.req.param('id');
   const nowIso = new Date().toISOString();
   const r = await c.env.DB.prepare(
@@ -147,7 +144,7 @@ bridges.delete('/v1/admin/bridges/:id', requireScope('admin:rotate'), async (c) 
   // immediately rather than waiting on the TTL.
   await c.env.KV_KEY_CACHE.delete(bridgePlainKvKey(id));
   await audit(c.env, {
-    actor: `key:${key.key_id}`,
+    actor: actorOf(c),
     action: 'bridge.deregister',
     target: id,
     meta: {},

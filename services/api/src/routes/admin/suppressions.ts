@@ -17,7 +17,7 @@ import {
 } from '@polaris-email/schema';
 import { normalizeAddress } from '@polaris-email/suppressions';
 import { ulid } from '@polaris-email/ids';
-import { audit } from '../../audit.js';
+import { actorOf, audit } from '../../audit.js';
 import { bodyText, requireScope } from '../../auth.js';
 import type { Env } from '../../env.js';
 import { buildError } from '../../errors.js';
@@ -139,7 +139,6 @@ suppressions.get('/v1/admin/suppressions/:id', requireScope('admin:read'), async
 });
 
 suppressions.post('/v1/admin/suppressions', requireScope('admin:rotate'), async (c) => {
-  const key = c.get('apiKey');
   let body;
   try {
     body = CreateSuppressionRequest.parse(JSON.parse(bodyText(c) || '{}'));
@@ -183,7 +182,7 @@ suppressions.post('/v1/admin/suppressions', requireScope('admin:rotate'), async 
     throw e;
   }
   await audit(c.env, {
-    actor: `key:${key.key_id}`,
+    actor: actorOf(c),
     action: 'suppression.create',
     target: id,
     meta: {
@@ -200,7 +199,6 @@ suppressions.post('/v1/admin/suppressions', requireScope('admin:rotate'), async 
 });
 
 suppressions.patch('/v1/admin/suppressions/:id', requireScope('admin:rotate'), async (c) => {
-  const key = c.get('apiKey');
   const id = c.req.param('id');
   let body;
   try {
@@ -225,7 +223,7 @@ suppressions.patch('/v1/admin/suppressions/:id', requireScope('admin:rotate'), a
     .run();
   if (r.meta.changes === 0) return buildError(c, 'not_found', 'suppression not found');
   await audit(c.env, {
-    actor: `key:${key.key_id}`,
+    actor: actorOf(c),
     action: 'suppression.create', // patch reuses .create since there's no .update enum
     target: id,
     meta: { patch: Object.keys(body) },
@@ -236,7 +234,6 @@ suppressions.patch('/v1/admin/suppressions/:id', requireScope('admin:rotate'), a
 // Soft-disable. Rows are never deleted (audit-chain invariant). The
 // `disabled_reason` field is required so the operator's intent is captured.
 suppressions.delete('/v1/admin/suppressions/:id', requireScope('admin:rotate'), async (c) => {
-  const key = c.get('apiKey');
   const id = c.req.param('id');
   const reason = c.req.query('reason') ?? 'operator_override';
   const nowIso = new Date().toISOString();
@@ -250,7 +247,7 @@ suppressions.delete('/v1/admin/suppressions/:id', requireScope('admin:rotate'), 
     return buildError(c, 'not_found', 'not found or already disabled');
   }
   await audit(c.env, {
-    actor: `key:${key.key_id}`,
+    actor: actorOf(c),
     action: 'suppression.disable',
     target: id,
     meta: { reason },
