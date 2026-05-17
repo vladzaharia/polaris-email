@@ -34,7 +34,6 @@ jobs:
           fetch-depth: 0 # need full history to diff against deployed/main
 
       - uses: pnpm/action-setup@v6
-        with: { version: 9 }
       - uses: actions/setup-node@v6
         with: { node-version: 22, cache: pnpm }
       - uses: actions/setup-go@v6
