@@ -1,0 +1,10 @@
+{
+  "label": "Day 2",
+  "position": 3,
+  "link": {
+    "type": "generated-index",
+    "slug": "/operators/day-2",
+    "title": "Day-2 operations",
+    "description": "The recurring operator workflows that sit between concepts and runbooks: domain and bridge management, TLS rotation, and credential lifecycle. Use these when you are tending the system, not standing it up and not putting out a fire."
+  }
+}
