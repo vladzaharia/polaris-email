@@ -184,5 +184,5 @@ jobs:
       - name: link-check
         uses: lycheeverse/lychee-action@v2
         with:
-          args: --no-progress --exclude-mail 'apps/docs/build/**/*.html'
+          args: --no-progress --exclude '^mailto:' 'apps/docs/build/**/*.html'
           fail: true

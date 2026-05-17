@@ -1,0 +1,9 @@
+# Bridge golden-fixture READMEs are byte-exact expected outputs from the
+# renderer; oxfmt must not touch them or TestRender_Golden breaks.
+apps/polaris-cli/internal/setup/daemons/bridge/testdata/render-golden/**/README.md
+
+# Docusaurus build output (also covered by apps/docs/.gitignore but
+# oxfmt walks all files, not just tracked).
+apps/docs/build/
+apps/docs/.docusaurus/
+apps/docs/content/reference/api/
