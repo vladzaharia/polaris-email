@@ -1,0 +1,137 @@
+# Multi-arch build + publish for the mail-bridge container image.
+#
+# Single-job design: `docker/build-push-action` decides whether to push based
+# on a computed expression. PRs default to build-only (no registry spam); add
+# the `build-pr-image` label to a PR to actually publish a `pr-<n>` tag.
+#
+# Tag policy is delegated to `docker/metadata-action`:
+#   - push to main          -> :main, :edge, :sha-<short>
+#   - push tag vX.Y.Z       -> :vX.Y.Z, :vX.Y, :vX, :latest
+#   - push tag mail-bridge-vX.Y.Z (same as above via the `v*` family)
+#   - PR with build label   -> :pr-<n>
+#   - workflow_dispatch     -> :main (the branch ref)
+#
+# linux/arm64 is built under QEMU emulation, which takes ~15-25 min total.
+# That's acceptable for an image-publish workflow; we deliberately do not
+# run this on every CI push.
+name: mail-bridge-image
+
+on:
+  push:
+    branches: [main]
+    tags:
+      - 'v*'
+      - 'mail-bridge-v*'
+    paths:
+      - 'apps/mail-bridge/**'
+      - 'packages/sdk-go/**'
+      - '.github/workflows/mail-bridge-image.yml'
+  pull_request:
+    paths:
+      - 'apps/mail-bridge/**'
+      - 'packages/sdk-go/**'
+      - '.github/workflows/mail-bridge-image.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: mail-bridge-image-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+  attestations: write
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    env:
+      IMAGE_NAME: ghcr.io/vladzaharia/polaris-mail-bridge
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Decide whether to push. All untrusted-ish inputs are passed via env to
+      # avoid any expression-injection surface in the shell body.
+      - name: Compute push flag
+        id: push-flag
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          HAS_LABEL: ${{ github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'build-pr-image') }}
+        run: |
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            if [ "$HAS_LABEL" = "true" ]; then
+              echo "push=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "push=false" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "push=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Log in to GHCR
+        if: steps.push-flag.outputs.push == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE_NAME }}
+          # `latest` only on tag events; `edge` and `sha-<short>` on every
+          # default-branch push. PR tag only emits when the build-pr-image
+          # label is present (matches the push-flag gate above).
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr,prefix=pr-,enable=${{ contains(github.event.pull_request.labels.*.name, 'build-pr-image') }}
+            type=raw,value=edge,enable={{is_default_branch}}
+            type=sha,format=short,prefix=sha-
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/') }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/vladzaharia/polaris-email
+            org.opencontainers.image.description=polaris-email mail-bridge — SMTPS + IMAP4rev2 in one Go binary
+            org.opencontainers.image.title=polaris-mail-bridge
+            org.opencontainers.image.vendor=polaris-email
+
+      - name: Build and push
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          # Build context is the repo root, not apps/mail-bridge/ — the
+          # bridge's go.mod has a `replace` directive that points at
+          # ../../packages/sdk-go.
+          context: .
+          file: ./apps/mail-bridge/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: ${{ steps.push-flag.outputs.push == 'true' }}
+          provenance: mode=max
+          sbom: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Attest build provenance
+        # Only when we actually pushed (we need a digest in the registry).
+        if: steps.push-flag.outputs.push == 'true' && steps.build.outputs.digest != ''
+        uses: actions/attest-build-provenance@v1
+        with:
+          subject-name: ${{ env.IMAGE_NAME }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true

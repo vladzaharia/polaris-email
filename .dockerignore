@@ -1,0 +1,42 @@
+# Repo-root .dockerignore. Applied to every `docker build` whose context is
+# the repo root — currently only the mail-bridge image, which lives at
+# apps/mail-bridge/Dockerfile and pulls in ../../packages/sdk-go via a
+# go.mod `replace` directive.
+#
+# Strategy: exclude everything, then un-exclude only the two trees the
+# mail-bridge build actually needs. This keeps the build context small
+# (~MBs, not GBs) and avoids spurious cache busts when unrelated Worker
+# code changes.
+
+# Default-deny.
+*
+
+# Mail-bridge source tree + its sibling Go SDK dependency.
+!apps
+apps/*
+!apps/mail-bridge
+!packages
+packages/*
+!packages/sdk-go
+
+# Inside the un-excluded trees, prune build/test artefacts that aren't part
+# of the Go module surface.
+apps/mail-bridge/bin/
+apps/mail-bridge/out/
+apps/mail-bridge/*.test
+apps/mail-bridge/coverage.out
+apps/mail-bridge/coverage.html
+apps/mail-bridge/docker-compose*.yml
+apps/mail-bridge/README.md
+apps/mail-bridge/Dockerfile
+apps/mail-bridge/.dockerignore
+
+packages/sdk-go/*.test
+packages/sdk-go/coverage.out
+
+# Editor + OS noise (defensive — should already be excluded by the default-deny).
+**/.DS_Store
+**/.vscode
+**/.idea
+**/.git
+**/.github
