@@ -32,9 +32,11 @@
   },
   "packageManager": "pnpm@9.0.0",
   "pnpm": {
-    "//": "webpack >=5.106 breaks docusaurus build (facebook/docusaurus#11923). Pin docusaurus's webpack to the last working release. The scoped override only affects @docusaurus/core's resolution — other webpack consumers (vitest-pool-workers, etc.) are untouched.",
+    "//": "webpack >=5.106 breaks docusaurus build (facebook/docusaurus#11923). Pin docusaurus's webpack to the last working release. The scoped override only affects @docusaurus/core's resolution — other webpack consumers (vitest-pool-workers, etc.) are untouched. @types/react is pinned to 19 globally so apps/panel's React 19 ReactNode (which includes bigint) doesn't clash with Docusaurus's React 18 transitive types — Docusaurus tolerates the type-skew at build time.",
     "overrides": {
-      "@docusaurus/core>webpack": "5.105.0"
+      "@docusaurus/core>webpack": "5.105.0",
+      "@types/react": "^19.2.14",
+      "@types/react-dom": "^19.2.3"
     }
   }
 }
