@@ -1,0 +1,10 @@
+{
+  "label": "Messages",
+  "position": 3,
+  "link": {
+    "type": "generated-index",
+    "slug": "/developers/messages",
+    "title": "Messages",
+    "description": "The unified Message model — inbound and outbound mail share one shape, one table, and one set of retrieval endpoints. R2-hosted bodies, attachment URLs, and webhook v2 envelopes all flow from this contract."
+  }
+}
