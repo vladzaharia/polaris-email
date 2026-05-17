@@ -1,0 +1,10 @@
+{
+  "label": "Webhooks",
+  "position": 4,
+  "link": {
+    "type": "generated-index",
+    "slug": "/developers/webhooks",
+    "title": "Webhooks",
+    "description": "Signed v2 envelopes, delivery patterns (external / tailnet / bridge-proxied), retry semantics, and verification with the published SDKs."
+  }
+}

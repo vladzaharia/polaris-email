@@ -1,0 +1,10 @@
+{
+  "label": "Concepts",
+  "position": 2,
+  "link": {
+    "type": "generated-index",
+    "slug": "/operators/concepts",
+    "title": "Operator concepts",
+    "description": "The system view operators need before standing the service up: architecture, cost model, and mail-bridge deployment modes."
+  }
+}
