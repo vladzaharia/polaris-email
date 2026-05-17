@@ -1,0 +1,30 @@
+/**
+ * Thin override on top of the Docusaurus classic theme.
+ *
+ * PR 11 keeps the brand palette deliberately minimal — neutral slate accents
+ * that read well in both light and dark mode. Real brand colors land with
+ * the brand-assets follow-up.
+ */
+
+:root {
+  --ifm-color-primary: #5b8def;
+  --ifm-color-primary-dark: #3a72ea;
+  --ifm-color-primary-darker: #2a66e8;
+  --ifm-color-primary-darkest: #1a55c8;
+  --ifm-color-primary-light: #7ca5f3;
+  --ifm-color-primary-lighter: #8eb1f4;
+  --ifm-color-primary-lightest: #b7cef9;
+  --ifm-code-font-size: 92%;
+  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.08);
+}
+
+[data-theme='dark'] {
+  --ifm-color-primary: #8eb1f4;
+  --ifm-color-primary-dark: #6f99f0;
+  --ifm-color-primary-darker: #5f8def;
+  --ifm-color-primary-darkest: #3a72ea;
+  --ifm-color-primary-light: #adc5f7;
+  --ifm-color-primary-lighter: #bdd1f8;
+  --ifm-color-primary-lightest: #dde7fc;
+  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.3);
+}

@@ -30,5 +30,11 @@
     "vitest": "^4.1.0",
     "wrangler": "^4.90.1"
   },
-  "packageManager": "pnpm@9.0.0"
+  "packageManager": "pnpm@9.0.0",
+  "pnpm": {
+    "//": "webpack >=5.106 breaks docusaurus build (facebook/docusaurus#11923). Pin docusaurus's webpack to the last working release. The scoped override only affects @docusaurus/core's resolution — other webpack consumers (vitest-pool-workers, etc.) are untouched.",
+    "overrides": {
+      "@docusaurus/core>webpack": "5.105.0"
+    }
+  }
 }

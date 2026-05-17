@@ -134,7 +134,7 @@ provider "cloudflare" {
 # }
 
 # -----------------------------------------------------------------------------
-# Workers custom domains (PR 6 — cli-installer).
+# Workers custom domains.
 #
 # `cloudflare_workers_custom_domain` attaches a hostname to a deployed Worker.
 # The Worker itself is deployed by Wrangler (out-of-band from Terraform); this
@@ -161,5 +161,20 @@ resource "cloudflare_workers_custom_domain" "cli_installer" {
 #   zone_id     = "REPLACE_WITH_PANEL_ZONE_ID"
 #   hostname    = "panel.polaris.example.com"
 #   service     = "polaris-email-panel"
+#   environment = "production"
+# }
+
+# Workers custom domain for the docs site (apps/docs).
+#
+# Binds the `polaris-email-docs` Worker (deployed via wrangler) to
+# `docs.mail.plrs.im`. Lives in the same `mail.plrs.im` zone as the R2
+# public domain above. PR 11 scaffolds; uncomment once the zone ID and
+# Worker deploy have landed.
+#
+# resource "cloudflare_workers_custom_domain" "docs" {
+#   account_id = var.cloudflare_account_id
+#   zone_id    = "REPLACE_WITH_MAIL_PLRS_IM_ZONE_ID"
+#   hostname   = "docs.mail.plrs.im"
+#   service    = "polaris-email-docs"
 #   environment = "production"
 # }

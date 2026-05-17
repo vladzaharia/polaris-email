@@ -141,3 +141,19 @@ jobs:
       - run: pnpm --filter @polaris-email/cli-installer run typecheck
       - run: shellcheck -s sh apps/cli-installer/src/install.sh
       - run: pnpm --filter @polaris-email/cli-installer test
+
+  docs:
+    # Docusaurus site (apps/docs). PR 11 ships scaffolding; build must
+    # stay green before any content lands in PR 12.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 9 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @polaris-email/docs run typecheck
+      - run: pnpm --filter @polaris-email/docs run build:client
+      - name: link-check
+        run: pnpm dlx lychee --no-progress --exclude-mail 'apps/docs/build/**/*.html'
