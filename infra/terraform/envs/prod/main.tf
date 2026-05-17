@@ -132,3 +132,20 @@ provider "cloudflare" {
 #   domain_name   = "r2.mail.plrs.im"
 #   record_name   = "r2.mail" # relative to the `plrs.im` zone
 # }
+
+# -----------------------------------------------------------------------------
+# Workers custom domain for the docs site (apps/docs).
+#
+# Binds the `polaris-email-docs` Worker (deployed via wrangler) to
+# `docs.mail.plrs.im`. Lives in the same `mail.plrs.im` zone as the R2
+# public domain above. PR 11 scaffolds; uncomment once the zone ID and
+# Worker deploy have landed.
+# -----------------------------------------------------------------------------
+#
+# resource "cloudflare_workers_custom_domain" "docs" {
+#   account_id = var.cloudflare_account_id
+#   zone_id    = "REPLACE_WITH_MAIL_PLRS_IM_ZONE_ID"
+#   hostname   = "docs.mail.plrs.im"
+#   service    = "polaris-email-docs"
+#   environment = "production"
+# }

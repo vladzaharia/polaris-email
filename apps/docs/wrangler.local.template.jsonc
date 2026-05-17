@@ -1,0 +1,16 @@
+// Template merged on top of apps/docs/wrangler.jsonc by bin/deploy.sh.
+// Placeholders are substituted by bin/render-wrangler-local.sh from
+// .deploy-state.json + .env.deploy. Do NOT hand-edit the materialized
+// wrangler.local.jsonc — re-run `make configure` instead.
+{
+  "account_id": "{{ .Env.CF_ACCOUNT_ID }}",
+  // docs.mail.plrs.im is the canonical hostname for the docs site. The
+  // zone is the same `mail.plrs.im` zone that fronts r2.mail.plrs.im
+  // (see infra/terraform/envs/prod/main.tf — R2 public domain comment).
+  "routes": [
+    {
+      "pattern": "{{ .Env.POLARIS_DOCS_HOSTNAME }}/*",
+      "zone_name": "{{ .Env.POLARIS_DOCS_ZONE }}",
+    },
+  ],
+}

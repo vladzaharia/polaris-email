@@ -1,0 +1,13 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist/server",
+    "rootDir": "./src/server",
+    "lib": ["ES2024", "WebWorker"],
+    "types": ["@cloudflare/workers-types"],
+    "module": "ES2022",
+    "moduleResolution": "Bundler",
+    "noEmit": true
+  },
+  "include": ["src/server/**/*"]
+}

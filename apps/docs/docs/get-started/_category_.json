@@ -1,0 +1,8 @@
+{
+  "label": "Get started",
+  "position": 1,
+  "link": {
+    "type": "generated-index",
+    "description": "Onboard a domain and send your first message."
+  }
+}

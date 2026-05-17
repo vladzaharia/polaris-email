@@ -1,0 +1,30 @@
+// polaris-email-docs Worker — committed config. Real IDs / routes live in
+// wrangler.local.jsonc (gitignored) and are merged by bin/deploy.sh before
+// `wrangler deploy`.
+//
+// The docs site is a Docusaurus v3 static build (output: ./build) served
+// via the Workers Assets binding, with a thin Hono server that adds CSP
+// headers, a /healthz probe, and a legacy-URL redirect table. PR 12 will
+// expand the redirect table from the actual content migration.
+//
+// Route / custom domain (set in wrangler.local.jsonc):
+//   "routes": [{ "pattern": "docs.mail.plrs.im/*", "zone_name": "mail.plrs.im" }]
+{
+  "$schema": "https://json-schema.org/draft-07/schema",
+  "name": "polaris-email-docs",
+  "main": "src/server/index.ts",
+  "compatibility_date": "2026-04-15",
+  "compatibility_flags": ["nodejs_compat_v2"],
+  "observability": { "enabled": true },
+  "logpush": true,
+  "placement": { "mode": "smart" },
+  "assets": {
+    "directory": "build",
+    "binding": "ASSETS",
+    "html_handling": "auto-trailing-slash",
+    "not_found_handling": "404-page",
+  },
+  "vars": {
+    "ENVIRONMENT": "production",
+  },
+}

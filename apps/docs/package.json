@@ -1,0 +1,37 @@
+{
+  "name": "@polaris-email/docs",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "docs:start": "docusaurus start",
+    "docs:build": "docusaurus build",
+    "build:client": "pnpm run docs:build",
+    "build:server": "tsc -p tsconfig.server.json --noEmit",
+    "build": "pnpm run build:client && pnpm run build:server",
+    "typecheck": "tsc -p tsconfig.server.json --noEmit && tsc -p tsconfig.json --noEmit",
+    "lint": "oxlint .",
+    "dev:server": "wrangler dev",
+    "deploy": "../../bin/deploy.sh apps/docs"
+  },
+  "dependencies": {
+    "@docusaurus/core": "^3.10.1",
+    "@docusaurus/preset-classic": "^3.10.1",
+    "hono": "^4.5.0",
+    "prism-react-renderer": "^2.4.0",
+    "react": "^18.3.0",
+    "react-dom": "^18.3.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260511.1",
+    "@docusaurus/module-type-aliases": "^3.10.1",
+    "@docusaurus/tsconfig": "^3.10.1",
+    "@docusaurus/types": "^3.10.1",
+    "@types/node": "^22.0.0",
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0",
+    "oxlint": "^1.64.0",
+    "typescript": "^5.5.0",
+    "wrangler": "^4.0.0"
+  },
+  "//": "Note: docusaurus build is broken with webpack >=5.106 (facebook/docusaurus#11923). The pnpm override pinning `webpack` to 5.105.0 lives in the root package.json so it applies to the whole tree."
+}

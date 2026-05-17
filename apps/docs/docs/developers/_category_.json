@@ -1,0 +1,8 @@
+{
+  "label": "For developers",
+  "position": 2,
+  "link": {
+    "type": "generated-index",
+    "description": "SDKs, REST + webhook contract, HMAC signing, code samples."
+  }
+}
