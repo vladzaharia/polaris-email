@@ -1,5 +1,5 @@
 -- polaris-email — extend audit_log CHECK with operator.* + auth.* actions
--- (schema version=24)
+-- (schema version=25)
 
 PRAGMA foreign_keys = OFF;
 
@@ -10,6 +10,7 @@ CREATE TABLE audit_log (
   actor     TEXT NOT NULL,
   action    TEXT NOT NULL CHECK(action IN (
               'bootstrap.consume',
+              'bootstrap.webauthn_enrolled',
               'mailbox.create','mailbox.update','mailbox.disable','mailbox.delete',
               'mailbox.expunge',
               'mailbox_sender.create','mailbox_sender.update','mailbox_sender.disable','mailbox_sender.delete',
@@ -81,4 +82,4 @@ CREATE INDEX idx_audit_log_actor  ON audit_log(actor);
 PRAGMA foreign_keys = ON;
 
 INSERT INTO schema_migrations (version, applied_at, sha)
-VALUES (24, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), '0024_audit_actions_operator');
+VALUES (25, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), '0025_audit_actions_operator');

@@ -81,7 +81,7 @@ Additionally, generates an ED25519 SSH host key at the configured path
 
 			// 1. Mint the impersonation api_key. This still needs a mailbox
 			//    to anchor the principal — the operators sentinel mailbox
-			//    (`_polaris_operators`, seeded by migration 0023) is the
+			//    (`_polaris_operators`, seeded by migration 0024) is the
 			//    correct home, but we accept any mailbox for environments
 			//    that haven't migrated yet.
 			mailboxID := ""
@@ -104,7 +104,7 @@ Additionally, generates an ED25519 SSH host key at the configured path
 				mailboxID = mailboxes.Data[0].ID
 			}
 			if mailboxID == "" {
-				return errors.New("no mailbox available; apply migration 0023 then retry")
+				return errors.New("no mailbox available; apply migration 0024 then retry")
 			}
 
 			issueBody := map[string]any{

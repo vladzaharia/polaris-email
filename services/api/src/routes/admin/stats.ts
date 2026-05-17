@@ -44,8 +44,9 @@ stats.get('/v1/admin/stats/overview', requireScope('admin:read'), async (c) => {
     }
   };
 
+  // Exclude sentinel mailboxes (`_polaris_*`) — operator-system internals.
   const mailboxCount = await safeCount(
-    `SELECT COUNT(*) AS n FROM mailboxes WHERE disabled_at IS NULL`,
+    `SELECT COUNT(*) AS n FROM mailboxes WHERE disabled_at IS NULL AND name NOT LIKE '\\_polaris\\_%' ESCAPE '\\'`,
   );
   const domainVerified = await safeCount(
     `SELECT COUNT(*) AS n FROM mail_domains WHERE status = 'verified' AND disabled_at IS NULL`,

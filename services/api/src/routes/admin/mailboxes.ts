@@ -19,6 +19,9 @@ import { ulid } from '@polaris-email/ids';
 export const mailboxes = new Hono<{ Bindings: Env }>();
 
 // ---------- list (uses v_mailbox_summary view) ----------
+// Sentinel mailboxes (name prefix `_polaris_`) are operator-system
+// internals (created by migration 0024 to anchor operator principals);
+// they have no user-facing meaning and are filtered out of list responses.
 mailboxes.get('/v1/admin/mailboxes', requireScope('admin:read'), async (c) => {
   // Production hits the `v_mailbox_summary` view (active sender/receiver
   // counts); degraded environments (in-memory mock D1) fall back to the raw
@@ -26,14 +29,16 @@ mailboxes.get('/v1/admin/mailboxes', requireScope('admin:read'), async (c) => {
   let rows = await c.env.DB.prepare(
     `SELECT id, name, description, default_sender_id, created_at, updated_at,
             disabled_at, active_sender_count, active_receiver_count
-     FROM v_mailbox_summary ORDER BY name ASC`,
+     FROM v_mailbox_summary WHERE name NOT LIKE '\\_polaris\\_%' ESCAPE '\\'
+     ORDER BY name ASC`,
   )
     .all()
     .catch(() => ({ results: [] as unknown[] }));
   if (!rows.results || rows.results.length === 0) {
     rows = await c.env.DB.prepare(
       `SELECT id, name, description, default_sender_id, created_at, updated_at, disabled_at
-       FROM mailboxes ORDER BY name ASC`,
+       FROM mailboxes WHERE name NOT LIKE '\\_polaris\\_%' ESCAPE '\\'
+       ORDER BY name ASC`,
     ).all();
   }
   return c.json({ data: rows.results });

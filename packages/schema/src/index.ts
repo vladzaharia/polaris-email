@@ -344,7 +344,10 @@ export type VerifyResponse = z.infer<typeof VerifyResponse>;
 
 // ---------- credential plane ----------
 
-export const PrincipalKind = z.enum(['api_key', 'smtp_cred']);
+// `operator` kind is added by migration 0024 — operator principals anchor
+// to the sentinel `_polaris_operators` mailbox and own the api_key that
+// `polaris-email login` stores in the credstore.
+export const PrincipalKind = z.enum(['api_key', 'smtp_cred', 'operator']);
 export type PrincipalKind = z.infer<typeof PrincipalKind>;
 
 export const Principal = z.object({
@@ -828,6 +831,8 @@ export type IdempotencyClaim = z.infer<typeof IdempotencyClaim>;
 export const AuditAction = z.enum([
   // bootstrap
   'bootstrap.consume',
+  // PR 7 genesis-seal records the WebAuthn enrolment completion as an
+  // audit row (migration 0023_audit_action_webauthn_enrolled.sql).
   'bootstrap.webauthn_enrolled',
   // mailbox CRUD
   'mailbox.create',
@@ -952,7 +957,15 @@ export const AuditAction = z.enum([
   'moderation.feedback_recorded',
   'inbound_sender_block.create',
   'inbound_sender_block.delete',
-  // Operator lifecycle (migration 0024). `operator.*` covers admin actions
+  // Legacy tenant lifecycle (kept in the audit_log CHECK from
+  // 0001_init.sql onward for historic rows; the runtime equivalents
+  // are mailbox.*). Listing them here closes the Zod-vs-CHECK gap so
+  // historic audit rows parse cleanly through AuditAction.
+  'tenant.create',
+  'tenant.update',
+  'tenant.disable',
+  'tenant.rotate_pepper',
+  // Operator lifecycle (migration 0025). `operator.*` covers admin actions
   // managing the operator roster; `auth.*` covers per-session events
   // (CLI login/logout); `operator.ssh.*` covers Wish-fronted SSH sessions.
   'operator.create',

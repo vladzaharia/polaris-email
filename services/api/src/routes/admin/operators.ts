@@ -29,7 +29,7 @@ import { hashSecret } from '../../hashing.js';
 export const operators = new Hono<{ Bindings: Env }>();
 
 // Sentinel mailbox that all operator principals anchor to (created by
-// migration 0023). Not user-visible; operator scopes should never include
+// migration 0024). Not user-visible; operator scopes should never include
 // `messages:read` or `send` that would let them act against this mailbox.
 const OPERATOR_SENTINEL_MAILBOX_ID = '01J0000000000000000000PLRS';
 

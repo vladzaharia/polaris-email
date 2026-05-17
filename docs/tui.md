@@ -49,7 +49,7 @@ Global:
 | `?`            | Help overlay (when implemented)     |
 
 Per-tab keys are surfaced in the status-bar hint line and inherited from
-`bubbles/table` (`↑/k` ↓/j` move, `pgup/pgdn` page, etc.).
+`bubbles/table` (`↑/k` `↓/j` move, `pgup/pgdn` page, etc.).
 
 Mouse: the tab bar is clickable (via `bubblezone`). Modern xterm-compatible
 terminals work over SSH provided a PTY is allocated (`ssh -t`).

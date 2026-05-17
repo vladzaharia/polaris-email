@@ -1,5 +1,5 @@
 -- polaris-email — operators table for human-identity SSH + CLI access
--- (schema version=23)
+-- (schema version=24)
 --
 -- An `operator` is a named human (or service account) granted access to the
 -- control plane. Each operator owns exactly one row in `api_keys` (1:1 via
@@ -81,4 +81,4 @@ END;
 PRAGMA foreign_keys = ON;
 
 INSERT INTO schema_migrations (version, applied_at, sha)
-VALUES (23, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), '0023_operators');
+VALUES (24, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), '0024_operators');
