@@ -10,8 +10,7 @@
 #   - Suitable when the host is already the public entry point or sits behind
 #     a load balancer the operator controls.
 services:
-  # Optional cert manager. Skip if you're mounting operator-managed PEM files
-  # directly. Activate with `docker compose --profile lego up`.
+  # Lego DNS-01 cert manager. Activated automatically because TLSSource=lego.
   lego:
     image: goacme/lego:v4.14
     container_name: polaris-mail-lego
@@ -27,7 +26,7 @@ services:
     profiles: [lego]
 
   bridge:
-    image: ghcr.io/vladzaharia/polaris-mail-bridge:dev
+    image: ghcr.io/vladzaharia/polaris-mail-bridge:v0.0.0-test
     container_name: polaris-mail-bridge
     # Bind the protocol ports directly on the host. Operator controls firewall.
     #
@@ -46,7 +45,7 @@ services:
       BRIDGE_TLS_CERT_PATH: /etc/polaris-bridge/tls/fullchain.pem
       BRIDGE_TLS_KEY_PATH: /etc/polaris-bridge/tls/privkey.pem
       # Bridge identity (consumed by config.Load).
-      BRIDGE_NAME: ${BRIDGE_NAME:-polaris-mail-local}
+      BRIDGE_NAME: ${BRIDGE_NAME:-polaris-mail-local-lego}
       BRIDGE_POLARIS_API_URL: ${POLARIS_API_URL:-https://api.polaris.example.com}
       BRIDGE_POLARIS_BRIDGE_ID_FILE: /run/secrets/bridge_id
       BRIDGE_POLARIS_HMAC_KEY_FILE: /run/secrets/hmac_key

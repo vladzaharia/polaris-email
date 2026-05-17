@@ -1,0 +1,59 @@
+# {{ .GeneratedBanner }}
+#
+# polaris-mail-bridge configuration. Every key has a BRIDGE_<SECTION>_<KEY>
+# environment-variable override — the env var wins. Useful for layering
+# compose env on a baseline toml.
+
+[smtps]
+enabled = true
+listen_addr = ":465"
+max_message_size = 26214400 # 25 MiB
+require_starttls = false # implicit TLS (port 465) — STARTTLS is for port 587
+
+[imap]
+enabled = true
+listen_addr = ":993"
+idle_timeout = "29m" # IMAP IDLE max per RFC 9051 §6.3.13 recommendation
+fetch_concurrency = 32
+
+[webhook]
+# Internal webhook receiver — polaris fanout POSTs `message.received` events
+# here, which the bridge uses to drive IMAP IDLE pushes. Plain HTTP; expects
+# Tailscale or a local reverse proxy to terminate TLS in front.
+enabled = true
+listen_addr = ":8080"
+
+[tls]
+# Mode: "tailscale" uses tsnet.ListenTLS with auto-issued MagicDNS certs.
+#       "local" loads PEM files from cert_path / key_path.
+mode = "{{ .TLSMode }}"
+cert_path = "/etc/polaris-bridge/tls/fullchain.pem"
+key_path = "/etc/polaris-bridge/tls/privkey.pem"
+# Reload on file change. fsnotify watches cert_path + key_path.
+hot_reload = true
+
+[polaris]
+api_url = "{{ .PolarisAPIURL }}"
+# Bridge ID and HMAC key paths (one secret per file; mounted via Docker
+# secrets in the compose stacks).
+bridge_id_file = "/run/secrets/bridge_id"
+hmac_key_file = "/run/secrets/hmac_key"
+poll_interval = "5s"
+
+[credstore]
+path = "/var/lib/polaris-bridge/credstore.db"
+cache_size = 5000
+cache_ttl = "5m"
+
+[mirror]
+# Bridge-local SQLite mirror of mailbox_messages_state for low-latency IMAP.
+path = "/var/lib/polaris-bridge/mirror.db"
+max_size_mb = 1024
+baseline_refresh = "30s"
+
+[logging]
+level = "info" # trace | debug | info | warn | error
+file = "/var/log/polaris-bridge/audit.jsonl"
+
+[shutdown]
+grace_period = "30s" # drain connections on SIGTERM

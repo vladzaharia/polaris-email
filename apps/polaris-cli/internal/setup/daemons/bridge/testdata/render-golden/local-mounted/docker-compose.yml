@@ -27,7 +27,7 @@ services:
     profiles: [lego]
 
   bridge:
-    image: ghcr.io/vladzaharia/polaris-mail-bridge:dev
+    image: ghcr.io/vladzaharia/polaris-mail-bridge:v0.0.0-test
     container_name: polaris-mail-bridge
     # Bind the protocol ports directly on the host. Operator controls firewall.
     #

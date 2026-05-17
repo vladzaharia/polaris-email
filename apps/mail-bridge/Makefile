@@ -1,4 +1,4 @@
-.PHONY: build test vet lint docker docker-multiarch tidy
+.PHONY: build test vet lint docker docker-multiarch tidy compose-examples
 
 PKG := ./...
 IMAGE ?= polaris-bridge:dev
@@ -43,3 +43,16 @@ docker-multiarch:
 	  -t $(MULTIARCH_IMAGE) \
 	  $(BUILDX_OUTPUT) \
 	  $(REPO_ROOT)
+
+# Regenerate the in-repo example compose files from the bridge daemon's
+# Go templates. CI has a drift gate that runs this target and fails on
+# a non-empty `git diff --exit-code apps/mail-bridge/docker-compose.*.yml`.
+#
+# The image tag baked into the examples is taken from `cmds.Version`
+# (the CLI's compiled-in version). On `main` that is the literal
+# "dev"; goreleaser stamps a real version at release time.
+COMPOSE_IMAGE_TAG ?=
+compose-examples:
+	cd $(REPO_ROOT)/apps/polaris-cli && go run ./cmd/render-compose-examples \
+	  -out $(REPO_ROOT)/apps/mail-bridge \
+	  $(if $(COMPOSE_IMAGE_TAG),-image-tag $(COMPOSE_IMAGE_TAG))

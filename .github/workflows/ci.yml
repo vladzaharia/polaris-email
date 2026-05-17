@@ -105,6 +105,40 @@ jobs:
       - working-directory: apps/mail-bridge
         run: go test -race ./...
 
+  compose-examples-drift:
+    # The in-repo apps/mail-bridge/docker-compose.{local,tailscale}.yml
+    # files are generated artefacts; the source of truth is
+    # apps/polaris-cli/internal/setup/daemons/bridge/templates/. CI runs
+    # `make compose-examples` and fails on any drift so an operator
+    # editing the example file directly (instead of the template) is
+    # caught at PR time.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache-dependency-path: apps/polaris-cli/go.sum
+      - name: regenerate compose examples
+        run: make -C apps/mail-bridge compose-examples
+      - name: assert no drift
+        run: git diff --exit-code apps/mail-bridge/docker-compose.local.yml apps/mail-bridge/docker-compose.tailscale.yml
+
+  polaris-cli-test:
+    # Unit tests for the polaris-email Go CLI, including the PR 9 setup
+    # bridge wizard + platform helpers.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache-dependency-path: apps/polaris-cli/go.sum
+      - working-directory: apps/polaris-cli
+        run: go vet ./...
+      - working-directory: apps/polaris-cli
+        run: go test -race ./...
+
   openapi-validate:
     runs-on: ubuntu-latest
     steps:
