@@ -3,16 +3,17 @@
 // Cron triggers and their handlers (all routed off `event.cron`):
 //   * `0 * * * *`           — hourly audit anchor                → anchor
 //   * `0 9 * * 1`           — weekly control-plane staleness     → staleness
-//   * `* * * * *`           — per-minute synthetic /healthz probe → synthetic
+//   * `*/5 * * * *`         — synthetic /healthz probe (5 min)   → synthetic
 //   * `0 3 * * *`           — nightly retention janitor           → janitor
 //   * `*/15 * * * *`        — sender abuse threshold              → senderAbuseThresholdRun
 //   * `0 4 * * *`           — daily DMARC policy auto-promotion   → dmarcPromoteRun
 //   * `0 */6 * * *`         — MTA-STS continuity                  → mtaStsContinuityRun
 //   * `30 */6 * * *`        — DKIM self-verify                    → dkimSelfVerifyRun
 //   * `0 5 * * *`           — feedback window refresh             → feedbackWindowRefresh
-//   * `15 5 * * *`          — anchor B2 backfill (retry NULL ext) → anchorBackfill
-//   * `30 5 * * *`          — full audit chain verification       → auditVerify
-//   * `45 5 * * *`          — policy_decision ↔ message backfill  → policyBackfill
+//   * `5 5 * * *`           — anchor B2 backfill (retry NULL ext) → anchorBackfill
+//   * `20 5 * * *`          — full audit chain verification       → auditVerify
+//   * `50 5 * * *`          — policy_decision ↔ message backfill  → policyBackfill
+//   * `0 6 * * 0`           — weekly D1 export to R2 backups      → d1Backup
 //
 // Every handler runs inside withCronTelemetry, which writes a row into
 // cron_runs with (status, duration_ms, message). The anchor/backfill/
@@ -40,7 +41,7 @@ export async function scheduled(event: ScheduledEvent, env: Env): Promise<void> 
       return anchor(env); // anchor writes its own cron_runs row
     case '0 9 * * 1':
       return withCronTelemetry(env, 'staleness', () => staleness(env));
-    case '* * * * *':
+    case '*/5 * * * *':
       return withCronTelemetry(env, 'synthetic', () => synthetic(env));
     case '0 3 * * *':
       return withCronTelemetry(env, 'janitor', () => janitor(env));
@@ -88,12 +89,20 @@ export async function scheduled(event: ScheduledEvent, env: Env): Promise<void> 
         console.log('feedback-window-refresh cron:', `written=${r.written}`);
       });
       return;
-    case '15 5 * * *':
+    case '5 5 * * *':
       return anchorBackfill(env); // self-reports telemetry
-    case '30 5 * * *':
+    case '20 5 * * *':
       return auditVerify(env); // self-reports telemetry
-    case '45 5 * * *':
+    case '50 5 * * *':
       return policyBackfill(env); // self-reports telemetry
+    case '0 6 * * 0':
+      // d1-backup wired in PR9 — register the cron case here so dispatcher
+      // doesn't log "unknown cron" once wrangler.jsonc adds the schedule.
+      // Handler is added in services/api/src/scheduled/d1-backup.ts.
+      return withCronTelemetry(env, 'd1-backup', async () => {
+        const mod = await import('./d1-backup.js');
+        await mod.d1Backup(env);
+      });
     default:
       // eslint-disable-next-line no-console
       console.warn(`scheduled: unknown cron ${event.cron}`);

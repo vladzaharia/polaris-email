@@ -118,7 +118,7 @@ describe('scheduled dispatch', () => {
       MAX_LATENCY_MS: '30000',
     } as unknown as Env;
     await expect(
-      worker.scheduled!({ cron: '* * * * *' } as ScheduledEvent, env, ctx),
+      worker.scheduled!({ cron: '*/5 * * * *' } as ScheduledEvent, env, ctx),
     ).resolves.toBeUndefined();
   });
 
@@ -187,12 +187,12 @@ describe('scheduled dispatch', () => {
       });
 
       // First failure: counter=1, no alert.
-      await worker.scheduled!({ cron: '* * * * *' } as ScheduledEvent, env, ctx);
+      await worker.scheduled!({ cron: '*/5 * * * *' } as ScheduledEvent, env, ctx);
       expect(await kv.get('synthetic:consecutive_failures')).toBe('1');
       expect(fetched.length).toBe(0);
 
       // Second failure: counter=2, alert fires.
-      await worker.scheduled!({ cron: '* * * * *' } as ScheduledEvent, env, ctx);
+      await worker.scheduled!({ cron: '*/5 * * * *' } as ScheduledEvent, env, ctx);
       expect(await kv.get('synthetic:consecutive_failures')).toBe('2');
       expect(fetched.length).toBe(1);
       const payload = JSON.parse(fetched[0]!.body) as Record<string, unknown>;
@@ -200,13 +200,13 @@ describe('scheduled dispatch', () => {
       expect(payload.service).toBe('polaris-email');
 
       // Third failure: counter=3, another alert (over threshold every tick).
-      await worker.scheduled!({ cron: '* * * * *' } as ScheduledEvent, env, ctx);
+      await worker.scheduled!({ cron: '*/5 * * * *' } as ScheduledEvent, env, ctx);
       expect(await kv.get('synthetic:consecutive_failures')).toBe('3');
       expect(fetched.length).toBe(2);
 
       // Recovery: counter resets, KV key deleted, no alert.
       healthzMode = 'ok';
-      await worker.scheduled!({ cron: '* * * * *' } as ScheduledEvent, env, ctx);
+      await worker.scheduled!({ cron: '*/5 * * * *' } as ScheduledEvent, env, ctx);
       expect(await kv.get('synthetic:consecutive_failures')).toBeNull();
       expect(fetched.length).toBe(2);
     });
