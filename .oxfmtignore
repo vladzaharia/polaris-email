@@ -1,3 +1,0 @@
-# Bridge golden-fixture READMEs are byte-exact expected outputs from the
-# renderer; oxfmt must not touch them or TestRender_Golden breaks.
-apps/polaris-cli/internal/setup/daemons/bridge/testdata/render-golden/**/README.md
