@@ -3,7 +3,7 @@ build/
 .docusaurus/
 
 # OpenAPI plugin output — landed in PR 12.
-docs/reference/api/
+content/reference/api/
 
 # Standard.
 node_modules/

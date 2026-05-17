@@ -1,4 +1,0 @@
-{
-  "schema": { "type": "string", "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$", "title": "Ulid" },
-  "schemaType": "response"
-}
