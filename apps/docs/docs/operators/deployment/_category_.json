@@ -5,6 +5,6 @@
     "type": "generated-index",
     "slug": "/operators/deployment",
     "title": "Deployment",
-    "description": "Prerequisites, the one-time cold-start, and the moving parts that sit between Cloudflare and the public custom domains. The cold-start runbook target is ≤15 minutes from a clean clone to a green smoke."
+    "description": "Standing up polaris-email — prerequisites, the one-time cold-start, Cloudflare Access setup, and the Terraform module wiring that backs them. The cold-start runbook target is ≤15 minutes from a clean clone to a green smoke."
   }
 }
