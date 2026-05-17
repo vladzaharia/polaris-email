@@ -126,6 +126,9 @@ func newInfraCmd() *cobra.Command {
 	c.AddCommand(newInfraSmokeCmd())
 	// PR 7 leaf: genesis-seal.
 	c.AddCommand(newInfraGenesisSealCmd())
+	// PR 13 leaves: rollback + rotate-admin-key.
+	c.AddCommand(newInfraRollbackCmd())
+	c.AddCommand(newInfraRotateAdminKeyCmd())
 	return c
 }
 
