@@ -333,6 +333,12 @@ func (w *inputWrapper) Dir() string { return w.in.Dir }
 // the destructive action against the operator-supplied --confirm-name.
 func (w *inputWrapper) Identifier() string { return w.in.BridgeName }
 
+// ImageTag exposes the pinned container image tag so the cobra
+// generator's TUI can show "image v1.4.2" in the title bar without
+// reaching into the concrete BridgeSetupInput. The cobra leaf reads
+// this via a small interface declared in internal/setup/cmd/up_tui.go.
+func (w *inputWrapper) ImageTag() string { return w.in.ImageTag }
+
 // --- credentials adapter --------------------------------------------
 
 // Credentials is the setup.Credentials shape the bridge descriptor

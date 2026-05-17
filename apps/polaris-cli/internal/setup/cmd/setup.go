@@ -251,16 +251,24 @@ func runHappyPath(cmd *cobra.Command, d setup.Daemon, f *daemonFlags, opts Optio
 		return err
 	}
 
-	// Up.
+	// Up + Verify. The TUI fuses these two stages into one screen so
+	// the operator sees logs + probe results side-by-side while the
+	// container settles. --non-interactive (or a non-TTY stdout)
+	// falls back to the original plain-stdout sequence.
 	lc, _ := d.(setup.Lifecycle)
 	if lc == nil {
 		return fmt.Errorf("setup %s: daemon does not implement Lifecycle", d.Name())
 	}
+	if shouldUseTUI(f.NonInteractive) {
+		if err := runUpWithTUI(ctx, d, in, f.Profiles, out); err != nil {
+			return err
+		}
+		fmt.Fprintf(out, "%s is up.\n", d.Name())
+		return nil
+	}
 	if err := lc.Up(ctx, in, f.Profiles, out); err != nil {
 		return err
 	}
-
-	// Verify.
 	probes := runProbes(ctx, d, in)
 	renderProbeTable(out, probes)
 	for _, p := range probes {
@@ -368,6 +376,19 @@ func newUpCmd(d setup.Daemon, defaultDir string, _ Options) *cobra.Command {
 	c := &cobra.Command{
 		Use:   "up",
 		Short: "docker compose pull && docker compose up -d in <dir>",
+		Long: "Run `docker compose pull && docker compose up -d` in the daemon's project\n" +
+			"directory, then tail the live logs in a Bubble Tea TUI while the\n" +
+			"descriptor's post-up health probes run side-by-side.\n" +
+			"\n" +
+			"The TUI shows the merged log stream on top (q to dismiss, arrow keys to\n" +
+			"scroll) and one row per probe (SMTPS handshake, IMAP CAPABILITY, webhook\n" +
+			"/healthz, control-plane last_seen) at the bottom. The program exits\n" +
+			"cleanly when every required probe passes; failing probes or a 60s\n" +
+			"timeout surface as a non-zero exit.\n" +
+			"\n" +
+			"Pass --non-interactive (or run with POLARIS_NO_TUI=1, or pipe stdout\n" +
+			"to a non-TTY) to bypass the TUI and fall back to the original plain\n" +
+			"stdout streaming — CI pipelines are unaffected.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			in, err := loadInput(d, f)
 			if err != nil {
@@ -376,6 +397,9 @@ func newUpCmd(d setup.Daemon, defaultDir string, _ Options) *cobra.Command {
 			lc, _ := d.(setup.Lifecycle)
 			if lc == nil {
 				return fmt.Errorf("setup %s: daemon does not implement Lifecycle", d.Name())
+			}
+			if shouldUseTUI(f.NonInteractive) {
+				return runUpWithTUI(cmd.Context(), d, in, f.Profiles, cmd.OutOrStdout())
 			}
 			return lc.Up(cmd.Context(), in, f.Profiles, cmd.OutOrStdout())
 		},

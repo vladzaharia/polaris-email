@@ -34,6 +34,26 @@ based on operational fit:
 Both modes use the same image, the same `bridge.toml`, and the same
 env-var overrides. Only the network mode and TLS source differ.
 
+## Live `up` TUI
+
+`polaris-email setup bridge up` brings the bridge online with a live
+Bubble Tea TUI: the merged `docker compose logs -f` stream renders at
+the top of the screen while a probe table at the bottom updates as
+each post-up health check (SMTPS handshake, IMAP CAPABILITY, webhook
+`/healthz`, control-plane `last_seen`) finishes. The program exits
+cleanly when every required probe passes; a failing probe — or a 60s
+timeout — surfaces as a non-zero exit and leaves the screen state
+visible until you press `q` to dismiss.
+
+Press `q`, `esc`, or `Ctrl-C` to dismiss the view. Arrow keys scroll
+the log pane. The same keys also work mid-run if you decide to bail
+before the probes finish.
+
+In CI or non-interactive shells the TUI is bypassed automatically and
+the original plain-stdout streaming is used so log capture / CI scrapes
+keep working unchanged. Force the fallback explicitly with
+`--non-interactive` or by exporting `POLARIS_NO_TUI=1`.
+
 ## Register a new bridge
 
 ```sh
