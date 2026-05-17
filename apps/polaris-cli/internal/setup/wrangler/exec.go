@@ -47,10 +47,21 @@ func Run(ctx context.Context, args ...string) (*Result, error) {
 // the binary name and pipe extra stdin. The setup flow uses Run; this
 // is here mainly to keep exec_test.go honest.
 func RunWith(ctx context.Context, binary string, stdin io.Reader, args ...string) (*Result, error) {
+	return RunWithDir(ctx, "", binary, stdin, args...)
+}
+
+// RunWithDir is RunWith with an explicit working directory. `dir`
+// empty falls back to the parent process's cwd. The rollback flow
+// uses this so `wrangler rollback` picks up the right wrangler.jsonc
+// without needing to chdir the entire process.
+func RunWithDir(ctx context.Context, dir, binary string, stdin io.Reader, args ...string) (*Result, error) {
 	if _, err := exec.LookPath(binary); err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrNotInstalled, err)
 	}
 	cmd := exec.CommandContext(ctx, binary, args...)
+	if dir != "" {
+		cmd.Dir = dir
+	}
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr

@@ -15,6 +15,7 @@ import (
 	"github.com/vladzaharia/polaris-email/apps/polaris-cli/internal/output"
 	"github.com/vladzaharia/polaris-email/apps/polaris-cli/internal/setup/config"
 	"github.com/vladzaharia/polaris-email/apps/polaris-cli/internal/setup/deploy"
+	"github.com/vladzaharia/polaris-email/apps/polaris-cli/internal/setup/rollback"
 	"github.com/vladzaharia/polaris-email/apps/polaris-cli/internal/setup/secrets"
 	"github.com/vladzaharia/polaris-email/apps/polaris-cli/internal/setup/secrets/sources"
 )
@@ -197,15 +198,93 @@ func newInfraSecretsListCmd() *cobra.Command {
 // --- rotate ----------------------------------------------------------
 
 func newInfraSecretsRotateCmd() *cobra.Command {
+	var (
+		envFile        string
+		recordPath     string
+		archivePath    string
+		nonInteractive bool
+		useVault       bool
+		useKeychain    bool
+		noArchive      bool
+	)
 	c := &cobra.Command{
-		Use:   "rotate",
-		Short: "Rotate one or more secrets (placeholder — PR 13 lands the implementation)",
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			fmt.Fprintln(cmd.OutOrStdout(),
-				"not implemented yet — PR 13 wires rotation alongside the rollback flow.")
+		Use:   "rotate <name>",
+		Short: "Rotate a single secret: generate-new → archive-old → re-push to every recorded service",
+		Long: "Rotate a single master secret end-to-end.\n" +
+			"\n" +
+			"  1. Read the current value via the same source chain as `seed`.\n" +
+			"  2. Mint a new value with the same byte-shape (base64 vs hex).\n" +
+			"  3. Archive the OLD value to .secrets.archive.json (1-deep).\n" +
+			"  4. Push the NEW value to every service the recorder lists.\n" +
+			"  5. Re-stamp secrets.created.json with the new sha256.\n" +
+			"\n" +
+			"To roll back: `setup infra rollback secret <name>` re-pushes the\n" +
+			"archived previous value.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmdContext(cmd)
+			cfg, _ := config.LoadOrDefault(envFile)
+			overrides := map[string]string{}
+			if cfg != nil {
+				for k, v := range cfg.AsMap() {
+					if v != "" {
+						overrides[k] = v
+					}
+				}
+			}
+			srcs := []sources.Source{sources.NewEnvSource(overrides)}
+			if useVault {
+				srcs = append(srcs, &sources.VaultSource{})
+			}
+			if useKeychain {
+				srcs = append(srcs, &sources.KeyringSource{})
+			}
+
+			rec := secrets.NewRecorder(pickPath(recordPath, secrets.DefaultRecordPath))
+			var arch secrets.RotateArchiver
+			archP := pickPath(archivePath, rollback.DefaultArchivePath)
+			if !noArchive {
+				arch = rollback.NewArchive(archP)
+			}
+
+			isTTY := !nonInteractive && isInteractiveStdin()
+			var reporter secrets.Reporter
+			var tuiR *rollbackTUIReporter
+			if isTTY {
+				tuiR = newRollbackTUIReporter(cmd.OutOrStdout(), "polaris-email — rotating secret")
+				reporter = tuiR
+			} else {
+				reporter = newSecretsPlainReporter(cmd.OutOrStdout())
+			}
+
+			err := secrets.Rotate(ctx, args[0], secrets.RotateOptions{
+				Sources:  srcs,
+				Pusher:   secrets.WranglerPusher{},
+				Recorder: rec,
+				Archive:  arch,
+				Reporter: reporter,
+			})
+			if tuiR != nil {
+				tuiR.Done()
+			}
+			if err != nil {
+				return err
+			}
+			if noArchive {
+				fmt.Fprintf(cmd.OutOrStdout(), "secrets: rotated %s (no archive — rollback impossible)\n", args[0])
+			} else {
+				fmt.Fprintf(cmd.OutOrStdout(), "secrets: rotated %s — old value archived to %s\n", args[0], archP)
+			}
 			return nil
 		},
 	}
+	c.Flags().StringVar(&envFile, "env-file", defaultEnvFile, "path to .env.deploy")
+	c.Flags().StringVar(&recordPath, "record-path", "", "override secrets.created.json path")
+	c.Flags().StringVar(&archivePath, "archive-path", "", "override .secrets.archive.json path")
+	c.Flags().BoolVar(&nonInteractive, "non-interactive", false, "force plain-stdout output (no TUI)")
+	c.Flags().BoolVar(&useVault, "vault", false, "include the 1Password vault source")
+	c.Flags().BoolVar(&useKeychain, "keychain", false, "include the OS keychain source (build with -tags keyring)")
+	c.Flags().BoolVar(&noArchive, "no-archive", false, "skip writing the archive (rollback will be impossible)")
 	return c
 }
 

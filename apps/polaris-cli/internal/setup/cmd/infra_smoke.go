@@ -29,9 +29,12 @@ const defaultBootstrapOutput = ".bootstrap-output.json"
 // bootstrapOutput is the small JSON shape `bin/bootstrap.sh` (and PR 7)
 // writes to .bootstrap-output.json. We declare it locally so the smoke
 // command doesn't have to import another package just for the shape.
+// MailboxID is carried so `setup infra rotate-admin-key` can mint the
+// replacement key against the same operator mailbox.
 type bootstrapOutput struct {
 	AdminKeyID     string `json:"admin_key_id"`
 	AdminKeySecret string `json:"admin_key_secret"`
+	MailboxID      string `json:"mailbox_id,omitempty"`
 	CreatedAt      string `json:"created_at,omitempty"`
 }
 

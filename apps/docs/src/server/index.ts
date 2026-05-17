@@ -54,6 +54,7 @@ const REDIRECTS: Record<string, string> = {
   '/runbooks': '/operators/runbooks',
   '/runbooks/anchor-maintenance': '/operators/runbooks/anchor-maintenance',
   '/runbooks/credential-rotation': '/operators/runbooks/credential-rotation',
+  '/runbooks/disaster-recovery': '/operators/runbooks/disaster-recovery',
   '/runbooks/dlq-replay': '/operators/runbooks/dlq-replay',
   '/runbooks/domain-onboarding': '/operators/runbooks/domain-onboarding',
   '/runbooks/incident-response': '/operators/runbooks/incident-response',

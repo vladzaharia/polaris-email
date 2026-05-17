@@ -43,5 +43,8 @@ func newInfraCmd() *cobra.Command {
 	c.AddCommand(newInfraMigrateCmd())
 	c.AddCommand(newInfraDeployCmd())
 	c.AddCommand(newInfraSmokeCmd())
+	// PR 13 leaves: rollback + rotate-admin-key.
+	c.AddCommand(newInfraRollbackCmd())
+	c.AddCommand(newInfraRotateAdminKeyCmd())
 	return c
 }

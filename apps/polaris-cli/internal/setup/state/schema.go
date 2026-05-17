@@ -74,10 +74,17 @@ type R2Bucket struct {
 // DeployRecord captures the most recent successful wrangler deploy for a
 // service. VersionID is the wrangler-reported version, SHA is the git SHA
 // the deployment came from.
+//
+// PreviousVersionID is stamped by `setup infra rollback deploy <svc>`
+// before it shells out to `wrangler rollback` — it records the version
+// id we just rolled BACK from, so a subsequent re-roll forwards can
+// find the original. Empty in the common case where no rollback has
+// occurred for this service.
 type DeployRecord struct {
-	VersionID string    `json:"version_id"`
-	SHA       string    `json:"sha"`
-	At        time.Time `json:"at"`
+	VersionID         string    `json:"version_id"`
+	SHA               string    `json:"sha"`
+	At                time.Time `json:"at"`
+	PreviousVersionID string    `json:"previous_version_id,omitempty"`
 }
 
 // migrateSchema upgrades a raw JSON document to the current schema. The

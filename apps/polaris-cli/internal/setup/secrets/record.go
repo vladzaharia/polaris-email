@@ -100,6 +100,49 @@ func (r *Recorder) Record(svc, name, value string, createdAt time.Time) error {
 	return r.writeLocked(entries)
 }
 
+// Upsert replaces the existing (svc, name) row's sha256 with
+// sha256(value), stamping createdAt as the rotation time. If no row
+// exists it falls back to creating one. Used by the rotation flow —
+// Record is append-only and "first wins", which is wrong semantically
+// for a rotation (the sha must change to reflect the new value).
+//
+// The append-only invariant for first-time seeds remains intact:
+// Upsert is only called by Rotate after the runner has verified the
+// secret has been seeded at least once.
+func (r *Recorder) Upsert(svc, name, value string, createdAt time.Time) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	entries, err := r.readLocked()
+	if err != nil {
+		return err
+	}
+	if createdAt.IsZero() {
+		createdAt = time.Now().UTC()
+	}
+	replaced := false
+	for i, e := range entries {
+		if e.Service == svc && e.Name == name {
+			entries[i] = Entry{
+				Name:      name,
+				Service:   svc,
+				SHA256:    sha256Hex(value),
+				CreatedAt: createdAt.UTC(),
+			}
+			replaced = true
+			break
+		}
+	}
+	if !replaced {
+		entries = append(entries, Entry{
+			Name:      name,
+			Service:   svc,
+			SHA256:    sha256Hex(value),
+			CreatedAt: createdAt.UTC(),
+		})
+	}
+	return r.writeLocked(entries)
+}
+
 // All returns a defensive copy of every entry. Sorted by (service,
 // name, created_at) so callers (e.g. `secrets list`) get deterministic
 // output.
