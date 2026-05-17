@@ -6,8 +6,8 @@
   "$schema": "https://json-schema.org/draft-07/schema",
   "name": "polaris-email-in-test",
   "main": "src/index.ts",
-  "compatibility_date": "2025-01-01",
-  "compatibility_flags": ["nodejs_compat"],
+  "compatibility_date": "2026-04-15",
+  "compatibility_flags": ["nodejs_compat_v2"],
   "d1_databases": [
     { "binding": "DB", "database_name": "polaris-email", "database_id": "test-local" },
   ],
