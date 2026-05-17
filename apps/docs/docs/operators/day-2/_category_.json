@@ -1,0 +1,10 @@
+{
+  "label": "Day 2",
+  "position": 5,
+  "link": {
+    "type": "generated-index",
+    "slug": "/operators/day-2",
+    "title": "Day 2",
+    "description": "Running polaris-email day-to-day — monitoring, alerting, the CLI tour, and the recurring operator workflows that aren't incident response."
+  }
+}

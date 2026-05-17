@@ -10,6 +10,10 @@ sidebar_position: 1
 First commands and decision trees for common incidents. Pairs with the
 [Operators](/operators) workflows and the cost model (lands in a later batch).
 
+If you'd rather scan a symptom → cause → fix index than walk the
+decision trees below, jump to the
+[troubleshooting decision matrix](/operators/troubleshooting/decision-matrix).
+
 ## Triage at 3 AM
 
 Whatever the alert, first command is:

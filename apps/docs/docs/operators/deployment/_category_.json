@@ -1,0 +1,10 @@
+{
+  "label": "Deployment",
+  "position": 4,
+  "link": {
+    "type": "generated-index",
+    "slug": "/operators/deployment",
+    "title": "Deployment",
+    "description": "Standing up polaris-email — cold-start bootstrap, Cloudflare Access setup, and the Terraform module wiring that backs them."
+  }
+}

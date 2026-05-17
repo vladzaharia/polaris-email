@@ -48,8 +48,14 @@ const REDIRECTS: Record<string, string> = {
   '/webhooks': '/developers/webhooks',
 
   // ----- Operator runbooks / tour -----------------------------------
-  '/deploy': '/operators/deployment/cold-start-bootstrap',
+  '/deploy': '/get-started/30-min-first-deploy',
+  '/first-deploy': '/get-started/30-min-first-deploy',
   '/operator': '/operators/day-2/cli-tour',
+  '/monitoring': '/operators/day-2/monitoring',
+  '/cloudflare-access': '/operators/deployment/cloudflare-access',
+  '/access': '/operators/deployment/cloudflare-access',
+  '/troubleshooting': '/operators/troubleshooting/decision-matrix',
+  '/decision-matrix': '/operators/troubleshooting/decision-matrix',
   '/runbook': '/operators/runbooks',
   '/runbooks': '/operators/runbooks',
   '/runbooks/anchor-maintenance': '/operators/runbooks/anchor-maintenance',

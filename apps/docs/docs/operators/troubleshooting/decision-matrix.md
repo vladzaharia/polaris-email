@@ -1,0 +1,129 @@
+---
+title: Decision matrix
+description: Symptom → diagnosis → remediation table for the failure modes operators hit in the field — auth, 5xx, missing webhooks, bounces, DKIM, panel auth loops, credential propagation, R2 404s, anchor staleness.
+sidebar_label: Decision matrix
+sidebar_position: 1
+---
+
+# Troubleshooting decision matrix
+
+Symptom on the left, what to check in the middle, what to do on the
+right. Linked runbooks carry the long form. The
+[on-call runbook](/operators/runbooks) is the source for the deep-dive
+sequences; this page is the index you scan first.
+
+Every error code in the matrix appears in the canonical
+[error catalog](/reference/errors), and the HTTP-status +
+retryability mapping is enforced server-side in
+[`services/api/src/errors.ts`](https://github.com/vladzaharia/polaris-email/blob/main/services/api/src/errors.ts).
+
+## API authentication (401 / 403)
+
+| Symptom | Diagnosis | Remediation | Linked runbook |
+| --- | --- | --- | --- |
+| `401 bad_signature` | Caller and server computed different HMACs. Wrong secret, wrong canonical-string, or wrong header set. | **Do not retry.** Replay locally: `polaris-email auth verify --method POST --path /v1/messages --body req.json --ts <ts> --nonce <n> --sig <hex> --secret "$(op read …)"`. Returns `OK` on a valid signature; otherwise prints the precise mismatch. | [HMAC reference](/security/overview) |
+| `401 key_propagating` | New / rotated key not yet in the colo KV cache. The plaintext sits in `KV_KEY_CACHE` with a 1h TTL and is best-effort across colos. | Retry once after `Retry-After` (≈2 s). If it persists past one minute, the key was rotated > 1h ago and the plaintext rolled off — operator must re-rotate. | [on-call runbook](/operators/runbooks) |
+| `401 clock_skew` | `X-Polaris-Ts` is outside ±5 min of server clock. | Resync the caller's clock via NTP. The header is millisecond epoch (`Date.now()`), not seconds. | — |
+| `401 unauthorized` | No `X-Polaris-Key-Id` header, or the panel session cookie expired. | Add the header (REST) or re-auth through Cloudflare Access (panel). | [Cloudflare Access setup](/operators/deployment/cloudflare-access) |
+| `403 key_revoked` | Key was revoked, or the principal it hangs off was disabled. Revocation propagates via `KV_REVOCATIONS` within ≤60 s. | Terminal for that key. Issue a fresh credential: `polaris-email cred issue --mailbox <id> ...`. The plaintext is printed exactly once. | [credential rotation runbook](/operators/runbooks) |
+| `403 scope_violation` | The `from` address is outside the key's `sender_scopes`, or the action is outside the key's `scopes` array. | Issue a new credential with the right scope set, or update the existing scope set in the panel (audited as a destructive action). | — |
+| `409 nonce_replay` | The same `X-Polaris-Nonce` was used twice within the 10-minute window. | Generate a fresh nonce for every request (`crypto.randomBytes(15).toString('base64url')` or similar). Never cache a nonce. | — |
+| `409 idempotency_conflict` | Same `Idempotency-Key`, different body. | Either reuse the original body or pick a fresh key. Keys are `^[A-Za-z0-9_-]{8,128}$`; the SDKs ship strict client-side validators. | — |
+
+## 5xx, transient vs persistent
+
+| Symptom | Diagnosis | Remediation | Linked runbook |
+| --- | --- | --- | --- |
+| `502 cf_upstream` (intermittent) | Cloudflare Email Service transient. Pipeline keeps the message in the outbound queue and retries; the caller sees this only on the synchronous path. | Retry with the **same** `Idempotency-Key` — the original `messageId` is returned on success. | — |
+| `502 cf_upstream` (sustained, one domain) | One sending domain's DKIM / SPF / DMARC drifted, or the receiver is bouncing every send. | Tail the outbound Worker: `wrangler tail polaris-email-out --status error --search "<domain>"`. If the failure is on our side (DKIM key removed too early), see the DKIM row below. | [on-call runbook](/operators/runbooks) — "Outbound to acme.com is failing" |
+| `502 cf_upstream` (sustained, all domains) | CF Email Service-wide incident. There is no built-in provider fail-over. | Watch [cloudflarestatus.com](https://www.cloudflarestatus.com/). If you can't wait, soft-disable affected domains so callers stop queueing doomed messages: `polaris-email domain disable <domain>`. Re-enable after the upstream recovers. | — |
+| `503 degraded` | Local circuit-breaker open — usually a downstream KV / D1 short outage tripped the breaker. | Retry after `Retry-After`. If it persists > 5 min, check `wrangler tail polaris-email-api --status error` for the upstream that's flapping. | — |
+| `429 rate_limited` / `too_many_requests` | Per-principal or per-mailbox rate limit hit. | Honor `Retry-After` (seconds). Rate-limit adjustments are a D1 update today — no CLI verb yet. Coordinate with the principal's owner before raising. | — |
+
+`429 retryable: true` does **not** mean "retry as fast as possible".
+Always sleep for the `Retry-After` value before retrying — anything
+shorter just bills CPU-ms for nothing and risks tripping the next
+limit window.
+
+## Missing webhooks
+
+| Symptom | Diagnosis | Remediation | Linked runbook |
+| --- | --- | --- | --- |
+| Consumer reports "we stopped getting deliveries" | Either the subscription is paused (5 consecutive failures tripped the circuit breaker) or the events are stacking in the DLQ. | `polaris-email webhook dlq list --sub-id <sub-id>` to see DLQ depth. If empty, check `paused`: `wrangler d1 execute polaris-email --command "SELECT id, paused, failure_count FROM webhook_subs WHERE id = '<sub-id>'"`. | [webhook DLQ runbook](/operators/runbooks/webhook-dlq) |
+| Subscription is `paused = 1` after a consumer outage | Per-subscription circuit breaker tripped after 5 consecutive failures. There's no dedicated `resume` verb. | `wrangler d1 execute polaris-email --command "UPDATE webhook_subs SET paused = 0, failure_count = 0 WHERE id = '<sub-id>'"`. The next event delivers immediately. | [on-call runbook](/operators/runbooks) — "Webhook deliveries are failing for service X" |
+| DLQ is filling and the consumer is permanently dead | Events arrived during the outage and need to either replay (once the consumer is healthy again) or be dropped. | `polaris-email webhook dlq replay <id>` for a single event, `polaris-email webhook dlq replay-all --sub-id <sub-id>` for the lot. Drops require `--confirm <id>` as a type-the-id guard. | [webhook DLQ runbook](/operators/runbooks/webhook-dlq) |
+| Consumer receives the event but says the signature didn't verify | Receiver is checking the wrong canonical string or the wrong domain tag. Webhooks sign with `polaris-webhook`, **not** `polaris-api`. Header is the un-versioned `X-Polaris-Sig: <hex>`. | Run the receiver's payload through the first-party verifier (`@polaris/sdk/webhook`, `polarissdkgo.VerifyWebhook`). If those reject, the receiver's HMAC code is wrong. If they accept, the receiver is reading the wrong header. | [HMAC reference](/security/overview) |
+
+The webhook fan-out queue consumer lives **inside `services/api`**
+(folded in from the retired `services/fanout` Worker). There is no
+separate Worker to tail; `wrangler tail polaris-email-api --status error --search webhook`
+is the canonical command.
+
+## Bounces and DKIM failures
+
+| Symptom | Diagnosis | Remediation | Linked runbook |
+| --- | --- | --- | --- |
+| `message.bounced` from one receiver | Remote-side permanent failure. The receiver said "this mailbox does not exist" (or worse). | Treat as terminal for that recipient. Update your suppression list. The bounce reason is in the webhook payload under `status.bounce_reason`. | — |
+| `message.failed` (not `message.bounced`) | Our-side permanent failure: binding misconfigured, DKIM record missing, retries exhausted. | Tail: `wrangler tail polaris-email-out --status error`. Cross-check `polaris-email domain show <domain>` for DKIM key state. | [on-call runbook](/operators/runbooks) |
+| DKIM verification failing at the receiver | A retiring DKIM key was removed from DNS before the new one fully propagated, or DKIM was never published. | Re-rotate to force a fresh publish: `polaris-email domain rotate-dkim <domain>`. Confirm the new selector resolves via `dig TXT <selector>._domainkey.<domain>` from at least two resolvers before retiring the old one. | [on-call runbook](/operators/runbooks) — "Outbound to acme.com is failing" |
+| Receiver bouncing with SPF fail | DNS edits propagated late or the SPF record drifted. | `dig TXT <domain>` and confirm `v=spf1 include:_spf.mx.cloudflare.net ~all` (or your equivalent) is intact. The `polaris-email domain onboard --apply` flow publishes this; if it's gone, the operator likely edited DNS by hand. | [domain onboarding runbook](/operators/runbooks) |
+| DMARC reports show alignment drops | DMARC is in `p=quarantine` or `p=reject` and the daily `dmarc-promote` cron may have promoted you off `p=none` while alignment was still flaky. | Tail: `wrangler tail polaris-email-api --search dmarc-promote`. If a promotion happened on a day with low signal, manually demote in the domain record; the next cron tick re-evaluates. | — |
+
+## Panel auth loops (OIDC)
+
+| Symptom | Diagnosis | Remediation | Linked runbook |
+| --- | --- | --- | --- |
+| Signed into Cloudflare Access, panel keeps bouncing back to `/login` | OIDC callback URL mismatch or the better-auth session cookie is being blocked. | Check the OIDC client config: `OIDC_REDIRECT_URL` must be the exact callback URL (e.g. `https://panel.example.com/panel/api/auth/callback/oidc`). If the panel + API live on different subdomains, set `COOKIE_DOMAIN=.example.com` and `COOKIE_PATH=/`. | [Cloudflare Access setup](/operators/deployment/cloudflare-access) |
+| Sign-in succeeds, panel says "not authorized" | OIDC `groups` claim is missing or doesn't contain `ADMIN_GROUP`. | Check the IdP-side group config. The panel reads `ADMIN_GROUP` (default `polaris-admins`) against the OIDC `groups` claim; alternate claim names are `roles`, `cf-access-groups`, `cf_access_groups`. The claim is capped at 200 entries. | [Cloudflare Access setup](/operators/deployment/cloudflare-access) |
+| Sign-in works briefly, then loops next page load | `BETTER_AUTH_SECRET` rotated without invalidating sessions, or `BETTER_AUTH_URL` doesn't match the public origin. | Confirm both secrets are set on the panel Worker. If `BETTER_AUTH_SECRET` was rotated, all sessions are invalidated; users must re-auth (expected, one-shot). | [panel README](https://github.com/vladzaharia/polaris-email/blob/main/apps/panel/README.md) |
+| Local panel running but `/api/dev/login` returns 403 | `ENVIRONMENT=production` is set. The dev backdoor is **fail-closed in production** regardless of `DEV_MODE`. | This is intentional — see the [threat model](/security/threat-model) §"`DEV_MODE` operator gate". To run the dev login locally: `DEV_MODE=1` and leave `ENVIRONMENT` unset (or set it to `development`). | [threat model](/security/threat-model) |
+
+## Credential propagation
+
+| Symptom | Diagnosis | Remediation | Linked runbook |
+| --- | --- | --- | --- |
+| Newly issued key returns `401 key_propagating` for ~60 s | Expected. The `api_keys` row is in D1 (strongly consistent), but the plaintext lives in `KV_KEY_CACHE` (eventually consistent across colos, ≤60 s typical). | Retry on `key_propagating` with backoff. Both first-party SDKs handle this automatically. | — |
+| Revoked key still authenticates briefly | Same eventual-consistency window. Revocation propagates via `KV_REVOCATIONS` plus a 60 s per-Worker in-memory cache, so total worst-case is ≤60 s. | Wait one minute and re-test. If the key is still live after two minutes, escalate: the revoke path is broken. | [credential rotation runbook](/operators/runbooks) |
+| Bridge can't auth after credential rotation | The bridge's local SQLite mirror polls every 30 s, but the host-side `registration.json` may be stale if rotation included the bridge's own HMAC key. | `polaris-email bridge list` for `last_seen_at` gap. If it's the bridge's own credential that rotated, SCP a fresh `registration.json` onto the host and restart the bridge container. | [bridge credential sync](/operators/runbooks/bridge-credential-sync) |
+
+## R2 attachment 404s
+
+| Symptom | Diagnosis | Remediation | Linked runbook |
+| --- | --- | --- | --- |
+| Webhook envelope references an attachment URL that 404s | The R2 retention janitor swept the object — message age exceeded the configured retention bucket. | Webhook consumers should fetch attachments **promptly**. Polaris does not refetch; the attachment is gone. | [retention and cleanup](/operators/runbooks/retention-and-cleanup) |
+| Body URL 404s within the retention window | R2 jurisdiction mismatch (bucket is `--jurisdiction=eu` but the public custom domain is pointed at the wrong region) or the bucket was renamed. | `wrangler r2 bucket info polaris-email` and confirm the custom domain attach is on the same jurisdiction. | [data residency runbook](/operators/runbooks/data-residency) |
+| All R2 URLs 404 | The public custom domain `R2_PUBLIC_HOST` is misconfigured. The bucket itself is fine; the DNS / Worker attach is wrong. | Re-attach the public domain in the Cloudflare dashboard. SHA-256 keys are the unguessability boundary — there's no signed-URL layer to bypass. | [threat model](/security/threat-model) §"R2 public custom domain" |
+
+## Audit anchor staleness
+
+| Symptom | Diagnosis | Remediation | Linked runbook |
+| --- | --- | --- | --- |
+| `polaris-email audit anchors` shows a gap > 1h | Either the hourly cron is failing or the B2 PUT is failing. The D1 row is written first; B2 PUT failure leaves `external_ref_at IS NULL`. | `wrangler tail polaris-email-api --status error --search anchor`. The daily backfill cron (`15 5 * * *`) retries failed B2 PUTs automatically within a 7-day window. | [anchor maintenance runbook](/operators/runbooks/anchor-maintenance) |
+| `audit_anchors` rows accumulate with `external_ref_at IS NULL` | Transient B2 outage or expired application key. | Confirm the B2 application key isn't past its expiry. Rotate via `wrangler secret put ANCHOR_S3_ACCESS_KEY_ID` and `... SECRET_ACCESS_KEY` on `services/api`. | [anchor maintenance runbook](/operators/runbooks/anchor-maintenance) |
+| Anchor cron status `error` with "no signing key configured" | `ANCHOR_SIGNING_KEY` was never seeded or got cleared. | Generate (`openssl rand -base64 32`), push (`wrangler secret put ANCHOR_SIGNING_KEY`), and **stash a copy in the operator vault** — any anchor signed with the old key needs the old key for re-verification. | [anchor maintenance runbook](/operators/runbooks/anchor-maintenance) |
+| `polaris-email audit verify` reports chain divergence | Critical incident. Either the audit chain in D1 was tampered with or an anchor was overwritten. The B2 bucket's Object Lock COMPLIANCE mode should prevent the latter. | Escalate. Compare the divergent D1 row against the corresponding B2 object via `b2 file info`. Treat this as a possible CF-account compromise. | [CF account compromise runbook](/operators/runbooks/cf-account-compromise) |
+
+## Mail bridge
+
+| Symptom | Diagnosis | Remediation | Linked runbook |
+| --- | --- | --- | --- |
+| Bridge `last_seen_at` gap > 2 min | Bridge host down, tailnet partition, expired cert, or the HMAC key rotated and the host didn't get the new `registration.json`. | `polaris-email bridge list` and then on the host: `docker compose logs polaris-bridge --tail 100`. | [bridge credential sync](/operators/runbooks/bridge-credential-sync) |
+| IMAP clients see stale credentials after rotation | The bridge's SQLite mirror is stuck. Polls every 30 s baseline; webhook-driven invalidation should clear it sooner. | `docker compose exec polaris-mail-bridge /usr/local/bin/bridgectl mirror-sync` forces a resync. If wedged > 5 min, restart the bridge container. | [on-call runbook](/operators/runbooks) — "Mail bridge mirror is stale" |
+| TLS handshake fails on :465 or :993 | Cert renewal failed and the bridge is serving an expired cert. The bridge hot-reloads on a `.renewed` sentinel; if the sentinel never lands, it never reloads. | Check the cert source (Lego logs for `docker-compose.local.yml`, Tailscale for `docker-compose.tailscale.yml`). | [bridge concept page](/operators/concepts/mail-bridge) |
+
+## When this matrix says "escalate"
+
+The four scenarios that warrant a real incident, not a quick fix:
+
+- Audit chain verification (`polaris-email audit verify`) reports divergence.
+- A revoked key still authenticates after two full minutes.
+- All R2 URLs are 404ing across all bodies and attachments.
+- `wrangler tail` is returning no logs at all when the Workers are
+  clearly serving traffic — likely Logpush mirror is broken or
+  someone tampered with the prod account.
+
+Each of those means it's worth pulling the
+[CF account compromise runbook](/operators/runbooks/cf-account-compromise)
+and treating it as a containment exercise rather than a tuning one.
+
+<!-- Verified against: apps/docs/docs/reference/errors.md, apps/docs/docs/operators/runbooks/overview.md, apps/docs/docs/operators/runbooks/anchor-maintenance.md, services/api/src/errors.ts, services/api/src/auth.ts, services/api/src/lib/admin-alert.ts, services/api/src/scheduled/synthetic.ts, services/api/src/scheduled/anchor.ts, apps/panel/src/server/auth/role-sync.ts, apps/panel/README.md @ eeee222cdf8359f8f2bf1013a103abdb3c705f06 -->
