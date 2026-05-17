@@ -1,0 +1,6 @@
+ ⛅️ wrangler 4.50.2
+-------------------
+Uploaded polaris-email-api
+Deployed polaris-email-api
+  https://polaris-email-api.acme.workers.dev
+Deployment ID: 7913f7aa-deaf-beef-cafe-cafedeadbeef

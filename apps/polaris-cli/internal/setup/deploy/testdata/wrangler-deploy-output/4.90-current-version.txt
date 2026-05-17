@@ -1,0 +1,13 @@
+ ⛅️ wrangler 4.90.1
+-------------------
+Total Upload: 200.45 KiB / gzip: 50.12 KiB
+Worker Startup Time: 5 ms
+Your worker has access to the following bindings:
+- KV Namespaces:
+  - POLARIS_NONCE_DEDUP: abc123...
+- D1 Databases:
+  - polaris-email: xyz789...
+Uploaded polaris-email-api (3.21 sec)
+Deployed polaris-email-api triggers (0.50 sec)
+  https://polaris-email-api.acme.workers.dev
+Current Version ID: deadbeef-cafe-babe-feed-deadbeefcafe

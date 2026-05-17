@@ -12,7 +12,7 @@ BIN  := $(ROOT)/bin
 .DEFAULT_GOAL := help
 
 .PHONY: help preflight configure bootstrap deploy deploy-all deploy-changed \
-        rollback smoke doctor tag-deployed state-rebuild parity compare-render
+        deploy-changed-go rollback smoke doctor tag-deployed state-rebuild parity compare-render
 
 help: ## Show this help.
 	@awk 'BEGIN {FS = ":.*##"; printf "Usage: make \033[36m<target>\033[0m [VAR=value...]\n\nTargets:\n"} \
@@ -38,6 +38,13 @@ deploy-all: ## Deploy every service in dependency order.
 
 deploy-changed: ## Deploy only services whose code (or transitive package deps) changed since the last deploy SHA.
 	@$(BIN)/deploy.sh --changed
+
+# Go-native equivalent of deploy-changed. PR 5 ships both side-by-side
+# during the soak window; CI runs `deploy-changed` then `deploy-changed-go`
+# in --dry-run-like read modes and asserts identical plan output before
+# PR 14 retires the shell.
+deploy-changed-go: ## Run the Go `setup infra deploy changed` (PR 5 transition).
+	@$(ROOT)/apps/polaris-cli/bin/polaris-email setup infra deploy changed
 
 rollback: ## Roll back one service (SERVICE=api) to the previous Worker version using wrangler rollback.
 	@if [ -z "$(SERVICE)" ]; then echo "usage: make rollback SERVICE=api" >&2; exit 2; fi

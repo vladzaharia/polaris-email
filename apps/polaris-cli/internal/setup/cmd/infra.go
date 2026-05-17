@@ -38,5 +38,10 @@ func newInfraCmd() *cobra.Command {
 	// PR 3 leaves: plan + apply.
 	c.AddCommand(newInfraPlanCmd())
 	c.AddCommand(newInfraApplyCmd())
+	// PR 5 leaves: secrets + migrate + deploy + smoke.
+	c.AddCommand(newInfraSecretsCmd())
+	c.AddCommand(newInfraMigrateCmd())
+	c.AddCommand(newInfraDeployCmd())
+	c.AddCommand(newInfraSmokeCmd())
 	return c
 }

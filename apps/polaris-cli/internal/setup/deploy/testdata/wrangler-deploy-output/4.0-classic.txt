@@ -1,0 +1,7 @@
+ ⛅️ wrangler 4.0.0
+-------------------
+Total Upload: 12.34 KiB / gzip: 4.56 KiB
+Uploaded polaris-email-api (1.23 sec)
+Published polaris-email-api (0.45 sec)
+  https://polaris-email-api.acme.workers.dev
+Current Version ID: 9c1b9d3d-1234-4567-89ab-cdef01234567
