@@ -33,6 +33,7 @@ go.sum.local
 .deploy-state.json
 .deploy-state.last-sha
 .bootstrap-output.json
+.ssh-bootstrap-output.json
 secrets.created.json
 .wrangler.merged.json
 # Claude Code per-project state (settings, worktrees, plans).
