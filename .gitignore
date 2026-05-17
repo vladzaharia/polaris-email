@@ -21,6 +21,10 @@ ts-state/
 .env
 .env.*
 !.env.example
+# Exception: golden-file fixtures under testdata/ — these are deterministic
+# sample renderings (no real secrets) and must be tracked so tests reproduce.
+!**/testdata/**/.env
+!**/testdata/**/.env.*
 __pycache__/
 *.pyc
 .pytest_cache/
