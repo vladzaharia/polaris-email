@@ -4,10 +4,11 @@ import "testing"
 
 func TestServices_OrderIsCanonical(t *testing.T) {
 	t.Parallel()
-	// Critical contract: api must be first; cli-installer must be
+	// Critical contract: tail must be first (its name is referenced as a
+	// tail_consumers entry from api/in/out/panel); cli-installer must be
 	// last. Reordering this slice is a deliberate decision — the
 	// regression test catches accidental edits.
-	want := []string{"api", "out", "in", "panel", "docs", "cli-installer"}
+	want := []string{"tail", "api", "out", "in", "panel", "docs", "cli-installer"}
 	got := Names()
 	if len(got) != len(want) {
 		t.Fatalf("len: want %d, got %d", len(want), len(got))
@@ -22,6 +23,7 @@ func TestServices_OrderIsCanonical(t *testing.T) {
 func TestServices_PanelAndDocsAreClientBuilds(t *testing.T) {
 	t.Parallel()
 	cases := map[string]bool{
+		"tail":          false,
 		"api":           false,
 		"out":           false,
 		"in":            false,

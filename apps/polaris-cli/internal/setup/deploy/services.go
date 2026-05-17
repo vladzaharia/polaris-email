@@ -33,11 +33,14 @@ type Service struct {
 	IsClientBuild bool
 }
 
-// Services is the canonical deploy order: api → out → in → panel →
-// docs → cli-installer.
+// Services is the canonical deploy order: tail → api → out → in →
+// panel → docs → cli-installer.
 //
 // Why this order:
-//   - api hosts cron + fanout, so it has to be the first thing alive.
+//   - tail is referenced as a `tail_consumers` entry from api/in/out/panel,
+//     so it must be the first thing deployed (else those four fail at
+//     wrangler deploy time with an unresolved service binding).
+//   - api hosts cron + fanout, so it has to be alive before out/in/panel.
 //   - out + in are the email I/O Workers; they call into api.
 //   - panel reads from api over the service binding.
 //   - docs is independent but lighter-weight; defer it.
@@ -46,6 +49,7 @@ type Service struct {
 // Adding a service: append it to this slice AND to the matching list
 // in bin/_lib.sh::POLARIS_SERVICES until PR 14 retires the shell.
 var Services = []Service{
+	{Name: "tail", Path: "services/tail"},
 	{Name: "api", Path: "services/api"},
 	{Name: "out", Path: "services/out"},
 	{Name: "in", Path: "services/in"},

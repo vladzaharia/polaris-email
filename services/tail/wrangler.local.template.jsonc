@@ -1,0 +1,10 @@
+// services/tail/wrangler.local.template.jsonc
+// Rendered into services/tail/wrangler.local.jsonc by `polaris-email setup
+// infra render`. Operator-supplied ALERT_WEBHOOK overrides the placeholder
+// in wrangler.jsonc.
+{
+  "vars": {
+    "ALERT_WEBHOOK": "{{ .AlertWebhook }}",
+    "TAIL_FORWARD_LEVELS": "error,warn,fatal",
+  },
+}
