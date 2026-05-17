@@ -10,7 +10,7 @@ in polaris D1, a 5k-entry LRU cache, and a bridge-local SQLite mirror of
 `mailbox_messages_state` for low-latency reads.
 
 See <https://docs.mail.plrs.im/operators/concepts/mail-bridge> for the full
-deployment and operator guide (and `apps/docs/docs/operators/concepts/mail-bridge.md`
+deployment and operator guide (and `apps/docs/content/operators/concepts/mail-bridge.md`
 for the source).
 
 ## Two deployment modes — equally supported

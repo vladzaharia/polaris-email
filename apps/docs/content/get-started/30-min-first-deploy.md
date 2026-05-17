@@ -351,4 +351,4 @@ You have a working control plane and one credential. To go from
   [Cloudflare Access walkthrough](/operators/deployment/cloudflare-access)
   covers OIDC IdPs, group-based role sync, and step-up policies.
 
-<!-- Verified against: bin/bootstrap.sh, bin/configure.sh, apps/polaris-cli/README.md, apps/polaris-cli/internal/setup/cmd/{infra_apply,infra_configure,infra_deploy,infra_migrate,infra_plan,infra_preflight,infra_render,infra_secrets,infra_smoke}.go, apps/docs/docs/developers/quickstart.md, apps/docs/docs/security/threat-model.md @ eeee222cdf8359f8f2bf1013a103abdb3c705f06 -->
+<!-- Verified against: bin/bootstrap.sh, bin/configure.sh, apps/polaris-cli/README.md, apps/polaris-cli/internal/setup/cmd/{infra_apply,infra_configure,infra_deploy,infra_migrate,infra_plan,infra_preflight,infra_render,infra_secrets,infra_smoke}.go, apps/docs/content/developers/quickstart.md, apps/docs/content/security/threat-model.md @ eeee222cdf8359f8f2bf1013a103abdb3c705f06 -->

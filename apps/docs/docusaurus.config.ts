@@ -80,12 +80,12 @@ const config: Config = {
       'classic',
       {
         docs: {
-          path: 'docs',
+          path: 'content',
           routeBasePath: '/',
           sidebarPath: './sidebars.ts',
           // Edit-link points at the source repo so contributors can fix
           // typos via the GitHub UI.
-          editUrl: 'https://github.com/polaris/polaris-email/edit/main/apps/docs/',
+          editUrl: 'https://github.com/polaris/polaris-email/edit/main/apps/docs/content/',
           // openapi-docs ships a custom MDX docItem with the request +
           // response panels. Pointing it here makes generated pages render
           // with that theme component instead of the default.

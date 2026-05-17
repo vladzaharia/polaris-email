@@ -1,6 +1,6 @@
 # PR 12 Phase E — Synthesis report
 
-Single-agent cross-cutting sweep over `apps/docs/docs/` ahead of launch.
+Single-agent cross-cutting sweep over `apps/docs/content/` ahead of launch.
 Per-page accuracy review (Phase D1) and audience review (Phase D2) are
 explicitly out of scope; this pass covers voice, frontmatter, dead-ends,
 audience drift, duplication, broken-anchor spot-checks, and the
@@ -30,13 +30,13 @@ Three audience-overview pages were one-line stubs blocking the
 audience-card navigation. Replaced with full index pages that link into
 every sub-section:
 
-- `apps/docs/docs/developers/overview.md`
-- `apps/docs/docs/operators/overview.md`
-- `apps/docs/docs/security/overview.md`
+- `apps/docs/content/developers/overview.md`
+- `apps/docs/content/operators/overview.md`
+- `apps/docs/content/security/overview.md`
 
 ### 2. Reference overview rewritten
 
-`apps/docs/docs/reference/overview.md` previously said the CLI and
+`apps/docs/content/reference/overview.md` previously said the CLI and
 errors pages would "live at /reference/cli in a later phase" — but
 both already exist. Rewrote to point at the live pages. Added missing
 `description` + `sidebar_label` frontmatter fields.
@@ -279,11 +279,11 @@ categories under "For operators". No orphan pages.
 | ------------------------------------------------- | ----------------------------------------------------- | ------ |
 | llms.txt                                          | `apps/docs/static/llms.txt`                           | created |
 | REDIRECTS table cleanup                           | `apps/docs/src/server/index.ts`                       | updated |
-| Stub overview pages                               | `apps/docs/docs/{developers,operators,security,reference}/overview.md` | rewritten |
-| CLI vocabulary page                               | `apps/docs/docs/reference/cli.md`                     | rewritten |
+| Stub overview pages                               | `apps/docs/content/{developers,operators,security,reference}/overview.md` | rewritten |
+| CLI vocabulary page                               | `apps/docs/content/reference/cli.md`                     | rewritten |
 | "Lands in a later batch" pointers                 | 13 pages                                              | fixed |
-| `--tenant` deprecated flag in data-residency      | `apps/docs/docs/operators/runbooks/data-residency.md` | fixed |
-| Phantom submission-daemon reference               | `apps/docs/docs/developers/sdks/go.md`                | fixed |
+| `--tenant` deprecated flag in data-residency      | `apps/docs/content/operators/runbooks/data-residency.md` | fixed |
+| Phantom submission-daemon reference               | `apps/docs/content/developers/sdks/go.md`                | fixed |
 
 ## Final build
 

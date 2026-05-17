@@ -11,7 +11,7 @@ panel deployed as a Worker. Three Workers, three apps, ~12 packages.
 
 Start with: `README.md` (component map), the docs site at
 <https://docs.mail.plrs.im> (architecture, message model, runbooks; sources
-under `apps/docs/docs/`), `SECURITY.md` (threat model — required reading
+under `apps/docs/content/`), `SECURITY.md` (threat model — required reading
 before changing anything touching R2 public URLs, audit anchors, or HMAC).
 
 ## Repository layout (polyglot monorepo)
@@ -114,7 +114,7 @@ polaris-email serve --ssh           # publish the TUI over SSH for Wish/Wishlist
 polaris-email <cobra subcommand>    # domain/credential/bridge/webhook/audit/... (scripting surface)
 ```
 
-See `apps/polaris-cli/README.md` and `apps/docs/docs/operators/day-2/tui.md`
+See `apps/polaris-cli/README.md` and `apps/docs/content/operators/day-2/tui.md`
 for the full surface.
 
 ## Lint, format, hooks
@@ -162,7 +162,7 @@ for the full surface.
    with no `v2=` prefix. Domain tags: `polaris-api` (API requests),
    `polaris-webhook` (outgoing webhook signing). See
    <https://docs.mail.plrs.im/security/hmac-reference> (source in
-   `apps/docs/docs/security/hmac-reference.md`).
+   `apps/docs/content/security/hmac-reference.md`).
 
 4. **Webhook envelope is v2.** The full `Message` is inlined in the event.
    Signing happens in the queue consumer inside `services/api`

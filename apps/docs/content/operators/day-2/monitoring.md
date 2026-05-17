@@ -255,4 +255,4 @@ The
 cover the SQL surface; everything in this page works against that
 endpoint.
 
-<!-- Verified against: bin/configure.sh, services/api/src/scheduled/index.ts, services/api/src/scheduled/synthetic.ts, services/api/src/scheduled/staleness.ts, services/api/src/scheduled/anchor.ts, services/api/src/lib/admin-alert.ts, services/api/src/env.ts, apps/docs/docs/operators/concepts/cost-model.md, apps/docs/docs/operators/runbooks/anchor-maintenance.md @ eeee222cdf8359f8f2bf1013a103abdb3c705f06 -->
+<!-- Verified against: bin/configure.sh, services/api/src/scheduled/index.ts, services/api/src/scheduled/synthetic.ts, services/api/src/scheduled/staleness.ts, services/api/src/scheduled/anchor.ts, services/api/src/lib/admin-alert.ts, services/api/src/env.ts, apps/docs/content/operators/concepts/cost-model.md, apps/docs/content/operators/runbooks/anchor-maintenance.md @ eeee222cdf8359f8f2bf1013a103abdb3c705f06 -->

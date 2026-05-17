@@ -126,4 +126,4 @@ Each of those means it's worth pulling the
 [CF account compromise runbook](/operators/runbooks/cf-account-compromise)
 and treating it as a containment exercise rather than a tuning one.
 
-<!-- Verified against: apps/docs/docs/reference/errors.md, apps/docs/docs/operators/runbooks/overview.md, apps/docs/docs/operators/runbooks/anchor-maintenance.md, services/api/src/errors.ts, services/api/src/auth.ts, services/api/src/lib/admin-alert.ts, services/api/src/scheduled/synthetic.ts, services/api/src/scheduled/anchor.ts, apps/panel/src/server/auth/role-sync.ts, apps/panel/README.md @ eeee222cdf8359f8f2bf1013a103abdb3c705f06 -->
+<!-- Verified against: apps/docs/content/reference/errors.md, apps/docs/content/operators/runbooks/overview.md, apps/docs/content/operators/runbooks/anchor-maintenance.md, services/api/src/errors.ts, services/api/src/auth.ts, services/api/src/lib/admin-alert.ts, services/api/src/scheduled/synthetic.ts, services/api/src/scheduled/anchor.ts, apps/panel/src/server/auth/role-sync.ts, apps/panel/README.md @ eeee222cdf8359f8f2bf1013a103abdb3c705f06 -->

@@ -1,4 +1,10 @@
-# polaris-email TUI
+---
+title: polaris-email TUI
+description: The fullscreen tabbed admin TUI — same eight tabs locally (`polaris-email tui`) or over SSH (`polaris-email serve --ssh`). Identity, polling, keymap, embedding under Wish.
+sidebar_label: Admin TUI
+sidebar_position: 2
+---
+
 
 The `polaris-email` binary ships a fullscreen tabbed admin TUI. It's the
 primary day-2 interface for operators — same eight tabs whether you launch
