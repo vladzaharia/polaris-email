@@ -24,6 +24,9 @@ type Spec struct {
 	Name string
 	// Services is the ordered list of services to push to. The runner
 	// pushes in order; failures on one service do not skip the rest.
+	// Ignored when Shared=true and a SecretsStorePusher is configured:
+	// the secret is pushed once to the account-level Secrets Store and
+	// every Worker that lists it in `secrets_store_secrets` picks it up.
 	Services []string
 	// Generator mints a value when no Source has one. May be nil for
 	// "must come from a source" secrets like OIDC_CLIENT_SECRET.
@@ -32,6 +35,17 @@ type Spec struct {
 	// Source value AND no Generator is silently skipped, rather than
 	// erroring. Used for OIDC_CLIENT_SECRET and the B2 anchor keys.
 	Optional bool
+	// Shared marks the secret as a candidate for the account-level
+	// Cloudflare Secrets Store. When the cmd layer configures a
+	// SecretsStorePusher (env POLARIS_SECRETS_STORE_ID is set), a
+	// Shared spec pushes once to the store instead of N times via
+	// `wrangler secret put`. Worker wrangler.jsonc files MUST list the
+	// secret in `secrets_store_secrets` for the binding to materialise.
+	//
+	// Currently set for POLARIS_SECRET_A only (it lands on every
+	// Worker). Per-Worker-scoped secrets (ARGON2_PEPPER, ANCHOR_*) gain
+	// nothing from the store and stay on the per-Worker path.
+	Shared bool
 }
 
 // Reporter receives per-secret progress events. Same shape as
@@ -70,6 +84,21 @@ func Seed(
 	rec *Recorder,
 	r Reporter,
 ) (map[string]string, error) {
+	return SeedWithStore(ctx, specs, srcs, pusher, nil, rec, r)
+}
+
+// SeedWithStore is Seed plus an optional account-level Secrets Store
+// pusher. Specs marked Shared=true push once to the store (when storePusher
+// is non-nil), bypassing the per-Worker `wrangler secret put` path.
+func SeedWithStore(
+	ctx context.Context,
+	specs []Spec,
+	srcs []sources.Source,
+	pusher Pusher,
+	storePusher StorePusher,
+	rec *Recorder,
+	r Reporter,
+) (map[string]string, error) {
 	if pusher == nil {
 		return nil, errors.New("secrets.Seed: nil Pusher")
 	}
@@ -80,11 +109,15 @@ func Seed(
 		r = nopReporter{}
 	}
 
-	// Count steps. We pre-resolve the "skip if already recorded" check
-	// inside the loop, but the total includes everything we'll attempt
-	// — pre-skipped entries get a StepDone(nil) so the bar advances.
+	// Count steps. Shared specs collapse to a single store push when
+	// storePusher is configured; otherwise they fall through to the
+	// per-service loop and count N.
 	total := 0
 	for _, s := range specs {
+		if s.Shared && storePusher != nil {
+			total++
+			continue
+		}
 		total += len(s.Services)
 	}
 	r.Start(total)
@@ -121,6 +154,32 @@ func Seed(
 		}
 		if fromGenerator {
 			out[s.Name] = val
+		}
+
+		// Shared + storePusher: account-level Secrets Store path.
+		// The store row replaces every per-Worker `wrangler secret put`
+		// call; Worker wrangler.jsonc `secrets_store_secrets` entries
+		// surface the value as a binding at deploy time.
+		if s.Shared && storePusher != nil {
+			if err := ctx.Err(); err != nil {
+				return out, err
+			}
+			r.Step(s.Name, "<store>")
+			storeKey := "store:" + s.Name
+			if rec.Has(storeKey, s.Name) {
+				r.StepDone(s.Name, "<store>", nil) // idempotent skip
+				continue
+			}
+			err := storePusher.PushStore(ctx, s.Name, val)
+			r.StepDone(s.Name, "<store>", err)
+			if err != nil {
+				failures = append(failures, fmt.Sprintf("<store>/%s: %v", s.Name, err))
+				continue
+			}
+			if recErr := rec.Record(storeKey, s.Name, val, time.Now().UTC()); recErr != nil {
+				failures = append(failures, fmt.Sprintf("<store>/%s: record: %v", s.Name, recErr))
+			}
+			continue
 		}
 
 		for _, svc := range s.Services {
@@ -214,6 +273,11 @@ func DefaultSpecs(allWorkers []string) []Spec {
 			Name:      "POLARIS_SECRET_A",
 			Services:  allWorkers,
 			Generator: GenerateMasterSecret,
+			// Shared across every Worker — collapses to a single
+			// account-level Secrets Store push when the operator has
+			// POLARIS_SECRETS_STORE_ID configured. Otherwise falls back
+			// to N per-Worker `wrangler secret put` calls.
+			Shared: true,
 		},
 		{
 			Name:      "ARGON2_PEPPER",

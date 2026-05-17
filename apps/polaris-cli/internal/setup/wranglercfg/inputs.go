@@ -40,7 +40,22 @@ type RenderInputs struct {
 	Synthetic    SyntheticInputs
 	Anchor       AnchorInputs
 	OIDC         OIDCInputs
+	SecretsStore SecretsStoreInputs
 	AlertWebhook string
+	// LogpushURL is the HTTP sink for the Logpush job (Better Stack,
+	// Honeycomb, etc.). Surfaced here so the Terraform module reads it
+	// from the same .env.deploy operators already maintain. Workers
+	// don't reference it directly.
+	LogpushURL string
+}
+
+// SecretsStoreInputs surface the optional account-level Secrets Store ID
+// the Worker templates conditionally bake into `secrets_store_secrets`.
+// Set via POLARIS_SECRETS_STORE_ID in .env.deploy. When empty, the
+// templates skip the `secrets_store_secrets` block and the per-Worker
+// `wrangler secret put` path is used unchanged.
+type SecretsStoreInputs struct {
+	StoreID string
 }
 
 // AccountInputs holds the Cloudflare account identifier.

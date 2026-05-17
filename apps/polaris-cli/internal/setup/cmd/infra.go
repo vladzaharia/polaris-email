@@ -406,7 +406,20 @@ func phaseSecrets(ctx context.Context, o happyPathOpts, _ *state.Store, generate
 	specs := secrets.DefaultSpecs(workers)
 	rec := secrets.NewRecorder(secrets.DefaultRecordPath)
 	rep := newSecretsPlainReporter(o.out)
-	generated, err := secrets.Seed(ctx, specs, srcs, secrets.WranglerPusher{}, rec, rep)
+	// Opt-in Secrets Store: when POLARIS_SECRETS_STORE_ID is set (either
+	// in env or .env.deploy), Shared specs collapse to a single store
+	// push. Otherwise the per-Worker path is used unchanged.
+	storeID := overrides["POLARIS_SECRETS_STORE_ID"]
+	if storeID == "" {
+		storeID = os.Getenv("POLARIS_SECRETS_STORE_ID")
+	}
+	var storePusher secrets.StorePusher
+	if storeID != "" {
+		storePusher = secrets.WranglerSecretsStorePusher{StoreID: storeID}
+	}
+	generated, err := secrets.SeedWithStore(
+		ctx, specs, srcs, secrets.WranglerPusher{}, storePusher, rec, rep,
+	)
 	if err != nil {
 		return err
 	}
