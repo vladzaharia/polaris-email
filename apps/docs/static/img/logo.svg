@@ -1,9 +1,35 @@
-<!-- Placeholder logo for the docs navbar. Real brand assets land in a
-     follow-up. The square is intentionally simple: dark-slate background
-     with a soft "P" cutout to evoke the polaris- wordmark. -->
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" aria-label="polaris-email logo">
-  <rect width="32" height="32" rx="6" fill="#1e293b"/>
-  <text x="50%" y="55%" text-anchor="middle" dominant-baseline="middle"
-        font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
-        font-size="18" font-weight="700" fill="#8eb1f4">p</text>
+<!--
+  polaris-email wordmark glyph.
+
+  Same visual idiom as the rest of the polaris-* family: a 5-point star
+  set inside a rounded indigo well. The accent colour (aurora-violet,
+  hue ~315) is the polaris-email-specific dial; support-portal's star
+  is cyan-teal at hue 195. Switching the fill is the one-line re-skin
+  for any future sibling.
+
+  Drawn in pure SVG so it scales crisply to navbar (24px) and OG-image
+  (1200px) sizes alike. No text — the navbar title carries the wordmark.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32"
+     role="img" aria-label="polaris-email">
+  <!-- Cosmos-indigo background well — matches --color-surface-1 in the
+       sibling theme. The slight darker rim reads as inset. -->
+  <rect x="0.5" y="0.5" width="31" height="31" rx="7"
+        fill="oklch(0.18 0.025 275)"
+        stroke="oklch(0.28 0.025 275)" stroke-width="1"/>
+
+  <!-- 5-point star, geometric. Path traces the outer + inner vertices of
+       a star centered at (16, 16.5) with outer radius 8.5. -->
+  <path d="M16 7.5
+           L18.06 13.84
+           L24.71 13.84
+           L19.33 17.76
+           L21.39 24.1
+           L16 20.18
+           L10.61 24.1
+           L12.67 17.76
+           L7.29 13.84
+           L13.94 13.84
+           Z"
+        fill="oklch(0.78 0.20 315)"/>
 </svg>
