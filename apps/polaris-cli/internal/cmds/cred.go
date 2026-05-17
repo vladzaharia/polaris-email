@@ -101,7 +101,7 @@ func credIssueCmd() *cobra.Command {
 		},
 	}
 	c.Flags().StringVar(&fromFile, "from-file", "", "non-interactive YAML/JSON input")
-	c.Flags().StringVar(&mailbox, "mailbox", "", "mailbox name or id (the schema is mailbox-centric; see docs/operator.md)")
+	c.Flags().StringVar(&mailbox, "mailbox", "", "mailbox name or id (the schema is mailbox-centric; see https://docs.mail.plrs.im/operators/)")
 	c.Flags().StringVar(&tenantDeprecated, "tenant", "", "DEPRECATED alias for --mailbox; prints a warning and will be removed")
 	c.Flags().StringVar(&ctype, "type", "smtp", "credential type: smtp|api")
 	c.Flags().StringVar(&sendersFlag, "senders", "", "comma-separated local@domain list")

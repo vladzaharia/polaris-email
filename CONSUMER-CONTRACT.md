@@ -9,7 +9,7 @@ This document binds your service to polaris-email. Read it before integrating.
 
 ## What you must do
 
-- Sign every request per `docs/hmac-reference.md`. Use one of the published verifier libraries on the receive side.
+- Sign every request per <https://docs.mail.plrs.im/security/hmac-reference>. Use one of the published verifier libraries on the receive side.
 - Honour `Retry-After` and `retryable: true/false`. Never retry `bad_signature`, `scope_violation`, `key_revoked`, `nonce_replay`, `idempotency_conflict`, `domain_not_verified`, `recipient_rejected`.
 - Treat `key_propagating` as transient — retry once after `Retry-After` (~2 s).
 - Hold **both** primary and secondary key pairs during planned rotation. Either pair is valid for the 24 h grace.

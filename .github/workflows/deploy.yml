@@ -37,8 +37,16 @@ jobs:
         with: { version: 9 }
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: pnpm }
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache-dependency-path: apps/polaris-cli/go.sum
 
       - run: pnpm install --frozen-lockfile
+
+      - name: Build polaris-email CLI
+        working-directory: apps/polaris-cli
+        run: make build
 
       - name: Restore deploy config from secrets
         env:
@@ -69,7 +77,7 @@ jobs:
           chmod 0600 .env.deploy .deploy-state.json .bootstrap-output.json
 
       - name: Render wrangler.local.jsonc files
-        run: bin/render-wrangler-local.sh
+        run: apps/polaris-cli/bin/polaris-email setup infra render
 
       - name: Resolve base SHA from deployed/main tag
         id: base
@@ -88,13 +96,13 @@ jobs:
             echo "$BASE_SHA" > .deploy-state.last-sha
           fi
           if [ "$DEPLOY_ALL" = "true" ]; then
-            bin/deploy.sh --all
+            apps/polaris-cli/bin/polaris-email setup infra deploy all
           else
-            bin/deploy.sh --changed
+            apps/polaris-cli/bin/polaris-email setup infra deploy changed
           fi
 
       - name: Smoke
-        run: bin/smoke.sh
+        run: apps/polaris-cli/bin/polaris-email setup infra smoke
 
       - name: Tag deployed/main at HEAD
         if: success()

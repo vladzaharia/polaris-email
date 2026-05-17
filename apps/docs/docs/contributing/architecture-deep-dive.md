@@ -165,13 +165,12 @@ Every Worker has:
 - A gitignored `wrangler.local.jsonc` with real IDs.
 
 The local file is **generated** from
-`services/*/wrangler.local.template.jsonc` plus `.deploy-state.json` via
-`bin/render-wrangler-local.sh` (being replaced by
-`polaris-email setup infra` in Go). **Do not hand-edit the materialised
-file.** `bin/deploy.sh` merges committed + local with
-`jq -s '.[0] * .[1]'` into a throwaway `.wrangler.merged.json` for the
-`wrangler deploy` call, then deletes it. Do not commit
-`.wrangler.merged.json`.
+`services/*/wrangler.local.template.jsonc` plus `.deploy-state.json` by
+`polaris-email setup infra render`. **Do not hand-edit the materialised
+file.** `polaris-email setup infra deploy` merges committed + local with
+the same precedence (local overlays public) into a throwaway
+`.wrangler.merged.json` for the `wrangler deploy` call, then deletes it.
+Do not commit `.wrangler.merged.json`.
 
 ## Panel specifics
 

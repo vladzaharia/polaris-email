@@ -93,7 +93,7 @@ is to wipe the `bootstrap` row in D1 manually so the one-time
 
 ```sh
 wrangler d1 execute polaris-email --command "DELETE FROM bootstrap;"
-make bootstrap   # re-runs /v1/admin/bootstrap, mints fresh key
+polaris-email setup infra   # re-runs /v1/admin/bootstrap, mints fresh key
 ```
 
 This is destructive — it leaves the previous (now-orphaned) admin

@@ -14,7 +14,7 @@
     "typecheck": "tsc -p tsconfig.server.json --noEmit && tsc -p tsconfig.json --noEmit",
     "lint": "oxlint .",
     "dev:server": "wrangler dev",
-    "deploy": "../../bin/deploy.sh apps/docs"
+    "deploy": "polaris-email setup infra deploy service docs"
   },
   "dependencies": {
     "@docusaurus/core": "^3.10.1",

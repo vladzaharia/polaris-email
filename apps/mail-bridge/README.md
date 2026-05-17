@@ -9,8 +9,9 @@ Both listeners share a single auth lookup against `mailbox_credentials`
 in polaris D1, a 5k-entry LRU cache, and a bridge-local SQLite mirror of
 `mailbox_messages_state` for low-latency reads.
 
-See [`docs/mail-bridge.md`](../../docs/mail-bridge.md) for the full deployment
-and operator guide.
+See <https://docs.mail.plrs.im/operators/concepts/mail-bridge> for the full
+deployment and operator guide (and `apps/docs/docs/operators/concepts/mail-bridge.md`
+for the source).
 
 ## Two deployment modes — equally supported
 
@@ -72,7 +73,7 @@ make docker     # builds polaris-mail-bridge:dev (CGO disabled, modernc.org/sqli
   different protocols, distinct rows otherwise).
 - **mutt / aerc** — IMAP-capable.
 
-See `docs/mail-bridge.md` for protocol-specific quirks.
+See <https://docs.mail.plrs.im/operators/concepts/mail-bridge> for protocol-specific quirks.
 
 ## Configuration
 

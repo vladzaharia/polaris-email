@@ -129,10 +129,10 @@ need to touch DNS or the route config. The preferred path after the
 initial bootstrap is the changed-only deploy:
 
 ```sh
-make deploy-changed
+polaris-email setup infra deploy changed
 ```
 
-`bin/deploy.sh --changed` computes
+`deploy changed` computes
 `git diff --name-only $(deployed/main)..HEAD`, maps:
 
 - files under `services/<svc>/...` → deploy that service
@@ -144,25 +144,26 @@ make deploy-changed
 On success, the new HEAD SHA is written to `.deploy-state.last-sha` and
 (in CI) the `deployed/main` tag is moved.
 
-To force-deploy everything: `make deploy-all`. To redeploy a single
-service: `make deploy SERVICE=services/api`.
+To force-deploy everything: `polaris-email setup infra deploy all`. To
+redeploy a single service: `polaris-email setup infra deploy service api`.
 
 ## Rollback
 
 ```sh
-make rollback SERVICE=api
+polaris-email setup infra rollback api
 ```
 
 Runs `wrangler rollback` inside `services/<svc>`. Cloudflare tracks the
 previous version ID; `.deploy-state.json` also records the last
 deployed version per service for human reference. After rollback,
-re-run `make smoke` to confirm.
+re-run `polaris-email setup infra smoke` to confirm.
 
 ## CI
 
-`.github/workflows/deploy.yml` runs `make deploy-changed` + `make smoke`
-after the `ci` workflow succeeds on `main`, then moves the
-`deployed/main` tag. Required GitHub secrets:
+`.github/workflows/deploy.yml` runs `polaris-email setup infra deploy
+changed` + `polaris-email setup infra smoke` after the `ci` workflow
+succeeds on `main`, then moves the `deployed/main` tag. Required
+GitHub secrets:
 
 - `CLOUDFLARE_API_TOKEN` — same scopes as
   [prerequisites](/operators/deployment/prerequisites).
@@ -172,7 +173,7 @@ after the `ci` workflow succeeds on `main`, then moves the
 
 Repo variables (non-secret): `POLARIS_API_HOSTNAME`, `ALERT_WEBHOOK`.
 
-Workflow-dispatch with `all=true` forces `make deploy-all` instead of
-`--changed`.
+Workflow-dispatch with `all=true` forces
+`polaris-email setup infra deploy all` instead of `deploy changed`.
 
 <!-- Verified against: docs/deploy.md @ c3c1b5048dd5bfe92facdce24982141a07446042 -->

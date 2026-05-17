@@ -9,10 +9,10 @@ Cloudflare Workers control plane (REST API, webhook fan-out, cron) + a Go
 on-prem mail bridge (SMTPS + IMAP) + a Go operator CLI + a Hono/React admin
 panel deployed as a Worker. Three Workers, three apps, ~12 packages.
 
-Start with: `README.md` (component map), `docs/architecture.md` (system view),
-`docs/messages.md` (unified `Message` data model), `SECURITY.md` (threat model
-— required reading before changing anything touching R2 public URLs, audit
-anchors, or HMAC).
+Start with: `README.md` (component map), the docs site at
+<https://docs.mail.plrs.im> (architecture, message model, runbooks; sources
+under `apps/docs/docs/`), `SECURITY.md` (threat model — required reading
+before changing anything touching R2 public URLs, audit anchors, or HMAC).
 
 ## Repository layout (polyglot monorepo)
 
@@ -34,9 +34,10 @@ anchors, or HMAC).
   `go.mod`, **no `go.sum`** — pure-stdlib). CI disables module cache for
   this job; if you add an external dep, update `.github/workflows/ci.yml`.
 - `infra/terraform/` — zone + access-app modules; per-env roots.
-- `bin/` — orchestration scripts (`deploy.sh`, `bootstrap.sh`,
-  `configure.sh`, `smoke.sh`, `killswitch-*.sh`). Invoke via Makefile
-  targets, not directly.
+- `bin/` — narrow operational scripts only (`killswitch-*.sh`,
+  `backfill-*.sh`, `smoke-mta-sts.sh`, `dev.sh`). The cold-start /
+  deploy / smoke / rollback orchestration lives in the `polaris-email`
+  Go CLI under `apps/polaris-cli/internal/setup/`.
 
 ## Commands
 
@@ -73,37 +74,34 @@ cd apps/polaris-cli && make build test vet   # builds bin/polaris-email + bin/pm
 cd packages/sdk-go  && go test ./...         # needs test-vectors generated first
 ```
 
-Cold-start (Go CLI — canonical from PR 7 onwards):
+Cold-start, deploy, smoke, rollback (Go CLI — canonical):
 
 ```sh
-polaris-email setup infra            # full happy path: preflight → configure →
-                                     # plan → apply → render → migrate →
-                                     # secrets seed → deploy → genesis-seal →
-                                     # smoke. Each phase records to
-                                     # .deploy-state.json so --resume short-
-                                     # circuits past completed phases.
-polaris-email setup infra --resume   # pick up after a partial run
+polaris-email setup infra                    # full happy path: preflight → configure →
+                                             # plan → apply → render → migrate →
+                                             # secrets seed → deploy → genesis-seal →
+                                             # smoke. Each phase records to
+                                             # .deploy-state.json so --resume short-
+                                             # circuits past completed phases.
+polaris-email setup infra --resume           # pick up after a partial run
 polaris-email setup infra --phase migrate    # start at a specific phase
-polaris-email setup infra <leaf>     # run one phase ad-hoc (e.g.
-                                     # `setup infra migrate`)
+polaris-email setup infra preflight          # validate tooling + .env.deploy
+polaris-email setup infra configure          # interactively (re)build .env.deploy
+polaris-email setup infra deploy all         # redeploy every Worker
+polaris-email setup infra deploy changed     # only services whose code/deps changed
+polaris-email setup infra deploy service api # one Worker
+polaris-email setup infra rollback api       # roll one Worker back to its previous version
+polaris-email setup infra smoke              # signed diagnostics + synthetic send
+polaris-email setup infra state rebuild      # reconstruct .deploy-state.json from live CF
 ```
 
-Orchestration (root `Makefile` — soak-window fallback, retired in PR 14):
-
-```sh
-make preflight                    # verify tooling + .env.deploy
-make configure                    # rebuild .env.deploy + re-render wrangler.local.jsonc files
-make bootstrap                    # cold-start CF resources + deploy + mint admin key
-make deploy SERVICE=services/api
-make deploy-all
-make deploy-changed               # only services whose code/deps changed since deployed/main
-make rollback SERVICE=api
-make smoke                        # signed diagnostics + synthetic send
-```
+Install the CLI with `curl -fsSL cli.mail.plrs.im | sh`. The root `Makefile`
+is now a thin migration banner — see `make help` for the mapping from the
+old `make bootstrap` / `make deploy` targets to the CLI verbs.
 
 Day-to-day operator workflows (issue keys, onboard domains, rotate creds,
-replay DLQ) run via the `polaris-email` Go CLI — not `bin/*` scripts and
-not the Makefile. See `apps/polaris-cli/README.md`.
+replay DLQ) also live in the `polaris-email` Go CLI. See
+`apps/polaris-cli/README.md`.
 
 ## Lint, format, hooks
 
@@ -138,7 +136,8 @@ not the Makefile. See `apps/polaris-cli/README.md`.
 3. **HMAC is un-versioned ().** Header is `X-Polaris-Sig: <hex>`
    with no `v2=` prefix. Domain tags: `polaris-api` (API requests),
    `polaris-webhook` (outgoing webhook signing). See
-   `docs/hmac-reference.md`.
+   <https://docs.mail.plrs.im/security/hmac-reference> (source in
+   `apps/docs/docs/security/hmac-reference.md`).
 
 4. **Webhook envelope is v2.** The full `Message` is inlined in the event.
    Signing happens in the queue consumer inside `services/api`
@@ -184,11 +183,13 @@ were the canonical one.
 - Every Worker has a committed `wrangler.jsonc` (placeholder IDs) and a
   gitignored `wrangler.local.jsonc` (real IDs).
 - `wrangler.local.jsonc` is **generated** from
-  `services/*/wrangler.local.template.jsonc` + `.deploy-state.json` via
-  `bin/render-wrangler-local.sh`. **Do not hand-edit the materialised file.**
-- `bin/deploy.sh` merges the two with `jq -s '.[0] * .[1]'` into a
-  throwaway `.wrangler.merged.json` before `wrangler deploy`, then deletes
-  it. Don't commit `.wrangler.merged.json`.
+  `services/*/wrangler.local.template.jsonc` + `.deploy-state.json` by
+  `polaris-email setup infra render`. **Do not hand-edit the
+  materialised file.**
+- `polaris-email setup infra deploy` merges the two with the same
+  precedence (`local` overlays public) into a throwaway
+  `.wrangler.merged.json` before `wrangler deploy`, then deletes it.
+  Don't commit `.wrangler.merged.json`.
 
 ## Panel specifics
 
@@ -234,3 +235,7 @@ were the canonical one.
 - "How do I onboard a domain end-to-end?" →
   `apps/polaris-cli/internal/cmds/domain.go` and the wizard in
   `apps/polaris-cli/internal/wizards/`.
+- "How does cold-start / deploy / smoke work?" →
+  `apps/polaris-cli/internal/setup/cmd/` (cobra entrypoints) and the
+  phase implementations under `apps/polaris-cli/internal/setup/{plan,
+provision,deploy,migrate,secrets,smoke,genesis,wranglercfg,state}/`.

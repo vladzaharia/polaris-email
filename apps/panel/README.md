@@ -38,8 +38,8 @@ pnpm --filter @polaris-email/panel test
 `dev:server` is the recommended end-to-end loop because better-auth +
 the D1 session store only run inside the Worker. Deploy with
 `pnpm --filter @polaris-email/panel deploy`, which is a thin wrapper
-around `../../bin/deploy.sh apps/panel` (merges the gitignored
-`wrangler.local.jsonc` overlay before `wrangler deploy`).
+around `polaris-email setup infra deploy service panel` (merges the
+gitignored `wrangler.local.jsonc` overlay before `wrangler deploy`).
 
 ## Environment
 

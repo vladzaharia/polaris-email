@@ -8,34 +8,28 @@ sidebar_position: 2
 # Cold-start bootstrap
 
 This is the one-time path from an empty Cloudflare account to a green
-`make smoke`. Run it once per deployment — after that, you live on
-[routine redeploy](/operators/runbooks) and the
+`polaris-email setup infra smoke`. Run it once per deployment — after
+that, you live on [routine redeploy](/operators/runbooks) and the
 [on-call runbook](/operators/runbooks). The
 [prerequisites](/operators/deployment/prerequisites) page must be green
 first.
 
-## Two paths during the soak window
+Install the CLI first:
 
-Two cold-start flows are supported in parallel. Pick one:
+```sh
+curl -fsSL cli.mail.plrs.im | sh
+```
 
-- **Shell flow (`make bootstrap`).** The original orchestrator —
-  `make configure` + `bin/bootstrap.sh`. Battle-tested, every step is
-  visible in the shell scripts under `bin/`.
-- **Go CLI flow (`polaris-email setup infra`).** The new canonical
-  command — a single Go binary that retires the shell-script flow with
-  resumable phases, atomic state writes, and `huh`-based prompts. This is
-  what new deployments should use post-soak.
-
-Both produce the same result and consume the same `.env.deploy` /
-`.deploy-state.json`. The shell flow is being retired during the
-current soak window; once the soak completes, this page will collapse to
-the CLI flow only. If you are picking polaris-email up fresh today,
-prefer `polaris-email setup infra`.
+The cold-start flow lives in `polaris-email setup infra` — a single Go
+binary that drives resumable phases, atomic state writes, and `huh`-based
+prompts. It consumes the same `.env.deploy` / `.deploy-state.json`
+files that the previous shell flow used; existing deployments resume
+without re-bootstrapping.
 
 ## Configure
 
 ```sh
-make configure
+polaris-email setup infra configure
 ```
 
 Interactive — writes `.env.deploy` (gitignored, mode `0600`). Prompts for
@@ -58,11 +52,13 @@ secret to seed at bootstrap.
 ## Bootstrap
 
 ```sh
-make bootstrap
+polaris-email setup infra
 ```
 
-Runs `preflight`, then `bin/bootstrap.sh` end-to-end. Idempotent — every
-phase reruns safely on the same `.deploy-state.json`. The phases are:
+Drives the happy-path runner: `preflight → configure → plan → apply →
+render → migrate → secrets seed → deploy → genesis-seal → smoke`. Each
+phase records to `.deploy-state.json`; `--resume` short-circuits past
+already-complete phases on retry. The phases are:
 
 1. `pnpm install --frozen-lockfile` + `pnpm -r run build`.
 2. Create the Cloudflare resources:
@@ -85,10 +81,11 @@ phase reruns safely on the same `.deploy-state.json`. The phases are:
 5. Seed master secrets: `POLARIS_SECRET_A`, `ARGON2_PEPPER`,
    `ANCHOR_SIGNING_KEY`. Creation timestamps go to
    `secrets.created.json` — names only, no values.
-6. `bin/deploy.sh --all` deploys the four Workers in dependency order:
-   `polaris-email-api` → `polaris-email-out` → `polaris-email-in` →
-   `polaris-email-panel`. The previous `services/fanout` and
-   `services/cron` Workers were folded into `services/api`.
+6. `polaris-email setup infra deploy all` deploys the four Workers in
+   dependency order: `polaris-email-api` → `polaris-email-out` →
+   `polaris-email-in` → `polaris-email-panel`. The previous
+   `services/fanout` and `services/cron` Workers were folded into
+   `services/api`.
 7. HMAC-sign `POST /v1/admin/bootstrap`. The response carries the
    `admin_key_id` and `admin_key_secret`. Both are captured into
    `.bootstrap-output.json` (gitignored, mode `0600`) **and** printed
@@ -108,7 +105,7 @@ onboarding path post-deploy. See the
 ## Smoke
 
 ```sh
-make smoke
+polaris-email setup infra smoke
 ```
 
 Checks, in order:
@@ -122,21 +119,22 @@ Exits non-zero on any FAIL. This is the canonical definition of
 ## State files
 
 All gitignored, all material. If you lose `.deploy-state.json`, run
-`make state-rebuild` (or `make state-rebuild DRY=1` to preview).
+`polaris-email setup infra state rebuild` (or
+`polaris-email setup infra state rebuild --dry-run` to preview).
 
-| File                     | Purpose                                                                               |
-| ------------------------ | ------------------------------------------------------------------------------------- |
-| `.env.deploy`            | Environment-specific config written by `make configure`.                              |
-| `.deploy-state.json`     | All Cloudflare resource IDs + last deployed version per service + rotation state.     |
-| `.bootstrap-output.json` | Admin `key_id` + `key_secret` from the one-time bootstrap. **Treat as a credential.** |
-| `secrets.created.json`   | Timestamps for master secret seeding (names only, no values).                         |
-| `.deploy-state.last-sha` | Last SHA `bin/deploy.sh --changed` deployed, for diff computation.                    |
+| File                     | Purpose                                                                                                  |
+| ------------------------ | -------------------------------------------------------------------------------------------------------- |
+| `.env.deploy`            | Environment-specific config written by `polaris-email setup infra configure`.                            |
+| `.deploy-state.json`     | All Cloudflare resource IDs + last deployed version per service + rotation state.                        |
+| `.bootstrap-output.json` | Admin `key_id` + `key_secret` from the one-time bootstrap. **Treat as a credential.**                    |
+| `secrets.created.json`   | Timestamps for master secret seeding (names only, no values).                                            |
+| `.deploy-state.last-sha` | Last SHA `polaris-email setup infra deploy changed` deployed, for diff computation.                      |
 
-`state-rebuild` queries `wrangler d1 list`, `wrangler kv namespace list`,
+`state rebuild` queries `wrangler d1 list`, `wrangler kv namespace list`,
 and `wrangler queues list`, matches resources by name, and writes a fresh
 state file. The previous one (if any) is backed up to
 `.deploy-state.json.bak.<timestamp>`. Re-run
-`bin/render-wrangler-local.sh` afterwards to materialise the local
+`polaris-email setup infra render` afterwards to materialise the local
 configs.
 
 ## Manual steps that remain
@@ -160,12 +158,12 @@ items:
 ## Doctor
 
 ```sh
-make doctor
+polaris-email setup infra preflight
+polaris-email setup infra smoke
 ```
 
-Runs `preflight` + `smoke` + a non-destructive check of
-`POLARIS_SECRET_A` rotation state. Use this as a quick read of overall
-health between deploys.
+Run preflight + smoke back-to-back as a quick read of overall health
+between deploys.
 
 ## Next
 

@@ -27,8 +27,9 @@ interface MessageRow {
 
 export async function janitor(env: Env): Promise<void> {
   // Note: per-mailbox message retention is intentionally not automated.
-  // Operator-driven pruning is documented in docs/runbooks/retention-
-  // and-cleanup.md; a future schema migration may add
+  // Operator-driven pruning is documented at
+  // https://docs.mail.plrs.im/operators/runbooks/retention-and-cleanup;
+  // a future schema migration may add
   // `mailboxes.retention_days` and a sweep here that reuses the
   // reference-counted `purgeMessage()` helper below.
 
