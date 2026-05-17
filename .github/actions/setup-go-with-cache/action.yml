@@ -1,5 +1,5 @@
 name: 'Setup Go with module cache'
-description: 'actions/setup-go with cache-dependency-path that falls back to go.mod when go.sum is missing (e.g. packages/sdk-go has no external deps).'
+description: 'actions/setup-go with cache-dependency-path falling back to go.mod when go.sum is missing. Caller MUST run actions/checkout first.'
 
 inputs:
   go-version:
@@ -9,16 +9,10 @@ inputs:
     description: 'Module dir to discover go.sum or go.mod under. Defaults to repo root.'
     required: false
     default: '.'
-  skip-checkout:
-    description: 'Skip the checkout step. Use when the caller already checked out.'
-    required: false
-    default: 'false'
 
 runs:
   using: composite
   steps:
-    - if: inputs.skip-checkout != 'true'
-      uses: actions/checkout@v6
     - id: pick
       shell: bash
       run: |

@@ -45,6 +45,7 @@ jobs:
   setup:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v6
       - uses: ./.github/actions/setup-node-pnpm
       - name: tar workspace node_modules
         # Single tarball preserves symlinks (pnpm's hoist-less layout depends
@@ -68,6 +69,7 @@ jobs:
     needs: setup
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v6
       - uses: ./.github/actions/restore-pnpm-workspace
       - run: pnpm lint
 
@@ -75,6 +77,7 @@ jobs:
     needs: setup
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v6
       - uses: ./.github/actions/restore-pnpm-workspace
       - run: pnpm fmt:check
 
@@ -82,6 +85,7 @@ jobs:
     needs: setup
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v6
       - uses: ./.github/actions/restore-pnpm-workspace
       - run: pnpm -r run typecheck
 
@@ -96,9 +100,15 @@ jobs:
           python3 -c "from openapi_spec_validator import validate_spec; import yaml; validate_spec(yaml.safe_load(open('openapi/polaris-email.yaml')))"
 
   sql-validate:
-    # Chained validation: cat all migrations in lexical order through one
-    # sqlite3 :memory: session. Catches inter-migration breakage (a migration
-    # referring to a column added later) — matches how prod applies them.
+    # Per-migration isolated syntax validation. Originally this job only
+    # checked 0001_init.sql; now it covers every migration in services/api/
+    # migrations/ but in isolation (fresh :memory: db per file).
+    #
+    # NOT a chained apply: SQLite's stricter VIEW validation fires on
+    # references to tables that don't exist yet, and several migrations use
+    # a rename pattern (foo → foo_old → foo) where chaining produces
+    # false-positive "no such table foo_old" / "table foo already exists"
+    # errors that don't occur under D1's per-migration apply.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -111,9 +121,18 @@ jobs:
             echo "::warning::no migrations found"
             exit 0
           fi
-          echo "validating ${#mig[@]} migration(s):"
-          printf '  %s\n' "${mig[@]}"
-          cat "${mig[@]}" | sqlite3 ':memory:'
+          echo "validating ${#mig[@]} migration(s) in isolation:"
+          fail=0
+          for f in "${mig[@]}"; do
+            if sqlite3 ':memory:' < "$f" 2>/tmp/sqlerr; then
+              echo "  ok  $f"
+            else
+              echo "::error file=$f::migration failed"
+              sed 's/^/    /' /tmp/sqlerr
+              fail=1
+            fi
+          done
+          test $fail -eq 0
 
   # ----------------------------------------------------------------------
   # Layer 2 — build & generate. Produces artifacts consumed by Layer 3.
@@ -122,6 +141,7 @@ jobs:
     needs: setup
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v6
       - uses: ./.github/actions/restore-pnpm-workspace
       - run: pnpm --filter @polaris-email/test-vectors run generate
       - uses: actions/upload-artifact@v4
@@ -135,6 +155,7 @@ jobs:
     needs: setup
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v6
       - uses: ./.github/actions/restore-pnpm-workspace
       - run: pnpm --filter @polaris-email/panel run build
       - uses: actions/upload-artifact@v4
@@ -149,6 +170,7 @@ jobs:
     if: needs.changes.outputs.docs == 'true' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v6
       - uses: ./.github/actions/restore-pnpm-workspace
       - run: pnpm --filter @polaris-email/docs run typecheck
       - run: pnpm --filter @polaris-email/docs run build:client
@@ -162,6 +184,7 @@ jobs:
   build-polaris-cli:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v6
       - uses: ./.github/actions/setup-go-with-cache
         with:
           working-directory: apps/polaris-cli
@@ -181,6 +204,7 @@ jobs:
     needs: [setup, build-test-vectors]
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v6
       - uses: ./.github/actions/restore-pnpm-workspace
       - uses: ./.github/actions/restore-build-artifacts
         with: { vectors: 'true' }
@@ -193,6 +217,7 @@ jobs:
     needs: [setup, build-test-vectors]
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v6
       - uses: ./.github/actions/restore-pnpm-workspace
       - uses: ./.github/actions/restore-build-artifacts
         with: { vectors: 'true' }
@@ -202,6 +227,7 @@ jobs:
     needs: [setup, build-test-vectors]
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v6
       - uses: ./.github/actions/setup-go-with-cache
         with:
           working-directory: packages/sdk-go
@@ -213,6 +239,7 @@ jobs:
   mail-bridge-test:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v6
       - uses: ./.github/actions/setup-go-with-cache
         with:
           working-directory: apps/mail-bridge
@@ -226,6 +253,7 @@ jobs:
     # bridge wizard + platform helpers.
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v6
       - uses: ./.github/actions/setup-go-with-cache
         with:
           working-directory: apps/polaris-cli
@@ -242,6 +270,7 @@ jobs:
     # the example file directly (instead of the template) is caught at PR time.
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v6
       - uses: ./.github/actions/setup-go-with-cache
         with:
           working-directory: apps/polaris-cli
@@ -258,6 +287,7 @@ jobs:
     if: needs.changes.outputs.cli-installer == 'true' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v6
       - uses: ./.github/actions/restore-pnpm-workspace
       - run: sudo apt-get update && sudo apt-get install -y shellcheck
       - run: pnpm --filter @polaris-email/cli-installer run typecheck

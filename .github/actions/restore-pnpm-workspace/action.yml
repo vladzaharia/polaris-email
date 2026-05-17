@@ -1,5 +1,5 @@
 name: 'Restore pnpm workspace'
-description: 'Restore the node_modules tarball produced by the setup job. Avoids re-running pnpm install in every downstream job.'
+description: 'Download + untar the workspace.tar artifact produced by the setup job. Caller MUST run actions/checkout first.'
 
 inputs:
   artifact-name:
@@ -10,7 +10,6 @@ inputs:
 runs:
   using: composite
   steps:
-    - uses: actions/checkout@v6
     - uses: pnpm/action-setup@v6
     - uses: actions/setup-node@v6
       with:

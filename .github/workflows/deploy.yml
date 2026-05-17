@@ -64,13 +64,13 @@ jobs:
             exit 1
           fi
 
-      - uses: ./.github/actions/setup-node-pnpm
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0 # need full history to diff against deployed/main
+      - uses: ./.github/actions/setup-node-pnpm
       - uses: ./.github/actions/setup-go-with-cache
         with:
           working-directory: apps/polaris-cli
-          skip-checkout: 'true'
 
       # Try to reuse the polaris-cli binary that CI just built on this SHA.
       # workflow_dispatch (manual) doesn't have a triggering run-id so the
