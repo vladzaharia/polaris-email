@@ -12,7 +12,7 @@ BIN  := $(ROOT)/bin
 .DEFAULT_GOAL := help
 
 .PHONY: help preflight configure bootstrap deploy deploy-all deploy-changed \
-        rollback smoke doctor tag-deployed state-rebuild parity
+        rollback smoke doctor tag-deployed state-rebuild parity compare-render
 
 help: ## Show this help.
 	@awk 'BEGIN {FS = ":.*##"; printf "Usage: make \033[36m<target>\033[0m [VAR=value...]\n\nTargets:\n"} \
@@ -84,3 +84,6 @@ parity: ## Diff legacy bin/preflight.sh against `polaris-email setup infra prefl
 	    echo "--- go log ---"; cat $$GO_LOG; rc=1; \
 	  fi; \
 	  rm -f $$SHELL_LOG $$GO_LOG; exit $$rc
+
+compare-render: ## Diff the Go renderer's output against the legacy envsubst path for every service (parity gate; PR 14 retires).
+	@$(BIN)/compare-render.sh

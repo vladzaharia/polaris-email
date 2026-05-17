@@ -34,11 +34,37 @@ deploy_one() {
   (
     cd "$dir"
     if [[ -f wrangler.jsonc && -f wrangler.local.jsonc ]]; then
-      # Strip // line-comments before jq merge. Two-pass so we don't eat the `//` inside URLs:
-      # only strip when `//` follows whitespace or starts a line.
-      PUB="$(sed -E -e 's|[[:space:]]+//.*$||' -e 's|^//.*$||' wrangler.jsonc)"
-      LOCAL="$(sed -E -e 's|[[:space:]]+//.*$||' -e 's|^//.*$||' wrangler.local.jsonc)"
-      jq -s '.[0] * .[1]' <(printf '%s' "$PUB") <(printf '%s' "$LOCAL") > .wrangler.merged.json
+      # PR 4 replaced the comment-stripping sed pass + jq deep-merge with
+      # a Go-native, comment-preserving merger in apps/polaris-cli/
+      # internal/setup/wranglercfg (exposed as
+      # `polaris-email setup infra render --merge ... --overlay ...`).
+      # We try the Go path first; if the binary is missing or it errors,
+      # we fall back to the legacy sed+jq pipeline so a partial install
+      # can still deploy. PR 14 retires the fallback.
+      GO_MERGE=""
+      if command -v polaris-email >/dev/null 2>&1; then
+        GO_MERGE="$(command -v polaris-email)"
+      elif [[ -x "$ROOT/apps/polaris-cli/bin/polaris-email" ]]; then
+        GO_MERGE="$ROOT/apps/polaris-cli/bin/polaris-email"
+      fi
+      merged_ok=0
+      if [[ -n "$GO_MERGE" ]]; then
+        if "$GO_MERGE" setup infra render \
+             --merge wrangler.jsonc --overlay wrangler.local.jsonc \
+             -o .wrangler.merged.json 2>/dev/null; then
+          merged_ok=1
+        else
+          warn "Go merge failed for $svc_path; falling back to sed+jq"
+        fi
+      fi
+      if [[ "$merged_ok" -ne 1 ]]; then
+        # Legacy fallback: strip // line-comments before jq merge. Two-pass
+        # so we don't eat the `//` inside URLs: only strip when `//`
+        # follows whitespace or starts a line.
+        PUB="$(sed -E -e 's|[[:space:]]+//.*$||' -e 's|^//.*$||' wrangler.jsonc)"
+        LOCAL="$(sed -E -e 's|[[:space:]]+//.*$||' -e 's|^//.*$||' wrangler.local.jsonc)"
+        jq -s '.[0] * .[1]' <(printf '%s' "$PUB") <(printf '%s' "$LOCAL") > .wrangler.merged.json
+      fi
       out="$(wrangler deploy --config .wrangler.merged.json 2>&1)"
       rc=$?
       rm -f .wrangler.merged.json

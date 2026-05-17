@@ -5,12 +5,12 @@
 // .env.deploy. Do NOT hand-edit the materialized wrangler.local.jsonc —
 // re-run `polaris-email setup infra render` (or `make configure`) instead.
 {
-  "account_id": "{{ .Account.ID }}",
+  "account_id": "cf-account-id",
   "d1_databases": [
     {
       "binding": "DB",
       "database_name": "polaris-email",
-      "database_id": "{{ .D1.PolarisEmail.ID }}",
+      "database_id": "d1-id",
     },
   ],
   "r2_buckets": [
@@ -20,23 +20,23 @@
     // infra/terraform/README.md, then `wrangler secret put ANCHOR_S3_*`.
   ],
   "kv_namespaces": [
-    { "binding": "KV_NONCE", "id": "{{ .KV.Nonce.ID }}" },
-    { "binding": "KV_IDEMPOTENCY", "id": "{{ .KV.Idempotency.ID }}" },
-    { "binding": "KV_RATE_LIMIT", "id": "{{ .KV.RateLimit.ID }}" },
-    { "binding": "KV_KEY_CACHE", "id": "{{ .KV.KeyCache.ID }}" },
-    { "binding": "KV_REVOCATIONS", "id": "{{ .KV.Revocations.ID }}" },
+    { "binding": "KV_NONCE", "id": "kv-nonce-id" },
+    { "binding": "KV_IDEMPOTENCY", "id": "kv-idem-id" },
+    { "binding": "KV_RATE_LIMIT", "id": "kv-rl-id" },
+    { "binding": "KV_KEY_CACHE", "id": "kv-kc-id" },
+    { "binding": "KV_REVOCATIONS", "id": "kv-rev-id" },
   ],
   "vars": {
-    "API_BASE_URL": "https://{{ .Hostnames.PolarisAPI }}",
+    "API_BASE_URL": "https://api.example.com",
     // R2 public custom domain. The R2 bucket `polaris-email` is fronted
     // by this hostname; both inbound and outbound message bodies/attachments
     // are served from it. See infra/terraform for the DNS + bucket config.
-    "R2_PUBLIC_HOST": "{{ .Hostnames.R2Public }}",
+    "R2_PUBLIC_HOST": "r2.example.com",
     // External anchor target. Non-secret config only; the
     // access-key id + secret are pushed via `wrangler secret put`.
-    "ANCHOR_S3_ENDPOINT": "{{ .Anchor.S3Endpoint }}",
-    "ANCHOR_S3_BUCKET": "{{ .Anchor.S3Bucket }}",
-    "ANCHOR_S3_REGION": "{{ .Anchor.S3Region }}",
-    "ALERT_WEBHOOK": "{{ .AlertWebhook }}",
+    "ANCHOR_S3_ENDPOINT": "https://s3.example.com",
+    "ANCHOR_S3_BUCKET": "polaris-anchors",
+    "ANCHOR_S3_REGION": "us-west-005",
+    "ALERT_WEBHOOK": "https://alerts.example.com/hook",
   },
 }

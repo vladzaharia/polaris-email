@@ -10,12 +10,12 @@
 //      to the `send_email` array below
 //   3. `make deploy SERVICE=services/out`
 {
-  "account_id": "{{ .Account.ID }}",
+  "account_id": "cf-account-id",
   "d1_databases": [
     {
       "binding": "DB",
       "database_name": "polaris-email",
-      "database_id": "{{ .D1.PolarisEmail.ID }}",
+      "database_id": "d1-id",
     },
   ],
   "r2_buckets": [{ "binding": "R2", "bucket_name": "polaris-email", "jurisdiction": "eu" }],

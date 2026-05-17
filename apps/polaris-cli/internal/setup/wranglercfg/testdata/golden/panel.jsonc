@@ -4,20 +4,20 @@
 // .env.deploy. Do NOT hand-edit the materialized wrangler.local.jsonc —
 // re-run `polaris-email setup infra render` (or `make configure`).
 {
-  "account_id": "{{ .Account.ID }}",
+  "account_id": "cf-account-id",
   // Panel binds to the same `polaris-email` D1 as services/api so better-auth
   // can read the auth + sessions tables alongside the mailbox-centric schema.
   "d1_databases": [
     {
       "binding": "DB",
       "database_name": "polaris-email",
-      "database_id": "{{ .D1.PolarisEmail.ID }}",
+      "database_id": "d1-id",
     },
   ],
   "vars": {
     // Public hostnames threaded into OIDC redirect URLs and cookie config.
-    "POLARIS_API_HOSTNAME": "{{ .Hostnames.PolarisAPI }}",
-    "OIDC_ISSUER": "{{ .OIDC.Issuer }}",
-    "OIDC_CLIENT_ID": "{{ .OIDC.ClientID }}",
+    "POLARIS_API_HOSTNAME": "api.example.com",
+    "OIDC_ISSUER": "https://oidc.example.com",
+    "OIDC_CLIENT_ID": "client-abc",
   },
 }
