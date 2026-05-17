@@ -14,6 +14,7 @@
     "coverage",
     "**/*.d.ts",
     "**/generated/**",
-    "packages/sdk-*/**"
+    "packages/sdk-*/**",
+    "**/wrangler.local.template.jsonc"
   ]
 }

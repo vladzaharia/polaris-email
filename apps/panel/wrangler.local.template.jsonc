@@ -20,4 +20,9 @@
     "OIDC_ISSUER": "{{ .OIDC.Issuer }}",
     "OIDC_CLIENT_ID": "{{ .OIDC.ClientID }}",
   },
+{{- if .SecretsStore.StoreID }}
+  "secrets_store_secrets": [
+    { "binding": "POLARIS_SECRET_A", "store_id": "{{ .SecretsStore.StoreID }}", "secret_name": "POLARIS_SECRET_A" },
+  ],
+{{- end }}
 }

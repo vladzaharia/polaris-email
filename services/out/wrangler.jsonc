@@ -26,4 +26,8 @@
   },
   // send_email bindings — one per verified outbound domain. Real names live in wrangler.local.jsonc.
   "send_email": [{ "name": "EMAIL_DEFAULT" }],
+  // Tail consumer: forwards error/warn logs to services/tail.
+  "tail_consumers": [{ "service": "polaris-email-tail" }],
+  // Analytics Engine: send_email success/bounce/failed per domain.
+  "analytics_engine_datasets": [{ "binding": "ANALYTICS", "dataset": "polaris_metrics" }],
 }

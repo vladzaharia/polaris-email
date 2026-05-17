@@ -24,4 +24,8 @@
   // Llama for unstructured complaint classification. The binding is named
   // `AI` per the @cloudflare/ai convention.
   "ai": { "binding": "AI" },
+  // Tail consumer: forwards error/warn logs to services/tail.
+  "tail_consumers": [{ "service": "polaris-email-tail" }],
+  // Analytics Engine: per-domain inbound rate. Shared dataset with api + out.
+  "analytics_engine_datasets": [{ "binding": "ANALYTICS", "dataset": "polaris_metrics" }],
 }
