@@ -1,6 +1,6 @@
 module github.com/vladzaharia/polaris-email/apps/polaris-cli
 
-go 1.23
+go 1.25.0
 
 require (
 	github.com/charmbracelet/bubbles v0.20.0
@@ -11,7 +11,8 @@ require (
 	github.com/polaris-email/polaris-sdk-go v0.0.0
 	github.com/spf13/cobra v1.8.1
 	github.com/tailscale/hujson v0.0.0-20260302212456-ecc657c15afd
-	golang.org/x/sys v0.28.0
+	github.com/zalando/go-keyring v0.2.8
+	golang.org/x/sys v0.44.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
@@ -25,8 +26,10 @@ require (
 	github.com/charmbracelet/x/ansi v0.2.3 // indirect
 	github.com/charmbracelet/x/exp/strings v0.0.0-20240722160745-212f7b056ed0 // indirect
 	github.com/charmbracelet/x/term v0.2.0 // indirect
+	github.com/danieljoos/wincred v1.2.3 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/erikgeiser/coninput v0.0.0-20211004153227-1c3628e74d0f // indirect
+	github.com/godbus/dbus/v5 v5.2.2 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/lucasb-eyer/go-colorful v1.2.0 // indirect
 	github.com/mattn/go-localereader v0.0.1 // indirect
