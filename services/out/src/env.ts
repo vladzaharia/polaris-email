@@ -2,6 +2,8 @@ export interface Env {
   DB: D1Database;
   R2: R2Bucket;
   FANOUT_QUEUE: Queue<FanoutEvent>;
+  /** Custom-metrics sink shared with services/api + services/in. */
+  ANALYTICS?: AnalyticsEngineDataset;
   /** Index of `send_email`-style bindings, populated dynamically below. */
   [k: string]: unknown;
 }

@@ -52,6 +52,8 @@ interface Env extends PipelineEnv {
   /** W4 — secret shared with services/api for verifying inbound RFC 8058
    *  unsubscribe tokens. */
   UNSUB_HMAC_SECRET?: string;
+  /** Custom-metrics sink shared with services/api + services/out. */
+  ANALYTICS?: AnalyticsEngineDataset;
 }
 
 interface FanoutInbound {
@@ -380,6 +382,14 @@ export default {
       message.setReject('451 4.7.1 ingest error');
       return;
     }
+
+    // Analytics Engine: per-domain inbound rate. One data point per
+    // received message. Best-effort; binding may be absent in tests.
+    env.ANALYTICS?.writeDataPoint({
+      indexes: [envelopeTo.split('@')[1] ?? 'unknown'],
+      blobs: ['received'],
+      doubles: [1],
+    });
 
     // Backfill the policy_decisions row with the freshly-minted message_id
     // (the engine writes the row at evaluation time with message_id=NULL

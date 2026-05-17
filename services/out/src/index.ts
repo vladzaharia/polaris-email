@@ -483,6 +483,11 @@ async function handleOne(env: Env, msg: OutboundQueueMessage, attempts: number):
         ['sending'],
       );
       if (!flipped.changed) return;
+      env.ANALYTICS?.writeDataPoint({
+        indexes: [msg.fromDomain],
+        blobs: ['bounced'],
+        doubles: [1],
+      });
       await fanout(env, {
         event_id: ulid(),
         event: 'message.bounced',
@@ -495,6 +500,11 @@ async function handleOne(env: Env, msg: OutboundQueueMessage, attempts: number):
     } else {
       const flipped = await setStatus(env, msg.messageId, 'sent', {}, ['sending']);
       if (!flipped.changed) return;
+      env.ANALYTICS?.writeDataPoint({
+        indexes: [msg.fromDomain],
+        blobs: ['sent'],
+        doubles: [1],
+      });
       await fanout(env, {
         event_id: ulid(),
         event: 'message.sent',

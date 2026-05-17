@@ -124,6 +124,14 @@ export interface Env {
   // KV_KEY_CACHE under `bridge_plain:<id>` (plaintext, 1h TTL). See
   // services/api/src/bridge-auth.ts.
 
+  // -- Analytics Engine ------------------------------------------------------
+  /**
+   * Custom-metrics sink, shared with services/in + services/out. Optional so
+   * tests + early-boot environments without the binding still run. Read via
+   * the CF SQL API (`/v1/admin/metrics/*`).
+   */
+  ANALYTICS?: AnalyticsEngineDataset;
+
   // -- CF zone discovery + configure (cf-zones.ts) --------------------------
   // CF_API_TOKEN + CF_ACCOUNT_ID are declared above and reused here.
   /** Worker name the catch-all rule must target. Default `polaris-email-in`. */
