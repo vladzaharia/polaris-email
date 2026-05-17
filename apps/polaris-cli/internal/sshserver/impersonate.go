@@ -1,5 +1,5 @@
 // HTTP-layer impersonation: wraps the bootstrap client's transport so
-// every outbound request carries `X-Polaris-On-Behalf-Of: operator:<id>`.
+// every outbound request carries `X-Polaris-OBO: operator:<id>`.
 //
 // We don't modify polaris-sdk-go itself — the client.Client struct's
 // HTTPClient is per-instance, so per-session impersonation is achieved by
@@ -20,7 +20,7 @@ type oboTransport struct {
 func (t *oboTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	// Clone the request so we don't mutate the caller's headers.
 	r := req.Clone(req.Context())
-	r.Header.Set("X-Polaris-On-Behalf-Of", "operator:"+t.operatorID)
+	r.Header.Set("X-Polaris-OBO", "operator:"+t.operatorID)
 	return t.wrapped.RoundTrip(r)
 }
 

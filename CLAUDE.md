@@ -140,7 +140,7 @@ for the full surface.
    flows through the same `operators` D1 table (one row per human,
    each owning exactly one `api_keys` row, fingerprinted by SSH pubkey).
    The bootstrap key keeps its own scope (`admin:impersonate`) and is
-   used ONLY by the Wish server to attach `X-Polaris-On-Behalf-Of`
+   used ONLY by the Wish server to attach `X-Polaris-OBO`
    headers; never log in with it. Audit log records `operator:<id>` as
    actor regardless of which key signed the request (see
    `services/api/src/auth.ts`'s impersonation block + `actorOf(c)` in

@@ -63,7 +63,7 @@ it was given:
   order: `--token` flag → `$POLARIS_TOKEN` → OS keychain (per
   `polaris-email login`) → legacy `~/.config/polaris-email/config.toml`.
 - **Over SSH:** the Wish handler injects an
-  `X-Polaris-On-Behalf-Of: operator:<id>` header on every outbound
+  `X-Polaris-OBO: operator:<id>` header on every outbound
   request via an HTTP-transport wrapper, so audit attribution names the
   human regardless of which key signed.
 
@@ -112,7 +112,7 @@ p := tuiapp.NewProgram(tuiapp.ProgramOpts{
 
 The Wish handler (`internal/sshserver/handler.go`) wraps the bootstrap
 client's HTTP transport with `oboTransport` so every request carries the
-operator's `X-Polaris-On-Behalf-Of` header. No SDK changes required.
+operator's `X-Polaris-OBO` header. No SDK changes required.
 
 ## Theme
 

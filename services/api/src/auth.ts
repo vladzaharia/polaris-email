@@ -19,7 +19,7 @@ export interface AuthenticatedKey {
   status: 'primary' | 'secondary' | 'revoked';
   revoked_at: number | null;
   /**
-   * Set when the request carried `X-Polaris-On-Behalf-Of: operator:<id>`
+   * Set when the request carried `X-Polaris-OBO: operator:<id>`
    * AND the signing key has `admin:impersonate`. The audit log records the
    * operator id as actor; `requireScope` evaluates against the *operator's*
    * scopes (not the bootstrap key's), so impersonation cannot grant a
@@ -252,7 +252,7 @@ export function hmacAuth(direction: 'polaris-api'): MiddlewareHandler<{ Bindings
     }
     await env.KV_NONCE.put(nonceKey, '1', { expirationTtl: NONCE_TTL_SECONDS });
 
-    // Impersonation (`X-Polaris-On-Behalf-Of`): when the signing key holds
+    // Impersonation (`X-Polaris-OBO`): when the signing key holds
     // `admin:impersonate`, it may attribute this request to an operator in
     // the `operators` table. The Wish/SSH server uses this to record each
     // SSH-fronted action under the connecting operator's identity instead
@@ -264,7 +264,7 @@ export function hmacAuth(direction: 'polaris-api'): MiddlewareHandler<{ Bindings
     //     The trade-off lets us avoid forking `packages/hmac`.
     //   * After successful impersonation, `requireScope()` runs against
     //     the OPERATOR'S scopes — not the bootstrap key's.
-    const obo = c.req.header('x-polaris-on-behalf-of');
+    const obo = c.req.header('x-polaris-obo');
     let effectiveScopesRaw = row.scopes;
     let effectiveOperatorId: string | null = null;
     if (obo) {

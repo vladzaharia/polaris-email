@@ -3,7 +3,7 @@
 // The Wish server signs every outgoing API call with the bootstrap key
 // supplied via flags (which must hold the `admin:impersonate` scope), and
 // attributes the request to the connecting operator via the
-// `X-Polaris-On-Behalf-Of` header.
+// `X-Polaris-OBO` header.
 package cmds
 
 import (

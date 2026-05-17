@@ -1,5 +1,5 @@
 // Bubble Tea handler — per-SSH-session: copies the bootstrap client,
-// injects the `X-Polaris-On-Behalf-Of` header for the connecting operator,
+// injects the `X-Polaris-OBO` header for the connecting operator,
 // and constructs a TUI program bound to that operator.
 package sshserver
 

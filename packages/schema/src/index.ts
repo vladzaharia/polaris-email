@@ -54,7 +54,7 @@ export const KeyScope = z.enum([
   'admin:rotate',
   'admin:read',
   // `admin:impersonate` gates the Wish/SSH server's bootstrap key:
-  //   * use of the `X-Polaris-On-Behalf-Of` header,
+  //   * use of the `X-Polaris-OBO` header,
   //   * the `GET /v1/admin/operators/lookup` route used by the Wish server.
   // The bootstrap key is expected to hold ONLY this scope; impersonation
   // grants the *operator's* scopes for the request, not the bootstrap key's.
