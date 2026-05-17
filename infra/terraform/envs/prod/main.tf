@@ -132,3 +132,34 @@ provider "cloudflare" {
 #   domain_name   = "r2.mail.plrs.im"
 #   record_name   = "r2.mail" # relative to the `plrs.im` zone
 # }
+
+# -----------------------------------------------------------------------------
+# Workers custom domains (PR 6 — cli-installer).
+#
+# `cloudflare_workers_custom_domain` attaches a hostname to a deployed Worker.
+# The Worker itself is deployed by Wrangler (out-of-band from Terraform); this
+# resource just owns the hostname-to-Worker mapping on the zone.
+#
+# The Worker `polaris-email-cli-installer` (apps/cli-installer) is fronted by
+# `cli.mail.plrs.im` and serves the POSIX-sh installer for the operator CLI.
+# -----------------------------------------------------------------------------
+
+resource "cloudflare_workers_custom_domain" "cli_installer" {
+  account_id = var.cloudflare_account_id
+  zone_id    = "REPLACE_WITH_MAIL_PLRS_IM_ZONE_ID" # TODO(operator): real zone id for plrs.im
+  hostname   = "cli.mail.plrs.im"
+  service    = "polaris-email-cli-installer"
+  environment = "production"
+}
+
+# Reference stub for the panel Worker. Uncomment and fill in once the
+# `panel.polaris.example.com` hostname is finalised. Mirrors the
+# cli-installer block above; the panel Worker is `polaris-email-panel`.
+#
+# resource "cloudflare_workers_custom_domain" "panel" {
+#   account_id  = var.cloudflare_account_id
+#   zone_id     = "REPLACE_WITH_PANEL_ZONE_ID"
+#   hostname    = "panel.polaris.example.com"
+#   service     = "polaris-email-panel"
+#   environment = "production"
+# }

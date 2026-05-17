@@ -1,0 +1,13 @@
+// Template merged on top of apps/cli-installer/wrangler.jsonc by
+// bin/deploy.sh. Placeholders use Go-template syntax `{{ .X.Y }}` and are
+// substituted by bin/render-wrangler-local.sh from .deploy-state.json +
+// .env.deploy.
+//
+// PR 6 starts on the new Go-template syntax. PR 4 migrates the existing
+// services (api, in, out, panel) from the older `${VAR}` shape to match.
+//
+// Do NOT hand-edit the materialised wrangler.local.jsonc — re-run
+// `make configure` instead.
+{
+  "account_id": "{{ .Cloudflare.AccountId }}",
+}

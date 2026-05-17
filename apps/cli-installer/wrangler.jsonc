@@ -1,0 +1,28 @@
+// polaris-email-cli-installer Worker — committed config. Real account ID
+// and any deploy-time overrides live in wrangler.local.jsonc (gitignored)
+// and are merged by bin/deploy.sh before `wrangler deploy`.
+//
+// This Worker hosts the POSIX-sh installer at https://cli.mail.plrs.im.
+// `src/install.sh` is bundled as a text module via the `rules` block below;
+// the Worker rewrites the `POLARIS_PIN_VERSION=` line when the request
+// includes a `?v=<tag>` query param.
+{
+  "$schema": "https://json-schema.org/draft-07/schema",
+  "name": "polaris-email-cli-installer",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-04-15",
+  "observability": { "enabled": true },
+  "logpush": true,
+  // Bundle `*.sh` files into the Worker as UTF-8 text. The default export of
+  // the import is the file contents as a string.
+  "rules": [
+    {
+      "type": "Text",
+      "globs": ["**/*.sh"],
+      "fallthrough": false,
+    },
+  ],
+  "vars": {
+    "ENVIRONMENT": "production",
+  },
+}

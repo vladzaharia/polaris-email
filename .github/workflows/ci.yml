@@ -121,3 +121,23 @@ jobs:
       - uses: actions/checkout@v4
       - run: sudo apt-get update && sudo apt-get install -y sqlite3
       - run: "sqlite3 ':memory:' < services/api/migrations/0001_init.sql"
+
+  cli-installer-test:
+    # Tests the cli-installer Worker (`apps/cli-installer`). The Worker
+    # bundles `src/install.sh` as a text module and serves it from
+    # cli.mail.plrs.im. Three checks:
+    #   1. typecheck the Worker entrypoint
+    #   2. shellcheck the install script under POSIX sh
+    #   3. vitest: Miniflare-based Worker tests + a Node-side shellcheck wrapper
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 9 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: sudo apt-get update && sudo apt-get install -y shellcheck
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @polaris-email/cli-installer run typecheck
+      - run: shellcheck -s sh apps/cli-installer/src/install.sh
+      - run: pnpm --filter @polaris-email/cli-installer test
