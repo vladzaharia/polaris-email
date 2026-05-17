@@ -5,133 +5,85 @@ on:
     branches: [main]
   pull_request:
 
-# Cancel an in-flight run when a new commit is pushed to the same ref.
-# github.ref is a builtin (refs/heads/main or refs/pull/N/merge) — never
-# user-supplied text — so it's safe to interpolate directly here.
+# Cancel an in-flight run when a new commit is pushed to the same ref — but
+# never cancel CI runs on main. The deploy workflow consumes artifacts from
+# the triggering CI run via workflow_run + run-id; cancelling main runs would
+# leave deploy looking at an incomplete CI. github.ref is a builtin so it's
+# safe to interpolate.
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
-  lint:
+  # ----------------------------------------------------------------------
+  # Path filter — drives conditional layer-3 jobs.
+  # ----------------------------------------------------------------------
+  changes:
     runs-on: ubuntu-latest
+    outputs:
+      docs: ${{ steps.f.outputs.docs }}
+      cli-installer: ${{ steps.f.outputs.cli-installer }}
     steps:
       - uses: actions/checkout@v6
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v6
-        with: { node-version: 22, cache: pnpm }
-      - run: pnpm install --frozen-lockfile
+      - uses: dorny/paths-filter@v3
+        id: f
+        with:
+          filters: |
+            docs:
+              - 'apps/docs/**'
+              - 'openapi/**'
+              - 'packages/sdk-node/**'
+              - 'services/api/src/routes/**'
+            cli-installer:
+              - 'apps/cli-installer/**'
+
+  # ----------------------------------------------------------------------
+  # Layer 0 — one-time workspace install. Uploads node_modules as a tarball
+  # so downstream jobs don't re-run pnpm install (saves ~30-60s per job × 8
+  # jobs in the old layout).
+  # ----------------------------------------------------------------------
+  setup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: ./.github/actions/setup-node-pnpm
+      - name: tar workspace node_modules
+        # Single tarball preserves symlinks (pnpm's hoist-less layout depends
+        # on them). upload-artifact@v4 treats the .tar as an opaque blob, so
+        # symlinks survive untouched.
+        run: |
+          tar -cf workspace.tar \
+            node_modules \
+            $(find services apps packages -maxdepth 2 -name node_modules -type d 2>/dev/null)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pnpm-workspace
+          path: workspace.tar
+          retention-days: 1
+          if-no-files-found: error
+
+  # ----------------------------------------------------------------------
+  # Layer 1 — static checks. Parallel; depend on setup but not on builds.
+  # ----------------------------------------------------------------------
+  lint:
+    needs: setup
+    runs-on: ubuntu-latest
+    steps:
+      - uses: ./.github/actions/restore-pnpm-workspace
       - run: pnpm lint
 
   fmt-check:
+    needs: setup
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v6
-        with: { node-version: 22, cache: pnpm }
-      - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/restore-pnpm-workspace
       - run: pnpm fmt:check
 
   typecheck:
+    needs: setup
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v6
-        with: { node-version: 22, cache: pnpm }
-      - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/restore-pnpm-workspace
       - run: pnpm -r run typecheck
-
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v6
-        with: { node-version: 22, cache: pnpm }
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter @polaris-email/test-vectors run generate
-      - run: pnpm test:unit
-
-  integration-test:
-    # Pool-workers integration tests: real Miniflare + workerd, no Cloudflare
-    # account required. Slower than `test` (one pool boot per file), so split
-    # into a parallel job. Required check — keep alongside `test`.
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v6
-        with: { node-version: 22, cache: pnpm }
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter @polaris-email/test-vectors run generate
-      - run: pnpm test:integration
-
-  go-test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-go@v6
-        with:
-          go-version: '1.25'
-          # sdk-go has no go.sum (no external deps). Disable per-module cache to
-          # avoid the action erroring on a missing dependency file.
-          cache: false
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v6
-        with: { node-version: 22 }
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter @polaris-email/test-vectors run generate
-      - working-directory: packages/sdk-go
-        run: go test ./...
-
-  mail-bridge-test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-go@v6
-        with:
-          go-version: '1.25'
-          cache-dependency-path: apps/mail-bridge/go.sum
-      - working-directory: apps/mail-bridge
-        run: go vet ./...
-      - working-directory: apps/mail-bridge
-        run: go test -race ./...
-
-  compose-examples-drift:
-    # The in-repo apps/mail-bridge/docker-compose.{local,tailscale}.yml
-    # files are generated artefacts; the source of truth is
-    # apps/polaris-cli/internal/setup/daemons/bridge/templates/. CI runs
-    # `make compose-examples` and fails on any drift so an operator
-    # editing the example file directly (instead of the template) is
-    # caught at PR time.
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-go@v6
-        with:
-          go-version: '1.25'
-          cache-dependency-path: apps/polaris-cli/go.sum
-      - name: regenerate compose examples
-        run: make -C apps/mail-bridge compose-examples
-      - name: assert no drift
-        run: git diff --exit-code apps/mail-bridge/docker-compose.local.yml apps/mail-bridge/docker-compose.tailscale.yml
-
-  polaris-cli-test:
-    # Unit tests for the polaris-email Go CLI, including the PR 9 setup
-    # bridge wizard + platform helpers.
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-go@v6
-        with:
-          go-version: '1.25'
-          cache-dependency-path: apps/polaris-cli/go.sum
-      - working-directory: apps/polaris-cli
-        run: go vet ./...
-      - working-directory: apps/polaris-cli
-        run: go test -race ./...
 
   openapi-validate:
     runs-on: ubuntu-latest
@@ -144,45 +96,222 @@ jobs:
           python3 -c "from openapi_spec_validator import validate_spec; import yaml; validate_spec(yaml.safe_load(open('openapi/polaris-email.yaml')))"
 
   sql-validate:
+    # Chained validation: cat all migrations in lexical order through one
+    # sqlite3 :memory: session. Catches inter-migration breakage (a migration
+    # referring to a column added later) — matches how prod applies them.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
       - run: sudo apt-get update && sudo apt-get install -y sqlite3
-      - run: "sqlite3 ':memory:' < services/api/migrations/0001_init.sql"
+      - run: |
+          set -euo pipefail
+          shopt -s nullglob
+          mig=(services/api/migrations/*.sql)
+          if [ ${#mig[@]} -eq 0 ]; then
+            echo "::warning::no migrations found"
+            exit 0
+          fi
+          echo "validating ${#mig[@]} migration(s):"
+          printf '  %s\n' "${mig[@]}"
+          cat "${mig[@]}" | sqlite3 ':memory:'
 
-  cli-installer-test:
-    # Tests the cli-installer Worker (`apps/cli-installer`). The Worker
-    # bundles `src/install.sh` as a text module and serves it from
-    # cli.mail.plrs.im. Three checks:
-    #   1. typecheck the Worker entrypoint
-    #   2. shellcheck the install script under POSIX sh
-    #   3. vitest: Miniflare-based Worker tests + a Node-side shellcheck wrapper
+  # ----------------------------------------------------------------------
+  # Layer 2 — build & generate. Produces artifacts consumed by Layer 3.
+  # ----------------------------------------------------------------------
+  build-test-vectors:
+    needs: setup
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v6
-        with: { node-version: 22, cache: pnpm }
+      - uses: ./.github/actions/restore-pnpm-workspace
+      - run: pnpm --filter @polaris-email/test-vectors run generate
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vectors-json
+          path: packages/test-vectors/vectors.json
+          retention-days: 1
+          if-no-files-found: error
+
+  build-panel:
+    needs: setup
+    runs-on: ubuntu-latest
+    steps:
+      - uses: ./.github/actions/restore-pnpm-workspace
+      - run: pnpm --filter @polaris-email/panel run build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: panel-dist
+          path: apps/panel/dist/
+          retention-days: 1
+          if-no-files-found: error
+
+  build-docs:
+    needs: [setup, changes]
+    if: needs.changes.outputs.docs == 'true' || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: ./.github/actions/restore-pnpm-workspace
+      - run: pnpm --filter @polaris-email/docs run typecheck
+      - run: pnpm --filter @polaris-email/docs run build:client
+      - uses: actions/upload-artifact@v4
+        with:
+          name: docs-dist
+          path: apps/docs/build/
+          retention-days: 1
+          if-no-files-found: error
+
+  build-polaris-cli:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: ./.github/actions/setup-go-with-cache
+        with:
+          working-directory: apps/polaris-cli
+      - working-directory: apps/polaris-cli
+        run: make build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: polaris-cli-bin
+          path: apps/polaris-cli/bin/
+          retention-days: 1
+          if-no-files-found: error
+
+  # ----------------------------------------------------------------------
+  # Layer 3 — tests & integrations. Consume Layer 2 artifacts.
+  # ----------------------------------------------------------------------
+  test:
+    needs: [setup, build-test-vectors]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: ./.github/actions/restore-pnpm-workspace
+      - uses: ./.github/actions/restore-build-artifacts
+        with: { vectors: 'true' }
+      - run: pnpm test:unit
+
+  integration-test:
+    # Pool-workers integration tests: real Miniflare + workerd, no Cloudflare
+    # account required. Slower than `test` (one pool boot per file), so split
+    # into a parallel job. Required check — keep alongside `test`.
+    needs: [setup, build-test-vectors]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: ./.github/actions/restore-pnpm-workspace
+      - uses: ./.github/actions/restore-build-artifacts
+        with: { vectors: 'true' }
+      - run: pnpm test:integration
+
+  go-test:
+    needs: [setup, build-test-vectors]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: ./.github/actions/setup-go-with-cache
+        with:
+          working-directory: packages/sdk-go
+      - uses: ./.github/actions/restore-build-artifacts
+        with: { vectors: 'true' }
+      - working-directory: packages/sdk-go
+        run: go test ./...
+
+  mail-bridge-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: ./.github/actions/setup-go-with-cache
+        with:
+          working-directory: apps/mail-bridge
+      - working-directory: apps/mail-bridge
+        run: go vet ./...
+      - working-directory: apps/mail-bridge
+        run: go test -race ./...
+
+  polaris-cli-test:
+    # Unit tests for the polaris-email Go CLI, including the PR 9 setup
+    # bridge wizard + platform helpers.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: ./.github/actions/setup-go-with-cache
+        with:
+          working-directory: apps/polaris-cli
+      - working-directory: apps/polaris-cli
+        run: go vet ./...
+      - working-directory: apps/polaris-cli
+        run: go test -race ./...
+
+  compose-examples-drift:
+    # The in-repo apps/mail-bridge/docker-compose.{local,tailscale}.yml files
+    # are generated artefacts; the source of truth is the templates under
+    # apps/polaris-cli/internal/setup/daemons/bridge/templates/. CI runs
+    # `make compose-examples` and fails on any drift so an operator editing
+    # the example file directly (instead of the template) is caught at PR time.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: ./.github/actions/setup-go-with-cache
+        with:
+          working-directory: apps/polaris-cli
+      - name: regenerate compose examples
+        run: make -C apps/mail-bridge compose-examples
+      - name: assert no drift
+        run: git diff --exit-code apps/mail-bridge/docker-compose.local.yml apps/mail-bridge/docker-compose.tailscale.yml
+
+  cli-installer-test:
+    # Worker bundles src/install.sh as a text module and serves it from
+    # cli.mail.plrs.im. Three checks: typecheck Worker, shellcheck install
+    # script under POSIX sh, vitest Miniflare-based Worker tests.
+    needs: [setup, changes]
+    if: needs.changes.outputs.cli-installer == 'true' || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: ./.github/actions/restore-pnpm-workspace
       - run: sudo apt-get update && sudo apt-get install -y shellcheck
-      - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @polaris-email/cli-installer run typecheck
       - run: shellcheck -s sh apps/cli-installer/src/install.sh
       - run: pnpm --filter @polaris-email/cli-installer test
 
-  docs:
-    # Docusaurus site (apps/docs). PR 11 ships scaffolding; build must
-    # stay green before any content lands in PR 12.
+  docs-link-check:
+    needs: build-docs
+    if: needs.changes.outputs.docs == 'true' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v6
-        with: { node-version: 22, cache: pnpm }
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter @polaris-email/docs run typecheck
-      - run: pnpm --filter @polaris-email/docs run build:client
+      - uses: ./.github/actions/restore-build-artifacts
+        with: { docs: 'true' }
       - name: link-check
         uses: lycheeverse/lychee-action@v2
         with:
           args: --no-progress --root-dir ${{ github.workspace }}/apps/docs/build --config lychee.toml --accept '200,206,429' 'apps/docs/build/**/*.html'
           fail: true
+
+  # ----------------------------------------------------------------------
+  # Aggregator — single required check. Set branch protection to require
+  # only this job; `if: always()` guarantees we evaluate even when an
+  # upstream fails, and toJSON(needs) covers skipped (path-filtered) jobs.
+  # NEEDS is passed via env: so the jq expansion is never injected into
+  # the shell command.
+  # ----------------------------------------------------------------------
+  ci-ok:
+    if: always()
+    needs:
+      - lint
+      - fmt-check
+      - typecheck
+      - openapi-validate
+      - sql-validate
+      - build-test-vectors
+      - build-panel
+      - build-polaris-cli
+      - test
+      - integration-test
+      - go-test
+      - mail-bridge-test
+      - polaris-cli-test
+      - compose-examples-drift
+      - build-docs
+      - docs-link-check
+      - cli-installer-test
+    runs-on: ubuntu-latest
+    steps:
+      - name: aggregate results
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          set -euo pipefail
+          echo "$NEEDS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
+          # Required: success or skipped. Anything else (failure, cancelled) trips this.
+          echo "$NEEDS" | jq -e 'all(.[]; .result == "success" or .result == "skipped")' >/dev/null
