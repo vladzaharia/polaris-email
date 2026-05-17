@@ -100,15 +100,13 @@ jobs:
           python3 -c "from openapi_spec_validator import validate_spec; import yaml; validate_spec(yaml.safe_load(open('openapi/polaris-email.yaml')))"
 
   sql-validate:
-    # Per-migration isolated syntax validation. Originally this job only
-    # checked 0001_init.sql; now it covers every migration in services/api/
-    # migrations/ but in isolation (fresh :memory: db per file).
-    #
-    # NOT a chained apply: SQLite's stricter VIEW validation fires on
-    # references to tables that don't exist yet, and several migrations use
-    # a rename pattern (foo → foo_old → foo) where chaining produces
-    # false-positive "no such table foo_old" / "table foo already exists"
-    # errors that don't occur under D1's per-migration apply.
+    # Cumulative-apply validation against a file-backed SQLite DB,
+    # mimicking how `wrangler d1 migrations apply` sequences them in prod.
+    # Each migration runs as a separate sqlite3 invocation so SQLite's VIEW
+    # validation parses each file in isolation (chained `cat | sqlite3`
+    # tripped on cross-file references to `_old` tables created mid-
+    # migration). We pre-bootstrap `schema_migrations` because wrangler
+    # owns that table — migrations INSERT into it without re-creating.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -121,10 +119,13 @@ jobs:
             echo "::warning::no migrations found"
             exit 0
           fi
-          echo "validating ${#mig[@]} migration(s) in isolation:"
+          DB=$(mktemp -u).db
+          trap 'rm -f "$DB"' EXIT
+          sqlite3 "$DB" "CREATE TABLE schema_migrations (name TEXT PRIMARY KEY, applied_at TEXT DEFAULT (datetime('now')));"
+          echo "applying ${#mig[@]} migration(s) cumulatively:"
           fail=0
           for f in "${mig[@]}"; do
-            if sqlite3 ':memory:' < "$f" 2>/tmp/sqlerr; then
+            if sqlite3 "$DB" < "$f" 2>/tmp/sqlerr; then
               echo "  ok  $f"
             else
               echo "::error file=$f::migration failed"
