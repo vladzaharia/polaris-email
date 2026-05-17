@@ -85,7 +85,7 @@ const config: Config = {
           sidebarPath: './sidebars.ts',
           // Edit-link points at the source repo so contributors can fix
           // typos via the GitHub UI.
-          editUrl: 'https://github.com/polaris/polaris-email/edit/main/apps/docs/content/',
+          editUrl: 'https://github.com/vladzaharia/polaris-email/edit/main/apps/docs/',
           // openapi-docs ships a custom MDX docItem with the request +
           // response panels. Pointing it here makes generated pages render
           // with that theme component instead of the default.
@@ -132,7 +132,7 @@ const config: Config = {
           position: 'left',
         },
         {
-          href: 'https://github.com/polaris/polaris-email',
+          href: 'https://github.com/vladzaharia/polaris-email',
           label: 'GitHub',
           position: 'right',
         },
@@ -153,7 +153,7 @@ const config: Config = {
         {
           title: 'Project',
           items: [
-            { label: 'GitHub', href: 'https://github.com/polaris/polaris-email' },
+            { label: 'GitHub', href: 'https://github.com/vladzaharia/polaris-email' },
             { label: 'Security', to: '/security' },
             { label: 'Changelog', to: '/changelog' },
             { label: 'Contributing', to: '/contributing' },
