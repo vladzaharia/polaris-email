@@ -80,8 +80,8 @@ importers:
         specifier: ^5.0.2
         version: 5.0.2(@docusaurus/theme-common@3.10.1(@docusaurus/plugin-content-docs@3.10.1(@mdx-js/react@3.1.1(@types/react@19.2.14)(react@18.3.1))(esbuild@0.28.0)(postcss@8.5.14)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(typescript@5.9.3))(esbuild@0.28.0)(postcss@8.5.14)(react-dom@18.3.1(react@18.3.1))(react@18.3.1))(@types/react@19.2.14)(docusaurus-plugin-openapi-docs@5.0.2(@docusaurus/plugin-content-docs@3.10.1(@mdx-js/react@3.1.1(@types/react@19.2.14)(react@18.3.1))(esbuild@0.28.0)(postcss@8.5.14)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(typescript@5.9.3))(@docusaurus/utils-validation@3.10.1(esbuild@0.28.0)(postcss@8.5.14)(react-dom@18.3.1(react@18.3.1))(react@18.3.1))(@docusaurus/utils@3.10.1(esbuild@0.28.0)(postcss@8.5.14)(react-dom@18.3.1(react@18.3.1))(react@18.3.1))(@types/json-schema@7.0.15)(react@18.3.1))(docusaurus-plugin-sass@0.2.6(@docusaurus/core@3.10.1(@mdx-js/react@3.1.1(@types/react@19.2.14)(react@18.3.1))(esbuild@0.28.0)(postcss@8.5.14)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(typescript@5.9.3))(sass@1.99.0)(webpack@5.105.0(esbuild@0.28.0)(postcss@8.5.14)))(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(redux@5.0.1)(webpack@5.105.0(esbuild@0.28.0)(postcss@8.5.14))
       hono:
-        specifier: ^4.5.0
-        version: 4.12.18
+        specifier: ^4.12.19
+        version: 4.12.19
       prism-react-renderer:
         specifier: ^2.4.0
         version: 2.4.1(react@18.3.1)
@@ -210,8 +210,8 @@ importers:
         specifier: ^0.45.2
         version: 0.45.2(@cloudflare/workers-types@4.20260511.1)(@types/better-sqlite3@7.6.13)(better-sqlite3@12.10.0)(kysely@0.28.17)
       hono:
-        specifier: ^4.5.0
-        version: 4.12.18
+        specifier: ^4.12.19
+        version: 4.12.19
       lucide-react:
         specifier: ^1.16.0
         version: 1.16.0(react@19.2.6)
@@ -498,8 +498,8 @@ importers:
         specifier: ^2.4.3
         version: 2.4.3
       hono:
-        specifier: ^4.5.0
-        version: 4.12.18
+        specifier: ^4.12.19
+        version: 4.12.19
       zod:
         specifier: ^3.23.0
         version: 3.25.76
@@ -6279,8 +6279,8 @@ packages:
   hoist-non-react-statics@3.3.2:
     resolution: {integrity: sha512-/gGivxi8JPKWNm/W0jSmzcMPpfpPLc3dY/6GxhX2hQ9iGj3aDfklV4ET7NjKpSinLpJ5vafa9iiGIEZg10SfBw==}
 
-  hono@4.12.18:
-    resolution: {integrity: sha512-RWzP96k/yv0PQfyXnWjs6zot20TqfpfsNXhOnev8d1InAxubW93L11/oNUc3tQqn2G0bSdAOBpX+2uDFHV7kdQ==}
+  hono@4.12.19:
+    resolution: {integrity: sha512-xa3eYXYXx68XTT4hZ7dRzsXBhaq85ToSrlUJNoR0gwz/1Ap/CNwX47wfvV7pc/xWhjKVVkLT7zBJy8chhNguqQ==}
     engines: {node: '>=16.9.0'}
 
   hpack.js@2.1.6:
@@ -16075,7 +16075,7 @@ snapshots:
     dependencies:
       react-is: 16.13.1
 
-  hono@4.12.18: {}
+  hono@4.12.19: {}
 
   hpack.js@2.1.6:
     dependencies:

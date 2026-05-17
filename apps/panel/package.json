@@ -41,7 +41,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "drizzle-orm": "^0.45.2",
-    "hono": "^4.5.0",
+    "hono": "^4.12.19",
     "lucide-react": "^1.16.0",
     "motion": "^12.38.0",
     "react": "^19.2.6",
