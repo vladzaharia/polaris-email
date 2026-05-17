@@ -24,7 +24,7 @@
     "docusaurus-plugin-openapi-docs": "^5.0.2",
     "docusaurus-plugin-sass": "^0.2.6",
     "docusaurus-theme-openapi-docs": "^5.0.2",
-    "hono": "^4.5.0",
+    "hono": "^4.12.19",
     "prism-react-renderer": "^2.4.0",
     "react": "^18.3.0",
     "react-dom": "^18.3.0",

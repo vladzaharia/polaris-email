@@ -22,7 +22,7 @@
     "@polaris-email/schema": "workspace:*",
     "@polaris-email/suppressions": "workspace:*",
     "bcryptjs": "^2.4.3",
-    "hono": "^4.5.0",
+    "hono": "^4.12.19",
     "zod": "^3.23.0"
   },
   "devDependencies": {
