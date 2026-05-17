@@ -31,6 +31,7 @@ import { applyD1Migrations, createExecutionContext } from 'cloudflare:test';
 import { env } from 'cloudflare:workers';
 import { beforeAll, describe, expect, inject, it } from 'vitest';
 import { sign, generateNonce } from '@polaris-email/hmac';
+import { ulid } from '@polaris-email/ids';
 import worker from '../../src/index.js';
 import type { Env, OutboundQueueMessage } from '../../src/env.js';
 
@@ -228,11 +229,15 @@ beforeAll(async () => {
        message_id   TEXT REFERENCES messages(id),
        expires_at   TEXT,
        created_at   TEXT NOT NULL,
+       claim_locked INTEGER NOT NULL DEFAULT 0,
        PRIMARY KEY (principal_id, key)
      )`,
   ).run();
   await testEnv.DB.prepare(
     `CREATE INDEX idx_idempotency_keys_expires_at ON idempotency_keys (expires_at)`,
+  ).run();
+  await testEnv.DB.prepare(
+    `CREATE INDEX idx_idempotency_keys_mailbox_id ON idempotency_keys (mailbox_id)`,
   ).run();
 
   await testEnv.DB.prepare(`DROP TABLE message_attempts`).run();
@@ -307,6 +312,8 @@ describe('services/api send round-trip (pool-workers)', () => {
         'POST',
         key.key_secret,
         key.key_id,
+        // POST /v1/messages requires a caller-supplied idempotency key.
+        { 'idempotency-key': ulid() },
       ),
     );
     const responseText = await res.text();

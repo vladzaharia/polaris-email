@@ -1,6 +1,10 @@
 // Scrub PII from log lines. CI tests assert no `from`/`to`/`subject` plaintext escapes.
 const EMAIL_RE = /([A-Za-z0-9._%+-]+)@([A-Za-z0-9.-]+\.[A-Za-z]{2,})/g;
 const LONG_B64_RE = /\b[A-Za-z0-9+/]{64,}={0,2}\b/g;
+// Bearer-token shapes used across the system: `sk_…` / `pk_…` (Stripe-style),
+// `wh_…` (webhook secrets), `sec_…` (generic), `polaris_…` (operator bearer).
+// Matched independent of payload length so a 16-char `wh_*` is still caught.
+const TOKEN_PREFIX_RE = /\b(?:sk|pk|wh|sec|polaris)_[A-Za-z0-9_-]{8,}/g;
 
 export function scrub(value: unknown): unknown {
   if (typeof value === 'string') return scrubString(value);
@@ -25,6 +29,7 @@ export function scrub(value: unknown): unknown {
 
 function scrubString(s: string): string {
   let out = s.replace(EMAIL_RE, '<email>');
+  out = out.replace(TOKEN_PREFIX_RE, '<token>');
   out = out.replace(LONG_B64_RE, '<blob>');
   return out;
 }

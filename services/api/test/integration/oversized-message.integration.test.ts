@@ -108,6 +108,8 @@ describe('A.6: oversized messages rejected pre-enqueue', () => {
         'POST',
         key.key_secret,
         key.key_id,
+        // POST /v1/messages requires a caller-supplied idempotency key.
+        { 'idempotency-key': ulid() },
       ),
       env,
       ctx,

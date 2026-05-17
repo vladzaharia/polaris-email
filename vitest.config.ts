@@ -18,9 +18,10 @@ export default defineConfig({
             'services/*/test/**/*.test.ts',
             'apps/*/test/**/*.test.ts',
           ],
-          // Workers integration tests live under `test/integration/` with the
-          // `*.workers.test.ts` suffix so the two suites never collide.
-          exclude: ['**/test/integration/*.workers.test.ts', '**/node_modules/**', '**/dist/**'],
+          // Workers tests use the `*.workers.test.ts` suffix so the two suites
+          // never collide — they import `cloudflare:test`, which only resolves
+          // under each service's workers pool, not the root unit project.
+          exclude: ['**/*.workers.test.ts', '**/node_modules/**', '**/dist/**'],
           environment: 'node',
         },
       },

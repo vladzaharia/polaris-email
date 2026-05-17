@@ -15,6 +15,7 @@
 // expiry would actually fail the test.
 
 import { describe, expect, it } from 'vitest';
+import { ulid } from '@polaris-email/ids';
 import {
   app,
   bootstrapEnv,
@@ -37,6 +38,9 @@ async function postMessage(
       'POST',
       key.key_secret,
       key.key_id,
+      // POST /v1/messages requires a caller-supplied idempotency key; a fresh
+      // ULID per call gives every test a distinct one (matches real callers).
+      { 'idempotency-key': ulid() },
     ),
     env,
     ctx,

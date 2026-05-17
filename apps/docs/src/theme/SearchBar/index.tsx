@@ -63,6 +63,7 @@ export default function SearchBar(): ReactElement {
       // The first build never has the index — keep the input usable so we
       // don't blow up dev. A 404 here is expected in `docusaurus start`
       // unless the operator ran `pagefind --site build` already.
+      // eslint-disable-next-line no-console
       console.warn('[polaris-docs] Pagefind UI not available yet:', err);
     });
     setReady(true);

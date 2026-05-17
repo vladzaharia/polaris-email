@@ -1,4 +1,31 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+// Stub the inbound-policy engine: these tests cover the message-row + fanout
+// plumbing in services/in, not policy decisions. The real engine (introduced
+// later in 0019) holds messages with non-pass DKIM/SPF/DMARC verdicts, which
+// would short-circuit the 8e auth-column persistence checks before
+// processMessage() runs. Returning `continue` lets every test exercise the
+// downstream pipeline regardless of the synthetic auth header content.
+vi.mock('../src/lib/policy-dispatch.js', async () => {
+  const actual = await vi.importActual<typeof import('../src/lib/policy-dispatch.js')>(
+    '../src/lib/policy-dispatch.js',
+  );
+  return {
+    ...actual,
+    evaluateInboundPolicy: async () => ({
+      kind: 'continue' as const,
+      decision: {
+        verdict: 'pass' as const,
+        total_score: 0,
+        reasons: [],
+        llm: { invoked: false, budget_state: 'binding_absent' as const },
+        decision_id: 'pd_test',
+        band: 'pass' as const,
+      },
+    }),
+  };
+});
+
 import worker from '../src/index.js';
 
 interface Row {

@@ -46,12 +46,15 @@ describe('scheduled dispatch', () => {
               if (sql.includes('audit_log ORDER BY id DESC')) {
                 return { id: 42, row_hash: 'a'.repeat(64), at: 100 };
               }
+              // anchor.ts uses `INSERT … RETURNING id` (read via .first()),
+              // not the older two-step `.run()` then SELECT pattern.
+              if (sql.includes('INSERT INTO audit_anchors')) {
+                dbInserts.push(this._p);
+                return { id: dbInserts.length };
+              }
               return null;
             },
             async run() {
-              if (sql.includes('INSERT INTO audit_anchors')) {
-                dbInserts.push(this._p);
-              }
               return { meta: { changes: 1 } };
             },
           };

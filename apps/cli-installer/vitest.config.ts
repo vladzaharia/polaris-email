@@ -16,7 +16,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const workersProject = defineProject({
   test: {
     name: 'cli-installer-workers',
-    include: [path.resolve(here, 'test/worker.test.ts')],
+    include: [path.resolve(here, 'test/worker.workers.test.ts')],
   },
   plugins: [
     cloudflareTest({
