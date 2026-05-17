@@ -31,7 +31,7 @@
     "sass": "^1.99.0"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.20260511.1",
+    "@cloudflare/workers-types": "^4.20260517.1",
     "@docusaurus/module-type-aliases": "^3.10.1",
     "@docusaurus/tsconfig": "^3.10.1",
     "@docusaurus/types": "^3.10.1",
@@ -41,7 +41,7 @@
     "oxlint": "^1.64.0",
     "pagefind": "^1.5.2",
     "typescript": "^5.5.0",
-    "wrangler": "^4.0.0"
+    "wrangler": "^4.92.0"
   },
   "//": "Note: docusaurus build is broken with webpack >=5.106 (facebook/docusaurus#11923). The pnpm override pinning `webpack` to 5.105.0 lives in the root package.json so it applies to the whole tree."
 }
