@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"runtime/debug"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -19,24 +20,106 @@ var (
 )
 
 // newVersionCmd is the parent command. Bare `polaris-email version`
-// keeps the historical behaviour (print one-line banner); the
-// `upgrade` and `channel` subcommands ride underneath.
+// prints a multi-line status block: build banner + channel + install
+// method + last-check status. Subcommands `upgrade` and `channel`
+// ride underneath for the explicit-action verbs.
 func newVersionCmd() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "version",
-		Short: "Print build version + manage CLI upgrades",
-		RunE: func(_ *cobra.Command, _ []string) error {
+		Short: "Print build version, channel, install method, and update status",
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			info, _ := debug.ReadBuildInfo()
 			gv := ""
 			if info != nil {
 				gv = info.GoVersion
 			}
 			fmt.Fprintf(Out, "polaris-email %s (commit %s, built %s, %s)\n", Version, Commit, Date, gv)
+
+			// Best-effort: surface channel + install method + update
+			// status. Network/state errors are non-fatal — `version`
+			// must never block on a flaky GitHub API.
+			dir, err := upgrader.DefaultStateDir()
+			if err != nil {
+				return nil
+			}
+			state, err := upgrader.LoadState(dir)
+			if err != nil {
+				return nil
+			}
+			method, _ := upgrader.DetectInstallMethod(dir, Version)
+			channel := upgrader.ResolveChannel(state.Channel, method)
+			origin := "explicit"
+			if state.Channel == "" {
+				origin = "default (via install method)"
+			}
+			fmt.Fprintf(Out, "\nchannel:        %s  (%s)\n", channel, origin)
+			fmt.Fprintf(Out, "install method: %s\n", method)
+
+			// Refresh the cache if it's stale, so `pml version`
+			// surfaces a recent check without forcing the operator to
+			// run `version upgrade` first. Same 1h throttle every
+			// other check uses — calling `version` repeatedly inside
+			// the window doesn't re-hit GitHub.
+			ctx, cancel := context.WithTimeout(cmd.Context(), 3*time.Second)
+			defer cancel()
+			if ctx.Err() != nil || cmd.Context() == nil {
+				ctx, cancel = context.WithTimeout(context.Background(), 3*time.Second)
+				defer cancel()
+			}
+			upd, newState, _ := upgrader.OpportunisticCheck(ctx, channel, Version, state)
+			if !newState.LastCheck.Equal(state.LastCheck) {
+				// Persist only on a real check; a throttled no-op
+				// shouldn't touch the file.
+				_ = upgrader.SaveState(dir, newState)
+				state = newState
+			}
+
+			renderUpdateStatus(channel, state, upd)
 			return nil
 		},
 	}
 	c.AddCommand(newVersionUpgradeCmd(), newVersionChannelCmd())
 	return c
+}
+
+// renderUpdateStatus prints the "last checked" + "update available"
+// lines below the channel block. State carries the cached result, and
+// `upd` is the just-resolved Update from this invocation (nil when
+// throttled, up-to-date, OR when the channel doesn't support remote
+// resolution at all — the local channel).
+func renderUpdateStatus(channel upgrader.Channel, state upgrader.State, justChecked *upgrader.Update) {
+	if channel == upgrader.ChannelLocal {
+		// Local channel rebuilds from a sibling checkout — no remote
+		// tag to compare against. The "is there an update?" question
+		// answers "run `version upgrade` to rebuild from main"; we
+		// don't bother running a check here.
+		fmt.Fprintln(Out, "update:         local channel — run `polaris-email version upgrade` to rebuild from your checkout")
+		return
+	}
+	if state.LastCheck.IsZero() {
+		fmt.Fprintln(Out, "last check:     (never)")
+		return
+	}
+	age := time.Since(state.LastCheck).Round(time.Second)
+	fmt.Fprintf(Out, "last check:     %s (%s ago)\n",
+		state.LastCheck.Local().Format("2006-01-02 15:04:05"),
+		age,
+	)
+	// Prefer the just-checked result when present (this invocation
+	// did the network call); fall back to the cached LastCheckResult
+	// otherwise.
+	switch {
+	case justChecked != nil:
+		fmt.Fprintf(Out, "update:         %s -> %s available\n",
+			justChecked.CurrentVersion, justChecked.LatestVersion)
+		fmt.Fprintln(Out, "                (run `polaris-email version upgrade` to install)")
+	case state.LastCheckResult != nil:
+		fmt.Fprintf(Out, "update:         %s -> %s available (cached)\n",
+			state.LastCheckResult.CurrentVersion, state.LastCheckResult.LatestVersion)
+		fmt.Fprintln(Out, "                (run `polaris-email version upgrade` to install)")
+	default:
+		fmt.Fprintln(Out, "update:         up-to-date")
+	}
 }
 
 // newVersionUpgradeCmd runs an explicit upgrade. Skips the launch-time

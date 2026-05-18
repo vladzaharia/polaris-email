@@ -5,9 +5,9 @@ import (
 	"time"
 )
 
-// State persisted across runs in ~/.config/polaris-email/config.toml.
-// The config package owns the file format; this package just exposes
-// the data shape it needs.
+// State persisted across runs in ~/.config/polaris-email/upgrader-state.json.
+// Snake-case keys, RFC3339 timestamps — friendlier for any operator who
+// pokes at the file with `jq`.
 type State struct {
 	// Channel is the operator's update preference. Empty = default to
 	// ChannelStable at read time.
@@ -16,6 +16,22 @@ type State struct {
 	// whether an update was found). Used to throttle the launch-time
 	// check so we don't hammer the GitHub API.
 	LastCheck time.Time
+	// LastCheckResult caches what the most recent Check found.
+	// `pml version` reads it to show update status without a network
+	// call; `LastCheck`'s recency tells the reader whether to trust
+	// it. Nil means "no upgrade was available at last check".
+	LastCheckResult *CheckedUpdate
+}
+
+// CheckedUpdate is the persistent snapshot of an available update.
+// Reduced surface from Update — just the bits `version` needs to
+// render. Doesn't include the asset URLs because those expire (GitHub
+// rotates download links) and re-resolving them is cheap when the
+// operator actually runs `version upgrade`.
+type CheckedUpdate struct {
+	Channel        string
+	CurrentVersion string
+	LatestVersion  string
 }
 
 // CheckInterval bounds how often we'll re-hit the GitHub API on the
@@ -47,6 +63,16 @@ func OpportunisticCheck(ctx context.Context, channel Channel, currentVersion str
 	state.LastCheck = time.Now()
 	if err != nil {
 		return nil, state, err
+	}
+	// Cache the result for `pml version` to surface without making
+	// another network call. Nil means up-to-date.
+	state.LastCheckResult = nil
+	if upd != nil {
+		state.LastCheckResult = &CheckedUpdate{
+			Channel:        string(upd.Channel),
+			CurrentVersion: upd.CurrentVersion,
+			LatestVersion:  upd.LatestVersion,
+		}
 	}
 	return upd, state, nil
 }

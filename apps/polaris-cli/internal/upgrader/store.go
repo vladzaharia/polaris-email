@@ -89,18 +89,21 @@ func (s State) MarshalJSON() ([]byte, error) {
 		lastCheck = s.LastCheck.UTC().Format(time.RFC3339)
 	}
 	return json.Marshal(struct {
-		Channel    string `json:"channel,omitempty"`
-		LastCheck  string `json:"last_check,omitempty"`
+		Channel         string          `json:"channel,omitempty"`
+		LastCheck       string          `json:"last_check,omitempty"`
+		LastCheckResult *CheckedUpdate  `json:"last_check_result,omitempty"`
 	}{
-		Channel:   s.Channel,
-		LastCheck: lastCheck,
+		Channel:         s.Channel,
+		LastCheck:       lastCheck,
+		LastCheckResult: s.LastCheckResult,
 	})
 }
 
 func (s *State) UnmarshalJSON(data []byte) error {
 	var raw struct {
-		Channel   string `json:"channel"`
-		LastCheck string `json:"last_check"`
+		Channel         string          `json:"channel"`
+		LastCheck       string          `json:"last_check"`
+		LastCheckResult *CheckedUpdate  `json:"last_check_result"`
 	}
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return err
@@ -113,5 +116,6 @@ func (s *State) UnmarshalJSON(data []byte) error {
 		}
 		s.LastCheck = t
 	}
+	s.LastCheckResult = raw.LastCheckResult
 	return nil
 }

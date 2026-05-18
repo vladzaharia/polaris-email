@@ -11,6 +11,26 @@ This file tracks notable architectural changes. For operator-visible
 behavior, see [consumer contract](/reference/consumer-contract); for
 cutover runbooks, see [Operators → Deploy](/operators).
 
+## 2026-05-18 — v0.1.3 — `pml version` shows update status
+
+`polaris-email version` (no subcommand) now prints a multi-line status
+block instead of just the build banner: build line + channel +
+install method + last-check + update availability. One command for
+"what's my state?". `version channel` and `version upgrade` are
+unchanged.
+
+Implementation:
+
+- State gains a `LastCheckResult` field caching what the most recent
+  Check returned. `pml version` reads it to show update status
+  without forcing a network call. The existing 1h throttle still
+  gates the actual network round-trip.
+- `version` runs an opportunistic check itself if state is stale,
+  with a 3-second timeout — never blocks the shell prompt on a
+  hanging GitHub API.
+- The `local` channel gets a special-case line since there's no
+  remote tag to compare against.
+
 ## 2026-05-18 — v0.1.2 — Smarter install-method detection
 
 Small follow-up to v0.1.1's self-upgrader: hand-built binaries that
