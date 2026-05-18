@@ -72,8 +72,26 @@ type Config struct {
 	AdminGroup string `json:"OIDC_ADMIN_GROUP" yaml:"OIDC_ADMIN_GROUP"`
 	// LogpushDestinationURL is the HTTP sink Workers logs are shipped to.
 	// Threaded as TF_VAR_logpush_destination_url at `setup infra apply`
-	// time. Empty disables Logpush.
+	// time. Mutually exclusive with the LogpushR2_* fields below — set
+	// one or the other, not both. Empty AND no R2 fields disables Logpush
+	// entirely (Workers Trace Events retained ~24 h by CF, fine for
+	// "fix it within a day").
 	LogpushDestinationURL string `json:"LOGPUSH_DESTINATION_URL" yaml:"LOGPUSH_DESTINATION_URL"`
+	// LogpushR2Bucket is the R2 bucket Workers logs ship to in CF-native
+	// mode. Mutually exclusive with LogpushDestinationURL. Logs land as
+	// ND-JSON gzip blobs under
+	// `<r2-prefix>/YYYY/MM/DD/HH/<job>-<batch>.log.gz`.
+	LogpushR2Bucket string `json:"LOGPUSH_R2_BUCKET" yaml:"LOGPUSH_R2_BUCKET"`
+	// LogpushR2Prefix is the key prefix inside LogpushR2Bucket. Defaults
+	// to "logs" when bucket is set but prefix is blank.
+	LogpushR2Prefix string `json:"LOGPUSH_R2_PREFIX" yaml:"LOGPUSH_R2_PREFIX"`
+	// LogpushR2AccessKeyID is the R2 API token's S3-compatible access
+	// key id. Provision separately via R2 dashboard → Manage R2 API
+	// Tokens (NOT the main CF account API token).
+	LogpushR2AccessKeyID string `json:"LOGPUSH_R2_ACCESS_KEY_ID" yaml:"LOGPUSH_R2_ACCESS_KEY_ID"`
+	// LogpushR2SecretAccessKey is the matching R2 token secret.
+	// Sensitive — never logged.
+	LogpushR2SecretAccessKey string `json:"LOGPUSH_R2_SECRET_ACCESS_KEY" yaml:"LOGPUSH_R2_SECRET_ACCESS_KEY"`
 
 	// --- secrets ---
 
@@ -106,14 +124,19 @@ var FieldOrder = []string{
 	"R2_PUBLIC_HOST",
 	"BRIDGE_HOST",
 	"LOGPUSH_DESTINATION_URL",
+	"LOGPUSH_R2_BUCKET",
+	"LOGPUSH_R2_PREFIX",
+	"LOGPUSH_R2_ACCESS_KEY_ID",
+	"LOGPUSH_R2_SECRET_ACCESS_KEY",
 }
 
 // SecretFields lists the .env.deploy keys whose values must be hidden
 // in TUI prompts and never logged. Centralized so that adding a new
 // secret only requires editing one slice.
 var SecretFields = map[string]bool{
-	"CF_API_TOKEN":       true,
-	"OIDC_CLIENT_SECRET": true,
+	"CF_API_TOKEN":                 true,
+	"OIDC_CLIENT_SECRET":           true,
+	"LOGPUSH_R2_SECRET_ACCESS_KEY": true,
 }
 
 // AsMap returns a key=value map of every field, using on-disk variable
@@ -141,7 +164,11 @@ func (c *Config) AsMap() map[string]string {
 		"OIDC_ADMIN_GROUP":              c.AdminGroup,
 		"R2_PUBLIC_HOST":           c.R2PublicHost,
 		"BRIDGE_HOST":              c.BridgeHost,
-		"LOGPUSH_DESTINATION_URL":  c.LogpushDestinationURL,
+		"LOGPUSH_DESTINATION_URL":      c.LogpushDestinationURL,
+		"LOGPUSH_R2_BUCKET":            c.LogpushR2Bucket,
+		"LOGPUSH_R2_PREFIX":            c.LogpushR2Prefix,
+		"LOGPUSH_R2_ACCESS_KEY_ID":     c.LogpushR2AccessKeyID,
+		"LOGPUSH_R2_SECRET_ACCESS_KEY": c.LogpushR2SecretAccessKey,
 	}
 }
 
@@ -185,6 +212,14 @@ func (c *Config) setField(key, value string) bool {
 		c.BridgeHost = value
 	case "LOGPUSH_DESTINATION_URL":
 		c.LogpushDestinationURL = value
+	case "LOGPUSH_R2_BUCKET":
+		c.LogpushR2Bucket = value
+	case "LOGPUSH_R2_PREFIX":
+		c.LogpushR2Prefix = value
+	case "LOGPUSH_R2_ACCESS_KEY_ID":
+		c.LogpushR2AccessKeyID = value
+	case "LOGPUSH_R2_SECRET_ACCESS_KEY":
+		c.LogpushR2SecretAccessKey = value
 	default:
 		return false
 	}
