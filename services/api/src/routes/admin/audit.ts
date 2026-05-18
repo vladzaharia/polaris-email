@@ -2,7 +2,6 @@
 // table keeps its in-row chained-hash invariant (each row's row_hash is
 // SHA-256 of `prev_hash || canonical(this row)`); the auditVerify cron
 // walks the chain end-to-end nightly to catch any out-of-band rewrite.
-// External anchoring (off-CF Object Lock writes) was removed.
 import { Hono } from 'hono';
 import { requireScope } from '../../auth.js';
 import type { Env } from '../../env.js';

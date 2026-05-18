@@ -1,6 +1,6 @@
 ---
 title: On-call runbook
-description: First commands and decision trees for common polaris-email incidents — triage, outbound failures, webhook delivery failures, bridge offline, audit-anchor staleness, schema migration rollback, D1 quota, cost alerts, mirror staleness, and DLQ filling.
+description: First commands and decision trees for common polaris-email incidents — triage, outbound failures, webhook delivery failures, bridge offline, audit chain breakage, schema migration rollback, D1 quota, cost alerts, mirror staleness, and DLQ filling.
 sidebar_label: On-call runbook
 sidebar_position: 1
 ---
@@ -119,32 +119,26 @@ Common causes:
 - CF Access service token expired (rare; tokens are long-lived but
   revocable). Check the Access app in dashboard.
 
-### "Audit chain anchor is stale"
+### "Audit chain verification failed"
 
 ```bash
-polaris-email audit anchors
-# Each entry should be ≤ 1 hour apart.
 polaris-email audit verify
-# Walks the chain end-to-end; any tamper or gap shows up here.
+# Walks audit_log end-to-end via the chained-hash invariant
+# (row_hash = SHA-256(prev_hash || canonical(row))). Any rewrite of an
+# older row invalidates every later row_hash and shows up here.
 ```
 
-If the gap is > 1h: the anchor cron stopped or is hitting an error. The
-anchor cron lives inside `services/api` (phase B1 folded the standalone
-`services/cron` Worker into `services/api`). Tail it:
+The `audit-verify` cron runs nightly (`20 5 * * *` UTC) and writes its
+result to `cron_runs(job_name='audit-verify')`. The panel diagnostics
+"Audit chain" card turns red on the first break.
 
-```bash
-wrangler tail polaris-email-api --status error --search anchor
-```
-
-If the B2 writes are failing, the anchor key may have been revoked, the
-bucket policy may have changed, or the account may be over its B2 cap.
-Verify with `polaris-email audit anchors` and the Backblaze B2 console.
-
-Backblaze B2 is the authoritative external backstop (Object Lock COMPLIANCE
-~7-year retention, write-only Application Key). If anchor writes have been
-silently dropped, comparing the latest D1 `audit_anchors` row against the
-most recent B2 object is the tamper-evidence signal — see
-`bin/audit-verify.sh`.
+If a break is reported: do **not** trust the panel's recovery; an
+in-band rewrite means someone bypassed the application layer's
+chain-write logic. Pull the Logpush mirror (out-of-CF) to see who
+touched `audit_log` and when, and use D1 Time-Travel to restore to a
+known-good bookmark. See the
+[CF account compromise runbook](./cf-account-compromise.md) for the
+full procedure.
 
 ### "Schema migration applied but Worker rolled back"
 
@@ -251,30 +245,14 @@ polaris-email webhook dlq drop <id> --confirm <id>
 
 - **Never** run `wrangler d1 execute --remote` with destructive SQL without
   a second operator's confirmation.
-- **Never** rotate the audit anchor key without first verifying the external
-  mirror has the most recent anchor (otherwise the chain becomes
-  unverifiable).
 - **Never** run `polaris-email domain delete` without checking for live
   webhook subscriptions first; orphan subs lose inbound mail silently.
-- **Two-person rule** is enforced via the panel's `withApproval(action)`
-  middleware (`apps/panel/src/server/auth/approvals.ts`) for: API-key
-  rotate / revoke, bridge rotate / deregister, mailbox-credential rotate,
-  `domain delete`, `webhook dlq drop`, anchor key rotation. (The earlier
-  WebAuthn step-up flow was removed in phase 2f; destructive ops now gate
-  on a second admin's approval, not a self-elevating token.)
-
-:::warning Out of date
-The "two-person rule" rows above (the DLQ `drop --confirm` flow and the
-final "Safety rules" bullet that cites `withApproval(action)` /
-`apps/panel/src/server/auth/approvals.ts`) describe the retired
-co-sign control. Real deployments are single-operator; destructive
-actions are now gated **client-side** in the panel via
-`DestructiveActionDialog` (type-the-resource-name confirmation), and
-the chained-hash `audit_log` table — anchored hourly to Backblaze B2
-with Object Lock COMPLIANCE — is the canonical record of who did what.
-The `--confirm <id>` flag on `webhook dlq drop` is a type-the-id
-guard (not a second-operator co-sign); the rest of each procedure
-still applies as written.
-:::
+- Destructive actions are gated **client-side** in the panel via
+  `DestructiveActionDialog` (type-the-resource-name confirmation), and
+  the chained-hash `audit_log` table is the canonical record of who did
+  what. The earlier two-person `withApproval(...)` flow was removed —
+  real deployments are single-operator. The `--confirm <id>` flag on
+  `webhook dlq drop` is a type-the-id guard (not a second-operator
+  co-sign).
 
 <!-- Verified against: docs/runbook.md @ c3c1b5048dd5bfe92facdce24982141a07446042 -->

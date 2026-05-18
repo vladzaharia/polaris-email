@@ -37,7 +37,7 @@ Routing: `webhook_subs`.
 Messages: `messages`, `message_attempts`, `message_deliveries`,
 `idempotency_keys`, `r2_refs`.
 
-Audit: `audit_log`, `audit_anchors`.
+Audit: `audit_log` (chained-hash; `audit_anchors` was dropped in 0026).
 
 Bookkeeping: `schema_migrations`, `bootstrap`.
 

@@ -9,13 +9,9 @@
 # Does NOT own (Wrangler does): Workers, D1, KV, R2 buckets, Queues, Durable
 # Objects.
 #
-# Phase O1 note: this is now the only composition under `envs/`. The prior
-# `staging/` (empty stub) and `anchors/` (audit-anchor R2 bucket) roots were
-# removed — staging was never reconciled to code, and anchors moved off-CF
-# to a Backblaze B2 bucket with Object Lock COMPLIANCE (see
-# `packages/object-lock` + `services/api/src/scheduled/anchor.ts`). The
-# Backblaze credentials live in the operator's password vault and are
-# delivered to the Worker via `wrangler secret put`, NOT via Terraform.
+# Single composition under `envs/`. Audit-log tamper-evidence is the
+# in-D1 chained-hash invariant verified by the nightly `audit-verify`
+# cron; there is no off-platform audit infrastructure to declare here.
 
 terraform {
   required_version = ">= 1.5.0"
@@ -116,10 +112,6 @@ provider "cloudflare" {
 # Fronts the bucket on `r2.mail.plrs.im`. Inbound + outbound message bodies
 # and per-attachment R2 objects are served from this hostname; the API
 # embeds the full URL in `Message.body_url` and `attachment.url`.
-#
-# Audit anchors live OFF Cloudflare (Phase O1) in Backblaze B2 with Object
-# Lock COMPLIANCE — they are never in any R2 bucket and never publicly
-# readable. See `packages/object-lock` and `services/api/src/scheduled/anchor.ts`.
 # -----------------------------------------------------------------------------
 #
 # module "r2_public_polaris_email" {

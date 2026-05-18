@@ -91,10 +91,8 @@ var FieldOrder = []string{
 // in TUI prompts and never logged. Centralized so that adding a new
 // secret only requires editing one slice.
 var SecretFields = map[string]bool{
-	"CF_API_TOKEN":                true,
-	"OIDC_CLIENT_SECRET":          true,
-	"ANCHOR_S3_ACCESS_KEY_ID":     true,
-	"ANCHOR_S3_SECRET_ACCESS_KEY": true,
+	"CF_API_TOKEN":       true,
+	"OIDC_CLIENT_SECRET": true,
 }
 
 // AsMap returns a key=value map of every field, using on-disk variable

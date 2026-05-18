@@ -2,11 +2,6 @@
 # subset it actually needs and forwards them to module/provider blocks. We
 # keep them centralized here so docs/tooling have one source of truth for
 # variable names + descriptions.
-#
-# Phase O1 collapsed three accounts to one. The previous `_prod`/`_staging`/
-# `_anchors` account-id variables were merged into a single
-# `cloudflare_account_id`; the `environment` discriminator was removed since
-# there is only one composition under `envs/`.
 
 variable "cloudflare_api_token" {
   description = <<-EOT

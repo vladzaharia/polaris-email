@@ -1,6 +1,6 @@
 ---
 title: Cloudflare account compromise
-description: Time-to-contain target 15 minutes. Containment (kill switches), investigation (Logpush + B2 anchor cross-check), and recovery (secret rotation, PITR restore, synthetic) for a full CF-account compromise.
+description: Time-to-contain target 15 minutes. Containment (kill switches), investigation (Logpush mirror), and recovery (secret rotation, D1 Time-Travel, synthetic) for a full CF-account compromise.
 sidebar_label: CF account compromise
 sidebar_position: 4
 ---
@@ -9,40 +9,37 @@ sidebar_position: 4
 
 Assume the polaris-email Cloudflare account has been (or is suspected of being) compromised. Time-to-contain target: 15 minutes.
 
-## Threat model — single-account topology, off-platform integrity fence
+## Threat model — single-account topology
 
-Phase O1 collapsed Polaris to **one Cloudflare account** (`polaris-prod`).
-That account hosts every runtime: Workers, D1, KV, R2, Queues, DNS, Email
+Polaris-email runs on **one Cloudflare account** (`polaris-prod`). That
+account hosts every runtime: Workers, D1, KV, R2, Queues, DNS, Email
 Routing, Email Service, Access. A full compromise of the CF account
 therefore has a wide blast radius — the attacker can mint Worker deploys,
 read/write D1, read/write the `polaris-email` R2 bucket, redirect MX
 records, and pull every Workers Secret (`POLARIS_SECRET_A`, the bcrypt
 pepper, the bridge HMAC key, etc.).
 
-**The integrity fence is the audit-anchor target, which lives OUTSIDE
-Cloudflare.** Hourly anchors are written by `services/api/src/scheduled/anchor.ts`
-to a Backblaze B2 bucket with Object Lock COMPLIANCE mode and a default
-7-year retention (`packages/object-lock`). Three properties matter:
+The accepted trade-off (no defence against a fully-compromised CF root
+token; D1 Time-Travel + the weekly D1 export to R2 are the recovery
+surface) is documented in `SECURITY.md`. The defences:
 
-1. **B2 credentials are NOT Workers Secrets.** They live in the operator's
-   password vault (1Password / equivalent). A compromised CF account
-   cannot read them.
-2. **The B2 Application Key is scoped write-only** to the anchor bucket. No
-   delete, no overwrite of existing objects, no other-bucket access.
-3. **Object Lock COMPLIANCE** means even the B2 account owner cannot
-   shorten the retention or delete an object before its retain-until date.
-
-So an attacker with full CF takeover can:
-
-- Stop NEW anchors from being written (by killing the Worker).
-- NOT rewrite or delete existing anchors.
-- NOT forge a backdated anchor (B2's retain-until date is set by our signer
-  using the local clock at write time; a backdated payload wouldn't match
-  the chain the historical anchors witness).
-
-This means the audit chain remains tamper-evident across a CF compromise.
-Recovery starts by re-anchoring against the B2 chain and reconciling D1
-back to whatever last known-good `last_row_hash` the anchors witness.
+- **`audit_log` chained-hash invariant.** Each row's `row_hash` is
+  `SHA-256(prev_hash || canonical(row))`. An attacker who rewrites any
+  row in-place breaks the chain for every later row — the `audit-verify`
+  cron nightly walk surfaces the break. An attacker who fully owns the
+  account can recompute the chain end-to-end, however; that's the
+  scenario this runbook addresses.
+- **Logpush mirror.** Worker logs (Workers Trace Events dataset) are
+  shipped via Logpush to an external HTTP destination (Better Stack,
+  Honeycomb, Datadog, …). The destination is out-of-CF and append-only,
+  so historic Worker-execution evidence survives a CF-side compromise.
+- **D1 Time-Travel.** ~30 days of point-in-time recovery for the live
+  database. The bookmark mechanism is internal to D1, but a restore
+  pre-compromise is the recovery surface for "audit_log was rewritten".
+- **Weekly D1 export to R2** under `backups/d1/` with 12-week
+  R2-lifecycle retention. Operator-owned R2 bucket; provides the
+  destroyed-DB recovery surface (Time-Travel cannot resurrect a deleted
+  database).
 
 ## Containment
 
@@ -64,58 +61,58 @@ back to whatever last known-good `last_row_hash` the anchors witness.
    ```sh
    bin/killswitch-r2-pause.sh
    ```
-   The `polaris-email` R2 bucket holds bodies + attachments; this is
-   distinct from the off-platform audit-anchor bucket on Backblaze B2,
-   which is already Object-Lock-protected and needs no separate freeze.
-5. **Pull the B2 Application Key out of rotation** (rotate via the B2
-   console). This forces the Worker to fail-loud on the next anchor cron
-   instead of silently appending under a stolen key (though the Worker
-   itself is also frozen via step 2).
-6. **Panel offline**: scale `polaris-email-panel` to 0 / pause its
+   The `polaris-email` R2 bucket holds bodies, attachments, and the
+   weekly D1 backups under `backups/d1/`. R2 Object Lock COMPLIANCE on
+   `mime/` and `att/` prefixes prevents body-deletion even by the
+   account owner; the kill switch additionally pauses lifecycle
+   transitions.
+5. **Panel offline**: scale `polaris-email-panel` to 0 / pause its
    container.
-7. **Comms**: open [Internal comms](/operators/runbooks/comms/breach-internal) and
-   [Customer comms](/operators/runbooks/comms/breach-customers).
+6. **Comms**: open internal + customer comms templates from the runbooks
+   index.
 
 ## Investigation
 
-- Pull the **Logpush mirror** (external append-only store). Worker logs,
-  D1 audit rows, R2 access logs.
-- **Verify the audit chain** using `bin/audit-verify.sh` and the latest
-  `audit_anchors` rows vs the anchor objects in the B2 bucket. Any
-  divergence between a D1 anchor row and the corresponding B2 object body
-  is the tamper-evidence signal: the B2 copy is authoritative.
-- List recent B2 anchors with the operator-vault-held credentials:
+- Pull the **Logpush mirror** at your external destination. Worker logs,
+  D1 audit rows that were emitted via `console.log`, R2 access logs.
+  Search for the suspected blast time window; look for unfamiliar
+  `wrangler deploy` events, secret reads, or D1 statement bursts.
+- **Walk the audit chain** from outside CF:
   ```sh
-  aws s3api list-objects-v2 \
-    --bucket polaris-anchors \
-    --prefix anchors/ \
-    --endpoint-url https://s3.us-west-005.backblazeb2.com
+  polaris-email audit verify
   ```
-  And spot-check retention on a recent object:
+  A break is the in-band tamper signal. If the chain verifies but you
+  suspect rewrite, **do not trust** the verification — a full-account
+  adversary can recompute it. Trust the Logpush mirror instead.
+- Cross-check the **weekly D1 backup** in R2 against the live DB:
   ```sh
-  aws s3api get-object-retention \
-    --bucket polaris-anchors --key anchors/<ts>-<id>.json \
-    --endpoint-url https://s3.us-west-005.backblazeb2.com
-  # → Mode: COMPLIANCE, RetainUntilDate: <date>
+  wrangler r2 object get polaris-email/backups/d1/<YYYY-MM-DD>-... \
+    --file pre-incident.sql
+  diff <(wrangler d1 execute polaris-email --remote --command "SELECT ... FROM audit_log") \
+       <(sqlite3 pre-incident.sql "SELECT ... FROM audit_log")
   ```
-- Diff D1 head's `row_hash` against the most recent anchor signature
-  recovered from B2.
+- Inspect Cloudflare's audit log (dashboard → My Profile → Audit Log) for
+  recent API token creations, Worker deploys, and account-level setting
+  changes.
 
 ## Recovery
 
-1. Rotate every secret (every API key, IMAP/SMTPS password, webhook secret,
-   `POLARIS_SECRET_A`, anchor HMAC signing key). All emergency-mode.
-   Rotate the B2 Application Key too; the new one lands via `wrangler
-secret put ANCHOR_S3_ACCESS_KEY_ID` / `ANCHOR_S3_SECRET_ACCESS_KEY`.
-2. Redeploy from a clean source checkout pinned to a digest known to
-   predate the compromise.
-3. Restore D1 from PITR to a point before the compromise; reconcile
-   against R2 (which is append-only / locked) and against the B2 anchor
-   chain (which the attacker could not have rewritten).
-4. Verify Logpush mirror integrity, confirm audit-chain anchors line up
-   with the B2 copies.
-5. Unfreeze: undo MX flip, undo killswitch deploy, restart panel.
-6. Run the diagnostics page; confirm green ticks.
+1. **Rotate every secret** in emergency mode. API keys, IMAP/SMTPS
+   passwords, webhook signing secrets, `POLARIS_SECRET_A`, `ARGON2_PEPPER`,
+   `PEPPER_MASTER`, OIDC client secret. The polaris-cli `setup infra
+secrets seed` re-mints generators and re-pushes via `wrangler secret
+put`; for sources-only secrets (like the CF API token itself), mint
+   manually and seed via .env.deploy.
+2. **Redeploy from a clean source checkout** pinned to a git SHA known
+   to predate the compromise. `polaris-email setup infra deploy all`
+   ships every Worker.
+3. **D1 Time-Travel restore** to a point before the compromise. See the
+   [D1 recovery runbook](./d1-recovery.md) for the two-step copy-then-
+   reconcile approach — never restore the live DB directly without first
+   inspecting the rollback target in a copy.
+4. Verify Logpush mirror integrity, confirm the post-restore `audit_log`
+   head matches expectations from before the blast window.
+5. **Unfreeze**: undo MX flip, undo killswitch deploy, restart panel.
+6. Run the diagnostics page; confirm green ticks across `Audit chain`,
+   `Cron health`, `Queue depth`.
 7. Run the synthetic for 24 h before any real consumer is unfrozen.
-
-<!-- Verified against: docs/runbooks/cf-account-compromise.md @ c3c1b5048dd5bfe92facdce24982141a07446042 -->

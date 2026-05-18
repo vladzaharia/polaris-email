@@ -1,6 +1,6 @@
 # polaris-email
 
-> A managed email service for the `polaris-*` family of internal apps. Cloudflare Workers control plane (REST, webhook fan-out, cron) plus an on-prem Go mail-bridge serving SMTPS (:465) and IMAP4rev2 (:993). One HMAC-signed REST contract covers outbound submission and inbound retrieval; v2-envelope signed webhooks deliver inbound events. Mailbox-centric schema, zero-payload-by-default, audit anchors anchored off Cloudflare on Backblaze B2 with Object Lock COMPLIANCE.
+> A managed email service for the `polaris-*` family of internal apps. Cloudflare Workers control plane (REST, webhook fan-out, cron) plus an on-prem Go mail-bridge serving SMTPS (:465) and IMAP4rev2 (:993). One HMAC-signed REST contract covers outbound submission and inbound retrieval; v2-envelope signed webhooks deliver inbound events. Mailbox-centric schema, zero-payload-by-default, chained-hash audit log walked nightly by an in-D1 verify cron.
 
 The site is organised by audience. Start at the section that matches your role; cross-links surface the spec pages when you need them.
 
@@ -32,10 +32,10 @@ SDKs, signing, webhooks, the unified Message model, error catalogue.
 Cold-start, day-2 ops, incident response.
 
 - [Operator documentation overview](https://docs.mail.plrs.im/operators/overview) — entry index for the operator audience.
-- [Architecture](https://docs.mail.plrs.im/operators/concepts/architecture) — three Workers, one D1, mailbox-centric schema, off-Cloudflare audit anchors.
+- [Architecture](https://docs.mail.plrs.im/operators/concepts/architecture) — three Workers, one D1, mailbox-centric schema, chained-hash audit log.
 - [Cost model](https://docs.mail.plrs.im/operators/concepts/cost-model) — forward bill projections at small/medium/large traffic.
 - [Mail bridge](https://docs.mail.plrs.im/operators/concepts/mail-bridge) — the on-prem Go binary, two equally-supported deployment modes.
-- [Deployment prerequisites](https://docs.mail.plrs.im/operators/deployment/prerequisites) — Cloudflare scopes, Backblaze B2 bucket, local tools.
+- [Deployment prerequisites](https://docs.mail.plrs.im/operators/deployment/prerequisites) — Cloudflare scopes, local tools.
 - [Cold-start bootstrap](https://docs.mail.plrs.im/operators/deployment/cold-start-bootstrap) — one-time setup that creates CF resources, seeds secrets, deploys, and mints the admin key.
 - [Cloudflare Access setup](https://docs.mail.plrs.im/operators/deployment/cloudflare-access) — OIDC IdP wiring, Terraform `access-app` module, group-based role sync.
 - [Custom domains](https://docs.mail.plrs.im/operators/deployment/custom-domains) — R2 public domain, panel, API, docs, per-tenant MTA-STS hostnames.
@@ -50,7 +50,6 @@ Cold-start, day-2 ops, incident response.
 - [Activity inspection](https://docs.mail.plrs.im/operators/day-2/activity-inspection) — red/yellow/green snapshot, queue depths, log tails, audit verify, suppression list.
 - [On-call runbook](https://docs.mail.plrs.im/operators/runbooks) — first commands and decision trees for common incidents.
 - [Troubleshooting decision matrix](https://docs.mail.plrs.im/operators/troubleshooting/decision-matrix) — symptom → cause → fix index.
-- [Anchor maintenance](https://docs.mail.plrs.im/operators/runbooks/anchor-maintenance) — detection and recovery for the hourly anchor cron.
 - [Bridge credential sync](https://docs.mail.plrs.im/operators/runbooks/bridge-credential-sync) — confirm drift, force resync, recover from HMAC key drift.
 - [CF account compromise](https://docs.mail.plrs.im/operators/runbooks/cf-account-compromise) — 15-minute containment, investigation, recovery.
 - [Control-plane rotation](https://docs.mail.plrs.im/operators/runbooks/control-plane-rotation) — `POLARIS_SECRET_A` A/B rotation dance.
@@ -65,7 +64,7 @@ Cold-start, day-2 ops, incident response.
 Threat model, HMAC spec, email authentication.
 
 - [Security documentation overview](https://docs.mail.plrs.im/security/overview) — entry index for the security audience.
-- [Threat model](https://docs.mail.plrs.im/security/threat-model) — trust boundaries, in-scope adversaries, mitigations, R2 capability semantics, audit-anchor integrity fence.
+- [Threat model](https://docs.mail.plrs.im/security/threat-model) — trust boundaries, in-scope adversaries, mitigations, R2 capability semantics, audit-chain integrity.
 - [HMAC reference](https://docs.mail.plrs.im/security/hmac-reference) — byte-exact canonical-string, bare-hex header, domain tags, test vectors, verifier error codes.
 - [DKIM / DMARC / SPF](https://docs.mail.plrs.im/security/dkim-dmarc-spf) — what polaris-email publishes per outbound domain, alignment rules, triage table, MTA-STS / TLS-RPT for inbound TLS.
 

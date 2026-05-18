@@ -68,17 +68,17 @@ bin/killswitch-freeze.sh --restore
 ## Audit chain verification after restore
 
 A PITR restore re-creates rows by id, so the chained-hash invariant
-should hold IF the bookmark predates any tampering. Verify before
+should hold if the bookmark predates any tampering. Verify before
 trusting the restored DB:
 
 ```sh
-bin/audit-verify.sh --from-id 0 --signing-key-file /path/to/key
+polaris-email audit verify
 ```
 
-Cross-check the latest D1 anchor against the matching B2 anchor — if
-they agree, the chain is intact. If they diverge, the bookmark you
-chose is too recent (it captured tampered rows). Pick an earlier
-bookmark and retry.
+If the chain breaks: the bookmark you chose is too recent — it captured
+the tampered rows. Pick an earlier bookmark and retry. The `audit-verify`
+cron will surface persistent breaks in `cron_runs(job_name='audit-verify')`
+nightly even without the CLI.
 
 ## R2 + KV are not in scope
 

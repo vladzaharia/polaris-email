@@ -7,12 +7,9 @@
 # key itself — no signing.
 #
 # IMPORTANT: only the `polaris-email` bucket is fronted by this module.
-# Audit anchors live OFF Cloudflare entirely (Phase O1 — Backblaze B2 with
-# Object Lock COMPLIANCE, see `packages/object-lock` +
-# `services/api/src/scheduled/anchor.ts`); they are never in any R2 bucket
-# and never publicly readable. The B5 cutover deletes the previous
-# signed-URL endpoint; rolling back requires re-enabling that endpoint,
-# NOT toggling the bucket back to private.
+# The B5 cutover deletes the previous signed-URL endpoint; rolling back
+# requires re-enabling that endpoint, NOT toggling the bucket back to
+# private.
 
 # --- DNS CNAME ----------------------------------------------------------------
 

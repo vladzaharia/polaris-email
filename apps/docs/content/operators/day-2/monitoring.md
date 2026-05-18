@@ -82,19 +82,25 @@ outbound DLQ collects poison messages too; for both, the
 [webhook DLQ runbook](/operators/runbooks/webhook-dlq) covers replay
 and drop.
 
-### Anchor cron freshness
+### Audit-verify cron freshness
 
 ```sql
 SELECT
-  max(timestamp) AS last_anchor,
-  now() - max(timestamp) AS lag
-FROM polaris_cron_runs
-WHERE blob1 = 'anchor' AND blob2 = 'ok'
+  job_name,
+  status,
+  last_run_at,
+  duration_ms,
+  message
+FROM cron_runs
+WHERE job_name = 'audit-verify'
+ORDER BY last_run_at DESC LIMIT 1
 ```
 
-`lag` > 1h is the alert threshold. The
-[anchor maintenance runbook](/operators/runbooks/anchor-maintenance)
-covers the failure modes.
+A `status='error'` row means the nightly chain walk found a break.
+That's a critical incident — see the
+[CF account compromise runbook](/operators/runbooks/cf-account-compromise).
+The cron runs `20 5 * * *` UTC; a missing row after that hour suggests
+the cron itself isn't firing.
 
 ### Bridge `last_seen` lag
 
@@ -149,7 +155,7 @@ the operator can pattern-match on:
 | `event`                    | Surface   | Meaning                                                                           |
 | -------------------------- | --------- | --------------------------------------------------------------------------------- |
 | `hmac_verification_failed` | API       | One of `bad_signature`, `clock_skew`, `nonce_replay`. Includes the key id + path. |
-| `anchor_b2_write_failed`   | API cron  | B2 PUT failed; daily backfill cron will retry.                                    |
+| `audit_chain_broken`       | API cron  | `audit-verify` walked the chain and found a break. Escalate.                      |
 | `synthetic_check_failed`   | API cron  | `/healthz` probe failed twice in a row; `ALERT_WEBHOOK` already fired.            |
 | `revocation_check_failed`  | API       | `KV_REVOCATIONS` read errored; treated as not-revoked but logged.                 |
 | `webhook_delivery_failed`  | API queue | One webhook attempt failed; check `paused` and `failure_count` on the sub.        |
@@ -226,14 +232,14 @@ Aim for these. Each is met today on the canonical deployment; falling
 below any one of them is the operator's signal that something has
 regressed.
 
-| SLO                            | Threshold                                               | Measured by                                                                                                      |
-| ------------------------------ | ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `/v1/messages` publish latency | 99% < 250 ms                                            | `polaris_api_requests` Analytics Engine, p99 by minute.                                                          |
-| Webhook delivery latency       | 99.9% within 30 s of source event                       | `polaris_webhook_deliveries` Analytics Engine, p99.9 by minute.                                                  |
-| Anchor cron freshness          | Latest anchor < 1 h stale                               | `polaris_cron_runs` Analytics Engine + the [anchor maintenance runbook](/operators/runbooks/anchor-maintenance). |
-| Synthetic outbound             | 100% over rolling 1 h window (allow ≤2 transient blips) | `services/api/src/scheduled/synthetic.ts` counter in `KV_RATE_LIMIT`; alert fires on `≥ ALERT_THRESHOLD` (2).    |
-| Bridge `last_seen` lag         | < 2 min for every healthy bridge                        | D1 `mail_bridges.last_sync_at`.                                                                                  |
-| DLQ growth                     | Bounded at zero outside an incident window              | Queues consumer status; the [webhook DLQ runbook](/operators/runbooks/webhook-dlq) is the recovery path.         |
+| SLO                            | Threshold                                               | Measured by                                                                                                                                 |
+| ------------------------------ | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/v1/messages` publish latency | 99% < 250 ms                                            | `polaris_api_requests` Analytics Engine, p99 by minute.                                                                                     |
+| Webhook delivery latency       | 99.9% within 30 s of source event                       | `polaris_webhook_deliveries` Analytics Engine, p99.9 by minute.                                                                             |
+| Audit-verify nightly run       | `status='ok'` row per night                             | `cron_runs(job_name='audit-verify')` + the [CF account compromise runbook](/operators/runbooks/cf-account-compromise) for `status='error'`. |
+| Synthetic outbound             | 100% over rolling 1 h window (allow ≤2 transient blips) | `services/api/src/scheduled/synthetic.ts` counter in `KV_RATE_LIMIT`; alert fires on `≥ ALERT_THRESHOLD` (2).                               |
+| Bridge `last_seen` lag         | < 2 min for every healthy bridge                        | D1 `mail_bridges.last_sync_at`.                                                                                                             |
+| DLQ growth                     | Bounded at zero outside an incident window              | Queues consumer status; the [webhook DLQ runbook](/operators/runbooks/webhook-dlq) is the recovery path.                                    |
 
 The publish-latency SLO bakes in a budget for Argon2id key
 verification — that's why Argon2id moved to the Out Worker in the
@@ -254,5 +260,3 @@ The
 [Cloudflare Analytics Engine integration docs](https://developers.cloudflare.com/analytics/analytics-engine/)
 cover the SQL surface; everything in this page works against that
 endpoint.
-
-<!-- Verified against: bin/configure.sh, services/api/src/scheduled/index.ts, services/api/src/scheduled/synthetic.ts, services/api/src/scheduled/staleness.ts, services/api/src/scheduled/anchor.ts, services/api/src/lib/admin-alert.ts, services/api/src/env.ts, apps/docs/content/operators/concepts/cost-model.md, apps/docs/content/operators/runbooks/anchor-maintenance.md @ eeee222cdf8359f8f2bf1013a103abdb3c705f06 -->

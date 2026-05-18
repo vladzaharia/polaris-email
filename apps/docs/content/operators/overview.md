@@ -1,6 +1,6 @@
 ---
 title: For operators
-description: Stand up polaris-email from cold start, run it day-to-day with the polaris-email CLI, and recover from incidents using the runbook library. Covers Cloudflare-side deploys, the on-prem mail-bridge, and the audit-anchor pipeline.
+description: Stand up polaris-email from cold start, run it day-to-day with the polaris-email CLI, and recover from incidents using the runbook library. Covers Cloudflare-side deploys and the on-prem mail-bridge.
 sidebar_label: Overview
 sidebar_position: 0
 ---
@@ -12,8 +12,7 @@ You own the deployment. Pick the entry point that matches today's work.
 ## Cold-start a new deployment
 
 → **[Prerequisites](/operators/deployment/prerequisites)** — the
-Cloudflare scopes, the Backblaze B2 anchor bucket, and the local tools
-the cold-start needs in place first.
+Cloudflare scopes and local tools the cold-start needs in place first.
 
 → **[Cold-start bootstrap](/operators/deployment/cold-start-bootstrap)** —
 one path from an empty CF account to a green smoke. Target: ≤30 minutes.
@@ -39,12 +38,14 @@ verb domain (`domain`, `cred`, `route`, `webhook`, `bridge`, `audit`,
 | Rotate the bridge's TLS cert                     | [Bridge TLS](/operators/day-2/bridge-tls)                       |
 | Watch the system from the outside                | [Monitoring](/operators/day-2/monitoring)                       |
 | Daily snapshot of red/yellow/green               | [Activity inspection](/operators/day-2/activity-inspection)     |
+| Weekly D1 export to R2                           | [D1 backup](/operators/day-2/d1-backup)                         |
+| Point-in-time D1 restore (Time-Travel)           | [D1 recovery](/operators/day-2/d1-recovery)                     |
 
 ## Understand what runs where
 
 → **[Architecture](/operators/concepts/architecture)** — the three
-Workers, the mailbox-centric schema, the unified pipeline, audit anchors
-off-Cloudflare on Backblaze B2.
+Workers, the mailbox-centric schema, the unified pipeline, the
+chained-hash audit log.
 
 → **[Cost model](/operators/concepts/cost-model)** — forward bill
 projections at small / medium / large traffic tiers and the cliffs that
@@ -58,7 +59,7 @@ equally-supported deployment modes: tailnet-fronted and host-network.
 
 → **[On-call runbook](/operators/runbooks)** — first commands and
 decision trees for the common incidents (outbound failing, webhook DLQ
-filling, bridge offline, audit anchor stale, D1 quota, cost spikes).
+filling, bridge offline, audit chain break, D1 quota, cost spikes).
 
 → **[Troubleshooting decision matrix](/operators/troubleshooting/decision-matrix)** —
 symptom → cause → fix index. The fast index when the on-call runbook
@@ -66,7 +67,6 @@ feels too deep.
 
 Specialised playbooks:
 
-- [Anchor maintenance](/operators/runbooks/anchor-maintenance)
 - [Bridge credential sync](/operators/runbooks/bridge-credential-sync)
 - [CF account compromise](/operators/runbooks/cf-account-compromise)
 - [Control-plane secret rotation](/operators/runbooks/control-plane-rotation)

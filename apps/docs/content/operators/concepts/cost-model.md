@@ -93,12 +93,13 @@ Things that disproportionately blow the bill if not watched:
      linearly. **Mitigation**: confirm the pipeline is not double-enqueuing
      on retry (the `send_attempt_id` CAS guards against it).
 
-3. **R2 Object Lock retention**: not relevant for polaris-email's R2
-   bucket (which doesn't use Object Lock), but worth flagging at the
-   adjacent **Backblaze B2** anchor bucket — anchors in COMPLIANCE mode
-   bill for storage until retention expires. **Mitigation**: lock only
-   the small (~200-byte) signed anchor entries, not full audit-log
-   copies.
+3. **R2 Object Lock retention**: the `polaris-email` R2 bucket uses
+   COMPLIANCE-mode Object Lock on the message-body prefixes
+   (`mime/`, `att/`) for 90 days. Locked objects bill for storage even
+   if soft-deleted at the application layer. **Mitigation**: the janitor
+   cron honours `r2_refs` so identical attachments forwarded to multiple
+   mailboxes share one R2 object; lifecycle rules sweep orphans the
+   refcount cron missed.
 
 4. **Email Service GA pricing**: unknown until Cloudflare announces.
    Watch closely during the beta-to-GA transition. **Mitigation**: the

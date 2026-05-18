@@ -5,6 +5,6 @@
     "type": "generated-index",
     "slug": "/security",
     "title": "Security documentation",
-    "description": "Threat model, the HMAC signing spec, R2 unguessability boundary, audit-anchor chain (Backblaze B2 + Object Lock), credential revocation, and compliance posture."
+    "description": "Threat model, the HMAC signing spec, R2 unguessability boundary, in-D1 audit-chain integrity, credential revocation, and compliance posture."
   }
 }

@@ -5,6 +5,6 @@
     "type": "generated-index",
     "slug": "/operators/runbooks",
     "title": "Operator runbooks",
-    "description": "On-call procedures for polaris-email: triage, common-incident playbooks, anchor maintenance, bridge credential drift, CF-account compromise, control-plane secret rotation, D1 PITR, data residency, retention/cleanup, webhook DLQ, and customer + internal breach comms templates."
+    "description": "On-call procedures for polaris-email: triage, common-incident playbooks, bridge credential drift, CF-account compromise, control-plane secret rotation, D1 PITR, data residency, retention/cleanup, webhook DLQ, and customer + internal breach comms templates."
   }
 }

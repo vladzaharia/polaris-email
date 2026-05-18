@@ -32,8 +32,8 @@ const PhaseName = "migrate"
 
 // Result captures the outcome of a single `wrangler d1 migrations apply`
 // invocation. Latest is the filename of the highest applied migration
-// (e.g. "0021_anchor_table.sql") or "" if no migrations were applied
-// because the schema was already current.
+// (e.g. "0027_something.sql") or "" if no migrations were applied because
+// the schema was already current.
 type Result struct {
 	// Applied is the count of migrations the run actually executed.
 	// Zero means "schema was already current".

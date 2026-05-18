@@ -60,10 +60,9 @@
   kill-switch runbook (<https://docs.mail.plrs.im/operators/runbooks/cf-account-compromise>),
   not prevented. The audit-chain hash inside D1 detects in-band rewrites,
   but a root-level CF compromise can wipe the chain itself; D1 Time-Travel
-  is the recovery surface (point-in-time restore covers ~30 days). The
-  earlier off-platform Backblaze B2 anchor mechanism was removed in favour
-  of this simpler model — operational cost was disproportionate for the
-  threat actually faced.
+  is the recovery surface (point-in-time restore covers ~30 days), paired
+  with the weekly D1 export to R2 under `backups/d1/` (12-week retention)
+  for longer-horizon recovery.
 - **Recipient recovery after submission** — by design, plaintext recipients are
   not retained server-side; see [`CONSUMER-CONTRACT.md`](CONSUMER-CONTRACT.md).
 
@@ -181,12 +180,10 @@ red.
 
 The chain defends against accidental / sloppy direct-DB-write rewrites;
 it does **not** defend against an adversary who fully owns the Cloudflare
-account (they can recompute the chain). The previous off-platform anchor
-mechanism (Backblaze B2 + Object Lock COMPLIANCE writes from an hourly
-cron) was removed; if you need defence against a CF-root compromise, the
-recovery surface is **D1 Time-Travel** (point-in-time restore covers ~30
-days) plus the weekly D1 export to R2 (operator-owned `backups/d1/`
-prefix, 12-week retention).
+account (they can recompute the chain). For defence against a CF-root
+compromise, the recovery surface is **D1 Time-Travel** (point-in-time
+restore covers ~30 days) plus the weekly D1 export to R2 (operator-owned
+`backups/d1/` prefix, 12-week retention).
 
 ## Cryptographic notes
 

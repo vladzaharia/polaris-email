@@ -1,6 +1,6 @@
 ---
 title: Architecture
-description: The operator's system view — three Cloudflare Workers, one D1 database, mailbox-centric schema, a unified pipeline, audit anchors written off-Cloudflare to Backblaze B2, and a single CF account for the entire control plane.
+description: The operator's system view — three Cloudflare Workers, one D1 database, mailbox-centric schema, a unified pipeline, and the chained-hash audit log on a single CF account.
 sidebar_label: Architecture
 sidebar_position: 1
 ---
@@ -18,12 +18,12 @@ The entire control plane runs in **one Cloudflare account** across three
 Workers. The panel runs as a fourth Worker but is operationally a client
 of the API.
 
-| Worker  | Role                                                                                                                                                                                                     |
-| ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `api`   | The REST surface. **Also** hosts the webhook fan-out queue consumer and every cron trigger — hourly audit anchor, weekly secret staleness check, per-minute health synthetic, nightly retention janitor. |
-| `in`    | Email Routing handler. Parses inbound MIME, runs the unified pipeline, persists.                                                                                                                         |
-| `out`   | Outbound queue consumer. Drives the configured provider (Cloudflare `send_email` binding per domain).                                                                                                    |
-| `panel` | Admin UI (Hono + React, sessions in D1). Talks to `api` via a service binding, not a public fetch. Not in the mail path.                                                                                 |
+| Worker  | Role                                                                                                                                                                                                                            |
+| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `api`   | The REST surface. **Also** hosts the webhook fan-out queue consumer and every cron trigger — weekly secret staleness check, 5-minute health synthetic, nightly retention janitor, nightly audit-chain verify, weekly D1 export. |
+| `in`    | Email Routing handler. Parses inbound MIME, runs the unified pipeline, persists.                                                                                                                                                |
+| `out`   | Outbound queue consumer. Drives the configured provider (Cloudflare `send_email` binding per domain).                                                                                                                           |
+| `panel` | Admin UI (Hono + React, sessions in D1). Talks to `api` via a service binding, not a public fetch. Not in the mail path.                                                                                                        |
 
 Three mail-path Workers, not five. The previous separate `fanout` and
 `cron` Workers were folded into `api`, and the `forensic` Worker was
@@ -31,10 +31,9 @@ removed when the schema went zero-payload-by-default. There is no reason
 to bring them back at the deployment scale polaris-email targets
 (< 10k msg/day).
 
-The previous staging + anchor Cloudflare accounts were collapsed into a
-single production account. Tamper-evidence comes from anchors pushed to
-**Backblaze B2** (off-Cloudflare, see [Audit anchors](#audit-anchors)) —
-not from CF account isolation.
+Tamper-evidence comes from the in-row chained-hash invariant on
+`audit_log` plus the nightly `audit-verify` cron — see
+[Audit chain integrity](#audit-chain-integrity) below.
 
 ## Mailbox-centric data model
 
@@ -82,13 +81,12 @@ For each message, the pipeline:
 
 ## Storage
 
-| Store            | Holds                                                                                                                                                                                                                                                                               |
-| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **D1**           | Source of truth: mailboxes, senders, receivers, principals, messages, webhook subs, audit log, anchors, bookkeeping. Single database (`polaris-email`).                                                                                                                             |
-| **R2**           | Content-addressed bodies and attachments, reference-counted by `r2_refs`. Served over the public custom domain `r2.mail.plrs.im`. SHA-256 keys are the unguessability boundary — there is no signed URL layer. See the [threat model](/security/threat-model) before changing this. |
-| **KV**           | Hot path: HMAC replay nonces, idempotency keys (24h TTL), rate limits, `key_id → secret` cache, **credential revocations**. Revocations propagate to all Workers within ≤60 s (KV write + 60 s per-Worker cache).                                                                   |
-| **Queues**       | Outbound, inbound, fan-out — each with its own DLQ.                                                                                                                                                                                                                                 |
-| **Backblaze B2** | Hourly signed audit anchors, **off Cloudflare**, under Object Lock COMPLIANCE mode with ~7-year retention. See [Audit anchors](#audit-anchors).                                                                                                                                     |
+| Store      | Holds                                                                                                                                                                                                                                                                                                                      |
+| ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **D1**     | Source of truth: mailboxes, senders, receivers, principals, messages, webhook subs, audit log, bookkeeping. Single database (`polaris-email`).                                                                                                                                                                             |
+| **R2**     | Content-addressed bodies and attachments + weekly D1 export under `backups/d1/`, reference-counted by `r2_refs`. Served over the public custom domain `r2.mail.plrs.im`. SHA-256 keys are the unguessability boundary — there is no signed URL layer. See the [threat model](/security/threat-model) before changing this. |
+| **KV**     | Hot path: HMAC replay nonces, idempotency keys (24h TTL), rate limits, `key_id → secret` cache, **credential revocations**. Revocations propagate to all Workers within ≤60 s (KV write + 60 s per-Worker cache).                                                                                                          |
+| **Queues** | Outbound, inbound, fan-out — each with its own DLQ.                                                                                                                                                                                                                                                                        |
 
 Identical attachments forwarded to multiple mailboxes share one R2 object
 via reference counting. Soft-deletes decrement the ref count; the nightly
@@ -106,33 +104,23 @@ See the [unified Message model](/developers/messages/unified-model) for
 the envelope shape and the [HMAC concept](/developers/authentication/concept)
 for what the signature covers.
 
-## Audit anchors
+## Audit chain integrity
 
-Every state mutation appends a row to `audit_log` with `prev_hash`
-linking to the previous row. The hourly cron in `api` signs the latest
-row hash plus the row count, writes a record to `audit_anchors` in D1,
-and **pushes a signed anchor to Backblaze B2** under Object Lock
-COMPLIANCE mode.
+Every state mutation appends a row to `audit_log` with `row_hash =
+SHA-256(prev_hash || canonical(row))` linking to the previous row. Any
+out-of-band rewrite of an older row breaks `row_hash` for every later
+row. The `audit-verify` cron in `api` walks the chain end-to-end nightly
+and records the outcome in `cron_runs(job_name='audit-verify')`. The
+panel "Audit chain" diagnostics card surfaces the head + freshness.
 
-Three properties matter to operators:
-
-- **Off-Cloudflare**. The B2 bucket is external; a fully-compromised CF
-  account cannot rewrite history.
-- **Write-only key**. The B2 application key used by `api` is scoped
-  `writeFiles`-only — no list, no read, no delete, no governance bypass.
-  Even an exfiltrated key cannot overwrite an existing anchor.
-- **Operator-vault credentials**. The B2 key is not stored in the CF
-  account. It is seeded as a Worker secret at deploy time and held in the
-  operator's password vault. A wrangler-level compromise can read the
-  in-flight value but cannot use it to rewrite history.
-
-Net property: a hostile actor who fully owns the CF account can **stop**
-new anchors from being written (denial of service) but cannot **rewrite**
-existing ones. The audit chain in D1 diverging from the latest B2 anchor
-is the tamper-evidence signal.
-
-Do not move anchor writes inside Cloudflare. The external bucket is the
-whole point.
+This defends against accidental / sloppy direct-DB writes. It does **not**
+defend against an adversary who fully owns the Cloudflare account (they
+can recompute the chain end-to-end). The recovery surface for that
+threat is **D1 Time-Travel** (~30 days of point-in-time restore) plus the
+weekly D1 export to R2 (`backups/d1/`, 12-week R2 lifecycle retention) —
+see [D1 backup](/operators/day-2/d1-backup) and
+[D1 recovery](/operators/day-2/d1-recovery). The accepted trade-off is
+documented in [`SECURITY.md`](/security/threat-model).
 
 ## Authentication
 

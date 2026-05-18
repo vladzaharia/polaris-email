@@ -11,15 +11,13 @@ Two doors. Pick the one that matches what you're trying to do today.
 
 ## Stand up a new deployment (operator)
 
-You have a Cloudflare account and a Backblaze account and you want a
-working control plane.
+You have a Cloudflare account and you want a working control plane.
 
 → **[30-minute first deploy](/get-started/30-min-first-deploy)** —
 the hero tutorial. Zero to your first authenticated send in roughly
-half an hour. Covers CF token scopes, B2 Object Lock COMPLIANCE
-bucket setup, `polaris-email setup infra` end-to-end, the genesis
-seal, minting a first credential, and three flavors of test send
-(curl, Node SDK, Go SDK).
+half an hour. Covers CF token scopes, `polaris-email setup infra`
+end-to-end, the genesis seal, minting a first credential, and three
+flavors of test send (curl, Node SDK, Go SDK).
 
 When the tutorial wraps, the next pages to read are the
 [Cloudflare Access walkthrough](/operators/deployment/cloudflare-access)
@@ -53,6 +51,6 @@ and the [unified Message model](/developers/messages/unified-model)
   indexes the same content by symptom.
 - **Security model**: the [threat model](/security/threat-model) is
   required reading before changing anything that touches HMAC,
-  R2 public URLs, or audit anchors.
+  R2 public URLs, or the audit chain.
 - **CLI reference**: the full subcommand surface is in
   [`reference/cli`](/reference/cli).

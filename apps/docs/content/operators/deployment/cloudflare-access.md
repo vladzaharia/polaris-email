@@ -164,8 +164,7 @@ That flow was removed — real deployments are single-operator, and
 the second-admin co-sign was unusable. Destructive actions are now
 gated **client-side** via `DestructiveActionDialog`
 (type-the-resource-name confirmation) inside the panel; the
-chained-hash `audit_log` table (anchored hourly to Backblaze B2 with
-Object Lock COMPLIANCE) remains the canonical record of who did
+chained-hash `audit_log` table remains the canonical record of who did
 what. WebAuthn step-up at the Access layer is the right place to
 enforce hardware-key presence for admin sessions.
 :::

@@ -126,9 +126,6 @@ polaris-email cred rotate <id> --planned --dry-run
 - [Control-plane rotation](/operators/runbooks/control-plane-rotation) —
   the broader rotation procedure for `POLARIS_SECRET_A` (the
   break-glass control-plane HMAC).
-- [Anchor maintenance](/operators/runbooks/anchor-maintenance) — the
-  rotation procedure for `ANCHOR_SIGNING_KEY` and the B2 application
-  key.
 - [Disaster recovery](/operators/runbooks/disaster-recovery) — the
   escape hatch for a lost admin key or a leaked master secret.
 

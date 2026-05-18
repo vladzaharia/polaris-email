@@ -106,11 +106,6 @@ Larger payloads are URL-only — the consumer follows `body_url` /
 
 Tune via `wrangler secret put` on `services/api`.
 
-Audit anchors are **not** stored in R2 — they live off-Cloudflare in
-**Backblaze B2** with Object Lock COMPLIANCE (~7-year retention), so a
-fully-compromised CF account cannot rewrite history. See the
-[threat model](/security/threat-model).
-
 ## Retrieval endpoints
 
 All retrieval endpoints require `messages:read` (or `admin:read` for

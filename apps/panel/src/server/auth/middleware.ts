@@ -10,8 +10,8 @@
 // `admin` flag set. Destructive actions (credential rotate/revoke, bridge
 // rotate, DKIM rotate, mailbox/receiver delete, webhook DLQ drop, …) are
 // gated client-side via `DestructiveActionDialog` (type-the-resource-name
-// confirmation); every mutation writes an audit_log row, and the audit chain
-// is anchored hourly to Backblaze B2 with Object Lock.
+// confirmation); every mutation writes an audit_log row whose row_hash
+// chains to the previous row so any rewrite breaks the chain.
 import type { MiddlewareHandler } from 'hono';
 import type { Env } from '../env.js';
 import { makeAuth } from './index.js';

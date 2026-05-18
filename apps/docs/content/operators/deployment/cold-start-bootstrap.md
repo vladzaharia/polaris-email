@@ -38,9 +38,6 @@ Workers, including:
 
 - `OIDC_CLIENT_ID` / `OIDC_CLIENT_SECRET` (panel auth — leave blank to
   skip the panel).
-- `ANCHOR_S3_ENDPOINT`, `ANCHOR_S3_BUCKET`, `ANCHOR_S3_REGION`,
-  `ANCHOR_S3_ACCESS_KEY_ID`, `ANCHOR_S3_SECRET_ACCESS_KEY` — required;
-  see [prerequisites](/operators/deployment/prerequisites).
 - The alert webhook and the production hostname.
 
 `BRIDGE_HMAC_KEY` is **not** a global secret. Each bridge gets its own
@@ -79,9 +76,9 @@ already-complete phases on retry. The phases are:
    `wrangler.local.template.jsonc` using `.deploy-state.json` plus
    `.env.deploy`. Do not hand-edit the materialised files.
 4. Apply D1 migrations remotely.
-5. Seed master secrets: `POLARIS_SECRET_A`, `ARGON2_PEPPER`,
-   `ANCHOR_SIGNING_KEY`. Creation timestamps go to
-   `secrets.created.json` — names only, no values.
+5. Seed master secrets: `POLARIS_SECRET_A`, `ARGON2_PEPPER` (plus any
+   sourced optional secrets like `OIDC_CLIENT_SECRET`). Creation
+   timestamps go to `secrets.created.json` — names only, no values.
 6. `polaris-email setup infra deploy all` deploys the four Workers in
    dependency order: `polaris-email-api` → `polaris-email-out` →
    `polaris-email-in` → `polaris-email-panel`. The previous

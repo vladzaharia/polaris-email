@@ -36,9 +36,10 @@ during early phases:
 
 - **`services/api`** — REST surface, admin API, audit chain,
   idempotency, key auth, **plus** the webhook fan-out queue consumer
-  and every cron trigger (hourly audit anchor, weekly secret staleness,
-  per-minute synthetic, nightly retention janitor). Phase B1 folded the
-  previous `services/fanout` and `services/cron` Workers in here.
+  and every cron trigger (weekly secret staleness, 5-minute synthetic,
+  nightly retention janitor, nightly audit-chain verify, weekly D1
+  export). Phase B1 folded the previous `services/fanout` and
+  `services/cron` Workers in here.
 - **`services/in`** — Email Routing handler. Parses inbound MIME via
   the unified `processMessage` pipeline.
 - **`services/out`** — outbound queue consumer that drives the
@@ -91,7 +92,6 @@ package consumed by Workers and apps. Highlights:
   Routing / Service, DKIM).
 - `packages/revocation` — KV-backed credential revocation primitive
   (≤60 s propagation; the previous Durable Object was retired).
-- `packages/object-lock` — Backblaze B2 anchor writer.
 - `packages/test-vectors` — fixtures shared between SDK suites.
 - `packages/sdk-node` — first-party Node SDK.
 
@@ -104,19 +104,19 @@ dependency, update `.github/workflows/ci.yml` too.
 
 `infra/terraform/` owns the slow-moving, state-shaped Cloudflare
 resources — DNS, Email Routing rules, Email Service onboarding,
-Cloudflare Access apps, and the R2 public custom-domain wiring —
-inside the single `polaris-prod` account. (Phase O1 collapsed the
-previous three-account topology to one.)
+Cloudflare Access apps, the R2 public custom-domain wiring, Logpush
+jobs, and R2 lifecycle rules — inside the single `polaris-prod`
+account.
 
 Wrangler (per-Worker `wrangler.jsonc` / `wrangler.local.jsonc`) owns
 the code-velocity resources within the same account: Workers, D1, KV,
 R2 buckets, Queues. The two never overlap, and the API tokens that
 drive each pipeline are scoped so they can't.
 
-Audit anchors live **off-Cloudflare** in Backblaze B2 with Object
-Lock COMPLIANCE; a fully-compromised CF account cannot rewrite
-history. See [`infra/terraform/README.md`](https://github.com/polaris/polaris-email/blob/main/infra/terraform/README.md)
-for the full split and the anchor-target setup.
+Tamper-evidence on `audit_log` is the in-row chained-hash invariant
+plus the nightly `audit-verify` cron. See
+[the architecture deep-dive](/contributing/architecture-deep-dive) for
+the full audit-chain story.
 
 ## Toolchain
 

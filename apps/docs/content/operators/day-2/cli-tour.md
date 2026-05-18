@@ -150,18 +150,19 @@ The global `BRIDGE_HMAC_KEY` was retired so that a single leaked key no
 longer compromises every bridge. See
 [Bridge management](/operators/day-2/bridge-management).
 
-### `audit` — chain verification and B2 anchors
+### `audit` — chain verification
 
 ```sh
 polaris-email audit verify
-polaris-email audit anchors
 ```
 
-Audit anchors live off Cloudflare — Backblaze B2 with Object Lock
-COMPLIANCE. Chain verification walks `audit_log` rows and reconciles
-each `audit_anchors` row with the B2 object. See
+Walks `audit_log` and recomputes each row's hash
+(`SHA-256(prev_hash || canonical(row))`). Any divergence between the
+recomputed and stored values is a tamper signal. See
 [Activity inspection](/operators/day-2/activity-inspection#audit-chain)
-and the [anchor-maintenance runbook](/operators/runbooks/anchor-maintenance).
+for the full procedure and the
+[CF account compromise runbook](/operators/runbooks/cf-account-compromise)
+for what to do when a break is reported.
 
 ### `suppression` — manage the bi-directional suppression list
 

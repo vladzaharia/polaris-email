@@ -115,8 +115,7 @@ func (c *Client) CreateBucket(ctx context.Context, in CreateBucketInput) (*R2Buc
 
 // ObjectLockRule applies an Object Lock retention policy to a bucket via
 // the lifecycle endpoint. Hours is the COMPLIANCE-mode retention window
-// (polaris-email uses ~2160h = 90 days, but the audit-anchor bucket
-// receives ~61320h ≈ 7 years).
+// (polaris-email uses ~2160h = 90 days on the message-body archive).
 //
 // PR 1 only needs the surface to exist; the heavy testing lands in PR 3
 // (provision phase) which actually wires this onto polaris-mail-archive.

@@ -72,8 +72,8 @@ export function canonicalQuery(
     const sp = new URLSearchParams(input.startsWith('?') ? input.slice(1) : input);
     // Spread via Symbol.iterator (yields [k, v] tuples) instead of .entries()
     // because the WebWorker lib's URLSearchParams type doesn't declare
-    // .entries(), and consumers under WebWorker (e.g. object-lock) transitively
-    // typecheck this file when resolving the package's src.
+    // .entries(), and Worker consumers transitively typecheck this file
+    // when resolving the package's src.
     params = [...sp];
   } else if (input instanceof URLSearchParams) {
     params = [...input];

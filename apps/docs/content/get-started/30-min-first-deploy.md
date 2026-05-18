@@ -9,11 +9,11 @@ slug: /get-started/30-min-first-deploy
 # 30 minutes from zero to first send
 
 This is the operator-side hero tutorial. You have a fresh Cloudflare
-account and a Backblaze account; you want a healthy polaris-email
-control plane and one credential you can `curl` against. Domain
-onboarding, mail-bridge install, and webhook subscriptions are
-covered in [next steps](#next-steps) — none of them are required to
-finish this tutorial.
+account; you want a healthy polaris-email control plane and one
+credential you can `curl` against. Domain onboarding, mail-bridge
+install, and webhook subscriptions are covered in
+[next steps](#next-steps) — none of them are required to finish this
+tutorial.
 
 Budget: ~30 minutes if everything is happy. The `setup infra apply`
 phase is the only step that does anything irreversible.
@@ -38,23 +38,6 @@ every zone in the account:
 - Account → Zone → Read
 - Zone → Zone → Edit
 - Zone → DNS → Edit
-
-A **Backblaze B2 account**. Create a bucket named `polaris-anchors`
-(the default; override via `ANCHOR_S3_BUCKET` if you need a different
-name) with:
-
-- Object Lock: **enabled**, **COMPLIANCE mode**, **~7-year** default
-  retention. COMPLIANCE means no one — not Backblaze support, not
-  the account root — can shorten retention before it expires.
-- An **Application Key** scoped to that bucket alone, with the
-  `writeFiles` capability **only**. Drop `listFiles`, `readFiles`,
-  `deleteFiles`, `bypassGovernance`. A compromised Cloudflare account
-  must not be able to rewrite or delete anchors with this key.
-
-Stash the B2 endpoint URL (e.g.
-`https://s3.us-west-005.backblazeb2.com`), region (e.g.
-`us-west-005`), and the application key id + secret. Why this matters
-is covered in the [threat model](/security/threat-model).
 
 ## 1. Install the CLI (1 min)
 
@@ -99,7 +82,6 @@ You will be asked for, in order:
 | `CF_ZONE_ID`           | Default zone for domain ops (optional).                                                     |
 | `ALERT_WEBHOOK`        | Slack / PagerDuty inbound webhook for synthetic + staleness alerts (optional, recommended). |
 | `OIDC_*`               | Panel auth — defer if you don't need the panel today.                                       |
-| `ANCHOR_S3_*`          | Backblaze B2 endpoint, bucket, region, application key id, application key secret.          |
 | `R2_PUBLIC_HOST`       | Public R2 custom domain for message bodies + attachments (e.g. `r2.mail.example.com`).      |
 
 The file is rewritten after every prompt, so a Ctrl-C halfway
@@ -176,10 +158,10 @@ polaris-email setup infra secrets seed
 ```
 
 This pushes generated master secrets (`POLARIS_SECRET_A`,
-`ARGON2_PEPPER`, `ANCHOR_SIGNING_KEY`) plus the
-`ANCHOR_S3_ACCESS_KEY_ID` / `ANCHOR_S3_SECRET_ACCESS_KEY` you supplied
-to each Worker via `wrangler secret put`. It records SHA-256 hashes
-(not plaintext) in `secrets.created.json` so re-runs are idempotent.
+`ARGON2_PEPPER`) plus any sourced optional secrets (OIDC client
+secret) to each Worker via `wrangler secret put`. It records SHA-256
+hashes (not plaintext) in `secrets.created.json` so re-runs are
+idempotent.
 
 The seed values stay in your shell environment for the next two
 steps — write them down or stash them in your password manager

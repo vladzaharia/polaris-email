@@ -1,6 +1,6 @@
 ---
 title: Deployment prerequisites
-description: The Cloudflare scopes, off-platform accounts, and local tooling you need before running the polaris-email cold-start.
+description: The Cloudflare scopes and local tooling you need before running the polaris-email cold-start.
 sidebar_label: Prerequisites
 sidebar_position: 1
 ---
@@ -53,37 +53,6 @@ you want the panel, mint a client up-front and capture:
 
 Leave them blank during `polaris-email setup infra configure` to skip
 the panel — the API and the CLI still work without it.
-
-## Backblaze B2 anchor target (required)
-
-Audit anchors live **off Cloudflare**. The hourly cron in `services/api`
-signs each anchor and pushes it to a Backblaze B2 bucket with
-**Object Lock COMPLIANCE mode** and ~7-year retention. A fully
-compromised Cloudflare account can stop new anchors from being written
-(denial of service) but cannot rewrite history, because the B2
-write-only Application Key lives outside Cloudflare.
-
-Before bootstrapping, create:
-
-- The B2 bucket itself with Object Lock COMPLIANCE enabled and the
-  retention window set to 7 years.
-- A **write-only** Application Key scoped to that bucket
-  (`writeFiles` only — no `listFiles`, `readFiles`, `deleteFiles`, or
-  `bypassGovernance`).
-
-Capture these values; bootstrap refuses to deploy `services/api`
-without them:
-
-- `ANCHOR_S3_ENDPOINT`
-- `ANCHOR_S3_BUCKET`
-- `ANCHOR_S3_REGION`
-- `ANCHOR_S3_ACCESS_KEY_ID`
-- `ANCHOR_S3_SECRET_ACCESS_KEY`
-
-Step-by-step setup lives in [`infra/terraform/README.md`](https://github.com/polaris/polaris-email/blob/main/infra/terraform/README.md)
-under "Audit anchors are NOT on Cloudflare". See also the
-[threat model](/security/threat-model) for the integrity properties this
-arrangement provides.
 
 ## Local tooling
 

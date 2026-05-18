@@ -63,7 +63,6 @@ const REDIRECTS: Record<string, string> = {
   // migration are remapped to the closest superset page (the on-call
   // runbook for incident-response, the disaster-recovery page for
   // rollback / key-rotation, the webhook DLQ runbook for dlq-replay).
-  '/runbooks/anchor-maintenance': '/operators/runbooks/anchor-maintenance',
   '/runbooks/bridge-credential-sync': '/operators/runbooks/bridge-credential-sync',
   '/runbooks/cf-account-compromise': '/operators/runbooks/cf-account-compromise',
   '/runbooks/control-plane-rotation': '/operators/runbooks/control-plane-rotation',

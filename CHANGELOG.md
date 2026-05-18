@@ -4,17 +4,45 @@ This file tracks notable architectural changes. For operator-visible
 behavior, see [`CONSUMER-CONTRACT.md`](CONSUMER-CONTRACT.md); for cutover
 runbooks, see [`docs/deploy.md`](docs/deploy.md).
 
+## 2026-05-17 — Off-platform audit anchors removed
+
+The off-platform audit-anchor mechanism (hourly Worker cron writing signed
+chain heads to Backblaze B2 under Object Lock COMPLIANCE) and the
+single-Cloudflare-account compromise model it defended against have been
+removed. Tamper-evidence now relies entirely on the in-D1 chained-hash
+invariant verified by the nightly `audit-verify` cron, paired with D1
+Time-Travel (30-day point-in-time restore) and the weekly D1 export to
+the `polaris-email` R2 bucket under `backups/d1/` for longer-horizon
+recovery.
+
+- **Removed packages / code paths.** `packages/object-lock/` is deleted;
+  `services/api/src/scheduled/anchor.ts` and `anchor-backfill.ts` are
+  gone; the `audit_anchors` D1 table is dropped in migration
+  `0026_drop_audit_anchors.sql`; the hourly anchor cron and the
+  anchor-backfill cron are removed from `services/api/wrangler.jsonc`;
+  the `ANCHOR_S3_*` secret family is removed from the polaris-cli
+  secrets specs; `apps/polaris-cli/internal/setup/preflight/b2.go` is
+  deleted.
+- **Operator surface.** `.env.deploy.example` no longer references
+  Backblaze; the cold-start runbook no longer lists B2 as a
+  prerequisite; the CF-account-compromise runbook
+  (`apps/docs/content/operators/runbooks/cf-account-compromise.md`) has
+  been rewritten around Logpush mirror + D1 Time-Travel instead of
+  off-platform anchors.
+- **Threat model.** `SECURITY.md` and the docs mirror at
+  `apps/docs/content/security/threat-model.md` no longer claim
+  fully-compromised-CF recovery via anchors; the new posture is stated
+  honestly (D1 Time-Travel + R2 export are the recovery surfaces).
+
 ## 2026-05-15 — Pre-launch hardening pass
 
 Eight-phase hardening sweep before first non-synthetic consumer. Operator-
 and consumer-visible highlights:
 
 - **Cold-start path repaired.** `bin/bootstrap.sh` + `bin/render-wrangler-local.sh`
-  now drive a clean clone → green smoke without manual hand-edits; the
-  Backblaze B2 anchor target is a documented prerequisite (see
-  `infra/terraform/README.md`); previously-missing wrangler secrets
-  (`OIDC_CLIENT_SECRET`, `ANCHOR_S3_*`) are prompted at `make configure`
-  time.
+  now drive a clean clone → green smoke without manual hand-edits;
+  previously-missing wrangler secrets (`OIDC_CLIENT_SECRET`) are prompted
+  at `make configure` time.
 - **Production correctness P0s fixed.** Audit-chain CAS unified;
   `services/out` no longer routes to the wrong recipient on retries;
   `services/in` enqueue failures are no longer swallowed; IMAP STORE /
@@ -29,9 +57,9 @@ and consumer-visible highlights:
   into the `Message.auth` shape; revocation cache now atomically busts
   `KV_KEY_CACHE` alongside the `KV_REVOCATIONS` write.
 - **Pipeline correctness.** Attachment R2 writes are now required (no
-  silent drop); UID + change-counter advance atomically; anchor write
-  happens **after** D1 commit; MIME walker enforces a depth limit;
-  attachment filenames are sanitised before they hit R2 keys.
+  silent drop); UID + change-counter advance atomically; MIME walker
+  enforces a depth limit; attachment filenames are sanitised before they
+  hit R2 keys.
 - **SDK + CLI polish.** sdk-go gained typed `*APIError` sub-types,
   `WebhookEnvelope` + `ParseWebhookEnvelope` + `VerifyAndParseWebhook`;
   sdk-node gained `listAllMessages` AsyncIterable + `assertIdempotencyKey`;
@@ -46,8 +74,7 @@ and consumer-visible highlights:
   Vite `manualChunks` for faster nav.
 - **Documentation reconciliation.** Docs now match the post-B1 (3 control-
   plane Workers + panel) world, the post-B3 un-versioned HMAC, the
-  post-B4 `bridge` terminology, and the post-O1 single-account topology
-  with Backblaze B2 anchors.
+  post-B4 `bridge` terminology, and the post-O1 single-account topology.
 
 ## 2026-05-15 — Pre-launch hardening (Phase 5)
 
@@ -111,10 +138,6 @@ changed; net -3380 LOC.
   KV-backed `revocationCheck` (`KV_REVOCATIONS` namespace + ≤60s
   propagation, per-Worker 60s cache); revoke now writes both
   `KV_REVOCATIONS` and busts `KV_KEY_CACHE` in one call.
-- **O0 anchor R2 public-leak fixed (B5 regression)** — audit anchors had
-  been writable to the public-domain bucket; moved to a private R2
-  bucket. Superseded by O1 below, which routes anchors to Backblaze B2
-  with Object Lock COMPLIANCE.
 - SMTPS forwarder `Idempotency-Key` (A2), OIDC role-sync on every
   sign-in (A3), webhook → push → mirror race repaired (A4), bcrypt cost
   normalized to 12 across issuance + dummy-burn (A5), SSRF allowlist
@@ -127,15 +150,14 @@ changed; net -3380 LOC.
 ### Architecture restructure
 
 - **5 Workers → 3 (B1)** — `services/api` absorbed `services/fanout`
-  (webhook queue consumer) and `services/cron` (hourly anchor + nightly
-  janitor + per-minute health + weekly staleness). `services/in` and
+  (webhook queue consumer) and `services/cron` (nightly janitor +
+  per-minute health + weekly staleness). `services/in` and
   `services/out` remain separate because they have distinct trust
   surfaces (Email Routing handler / outbound provider binding).
-- **3 CF accounts → 1 (O1)** — `polaris-anchors` and `polaris-staging`
-  collapsed into `polaris-prod`. Tamper-evidence now anchored externally
-  via **Backblaze B2 with Object Lock COMPLIANCE** (~7-year retention);
-  B2 application key scoped write-only; B2 credentials live in the
-  operator's password vault, not in the Cloudflare account.
+- **3 CF accounts → 1 (O1)** — the previously-planned multi-account
+  topology collapsed into a single `polaris-prod` account. Tamper-evidence
+  for the audit log is the in-D1 chained-hash invariant verified by the
+  nightly `audit-verify` cron.
 - **HMAC un-versioned (B3)** — domain tags `polaris-api` /
   `polaris-webhook` (no `.v1` suffix); signature header
   `X-Polaris-Sig: <hex>` (no `v1=` / `v2=` prefix). Single webhook
@@ -219,9 +241,8 @@ changed; net -3380 LOC.
   example pulled verbatim from `packages/test-vectors/vectors.json`.
 - `docs/architecture.md` surgical edits (F9) — Workers table, Webhook
   fan-out, Storage, Audit chain, Authentication, CF account topology.
-- `SECURITY.md` final pass (F10): read-once secrets section, Backblaze
-  B2 anchor target section, HMAC un-versioning note, R2 public-URL
-  capability semantics.
+- `SECURITY.md` final pass (F10): read-once secrets section, HMAC
+  un-versioning note, R2 public-URL capability semantics.
 - New: `apps/panel/README.md`, `docs/cli.md` (revoke vs deregister vs
   disable vs delete vocabulary).
 

@@ -39,6 +39,6 @@ for the canonical spec.
 - Emergency rotation invalidates the old credential within ≤5 s of the panel button click. Planned rotation gives 24 h.
 - Zero-payload logging by default. **Recipients are unrecoverable post-submission**; the service does not retain plaintext recipient addresses past delivery. If you anticipate having to respond to subpoenas or otherwise reconstruct who you sent to, keep your own outbound logs on the consumer side — polaris-email cannot produce them after the fact.
 - Webhook deliveries retry with exponential backoff up to 6 attempts, then DLQ. DLQ messages can be replayed from the panel.
-- Audit chain is hash-linked and externally anchored. Tampering is detectable.
+- Audit chain is hash-linked in D1 and walked nightly. In-band tampering is detectable.
 
 <!-- Verified against: CONSUMER-CONTRACT.md @ 022520fd49a135eaf4685a09668439d58257ec95 -->

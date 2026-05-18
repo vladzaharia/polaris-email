@@ -1,6 +1,6 @@
 ---
 title: Data residency
-description: Where every class of polaris-email data lives — D1, R2, Backblaze B2 anchors, Email Routing, Workers, the mail-bridge SQLite mirror, panel sessions — plus verification commands and the right-to-erasure path.
+description: Where every class of polaris-email data lives — D1, R2, Email Routing, Workers, the mail-bridge SQLite mirror, panel sessions — plus verification commands and the right-to-erasure path.
 sidebar_label: Data residency
 sidebar_position: 7
 ---
@@ -10,8 +10,7 @@ sidebar_position: 7
 polaris-email's stored data:
 
 - **D1** — declared in `services/api/wrangler.local.jsonc` as `database_name` + `location: 'weur'` (configurable).
-- **R2** (`polaris-email` bucket) — declared in `services/api/wrangler.local.jsonc` as `bucket_name` + `jurisdiction: 'eu'` (configurable). Holds message bodies + attachments, fronted publicly at `r2.mail.plrs.im` via content-addressed keys.
-- **Audit anchors (off-Cloudflare)** — Backblaze B2 bucket with Object Lock COMPLIANCE mode + 7-year default retention. Region is operator-chosen (default `us-west-005`); endpoint, bucket, and region are set in `services/api/wrangler.jsonc` `vars` as `ANCHOR_S3_ENDPOINT` / `ANCHOR_S3_BUCKET` / `ANCHOR_S3_REGION`. The B2 Application Key lives in the operator's password vault, not Workers Secrets. See `packages/object-lock` and `infra/terraform/README.md` for setup.
+- **R2** (`polaris-email` bucket) — declared in `services/api/wrangler.local.jsonc` as `bucket_name` + `jurisdiction: 'eu'` (configurable). Holds message bodies + attachments + weekly D1 backups under `backups/d1/`, fronted publicly at `r2.mail.plrs.im` via content-addressed keys.
 - **Email Routing inbound** — CF's regional routing follows the domain's MX, which lands in CF's nearest colo. Use a regional CF account to constrain.
 - **Workers** — `placement: { mode: 'smart' }` keeps execution close to D1/R2.
 - **Mail-bridge SQLite mirror** — on each bridge host's local volume (operator-managed). Holds credential bcrypt hashes and the local message-state mirror; never plaintext passwords.

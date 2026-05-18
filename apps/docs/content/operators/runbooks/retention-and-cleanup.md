@@ -17,18 +17,18 @@ This runbook documents what each retention class needs.
 
 ## Retention classes
 
-| Class                        | Where                       | Default retention        | Pruning         |
-| ---------------------------- | --------------------------- | ------------------------ | --------------- |
-| Message bodies + attachments | R2 (`polaris-email` bucket) | indefinite               | manual          |
-| Message rows                 | D1 `messages` table         | indefinite               | manual          |
-| Delivery rows                | D1 `message_deliveries`     | indefinite               | manual          |
-| Audit log                    | D1 `audit_log` + B2 anchors | 7 years (B2 Object Lock) | not allowed     |
-| DMARC / TLS-RPT reports      | D1 + R2                     | indefinite               | manual          |
-| Policy decisions             | D1 `policy_decisions`       | indefinite               | manual          |
-| Held messages (MIME blobs)   | R2                          | until released/dropped   | replay clears   |
-| Idempotency keys             | D1                          | per-row `expires_at`     | janitor nightly |
-| Nonces                       | KV                          | 10 min                   | KV TTL          |
-| API key plaintext            | KV                          | 15 min                   | KV TTL          |
+| Class                        | Where                       | Default retention      | Pruning         |
+| ---------------------------- | --------------------------- | ---------------------- | --------------- |
+| Message bodies + attachments | R2 (`polaris-email` bucket) | indefinite             | manual          |
+| Message rows                 | D1 `messages` table         | indefinite             | manual          |
+| Delivery rows                | D1 `message_deliveries`     | indefinite             | manual          |
+| Audit log                    | D1 `audit_log`              | indefinite             | not allowed     |
+| DMARC / TLS-RPT reports      | D1 + R2                     | indefinite             | manual          |
+| Policy decisions             | D1 `policy_decisions`       | indefinite             | manual          |
+| Held messages (MIME blobs)   | R2                          | until released/dropped | replay clears   |
+| Idempotency keys             | D1                          | per-row `expires_at`   | janitor nightly |
+| Nonces                       | KV                          | 10 min                 | KV TTL          |
+| API key plaintext            | KV                          | 15 min                 | KV TTL          |
 
 ## Janitor
 
@@ -78,14 +78,15 @@ future janitor cycle could sweep them.
 ## Audit retention
 
 **Do not delete `audit_log` rows.** The chained-hash table is the
-canonical record of every privileged action; entries are anchored hourly
-to Backblaze B2 with Object Lock COMPLIANCE (~7-year retain-until).
-Pruning rows here breaks the chain and invalidates every subsequent
-anchor.
+canonical record of every privileged action; each row's `row_hash` is
+`SHA-256(prev_hash || canonical(row))`, so pruning rows or rewriting them
+in-place breaks the chain and the nightly `audit-verify` cron will surface
+the break in `cron_runs`.
 
-The 7-year B2 retain-until covers GDPR / SOX / HIPAA audit windows.
-Operators who need longer should adjust `ANCHOR_RETENTION_DAYS` before
-the corresponding anchor lands.
+For long-term archival beyond the live D1 database, use the weekly D1
+export to R2 (`backups/d1/` prefix, 12-week R2-lifecycle retention) — see
+the [D1 backup runbook](/operators/day-2/d1-backup) for the verification
+flow.
 
 ## Planned: Logpush → R2 Parquet pipeline
 

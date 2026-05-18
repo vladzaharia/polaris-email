@@ -1,5 +1,5 @@
 // Cron-run telemetry. Each scheduled handler upserts a row into `cron_runs`
-// (added in 0020) so the panel can show "last successful anchor 3h ago"
+// (added in 0020) so the panel can show "last successful audit-verify 3h ago"
 // without scraping Logpush. Records duration_ms and status (ok|error|skipped)
 // plus an optional short message.
 import type { Env } from '../env.js';

@@ -21,7 +21,7 @@ apps/mail-bridge             — Go 1.25, SMTPS + IMAP4rev2 in one binary
 apps/polaris-cli             — Go 1.22, operator CLI (`polaris-email`, alias `pml`)
 apps/docs                    — Docusaurus v3 site (this site), deployed as a Worker
 apps/cli-installer           — installer Worker at cli.mail.plrs.im
-packages/{hmac,schema,pipeline,ids,mime,cf-api,revocation,object-lock,test-vectors,sdk-node}
+packages/{hmac,schema,pipeline,ids,mime,cf-api,revocation,test-vectors,sdk-node}
                              — TS workspace packages
 packages/sdk-go              — the only Go package under packages/ (pure stdlib, no go.sum)
 infra/terraform              — zone + access-app modules; per-env roots
@@ -49,10 +49,9 @@ targets dwarfed the isolation benefit. `services/forensic` was removed
 entirely when the schema went zero-payload-by-default. Don't reintroduce
 any of these — the consolidation is intentional and the tests assume it.
 
-The previous separate `polaris-anchors` and `polaris-staging` Cloudflare
-accounts were also collapsed (O1). Tamper-evidence is now anchored
-externally via Backblaze B2; account separation was no longer pulling
-its weight. Don't move audit-anchor writes inside CF.
+Tamper-evidence is the chained-hash `audit_log` invariant — each row's
+`row_hash` is `SHA-256(prev_hash || canonical(row))`, verified end-to-end
+nightly by the `audit-verify` cron.
 
 ## The single unified pipeline
 
@@ -146,16 +145,17 @@ at the internal-deployment scale polaris-email targets. Read
 [SECURITY.md](https://github.com/vladzaharia/polaris-email/blob/main/SECURITY.md)
 before changing anything in this area.
 
-## Audit anchors live off Cloudflare
+## Audit chain integrity
 
-Hourly cron in `services/api` pushes signed anchors to Backblaze B2 with
-Object Lock COMPLIANCE mode (~7-year retention). The B2 application key
-is scoped `writeFiles`-only and lives in the operator's password
-vault — not in the Cloudflare account. A fully-compromised CF account
-cannot rewrite history.
+Each `audit_log` row's `row_hash` is `SHA-256(prev_hash || canonical(row))`.
+The `audit-verify` cron in `services/api` walks the chain end-to-end
+nightly and records the outcome in `cron_runs(job_name='audit-verify')`.
+A break means an out-of-band rewrite — escalate per the
+[CF account compromise runbook](/operators/runbooks/cf-account-compromise).
 
-Don't move anchor writes inside Cloudflare. The external bucket is the
-tamper-evidence anchor.
+D1 Time-Travel + the weekly D1 export to R2 are the recovery surfaces
+for a CF-root compromise — the chain alone cannot defend against that
+case.
 
 ## Wrangler config convention
 
@@ -184,8 +184,8 @@ Do not commit `.wrangler.merged.json`.
   `DestructiveActionDialog` (type-the-resource-name confirmation). The
   prior two-person `withApproval(...)` flow and the `approvals` D1 table
   were removed — single-operator deployments made the second-admin
-  co-sign unusable. The hash-chained `audit_log` (anchored hourly to
-  Backblaze B2) remains the canonical record of who did what.
+  co-sign unusable. The hash-chained `audit_log` remains the canonical
+  record of who did what.
 - Auth flow: Cloudflare Access → Worker → better-auth `genericOAuth` →
   OIDC. The `databaseHooks.user.create.after` hook role-syncs from the
   OIDC `groups` claim against the `ADMIN_GROUP` var. The claim is
@@ -226,7 +226,6 @@ refactor as if one path were canonical.
 - Hand-edit materialised `wrangler.local.jsonc` or `.wrangler.merged.json`.
 - Treat the Tailscale compose file as the mail-bridge default.
 - Re-split `services/api` into `fanout` / `cron` / `forensic` Workers.
-- Move audit-anchor writes inside Cloudflare.
 - Skip lefthook with `--no-verify`. Fix the underlying lint/fmt issue.
 
 ## See also

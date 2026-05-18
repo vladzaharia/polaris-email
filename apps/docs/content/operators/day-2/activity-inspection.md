@@ -53,23 +53,17 @@ cron failures both surface under that Worker's tail.
 
 ```sh
 polaris-email audit verify                     # walk hash chain end-to-end
-polaris-email audit anchors                    # list B2 anchors (off-Cloudflare)
 ```
 
-`audit verify` walks every row in `audit_log`, recomputes each
-`row_hash`, and cross-checks `audit_anchors` for matching Backblaze B2
-keys. Any divergence is a critical incident — see the
-[anchor-maintenance runbook](/operators/runbooks/anchor-maintenance).
+`audit verify` walks every row in `audit_log` and recomputes each
+`row_hash` (`SHA-256(prev_hash || canonical(row))`). Any divergence
+between the recomputed value and the stored one signals an out-of-band
+rewrite and is a critical incident — see the
+[CF account compromise runbook](/operators/runbooks/cf-account-compromise).
 
-`audit anchors` lists every anchor row with its B2 object key and
-`external_ref_at` timestamp. Rows where `external_ref_at IS NULL` are
-unanchored (the daily backfill cron will retry the B2 PUT).
-
-Audit anchors live **off** Cloudflare — Backblaze B2 with Object Lock
-COMPLIANCE mode and ~7-year retention. A fully-compromised CF account
-can stop anchors from being written but cannot rewrite existing
-anchors. See [the threat model](/security/threat-model#audit-anchors)
-for the full property statement.
+The `audit-verify` cron runs nightly (`20 5 * * *` UTC) and surfaces
+breaks in `cron_runs(job_name='audit-verify')`; the panel diagnostics
+"Audit chain" card turns red on the first break.
 
 ## Webhook DLQ
 
@@ -132,18 +126,17 @@ breakdown.
 
 - **Watch DLQ depth**: alert if `polaris-email status --queues` shows
   DLQ growth > 0 over a 5-minute window.
-- **Watch audit anchor age**: anchors run hourly and land in Backblaze
-  B2; anchor age > 90 min is an alert (the anchor cron inside
-  `services/api` may be stuck).
+- **Watch the audit-verify cron**: the nightly chain walk writes to
+  `cron_runs(job_name='audit-verify')`. A `status='error'` row means
+  someone rewrote `audit_log` outside the application — escalate.
 - **Watch cost**: review the CF dashboard Billing → Usage page
   weekly; alert if Workers CPU-ms exceeds 50% of the subscription
   tier.
 
 ## Related runbooks
 
-- [Anchor maintenance](/operators/runbooks/anchor-maintenance) — when
-  `audit verify` flags drift or `audit anchors` shows unanchored rows
-  past 25 hours.
+- [CF account compromise](/operators/runbooks/cf-account-compromise) —
+  when `audit verify` flags chain divergence.
 - [Webhook DLQ](/operators/runbooks/webhook-dlq) — when DLQ depth
   alerts fire.
 - [D1 recovery](/operators/runbooks/d1-recovery) — when `status` rows

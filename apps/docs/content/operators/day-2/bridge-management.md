@@ -144,19 +144,15 @@ the two alerts to wire — lives at [Bridge TLS](/operators/day-2/bridge-tls).
 
 Every authenticated SMTPS submission and every authenticated IMAP
 session records a row in `audit_log` with the `bridge_id`. The chained
-hash plus hourly anchor (see
-[the threat model](/security/threat-model#audit-anchors)) means a
-compromised bridge cannot rewrite its session history without
-diverging the chain — and a fully-compromised Cloudflare account
-cannot rewrite the B2-anchored canonical form.
+hash (see
+[the threat model](/security/threat-model#audit-chain-integrity)) means a
+compromised bridge cannot rewrite its session history without breaking
+the chain — the nightly `audit-verify` cron will surface the break.
 
 ## Related runbooks
 
 - [Bridge credential sync](/operators/runbooks/bridge-credential-sync) —
   triage when the bridge's local SQLite mirror diverges from the
   control-plane `mailbox_credentials` rows.
-- [Anchor maintenance](/operators/runbooks/anchor-maintenance) — the
-  off-Cloudflare integrity fence that bridges depend on for audit
-  durability.
 
 <!-- Verified against: docs/operator.md @ c3c1b5048dd5bfe92facdce24982141a07446042 -->

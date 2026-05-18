@@ -27,50 +27,19 @@ infra/terraform/
 
 There is one Cloudflare account: **`polaris-prod`**. It owns every Polaris
 runtime — Workers, D1, KV, R2, Queues, DNS, Email Routing, Email Service,
-Access. The previous three-account layout (`polaris-staging`, `polaris-anchors`)
-was retired in `polaris-staging` was an empty stub, and audit
-anchors moved off-Cloudflare entirely to an external Object-Lock target (see
-**Audit anchors** below).
+Access.
 
-## Audit anchors are NOT on Cloudflare
+## Audit chain integrity
 
-Hourly audit anchors are written to **Backblaze B2** with Object Lock
-COMPLIANCE mode and a default 7-year retention. This is the integrity fence
-for the single-account model: even a fully-compromised Cloudflare account
-cannot rewrite history, because the B2 credentials live in the operator's
-password vault (NOT as Cloudflare Workers Secrets) and the B2 Application
-Key is scoped write-only to the anchor bucket.
+Tamper-evidence on `audit_log` is the in-row chained-hash invariant:
+each row's `row_hash` is `SHA-256(prev_hash || canonical(row))`, so any
+out-of-band rewrite breaks the chain for every later row. The
+`audit-verify` cron in `services/api` walks the chain end-to-end nightly
+and records the outcome in `cron_runs(job_name='audit-verify')`.
 
-Operator setup, once per deployment:
-
-1. **Create a B2 bucket** with Object Lock enabled in COMPLIANCE mode and a
-   default retention of 2555 days (7 years). Pick a region near the
-   operator (default suggestion: `us-west-005`). Bucket files are NEVER
-   served publicly — keep it private and skip the public-bucket option.
-2. **Mint a B2 Application Key** scoped to that bucket only. Required
-   capabilities: `writeFiles`, `listFiles` (latter is optional but useful
-   for the verification step below). DO NOT grant `deleteFiles` — Object
-   Lock would block deletes anyway, but principle of least authority.
-3. **Capture the S3-compatible endpoint** B2 prints for the bucket. It will
-   look like `https://s3.us-west-005.backblazeb2.com`. Note the region tag
-   (the part after `s3.`) — that becomes `ANCHOR_S3_REGION`.
-4. **Push the config to the Worker**:
-   ```sh
-   # Non-secret bindings live in services/api/wrangler.jsonc `vars`:
-   #   ANCHOR_S3_ENDPOINT, ANCHOR_S3_BUCKET, ANCHOR_S3_REGION
-   # The two secrets go through wrangler secret put:
-   cd services/api
-   wrangler secret put ANCHOR_S3_ACCESS_KEY_ID      # B2 keyID
-   wrangler secret put ANCHOR_S3_SECRET_ACCESS_KEY  # B2 applicationKey
-   ```
-5. **Optional override**: the SigV4 signer accepts `ANCHOR_RETENTION_DAYS`
-   as a `var` to bump or lower the per-object retain-until date. Default is
-   2555 days; the B2 bucket's _default_ retention enforces the floor.
-
-Backblaze B2 is the recommended target (cheapest, mature S3 Object Lock,
-decoupled blast radius). AWS S3 and Wasabi work too — point
-`ANCHOR_S3_ENDPOINT`/`ANCHOR_S3_REGION` at the right place and the same
-SigV4 signer carries you through.
+The accepted trade-off (no defence against a fully-compromised CF root
+token; D1 Time-Travel + the weekly D1 export to R2 are the recovery
+surface for that case) is documented in `SECURITY.md`.
 
 ## Why Terraform here, Wrangler there
 
@@ -171,14 +140,10 @@ and/or depend on Cloudflare API surface that's still in flux as of writing:
    module includes a `null_resource` placeholder. Replace the placeholder
    `local-exec` with a real curl call once the API surface is finalized,
    or remove the `null_resource` once a real provider resource exists.
-6. **Backblaze B2 anchor bucket** — provisioned out-of-band per the
-   "Audit anchors are NOT on Cloudflare" section above. Not in Terraform
-   because the B2 vendor relationship is intentionally separate from the
-   CF account credentials and lifecycle.
-7. **Worker handler reference** (`inbound_worker_name`) — defaults to
+6. **Worker handler reference** (`inbound_worker_name`) — defaults to
    `polaris-email-in` (matches `services/in/wrangler.jsonc`). Override only
    if you renamed the deployed Worker.
-8. **Initial zone import** — if the operator already has zones with
+7. **Initial zone import** — if the operator already has zones with
    hand-rolled DNS records, run `terraform import cloudflare_record.<name>
 <zone_id>/<record_id>` for each before the first apply, or terraform
    will create duplicates.

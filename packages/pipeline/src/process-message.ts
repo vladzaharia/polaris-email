@@ -486,7 +486,7 @@ export async function processMessage(
   // the decoded bytes. The public R2 custom domain `r2.mail.plrs.im` serves
   // these directly so that the `url` on each attachment in API/webhook
   // responses is fetchable without HMAC or signed URLs. SHA-256 in the key
-  // is the unguessability anchor.
+  // is the unguessability boundary.
   //
   // 4a.1: attachment R2 writes are REQUIRED, not best-effort. The pipeline
   // is content-addressed for dedup: identical attachments will not be

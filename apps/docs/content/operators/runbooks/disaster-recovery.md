@@ -129,7 +129,7 @@ Chain rollbacks across multiple services in dependency order
 
 ## Rotate a leaked secret
 
-If a master secret (POLARIS_SECRET_A, ARGON2_PEPPER, ANCHOR_SIGNING_KEY,
+If a master secret (POLARIS_SECRET_A, ARGON2_PEPPER, OIDC_CLIENT_SECRET,
 …) has leaked, rotate it across every Worker via:
 
 ```sh
@@ -156,12 +156,6 @@ polaris-email setup infra rollback secret POLARIS_SECRET_A
 
 The archive is 1-deep — only the most recent rotation can be rolled
 back. After a rollback, fix the underlying issue, then rotate again.
-
-`ANCHOR_SIGNING_KEY` is special: keep the previous value in the
-operator vault even after rotation, because every anchor signed with
-the old key still requires it for re-verification. See the
-[anchor maintenance runbook](./anchor-maintenance.md) for the
-chain-verification flow.
 
 ## Roll back a phase marker after a bad migration
 
@@ -202,9 +196,10 @@ reasons:
 1. **D1 deletes are unrecoverable.** A `wrangler d1 delete` removes
    the database irreversibly; PITR is per-database and doesn't help
    if the database itself is gone.
-2. **R2 buckets have Object Lock.** Anchor buckets refuse `DELETE` on
-   any object before its retain-until date; the bucket cannot be
-   deleted while it holds locked objects.
+2. **R2 buckets have Object Lock.** The `polaris-email` bucket holds
+   message bodies + attachments under COMPLIANCE-mode retention; objects
+   refuse `DELETE` before their retain-until date, and the bucket cannot
+   be deleted while it holds locked objects.
 3. **KV namespaces are read mid-flight.** Idempotency replay
    protection (`POLARIS_IDEMPOTENCY`), nonce dedup
    (`POLARIS_NONCE_DEDUP`), and revocation (`KV_REVOCATIONS`) are

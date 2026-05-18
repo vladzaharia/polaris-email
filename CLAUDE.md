@@ -174,10 +174,10 @@ for the full surface.
 
 6. **Audit log is in-D1, chain-hashed.** Each row's `row_hash` is
    SHA-256(prev_hash || canonical row), so any out-of-band rewrite breaks
-   the chain. The `audit-verify` cron walks the chain nightly. Off-platform
-   audit-anchor writes to Backblaze B2 were removed — see SECURITY.md for
-   the accepted trade-off (no defence against a fully-compromised CF
-   account; D1 Time-Travel is the recovery surface for that scenario).
+   the chain. The `audit-verify` cron walks the chain nightly. See
+   SECURITY.md for the accepted trade-off (no defence against a
+   fully-compromised CF account; D1 Time-Travel is the recovery surface
+   for that scenario).
 
 7. **R2 public domain `r2.mail.plrs.im` is intentionally unauthenticated.**
    SHA-256 keys are the unguessability boundary (per). Don't add
@@ -241,8 +241,6 @@ were the canonical one.
   `.wrangler.merged.json`.
 - Treating the Tailscale compose file as the mail-bridge default.
 - Re-splitting `services/api` into `fanout` / `cron` / `forensic` Workers.
-- Reintroducing off-platform audit anchors (Backblaze B2 / Object Lock) —
-  the mechanism was removed; D1 Time-Travel is the recovery surface now.
 - Skipping lefthook with `--no-verify`; fix the underlying lint/fmt issue.
 
 ## Where to look first for X
