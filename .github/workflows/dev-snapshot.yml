@@ -49,6 +49,15 @@ jobs:
           install-only: true
           version: '~> v2'
 
+      # Drop any local `dev` tag the checkout pulled in. Goreleaser's
+      # default `snapshot.version_template: '{{ incpatch .Version }}-snapshot'`
+      # walks back to the most-recent tag to compute the snapshot version;
+      # `dev` isn't semver so the template fails. Removing it locally
+      # forces goreleaser to fall back to the most recent semver tag
+      # (e.g. v0.1.1) which is what we want.
+      - name: Drop local dev tag (avoid goreleaser semver fail)
+        run: git tag -d dev 2>/dev/null || true
+
       - name: goreleaser (snapshot)
         working-directory: apps/polaris-cli
         run: goreleaser release --snapshot --clean --skip=publish,homebrew
