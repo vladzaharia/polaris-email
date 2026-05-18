@@ -106,7 +106,7 @@ wrangler r2 object list polaris-email --prefix att/ --json \
 ```
 
 A single sender pushing oversized attachments is the most common cause.
-Suppress the sender (`polaris-email suppression add ...`) and then
+Suppress the sender (`polaris-email suppress add ...`) and then
 prune their messages per the SQL above.
 
 <!-- Verified against: docs/runbooks/retention-and-cleanup.md @ c3c1b5048dd5bfe92facdce24982141a07446042 -->

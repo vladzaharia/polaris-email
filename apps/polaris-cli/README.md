@@ -243,21 +243,21 @@ a matching `mail_domains` row in D1.
 
 ```sh
 # Inventory every zone with rolled-up readiness pills.
-polaris-email cf-zone list
-polaris-email cf-zone list --refresh   # bypass the 60s server-side cache
+polaris-email domain cf-zone list
+polaris-email domain cf-zone list --refresh   # bypass the 60s server-side cache
 
 # Drill into one zone — prints each check + DNS errors / missing records /
 # named-rule routing targets.
-polaris-email cf-zone status plrs.im
+polaris-email domain cf-zone status plrs.im
 
 # Plan a configure run (dry-run by default — nothing is applied).
-polaris-email cf-zone configure plrs.im
+polaris-email domain cf-zone configure plrs.im
 
 # Apply the planned ops (exits non-zero if any fail).
-polaris-email cf-zone configure plrs.im --apply
+polaris-email domain cf-zone configure plrs.im --apply
 
 # Restrict to a subset of ops (useful for partial recovery after a failure).
-polaris-email cf-zone configure plrs.im --apply \
+polaris-email domain cf-zone configure plrs.im --apply \
   --ops enable_routing,set_catch_all_worker
 ```
 

@@ -82,10 +82,10 @@ mailbox via `mail_domains`. See
 ### `cf-zone` — discover and configure Cloudflare zones
 
 ```sh
-polaris-email cf-zone list
-polaris-email cf-zone status plrs.im
-polaris-email cf-zone configure plrs.im              # dry-run by default
-polaris-email cf-zone configure plrs.im --apply
+polaris-email domain cf-zone list
+polaris-email domain cf-zone status plrs.im
+polaris-email domain cf-zone configure plrs.im              # dry-run by default
+polaris-email domain cf-zone configure plrs.im --apply
 ```
 
 The CF-first path: instead of declaring "onboard this domain by name",
@@ -167,10 +167,10 @@ for what to do when a break is reported.
 ### `suppression` — manage the bi-directional suppression list
 
 ```sh
-polaris-email suppression list
-polaris-email suppression check user@example.com
-polaris-email suppression add
-polaris-email suppression remove <id>
+polaris-email suppress list
+polaris-email suppress check user@example.com
+polaris-email suppress add
+polaris-email suppress remove <id>
 ```
 
 The suppression list is bi-directional: bounces and complaints from

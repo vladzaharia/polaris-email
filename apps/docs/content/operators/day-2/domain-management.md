@@ -9,7 +9,7 @@ sidebar_position: 2
 
 Two paths exist for getting a domain into polaris-email:
 
-1. **CF zone discover + configure** (`polaris-email cf-zone configure`) —
+1. **CF zone discover + configure** (`polaris-email domain cf-zone configure`) —
    the canonical path when the zone lives in the same Cloudflare account
    as the control plane.
 2. **Legacy declarative onboard** (`polaris-email domain onboard`) — the
@@ -45,12 +45,12 @@ audit log is the canonical record of who applied what.
 ### CLI (parity)
 
 ```sh
-polaris-email cf-zone list                # all zones, status grid
-polaris-email cf-zone list --refresh      # bypass the 60s server-side cache
-polaris-email cf-zone status plrs.im      # detailed per-zone view
-polaris-email cf-zone configure plrs.im              # dry-run diff (default)
-polaris-email cf-zone configure plrs.im --apply      # actually apply
-polaris-email cf-zone configure plrs.im --apply \
+polaris-email domain cf-zone list                # all zones, status grid
+polaris-email domain cf-zone list --refresh      # bypass the 60s server-side cache
+polaris-email domain cf-zone status plrs.im      # detailed per-zone view
+polaris-email domain cf-zone configure plrs.im              # dry-run diff (default)
+polaris-email domain cf-zone configure plrs.im --apply      # actually apply
+polaris-email domain cf-zone configure plrs.im --apply \
     --ops set_catch_all_worker            # subset (partial recovery)
 ```
 
@@ -159,7 +159,7 @@ names the exact admin endpoint to call to remediate.
 polaris-email domain rotate-dkim acme.com
 
 # Zone-wide (all child domains using wildcard inheritance rotate together)
-polaris-email zone rotate-dkim acme.com
+polaris-email domain zone rotate-dkim acme.com
 ```
 
 Rotation flow:

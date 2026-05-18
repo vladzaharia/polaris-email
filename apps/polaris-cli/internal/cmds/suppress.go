@@ -1,14 +1,14 @@
-// W1 — `polaris-email suppression` CLI subtree.
+// W1 — `polaris-email suppress` CLI subtree.
 //
 // Mirrors the admin REST surface in services/api/src/routes/admin/suppressions.ts:
 //
-//   polaris-email suppression list   [--entity recipient|sender] [--reason ...] [--severity ...]
-//   polaris-email suppression check  <address>
-//   polaris-email suppression add    --entity recipient|sender --address <a>
+//   polaris-email suppress list   [--entity recipient|sender] [--reason ...] [--severity ...]
+//   polaris-email suppress check  <address>
+//   polaris-email suppress add    --entity recipient|sender --address <a>
 //                                    --reason <r> [--scope ...] [--scope-target ...]
 //                                    [--severity ...] [--notes ...]
-//   polaris-email suppression show   <id>
-//   polaris-email suppression remove <id> [--reason "why"]
+//   polaris-email suppress show   <id>
+//   polaris-email suppress remove <id> [--reason "why"]
 //
 // Manual add/remove are approval-gated server-side (dual-admin), so the CLI
 // surfaces a friendly hint when a 428 comes back.
@@ -44,29 +44,29 @@ type Suppression struct {
 	Notes             *string   `json:"notes"`
 }
 
-type suppressionListResponse struct {
+type suppressListResponse struct {
 	Data       []Suppression `json:"data"`
 	NextCursor *string       `json:"next_cursor"`
 }
 
-type suppressionCheckResponse struct {
+type suppressCheckResponse struct {
 	Address string        `json:"address"`
 	Data    []Suppression `json:"data"`
 }
 
-func newSuppressionCmd() *cobra.Command {
-	c := &cobra.Command{Use: "suppression", Short: "Manage the bi-directional suppression list"}
+func newSuppressCmd() *cobra.Command {
+	c := &cobra.Command{Use: "suppress", Short: "Manage the bi-directional suppression list"}
 	c.AddCommand(
-		suppressionListCmd(),
-		suppressionShowCmd(),
-		suppressionCheckCmd(),
-		suppressionAddCmd(),
-		suppressionRemoveCmd(),
+		suppressListCmd(),
+		suppressShowCmd(),
+		suppressCheckCmd(),
+		suppressAddCmd(),
+		suppressRemoveCmd(),
 	)
 	return c
 }
 
-func suppressionListCmd() *cobra.Command {
+func suppressListCmd() *cobra.Command {
 	var entityType, reason, source, severity, scope, address string
 	var includeDisabled bool
 	cmd := &cobra.Command{
@@ -103,7 +103,7 @@ func suppressionListCmd() *cobra.Command {
 			if encoded := q.Encode(); encoded != "" {
 				path += "?" + encoded
 			}
-			var out suppressionListResponse
+			var out suppressListResponse
 			if err := cl.DoJSON(CtxBackground(), "GET", path, nil, nil, &out); err != nil {
 				return err
 			}
@@ -137,7 +137,7 @@ func suppressionListCmd() *cobra.Command {
 	return cmd
 }
 
-func suppressionShowCmd() *cobra.Command {
+func suppressShowCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "show <id>",
 		Short: "Show a single suppression",
@@ -156,7 +156,7 @@ func suppressionShowCmd() *cobra.Command {
 	}
 }
 
-func suppressionCheckCmd() *cobra.Command {
+func suppressCheckCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "check <address>",
 		Short: "Return ALL active suppressions matching this address (both recipient + sender)",
@@ -168,7 +168,7 @@ func suppressionCheckCmd() *cobra.Command {
 			}
 			q := url.Values{}
 			q.Set("address", args[0])
-			var out suppressionCheckResponse
+			var out suppressCheckResponse
 			if err := cl.DoJSON(CtxBackground(), "GET", "/v1/admin/suppressions/check?"+q.Encode(), nil, nil, &out); err != nil {
 				return err
 			}
@@ -191,7 +191,7 @@ func suppressionCheckCmd() *cobra.Command {
 	}
 }
 
-func suppressionAddCmd() *cobra.Command {
+func suppressAddCmd() *cobra.Command {
 	var entity, address, reason, scope, scopeTarget, severity, notes, expiresAt string
 	cmd := &cobra.Command{
 		Use:   "add",
@@ -239,7 +239,7 @@ func suppressionAddCmd() *cobra.Command {
 	return cmd
 }
 
-func suppressionRemoveCmd() *cobra.Command {
+func suppressRemoveCmd() *cobra.Command {
 	var reason string
 	cmd := &cobra.Command{
 		Use:   "remove <id>",

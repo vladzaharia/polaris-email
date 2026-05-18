@@ -23,6 +23,12 @@ func newDomainCmd() *cobra.Command {
 		domainDeleteCmd(),
 		domainRotateDKIMCmd(),
 		domainBulkOnboardCmd(),
+		// Zone aggregates (polaris-side view) and Cloudflare zone
+		// operations (cf-side view) both belong under `domain` so the
+		// operator-visible namespace is consistent. The two top-level
+		// commands `zone` + `cf-zone` were folded into here in v0.1.1.
+		newZoneCmd(),
+		newCFZoneCmd(),
 	)
 	return c
 }

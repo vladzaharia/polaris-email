@@ -85,11 +85,11 @@ The suppression list is **bi-directional**:
 - **Inbound** — mail from suppressed addresses is also dropped.
 
 ```sh
-polaris-email suppression list
-polaris-email suppression check user@example.com
-polaris-email suppression show <id>
-polaris-email suppression add
-polaris-email suppression remove <id>
+polaris-email suppress list
+polaris-email suppress check user@example.com
+polaris-email suppress show <id>
+polaris-email suppress add
+polaris-email suppress remove <id>
 ```
 
 `suppression add` is interactive (it prompts for the address, reason,
