@@ -15,20 +15,43 @@
 //     even though `/.well-known/...` is a well-known path family that
 //     other routes might also use (none currently do).
 //
-// Cache discipline (RFC 8461 §3.2):
+// Cache discipline (RFC 8461 §3.2 + Workers Cache API):
 //   * The sender computes its own cache TTL from `max_age` in the body.
 //   * The HTTP response's `Cache-Control` is operator-facing only — it
 //     lets the Cloudflare edge cache the small policy file to absorb
-//     sender retry storms without hitting D1 on every fetch. Bumped to
-//     86400s (1 day) with `public, s-maxage` because the policy is keyed
-//     by Host header (intrinsically per-tenant) and changes only when an
-//     operator toggles mta_sts_mode (rare, manual). On change, an
-//     operator can purge the edge cache via the CF API — see
+//     sender retry storms without hitting D1 on every fetch. Set to
+//     86400s (1 day) with `public, s-maxage`.
+//   * We *also* wrap the handler in `caches.default.match`/`.put` with
+//     a canonicalised cache key. Two reasons: (1) the incoming Host
+//     header is case-insensitive (RFC 7230 §5.4) but the Cache API keys
+//     on the URL byte-for-byte, so without canonicalisation a mixed-case
+//     Host would miss the cache for the lowercase variant. (2) the
+//     Workers Cache API gives explicit semantics so the cache holds
+//     even if a future fronting Worker mutates Cache-Control. On
+//     mta_sts_mode change, an operator can purge via the CF API — see
 //     apps/docs/content/operators/day-2/cache-purge.md (TODO).
 import { Hono } from 'hono';
 import type { Env } from '../env.js';
 
 export const mtaStsPolicy = new Hono<{ Bindings: Env }>();
+
+// Canonical cache-key URL. Internal hostname (never resolves on the
+// public internet), domain segment is the lowercased per-tenant key.
+// Keeps cache entries stable across mixed-case Host headers, custom
+// ports, query strings, and any other request variability that the
+// underlying handler ignores.
+function cacheKeyFor(domain: string): Request {
+  return new Request(`https://mta-sts-cache.polaris.internal/${domain}/policy`, {
+    method: 'GET',
+  });
+}
+
+// `caches` is a Workers-runtime global; FakeD1 unit tests run in plain
+// Node where it's undefined. Resolve through `globalThis` so the unit
+// suite can fall through to the D1 path without a ReferenceError.
+function workersCache(): Cache | undefined {
+  return (globalThis as { caches?: CacheStorage }).caches?.default;
+}
 
 mtaStsPolicy.get('/.well-known/mta-sts.txt', async (c) => {
   // RFC 7230 §5.4: Host header is case-insensitive. We normalise to
@@ -38,10 +61,20 @@ mtaStsPolicy.get('/.well-known/mta-sts.txt', async (c) => {
   if (!host.startsWith('mta-sts.')) return c.notFound();
   const domain = host.slice('mta-sts.'.length);
 
+  const cache = workersCache();
+  const cacheKey = cacheKeyFor(domain);
+  if (cache) {
+    const cached = await cache.match(cacheKey);
+    if (cached) return cached;
+  }
+
   // Look up the tenant. Two short-circuits:
   //   * `disabled_at IS NOT NULL` → tenant offboarded; don't surface.
   //   * `mta_sts_mode = 'none'`   → policy explicitly disabled.
   // Both collapse to 404, indistinguishable from "domain we don't host".
+  // We deliberately do NOT cache the 404 path — it has no body cost on
+  // D1 and caching negative responses would delay a freshly-enabled
+  // tenant's first policy fetch.
   const row = await c.env.DB.prepare(
     `SELECT mta_sts_mode, mta_sts_max_age FROM mail_domains
      WHERE name = ? AND disabled_at IS NULL`,
@@ -60,15 +93,23 @@ mtaStsPolicy.get('/.well-known/mta-sts.txt', async (c) => {
     `mx: *.mx.cloudflare.net\r\n` +
     `max_age: ${row.mta_sts_max_age}\r\n`;
 
-  return new Response(body, {
+  const response = new Response(body, {
     status: 200,
     headers: {
       'content-type': 'text/plain; charset=utf-8',
       // Operator-facing edge cache TTL only; the sender ignores this
       // and trusts the in-body `max_age` field instead (RFC 8461 §3.2).
       // `public` so Cloudflare's anonymous edge caches it; `s-maxage`
-      // applies to shared (CDN) caches specifically.
+      // applies to shared (CDN) caches specifically. The Workers Cache
+      // API also honours `s-maxage` for its own TTL.
       'cache-control': 'public, s-maxage=86400, max-age=60',
     },
   });
+
+  // Clone before put — the original is what we hand back to the caller,
+  // and a Response body can only be consumed once. Skip silently on
+  // non-Workers runtimes (unit tests against FakeD1) where the Cache
+  // API isn't available.
+  if (cache) c.executionCtx.waitUntil(cache.put(cacheKey, response.clone()));
+  return response;
 });

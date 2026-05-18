@@ -194,4 +194,88 @@ describe('services/api MTA-STS public policy handler (pool-workers)', () => {
     const res = await callWorker(new Request('https://x/healthz'));
     expect(res.status).toBe(200);
   });
+
+  it('caches a 200 policy and serves the second request without touching D1', async () => {
+    // Wraps the handler around `caches.default.match` / `.put`. The
+    // first call seeds the cache via `executionCtx.waitUntil`; the
+    // second must come back with the same body even if the D1 row
+    // disappears underneath us. We simulate that by dropping the row
+    // between the two calls — the cache HIT path is the only way the
+    // second response can still be 200.
+    const domain = 'acme-cached.test';
+    await seedDomain({ domain, mode: 'enforce', maxAge: 12345 });
+
+    const req = () =>
+      new Request(`https://mta-sts.${domain}/.well-known/mta-sts.txt`, {
+        method: 'GET',
+        headers: { host: `mta-sts.${domain}` },
+      });
+
+    const first = await callWorker(req());
+    expect(first.status).toBe(200);
+    const firstBody = await first.text();
+    expect(firstBody).toContain('max_age: 12345');
+
+    // Yank the D1 row. If the second response is still a 200 with
+    // `max_age: 12345`, the cache served it.
+    await testEnv.DB.prepare(`DELETE FROM mail_domains WHERE name = ?`).bind(domain).run();
+
+    const second = await callWorker(req());
+    expect(second.status).toBe(200);
+    const secondBody = await second.text();
+    expect(secondBody).toContain('max_age: 12345');
+    expect(secondBody).toBe(firstBody);
+  });
+
+  it('cache key normalises across mixed-case Host headers', async () => {
+    // Workers Cache API keys on URL bytes, but our cache-key URL is
+    // built from the lowercased Host. The mixed-case fetch and the
+    // lowercase fetch must therefore share a cache entry.
+    const domain = 'acme-cache-mixedcase.test';
+    await seedDomain({ domain, mode: 'enforce', maxAge: 99999 });
+
+    const lowerReq = new Request(`https://mta-sts.${domain}/.well-known/mta-sts.txt`, {
+      method: 'GET',
+      headers: { host: `mta-sts.${domain}` },
+    });
+    const first = await callWorker(lowerReq);
+    expect(first.status).toBe(200);
+
+    // Drop the row so only the cache can satisfy the next request.
+    await testEnv.DB.prepare(`DELETE FROM mail_domains WHERE name = ?`).bind(domain).run();
+
+    const upperReq = new Request(`https://mta-sts.${domain}/.well-known/mta-sts.txt`, {
+      method: 'GET',
+      headers: { host: `MTA-STS.${domain.toUpperCase()}` },
+    });
+    const second = await callWorker(upperReq);
+    expect(second.status).toBe(200);
+    expect(await second.text()).toContain('max_age: 99999');
+  });
+
+  it('does not cache 404 responses', async () => {
+    // Negative responses must not be cached — otherwise a freshly-
+    // onboarded tenant would 404 for up to 24 h after enabling MTA-STS.
+    const domain = 'acme-cache-404.test';
+
+    // First call: domain doesn't exist → 404.
+    const first = await callWorker(
+      new Request(`https://mta-sts.${domain}/.well-known/mta-sts.txt`, {
+        method: 'GET',
+        headers: { host: `mta-sts.${domain}` },
+      }),
+    );
+    expect(first.status).toBe(404);
+
+    // Seed the domain and re-fetch — must hit D1 (not a cached 404) and
+    // return 200.
+    await seedDomain({ domain, mode: 'enforce', maxAge: 86400 });
+    const second = await callWorker(
+      new Request(`https://mta-sts.${domain}/.well-known/mta-sts.txt`, {
+        method: 'GET',
+        headers: { host: `mta-sts.${domain}` },
+      }),
+    );
+    expect(second.status).toBe(200);
+  });
 });
