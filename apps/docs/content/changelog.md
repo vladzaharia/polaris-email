@@ -11,6 +11,35 @@ This file tracks notable architectural changes. For operator-visible
 behavior, see [consumer contract](/reference/consumer-contract); for
 cutover runbooks, see [Operators → Deploy](/operators).
 
+## 2026-05-18 — v0.1.2 — Smarter install-method detection
+
+Small follow-up to v0.1.1's self-upgrader: hand-built binaries that
+get copied OUT of the polaris-email checkout (e.g. via
+`make build && cp bin/polaris-email ~/.local/bin/`) now auto-classify
+as `InstallMethodLocal` and auto-default to the `local` upgrade
+channel — no `polaris-email version channel set local` step required.
+
+How it works:
+
+- Detection gains a build-info heuristic: when the running binary's
+  ldflag-injected `Version` is the package default `"dev"` (i.e.
+  goreleaser didn't inject a real semver tag) AND
+  `runtime/debug.ReadBuildInfo()` confirms the main module is
+  polaris-cli, the install method resolves to `local`.
+- New `DefaultChannelFor(method)` returns `local` for local installs,
+  `stable` otherwise.
+- New `ResolveChannel(state.Channel, method)` honours an explicit
+  operator choice when present, falls through to install-method
+  defaulting when state is empty.
+
+Operator impact:
+
+- Contributors iterating on the CLI no longer have a way to silently
+  get a stable-tag upgrade clobber their in-flight work.
+- `polaris-email version channel` now shows whether the channel is
+  explicit (operator picked it) or default (derived from install
+  method).
+
 ## 2026-05-18 — v0.1.1 — Operator-experience pass
 
 Four parallel workstreams in v0.1.1, all aimed at making the CLI +

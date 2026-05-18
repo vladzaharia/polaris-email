@@ -46,10 +46,41 @@ func AllChannels() []Channel {
 	return []Channel{ChannelStable, ChannelDev, ChannelLocal}
 }
 
+// DefaultChannelFor returns the Channel that should be used when no
+// explicit operator selection has been persisted yet. The rule is
+// simple: a `make build` install (InstallMethodLocal) wants the
+// `local` channel — operators iterating on the CLI itself don't want
+// an opportunistic upgrade to silently clobber their in-flight work
+// with a stable-tag download. Everything else defaults to stable.
+func DefaultChannelFor(method InstallMethod) Channel {
+	if method == InstallMethodLocal {
+		return ChannelLocal
+	}
+	return ChannelStable
+}
+
+// ResolveChannel returns the channel to use given the persisted state
+// and the currently-detected install method. If the operator has
+// explicitly set a channel (state.Channel non-empty), that wins —
+// the install-method-driven default is only used when the operator
+// hasn't picked anything yet.
+func ResolveChannel(stateChannel string, method InstallMethod) Channel {
+	if stateChannel != "" {
+		if ch, err := ParseChannel(stateChannel); err == nil {
+			return ch
+		}
+	}
+	return DefaultChannelFor(method)
+}
+
 // ParseChannel normalises operator input (case-insensitive). Empty
 // strings default to ChannelStable rather than erroring — a fresh
 // config.toml has no channel field set and we want the default to be
 // inferred without forcing a `channel set stable` after first install.
+//
+// Callers that want install-method-aware defaulting (e.g. auto-pick
+// `local` on a `make build` install) should use ResolveChannel
+// instead.
 func ParseChannel(s string) (Channel, error) {
 	switch strings.ToLower(strings.TrimSpace(s)) {
 	case "", "stable":

@@ -67,10 +67,13 @@ This command skips the 1h launch-time throttle.`,
 			if err != nil {
 				return err
 			}
-			channel, err := upgrader.ParseChannel(state.Channel)
-			if err != nil {
-				return err
-			}
+			// Resolve channel through install-method-aware defaulting:
+			// a `make build` binary defaults to the `local` channel
+			// even when state.Channel is empty, so the upgrade doesn't
+			// silently swap in a stable tarball over the operator's
+			// in-flight work.
+			method, _ := upgrader.DetectInstallMethod(dir, Version)
+			channel := upgrader.ResolveChannel(state.Channel, method)
 
 			upd, err := upgrader.CheckLatest(ctx, channel, Version)
 			if err != nil {
@@ -86,7 +89,6 @@ This command skips the 1h launch-time throttle.`,
 				return nil
 			}
 
-			method, _ := upgrader.DetectInstallMethod(dir)
 			progress := func(p upgrader.Progress) {
 				if p.BytesTotal > 0 {
 					fmt.Fprintf(os.Stderr, "[upgrade] %s %d/%d\n", p.Stage, p.BytesDone, p.BytesTotal)
@@ -122,9 +124,13 @@ func newVersionChannelCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			ch, _ := upgrader.ParseChannel(state.Channel)
-			method, _ := upgrader.DetectInstallMethod(dir)
-			fmt.Fprintf(Out, "channel:        %s\n", ch)
+			method, _ := upgrader.DetectInstallMethod(dir, Version)
+			ch := upgrader.ResolveChannel(state.Channel, method)
+			origin := "explicit"
+			if state.Channel == "" {
+				origin = "default (via install method)"
+			}
+			fmt.Fprintf(Out, "channel:        %s  (%s)\n", ch, origin)
 			fmt.Fprintf(Out, "install method: %s\n", method)
 			fmt.Fprintf(Out, "current binary: %s\n", Version)
 			return nil

@@ -66,10 +66,13 @@ func maybeUpgrade(_ *cobra.Command) {
 	if err != nil {
 		return
 	}
-	channel, err := upgrader.ParseChannel(state.Channel)
-	if err != nil {
-		return
-	}
+	// install-method-aware channel resolve — see version.go's
+	// `version upgrade` for the same pattern. A make-build binary
+	// auto-defaults to the local channel even when state.Channel is
+	// empty, so the pre-run never tries to fetch a stable tarball
+	// over an in-flight dev build.
+	method, _ := upgrader.DetectInstallMethod(dir, Version)
+	channel := upgrader.ResolveChannel(state.Channel, method)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -80,8 +83,6 @@ func maybeUpgrade(_ *cobra.Command) {
 	if upd == nil {
 		return
 	}
-
-	method, _ := upgrader.DetectInstallMethod(dir)
 
 	// Print an orange-bordered notice to stderr. ANSI 38;5;215 is a
 	// peach close to Catppuccin macchiato Peach (#f5a97f) — same shade

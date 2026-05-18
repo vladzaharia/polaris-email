@@ -126,16 +126,83 @@ func TestDetectInstallMethodSentinel(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "install-method"), []byte("curl\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	got, err := DetectInstallMethod(dir)
+	// Pass a non-"dev" version so the build-info heuristic doesn't
+	// short-circuit to local before we get to the sentinel check.
+	// (When the test binary itself runs under `go test` inside the
+	// polaris-email checkout, isDevBuild would otherwise return true
+	// since the test binary inherits the polaris-cli main module.)
+	got, err := DetectInstallMethod(dir, "v9.9.9")
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Path-based detection may fire first (e.g. when `go test` is
-	// running from inside a polaris-email checkout under
-	// apps/polaris-cli/), so we accept either the sentinel value OR a
-	// successful path match. The important invariant is that the
-	// sentinel is read when path detection returns Unknown.
-	if got != InstallMethodCurl && got != InstallMethodLocal {
-		t.Errorf("DetectInstallMethod returned %q; expected curl (from sentinel) or local (from path)", got)
+	if got != InstallMethodCurl {
+		t.Errorf("DetectInstallMethod with sentinel = %q; want curl", got)
+	}
+}
+
+func TestDetectInstallMethodLocalFromDevBuild(t *testing.T) {
+	// Running `go test` inside the polaris-cli module: the test
+	// binary's debug.BuildInfo.Main.Path matches polarisModulePath.
+	// With runningVersion == "dev" (the package default), detection
+	// should return InstallMethodLocal without needing a sentinel
+	// file or the `apps/polaris-cli/bin/` path match.
+	got, err := DetectInstallMethod(t.TempDir(), "dev")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// On systems where the test binary's debug.BuildInfo isn't
+	// populated (rare; usually only when stripped or when the test
+	// binary lives in $GOPATH/pkg) we'd see InstallMethodUnknown.
+	// Either is acceptable; what's not acceptable is curl/brew —
+	// those would mean the heuristic mis-fired.
+	if got != InstallMethodLocal && got != InstallMethodUnknown {
+		t.Errorf("dev-build detection = %q; want local or unknown", got)
+	}
+}
+
+func TestDetectInstallMethodSemverSkipsLocalHeuristic(t *testing.T) {
+	// A runtime version that's a real semver tag should NOT trigger
+	// the dev-build heuristic — it means goreleaser injected the
+	// ldflag, so the binary came from a tarball install. With no
+	// sentinel + no path match, we expect unknown.
+	got, err := DetectInstallMethod(t.TempDir(), "v0.1.2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Path-match could still fire if the test binary happens to live
+	// at `apps/polaris-cli/bin/...` — accept that.
+	if got != InstallMethodUnknown && got != InstallMethodLocal {
+		t.Errorf("semver-version detection = %q; expected unknown (or local from path match)", got)
+	}
+}
+
+func TestDefaultChannelFor(t *testing.T) {
+	cases := map[InstallMethod]Channel{
+		InstallMethodLocal:   ChannelLocal,
+		InstallMethodBrew:    ChannelStable,
+		InstallMethodCurl:    ChannelStable,
+		InstallMethodUnknown: ChannelStable,
+	}
+	for method, want := range cases {
+		if got := DefaultChannelFor(method); got != want {
+			t.Errorf("DefaultChannelFor(%q) = %q, want %q", method, got, want)
+		}
+	}
+}
+
+func TestResolveChannel(t *testing.T) {
+	// Explicit operator preference wins.
+	if got := ResolveChannel("dev", InstallMethodLocal); got != ChannelDev {
+		t.Errorf("explicit dev should beat local default: got %q", got)
+	}
+	if got := ResolveChannel("stable", InstallMethodLocal); got != ChannelStable {
+		t.Errorf("explicit stable should beat local default: got %q", got)
+	}
+	// Empty state — fall through to install-method default.
+	if got := ResolveChannel("", InstallMethodLocal); got != ChannelLocal {
+		t.Errorf("local install method should default to local: got %q", got)
+	}
+	if got := ResolveChannel("", InstallMethodCurl); got != ChannelStable {
+		t.Errorf("curl install method should default to stable: got %q", got)
 	}
 }

@@ -4,6 +4,47 @@ This file tracks notable architectural changes. For operator-visible
 behavior, see [`CONSUMER-CONTRACT.md`](CONSUMER-CONTRACT.md); for cutover
 runbooks, see [`docs/deploy.md`](docs/deploy.md).
 
+## 2026-05-18 — v0.1.2 — Smarter install-method detection
+
+Small follow-up to v0.1.1's self-upgrader: hand-built binaries that
+get copied OUT of the polaris-email checkout (e.g. via
+`make build && cp bin/polaris-email ~/.local/bin/`) now auto-classify
+as `InstallMethodLocal` and auto-default to the `local` upgrade
+channel — no `polaris-email version channel set local` step required.
+
+How it works:
+
+- `DetectInstallMethod(configDir, runningVersion)` gains a third
+  detection step: when `runningVersion == "dev"` (the package default
+  set when goreleaser ldflag injection didn't fire) AND
+  `runtime/debug.ReadBuildInfo().Main.Path == polaris-cli's module
+  path`, the binary is classified as local-dev. Catches the case
+  where `make build` produced the binary and the operator copied it
+  to a generic install path.
+- New `DefaultChannelFor(method)` returns `local` for local installs,
+  `stable` otherwise.
+- New `ResolveChannel(state.Channel, method)` honours an explicit
+  operator choice (set via `version channel set …`) when present, and
+  falls through to `DefaultChannelFor` when state is empty. Plumbed
+  through `version channel`, `version upgrade`, and the
+  PersistentPreRunE opportunistic check.
+
+Operator impact:
+
+- Contributors iterating on the CLI no longer have a way to silently
+  get a stable-tag upgrade clobber their in-flight work. The pre-run
+  check on a `make build` binary resolves to `local` channel, which
+  means "compare against sibling checkout's bin/" — a no-op against
+  the same binary the operator just installed.
+- `polaris-email version channel` now annotates the channel line with
+  its origin (`(explicit)` vs `(default (via install method))`), so
+  operators can tell at a glance whether they've explicitly picked
+  one or whether it's auto-derived.
+
+4 new unit tests in `internal/upgrader/upgrader_test.go` covering
+DefaultChannelFor / ResolveChannel / dev-build detection /
+semver-version-skips-the-heuristic.
+
 ## 2026-05-18 — v0.1.1 — Operator-experience pass
 
 Four parallel workstreams in v0.1.1, all aimed at making the CLI +

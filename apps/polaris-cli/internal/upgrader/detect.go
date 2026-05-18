@@ -4,11 +4,22 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 )
 
+// polarisModulePath is the Go module path of the polaris-cli main
+// module. runtime/debug.ReadBuildInfo() returns this for any binary
+// built from this module — whether by `make build` or by goreleaser.
+const polarisModulePath = "github.com/vladzaharia/polaris-email/apps/polaris-cli"
+
 // DetectInstallMethod inspects the currently-running binary path to
-// figure out how it got onto disk. Detection order (first match wins):
+// figure out how it got onto disk. runningVersion is the binary's
+// version banner (internal/cmds.Version); we use it to distinguish
+// a `make build` artefact (Version == "dev", no goreleaser ldflag
+// injection) from a tarball install at the same path.
+//
+// Detection order (first match wins):
 //
 //  1. The path (resolved through symlinks) contains a Homebrew Cellar
 //     segment — `Cellar/polaris-email/` for macOS Homebrew or
@@ -16,16 +27,22 @@ import (
 //  2. The path lives inside a polaris-email git checkout, identified by
 //     the `apps/polaris-cli/bin/` segment AND the presence of a `.git`
 //     directory in some ancestor.
-//  3. A sentinel file at `<config-dir>/install-method` exists — the
+//  3. The binary was built via `make build` (runtime/debug.BuildInfo's
+//     Main.Path matches polarisModulePath, AND runningVersion is the
+//     uninjected default "dev"). Catches the case where the operator
+//     ran `make build` and copied the result to ~/.local/bin/ — the
+//     binary isn't in the checkout anymore, but it's clearly a dev
+//     build.
+//  4. A sentinel file at `<config-dir>/install-method` exists — the
 //     install.sh script writes "curl" here on a fresh install. This is
 //     the disambiguator for "binary lives at /usr/local/bin/polaris-email
 //     but we don't know how it got there."
-//  4. Default: InstallMethodUnknown. The upgrader will treat this like
+//  5. Default: InstallMethodUnknown. The upgrader will treat this like
 //     curl (tarball + replace) but log a warning.
 //
 // configDir is `~/.config/polaris-email` for production; tests pass a
 // temp directory.
-func DetectInstallMethod(configDir string) (InstallMethod, error) {
+func DetectInstallMethod(configDir string, runningVersion string) (InstallMethod, error) {
 	exe, err := os.Executable()
 	if err != nil {
 		return InstallMethodUnknown, err
@@ -43,6 +60,15 @@ func DetectInstallMethod(configDir string) (InstallMethod, error) {
 		return method, nil
 	}
 
+	// Build-info heuristic. A goreleaser tarball install has
+	// runningVersion set to a real semver (vX.Y.Z) via ldflag; a
+	// `make build` keeps it at the package default "dev". Combined
+	// with the module-path check, this catches dev binaries that have
+	// been copied OUT of the checkout to ~/.local/bin/ or /usr/local/bin/.
+	if isDevBuild(runningVersion) {
+		return InstallMethodLocal, nil
+	}
+
 	// Sentinel-file disambiguator. Read once; never written from this
 	// function (install.sh owns the write).
 	if sentinel := readSentinel(configDir); sentinel != InstallMethodUnknown {
@@ -50,6 +76,26 @@ func DetectInstallMethod(configDir string) (InstallMethod, error) {
 	}
 
 	return InstallMethodUnknown, nil
+}
+
+// isDevBuild returns true when the running binary was produced by
+// `make build` (or `go build`) rather than goreleaser. Two signals:
+//
+//   - runningVersion is the package default "dev" — goreleaser
+//     overrides this via ldflag with the tag value (vX.Y.Z).
+//   - runtime/debug.BuildInfo's main module path matches polaris-cli's
+//     module path. This rules out the case where someone forks the
+//     repo and renames the module — their build wouldn't be a polaris
+//     dev binary.
+func isDevBuild(runningVersion string) bool {
+	if runningVersion != "dev" {
+		return false
+	}
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		return false
+	}
+	return info.Main.Path == polarisModulePath
 }
 
 // detectFromPath matches the resolved binary path against known
