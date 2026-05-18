@@ -4,6 +4,60 @@ This file tracks notable architectural changes. For operator-visible
 behavior, see [`CONSUMER-CONTRACT.md`](CONSUMER-CONTRACT.md); for cutover
 runbooks, see [`docs/deploy.md`](docs/deploy.md).
 
+## 2026-05-18 — v0.1.1 — Operator-experience pass
+
+Four parallel workstreams in v0.1.1, all aimed at making the CLI +
+infra-provision flow zero-friction for fresh installs.
+
+- **Built-in self-upgrader.** New `internal/upgrader/` package plus
+  the `polaris-email version upgrade` / `version channel set` /
+  `version channel list` subcommands. Detects install method (brew /
+  curl / local-repo via path patterns + a sentinel file the install
+  script writes), resolves the latest release for the operator's
+  chosen channel (stable / dev / local), downloads the tarball with
+  byte-accurate progress, verifies sha256 against `checksums.txt`,
+  atomic-replaces the running binary, and re-execs into it. On TUI
+  launch the orange-bordered Catppuccin-Peach infobox displaces the
+  status bar with a download bar that pivots to a 10-second
+  countdown before relaunching; Enter restarts immediately, Esc
+  cancels. CLI subcommands block via `PersistentPreRunE`. State
+  persisted in a separate `~/.config/polaris-email/upgrader-state.json`
+  so the credentials TOML is never touched. New
+  `.github/workflows/dev-snapshot.yml` force-replaces a persistent
+  `dev` GitHub release on every main-branch push.
+
+- **Logpush R2 zero-config.** `polaris-email setup infra apply` now
+  auto-provisions the `polaris-email-logs` R2 bucket (default
+  jurisdiction, `wnam` region hint, 30-day lifecycle expiry), an R2
+  API token scoped to that bucket, and the Logpush job that ships
+  `workers_trace_events` into it. The four `LOGPUSH_R2_*` config
+  fields are GONE — operators get observability for free.
+  `LOGPUSH_DESTINATION_URL` remains as the optional HTTP-sink
+  override for Better Stack / Honeycomb / Datadog.
+  `infra/terraform/modules/logpush/` deleted (Go CLI owns provision
+  now, matching the existing pattern).
+
+- **Command-tree cleanup.** `suppression` → `suppress` (file
+  renamed, internal helpers renormalised). `zone` + `cf-zone` folded
+  under `domain`: `pml domain zone list/show/rotate-dkim` and
+  `pml domain cf-zone list/status/configure`. 23 doc lines flipped to
+  the new paths.
+
+- **R2 buckets to US-west.** Both `polaris-email` (existing) and
+  `polaris-email-logs` (new) ship with `LocationHint: "wnam"` and no
+  jurisdiction. Existing operators with the bucket already in `eu`
+  keep that location — CF only honours hints on first creation.
+
+Operator-visible impact:
+
+- Existing v0.1.0 installs auto-update on first `polaris-email <cmd>`
+  invocation (or via the orange infobox on TUI launch).
+- Fresh installs get observability out of the box — no manual R2
+  bucket or API token creation.
+- The `suppression` + `zone` + `cf-zone` command paths are GONE; use
+  `suppress` + `domain zone *` + `domain cf-zone *` instead. No
+  backwards-compat aliases.
+
 ## 2026-05-17 — Off-platform audit anchors removed
 
 The off-platform audit-anchor mechanism (hourly Worker cron writing signed
