@@ -47,10 +47,8 @@ func (v *ValidationError) HasErrors() bool { return len(v.Fields) > 0 }
 //   - CF_ACCOUNT_ID, POLARIS_API_HOSTNAME (preflight enforces too)
 //
 // Cross-field rules:
-//   - If any ANCHOR_S3_* secret is set, both ID + secret must be set
 //   - SYNTHETIC_FROM / SYNTHETIC_TO must parse as email addresses if non-empty
-//   - OIDC_ISSUER / ALERT_WEBHOOK / ANCHOR_S3_ENDPOINT must parse as URLs
-//     if non-empty
+//   - OIDC_ISSUER / ALERT_WEBHOOK must parse as URLs if non-empty
 func Validate(c *Config) error {
 	if c == nil {
 		return errors.New("config: Validate requires a non-nil *Config")
@@ -70,7 +68,6 @@ func Validate(c *Config) error {
 	}{
 		{"OIDC_ISSUER", c.OIDCIssuer},
 		{"ALERT_WEBHOOK", c.AlertWebhook},
-		{"ANCHOR_S3_ENDPOINT", c.AnchorS3Endpoint},
 	} {
 		if f.Val == "" {
 			continue
@@ -111,25 +108,6 @@ func Validate(c *Config) error {
 		}
 		if strings.ContainsAny(f.Val, " /\t") || strings.Contains(f.Val, "://") {
 			v.add(f.Key, fmt.Sprintf("expected a bare hostname, got %q", f.Val))
-		}
-	}
-
-	// Cross-field: B2 secret pair must be all-or-nothing.
-	idSet := strings.TrimSpace(c.AnchorS3AccessKeyID) != ""
-	secretSet := strings.TrimSpace(c.AnchorS3SecretAccessKey) != ""
-	switch {
-	case idSet && !secretSet:
-		v.add("ANCHOR_S3_SECRET_ACCESS_KEY", "required when ANCHOR_S3_ACCESS_KEY_ID is set")
-	case !idSet && secretSet:
-		v.add("ANCHOR_S3_ACCESS_KEY_ID", "required when ANCHOR_S3_SECRET_ACCESS_KEY is set")
-	}
-	// Cross-field: if any B2 field is set, endpoint + bucket must be too.
-	if idSet || secretSet {
-		if strings.TrimSpace(c.AnchorS3Endpoint) == "" {
-			v.add("ANCHOR_S3_ENDPOINT", "required when ANCHOR_S3_ACCESS_KEY_ID/SECRET is set")
-		}
-		if strings.TrimSpace(c.AnchorS3Bucket) == "" {
-			v.add("ANCHOR_S3_BUCKET", "required when ANCHOR_S3_ACCESS_KEY_ID/SECRET is set")
 		}
 	}
 

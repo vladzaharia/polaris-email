@@ -58,22 +58,6 @@ func (d *sdkDatasource) AuditChainStatus(ctx context.Context) (*AuditChainStatus
 	return &out, nil
 }
 
-func (d *sdkDatasource) AuditAnchors(ctx context.Context, limit int) ([]AnchorRow, error) {
-	cctx, cancel := d.deadline(ctx)
-	defer cancel()
-	q := url.Values{}
-	if limit > 0 {
-		q.Set("limit", itoa(limit))
-	}
-	var resp struct {
-		Data []AnchorRow `json:"data"`
-	}
-	if err := d.cli.DoJSON(cctx, "GET", "/v1/admin/audit/anchors", q, nil, &resp); err != nil {
-		return nil, err
-	}
-	return resp.Data, nil
-}
-
 func (d *sdkDatasource) AuditEntries(ctx context.Context, limit int) ([]AuditEntry, error) {
 	cctx, cancel := d.deadline(ctx)
 	defer cancel()

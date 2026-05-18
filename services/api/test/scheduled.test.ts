@@ -11,78 +11,11 @@ const ctx = {
   passThroughOnException() {},
 } as unknown as ExecutionContext;
 
-function masterB64() {
-  const b = new Uint8Array(32);
-  crypto.getRandomValues(b);
-  let s = '';
-  for (const x of b) s += String.fromCharCode(x);
-  return btoa(s);
-}
-
 afterEach(() => {
   vi.restoreAllMocks();
 });
 
 describe('scheduled dispatch', () => {
-  it('hourly cron runs the anchor handler (writes via SigV4 PUT to B2)', async () => {
-    // anchors are written via packages/object-lock against an
-    // external S3 endpoint. Capture the signed PUT by mocking global fetch.
-    const fetched: Request[] = [];
-    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
-      fetched.push(new Request(String(input), init as RequestInit));
-      return new Response('', { status: 200 });
-    });
-    const dbInserts: unknown[] = [];
-    const env = {
-      DB: {
-        prepare(sql: string) {
-          return {
-            bind(...p: unknown[]) {
-              this._p = p;
-              return this;
-            },
-            _p: [] as unknown[],
-            async first() {
-              if (sql.includes('audit_log ORDER BY id DESC')) {
-                return { id: 42, row_hash: 'a'.repeat(64), at: 100 };
-              }
-              // anchor.ts uses `INSERT … RETURNING id` (read via .first()),
-              // not the older two-step `.run()` then SELECT pattern.
-              if (sql.includes('INSERT INTO audit_anchors')) {
-                dbInserts.push(this._p);
-                return { id: dbInserts.length };
-              }
-              return null;
-            },
-            async run() {
-              return { meta: { changes: 1 } };
-            },
-          };
-        },
-      } as unknown as D1Database,
-      R2: {} as unknown as R2Bucket,
-      ANCHOR_R2_PREFIX: 'anchors/',
-      ANCHOR_SIGNING_KEY: masterB64(),
-      ANCHOR_S3_ENDPOINT: 'https://s3.us-west-005.backblazeb2.com',
-      ANCHOR_S3_BUCKET: 'polaris-anchors-test',
-      ANCHOR_S3_REGION: 'us-west-005',
-      ANCHOR_S3_ACCESS_KEY_ID: 'test-access-key',
-      ANCHOR_S3_SECRET_ACCESS_KEY: 'test-secret-key',
-      ALERT_WEBHOOK: '',
-      API_BASE_URL: '',
-      MAX_LATENCY_MS: '30000',
-    } as unknown as Env;
-    await worker.scheduled!({ cron: '0 * * * *' } as ScheduledEvent, env, ctx);
-    expect(fetched.length).toBe(1);
-    expect(fetched[0]!.method).toBe('PUT');
-    expect(fetched[0]!.url).toMatch(
-      /^https:\/\/s3\.us-west-005\.backblazeb2\.com\/polaris-anchors-test\/anchors\//,
-    );
-    expect(fetched[0]!.headers.get('x-amz-object-lock-mode')).toBe('COMPLIANCE');
-    expect(fetched[0]!.headers.get('authorization')).toMatch(/^AWS4-HMAC-SHA256 /);
-    expect(dbInserts.length).toBe(1);
-  });
-
   it('weekly cron runs staleness (empty audit log → no alert)', async () => {
     const env = {
       DB: {
@@ -98,7 +31,6 @@ describe('scheduled dispatch', () => {
         },
       } as unknown as D1Database,
       R2: {} as unknown as R2Bucket,
-      ANCHOR_R2_PREFIX: 'anchors/',
       ALERT_WEBHOOK: '',
       API_BASE_URL: '',
       MAX_LATENCY_MS: '30000',
@@ -112,7 +44,6 @@ describe('scheduled dispatch', () => {
     const env = {
       DB: {} as unknown as D1Database,
       R2: {} as unknown as R2Bucket,
-      ANCHOR_R2_PREFIX: 'anchors/',
       ALERT_WEBHOOK: '',
       API_BASE_URL: '',
       MAX_LATENCY_MS: '30000',
@@ -155,7 +86,6 @@ describe('scheduled dispatch', () => {
         DB: {} as unknown as D1Database,
         R2: {} as unknown as R2Bucket,
         KV_RATE_LIMIT: kv,
-        ANCHOR_R2_PREFIX: 'anchors/',
         ALERT_WEBHOOK: alertUrl,
         API_BASE_URL: 'https://api.example.test',
         MAX_LATENCY_MS: '30000',
@@ -233,7 +163,6 @@ describe('scheduled dispatch', () => {
       R2: {
         async delete() {},
       } as unknown as R2Bucket,
-      ANCHOR_R2_PREFIX: 'anchors/',
       ALERT_WEBHOOK: '',
       API_BASE_URL: '',
       MAX_LATENCY_MS: '30000',

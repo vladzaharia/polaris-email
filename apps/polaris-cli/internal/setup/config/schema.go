@@ -53,12 +53,6 @@ type Config struct {
 	SyntheticFrom string `json:"SYNTHETIC_FROM" yaml:"SYNTHETIC_FROM"`
 	// SyntheticTo is the synthetic monitor's TO address.
 	SyntheticTo string `json:"SYNTHETIC_TO" yaml:"SYNTHETIC_TO"`
-	// AnchorS3Endpoint is the S3-compatible endpoint URL (Backblaze B2).
-	AnchorS3Endpoint string `json:"ANCHOR_S3_ENDPOINT" yaml:"ANCHOR_S3_ENDPOINT"`
-	// AnchorS3Bucket is the Object-Lock COMPLIANCE bucket name.
-	AnchorS3Bucket string `json:"ANCHOR_S3_BUCKET" yaml:"ANCHOR_S3_BUCKET"`
-	// AnchorS3Region is the bucket's region (e.g. us-west-005).
-	AnchorS3Region string `json:"ANCHOR_S3_REGION" yaml:"ANCHOR_S3_REGION"`
 	// OIDCIssuer is the OIDC discovery URL for the admin panel.
 	OIDCIssuer string `json:"OIDC_ISSUER" yaml:"OIDC_ISSUER"`
 	// OIDCClientID is the OIDC client ID for the admin panel.
@@ -72,12 +66,6 @@ type Config struct {
 	// OIDCClientSecret is the OIDC client secret seeded into the panel
 	// Worker via `wrangler secret put` at bootstrap time.
 	OIDCClientSecret string `json:"OIDC_CLIENT_SECRET" yaml:"OIDC_CLIENT_SECRET"`
-	// AnchorS3AccessKeyID is the B2 application key ID for the anchor
-	// bucket.
-	AnchorS3AccessKeyID string `json:"ANCHOR_S3_ACCESS_KEY_ID" yaml:"ANCHOR_S3_ACCESS_KEY_ID"`
-	// AnchorS3SecretAccessKey is the B2 application key secret for the
-	// anchor bucket.
-	AnchorS3SecretAccessKey string `json:"ANCHOR_S3_SECRET_ACCESS_KEY" yaml:"ANCHOR_S3_SECRET_ACCESS_KEY"`
 }
 
 // FieldOrder is the canonical order .env.deploy is serialized in.
@@ -95,11 +83,6 @@ var FieldOrder = []string{
 	"OIDC_ISSUER",
 	"OIDC_CLIENT_ID",
 	"OIDC_CLIENT_SECRET",
-	"ANCHOR_S3_ENDPOINT",
-	"ANCHOR_S3_BUCKET",
-	"ANCHOR_S3_REGION",
-	"ANCHOR_S3_ACCESS_KEY_ID",
-	"ANCHOR_S3_SECRET_ACCESS_KEY",
 	"R2_PUBLIC_HOST",
 	"BRIDGE_HOST",
 }
@@ -134,11 +117,6 @@ func (c *Config) AsMap() map[string]string {
 		"OIDC_ISSUER":                 c.OIDCIssuer,
 		"OIDC_CLIENT_ID":              c.OIDCClientID,
 		"OIDC_CLIENT_SECRET":          c.OIDCClientSecret,
-		"ANCHOR_S3_ENDPOINT":          c.AnchorS3Endpoint,
-		"ANCHOR_S3_BUCKET":            c.AnchorS3Bucket,
-		"ANCHOR_S3_REGION":            c.AnchorS3Region,
-		"ANCHOR_S3_ACCESS_KEY_ID":     c.AnchorS3AccessKeyID,
-		"ANCHOR_S3_SECRET_ACCESS_KEY": c.AnchorS3SecretAccessKey,
 		"R2_PUBLIC_HOST":              c.R2PublicHost,
 		"BRIDGE_HOST":                 c.BridgeHost,
 	}
@@ -172,16 +150,6 @@ func (c *Config) setField(key, value string) bool {
 		c.OIDCClientID = value
 	case "OIDC_CLIENT_SECRET":
 		c.OIDCClientSecret = value
-	case "ANCHOR_S3_ENDPOINT":
-		c.AnchorS3Endpoint = value
-	case "ANCHOR_S3_BUCKET":
-		c.AnchorS3Bucket = value
-	case "ANCHOR_S3_REGION":
-		c.AnchorS3Region = value
-	case "ANCHOR_S3_ACCESS_KEY_ID":
-		c.AnchorS3AccessKeyID = value
-	case "ANCHOR_S3_SECRET_ACCESS_KEY":
-		c.AnchorS3SecretAccessKey = value
 	case "R2_PUBLIC_HOST":
 		c.R2PublicHost = value
 	case "BRIDGE_HOST":

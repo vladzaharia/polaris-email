@@ -317,22 +317,6 @@ importers:
         specifier: ^4.1.6
         version: 4.1.6(@types/node@25.8.0)(vite@8.0.13(@types/node@25.8.0)(esbuild@0.28.0)(jiti@2.7.0)(sass@1.99.0)(terser@5.47.1)(tsx@4.22.1)(yaml@2.9.0))
 
-  packages/object-lock:
-    dependencies:
-      '@polaris-email/hmac':
-        specifier: workspace:*
-        version: link:../hmac
-    devDependencies:
-      '@cloudflare/workers-types':
-        specifier: ^4.20260517.1
-        version: 4.20260517.1
-      typescript:
-        specifier: ^6.0.3
-        version: 6.0.3
-      vitest:
-        specifier: ^4.1.6
-        version: 4.1.6(@types/node@25.8.0)(vite@8.0.13(@types/node@25.8.0)(esbuild@0.28.0)(jiti@2.7.0)(sass@1.99.0)(terser@5.47.1)(tsx@4.22.1)(yaml@2.9.0))
-
   packages/pipeline:
     dependencies:
       '@polaris-email/hmac':
@@ -476,9 +460,6 @@ importers:
       '@polaris-email/mime':
         specifier: workspace:*
         version: link:../../packages/mime
-      '@polaris-email/object-lock':
-        specifier: workspace:*
-        version: link:../../packages/object-lock
       '@polaris-email/pipeline':
         specifier: workspace:*
         version: link:../../packages/pipeline

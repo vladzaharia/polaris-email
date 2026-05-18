@@ -29,8 +29,8 @@ func newInfraSecretsCmd() *cobra.Command {
 		Use:   "secrets",
 		Short: "Generate + push master secrets to every Worker via wrangler",
 		Long: "Seed and audit the master secrets polaris-email needs:\n" +
-			"POLARIS_SECRET_A, ARGON2_PEPPER, ANCHOR_SIGNING_KEY, and the\n" +
-			"optional B2 + OIDC secrets.\n" +
+			"POLARIS_SECRET_A, ARGON2_PEPPER, and the optional OIDC\n" +
+			"client secret.\n" +
 			"\n" +
 			"Master secret values are never written to disk by this command.\n" +
 			"They flow through an in-memory map straight into wrangler's\n" +
@@ -68,9 +68,9 @@ func newInfraSecretsSeedCmd() *cobra.Command {
 			"  2. 1Password vault via `op read` (when --vault).\n" +
 			"  3. OS keychain (when --keychain, build with -tags keyring).\n" +
 			"\n" +
-			"Falls back to crypto/rand generation for POLARIS_SECRET_A,\n" +
-			"ARGON2_PEPPER, and ANCHOR_SIGNING_KEY. OIDC + B2 secrets are\n" +
-			"optional — skipped cleanly when no source provides one.",
+			"Falls back to crypto/rand generation for POLARIS_SECRET_A and\n" +
+			"ARGON2_PEPPER. OIDC client secret is optional — skipped cleanly\n" +
+			"when no source provides one.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
 			if ctx == nil {
@@ -80,8 +80,8 @@ func newInfraSecretsSeedCmd() *cobra.Command {
 
 			// Build the env-source overlay from .env.deploy. We feed
 			// .env.deploy values in via Overrides so the runner can
-			// resolve OIDC_CLIENT_SECRET / anchor B2 keys without
-			// requiring os.Setenv juggling.
+			// resolve OIDC_CLIENT_SECRET without requiring os.Setenv
+			// juggling.
 			overrides := map[string]string{}
 			if cfg != nil {
 				for k, v := range cfg.AsMap() {

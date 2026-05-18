@@ -31,9 +31,9 @@ Cloudflare Workers (control plane — three Workers + the panel):
   **Also** hosts the webhook fan-out queue consumer (signed webhook delivery
   external + tailnet, retry + DLQ; v2 envelope inlines the full `Message`,
   signed with the un-versioned `X-Polaris-Sig: <hex>`) and the cron triggers
-  (hourly audit anchor, weekly secret staleness check, per-minute `/healthz`
-  synthetic, nightly retention janitor). Phase B1 folded the previous
-  separate `services/fanout` and `services/cron` Workers in here.
+  (weekly secret staleness check, 5-minute `/healthz` synthetic, nightly
+  retention janitor, nightly audit-chain verify). Phase B1 folded the
+  previous separate `services/fanout` and `services/cron` Workers in here.
   Credential revocation is backed by the `KV_REVOCATIONS` namespace
   (≤60 s propagation); the previous Durable Object was retired.
 - `services/out` — outbound queue consumer that drives Cloudflare Email
@@ -81,8 +81,8 @@ Shared packages:
 - `packages/cf-api` — Cloudflare API wrapper (zones, DNS, Email Routing/Service, DKIM).
 - `packages/revocation` — KV-backed credential revocation primitive (≤60s propagation).
 
-Infrastructure: `infra/terraform/` defines zone + access-app modules and per-environment
-roots (staging / prod / anchors).
+Infrastructure: `infra/terraform/` defines zone + access-app + logpush +
+r2-lifecycle modules under a single per-account prod root.
 
 ## Endpoint summary
 
@@ -166,5 +166,5 @@ See `apps/polaris-cli/README.md` for the full subcommand tree, and
 
 See [`SECURITY.md`](SECURITY.md) for the threat model and
 <https://docs.mail.plrs.im/operators/runbooks/> for incident-response
-runbooks (account compromise, on-call triage, DLQ replay, anchor
-maintenance).
+runbooks (account compromise, on-call triage, DLQ replay,
+D1 backup/recovery).

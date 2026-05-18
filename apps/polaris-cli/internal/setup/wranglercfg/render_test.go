@@ -25,7 +25,7 @@ func TestRender_NestedFields(t *testing.T) {
   "d1": "{{ .D1.PolarisEmail.ID }}",
   "kv_nonce": "{{ .KV.Nonce.ID }}",
   "host": "https://{{ .Hostnames.PolarisAPI }}",
-  "anchor_endpoint": "{{ .Anchor.S3Endpoint }}"
+  "alert_webhook": "{{ .AlertWebhook }}"
 }`
 	out, err := Render([]byte(tmpl), in)
 	if err != nil {
@@ -36,7 +36,7 @@ func TestRender_NestedFields(t *testing.T) {
 		`"d1": "d1-id"`,
 		`"kv_nonce": "kv-nonce-id"`,
 		`"host": "https://api.example.com"`,
-		`"anchor_endpoint": "https://s3.example.com"`,
+		`"alert_webhook": "https://alerts.example.com/hook"`,
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("output missing %q in:\n%s", want, got)

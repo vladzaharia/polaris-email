@@ -5,7 +5,7 @@
 //    backed by the existing GET /api/diagnostics route on the panel server).
 //  - DLQ depth / recent failures (24h) from the dashboard's stats overview,
 //    linking into the DLQ browser.
-//  - Last audit anchor / chain status from GET /api/audit/chain-status, with
+//  - Audit log head + hash from GET /api/audit/chain-status, with
 //    a link into the audit log on the account page.
 //  - Panel /healthz liveness ping.
 //
@@ -350,15 +350,15 @@ function DlqCard() {
   );
 }
 
-function AuditAnchorCard() {
-  const q = useAdminQuery<ChainStatus>(diagnosticsKeys.auditAnchor(), '/api/audit/chain-status');
+function AuditChainCard() {
+  const q = useAdminQuery<ChainStatus>(diagnosticsKeys.auditChain(), '/api/audit/chain-status');
   const head = q.data?.head;
   return (
     <Card>
       <CardHeader>
         <CardTitle>Audit chain</CardTitle>
         <CardDescription>
-          Last anchored entry.{' '}
+          Latest audit log head.{' '}
           <Link to="/settings/account" className="underline">
             View audit log
           </Link>
@@ -370,7 +370,7 @@ function AuditAnchorCard() {
         ) : q.error ? (
           <Unavailable message={q.error.message} />
         ) : !head ? (
-          <Unavailable message="No anchor seen yet." />
+          <Unavailable message="Audit log is empty." />
         ) : (
           <div className="space-y-1 text-sm">
             <div>
@@ -381,7 +381,7 @@ function AuditAnchorCard() {
                 className="text-xs text-[var(--color-muted-foreground)]"
                 title={formatDate(head.created_at)}
               >
-                anchored {formatRelative(head.created_at)}
+                {formatRelative(head.created_at)}
               </div>
             ) : null}
             {head.hash ? (
@@ -468,7 +468,7 @@ export function Diagnostics() {
         <QueueDepthsCard />
         <DlqCard />
         <RecentFailuresCard />
-        <AuditAnchorCard />
+        <AuditChainCard />
         <SyntheticMonitoringCard />
       </div>
     </PageCard>

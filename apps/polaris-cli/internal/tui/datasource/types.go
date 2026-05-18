@@ -46,23 +46,6 @@ type AuditChainStatus struct {
 		RowHash string `json:"row_hash"`
 		At      int64  `json:"at"`
 	} `json:"head"`
-	LatestAnchor *struct {
-		ID           int    `json:"id"`
-		LastAuditID  int    `json:"last_audit_id"`
-		LastRowHash  string `json:"last_row_hash"`
-		Signature    string `json:"signature"`
-		SignedAt     int64  `json:"signed_at"`
-		ExternalRef  string `json:"external_ref"`
-	} `json:"latest_anchor,omitempty"`
-}
-
-// AnchorRow is one row from GET /v1/admin/audit/anchors.
-type AnchorRow struct {
-	ID           int       `json:"id"`
-	LastAuditID  int       `json:"last_audit_id"`
-	Signature    string    `json:"signature"`
-	SignedAt     time.Time `json:"signed_at"`
-	ExternalRef  string    `json:"external_ref,omitempty"`
 }
 
 // AuditEntry is one row from GET /v1/admin/audit/chain.

@@ -21,8 +21,8 @@ const (
 	// FormatUnknown means the runner falls back to base64 standard
 	// (matches POLARIS_SECRET_A's historical shape).
 	FormatUnknown Format = iota
-	// FormatBase64Raw is unpadded standard base64. POLARIS_SECRET_A,
-	// ANCHOR_SIGNING_KEY use this.
+	// FormatBase64Raw is unpadded standard base64. POLARIS_SECRET_A
+	// uses this.
 	FormatBase64Raw
 	// FormatHexLower is lowercase hex. ARGON2_PEPPER uses this.
 	FormatHexLower

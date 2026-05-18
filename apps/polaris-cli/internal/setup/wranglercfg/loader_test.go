@@ -27,9 +27,6 @@ SYNTHETIC_MONITOR_DOMAIN="example.com"
 ALERT_WEBHOOK="https://alerts.example.com/hook"
 OIDC_ISSUER="https://oidc.example.com"
 OIDC_CLIENT_ID="client-abc"
-ANCHOR_S3_ENDPOINT="https://s3.example.com"
-ANCHOR_S3_BUCKET="polaris-anchors"
-ANCHOR_S3_REGION="us-west-005"
 `), 0o600); err != nil {
 		t.Fatalf("seed env: %v", err)
 	}

@@ -54,14 +54,6 @@ func GenerateArgon2Pepper() (string, error) {
 	return hex.EncodeToString(b), nil
 }
 
-// GenerateAnchorSigningKey returns a 32-byte cryptographically-random
-// signing key encoded as unpadded standard base64. Anchor signing uses
-// the same shape as POLARIS_SECRET_A — the only reason for a separate
-// generator is to keep callers honest about the semantic distinction.
-func GenerateAnchorSigningKey() (string, error) {
-	return GenerateMasterSecret()
-}
-
 // randomBytes reads n bytes from crypto/rand and surfaces a sensible
 // error if the source ever short-reads (it does not on a healthy system,
 // but the standard error message is opaque enough that wrapping helps).

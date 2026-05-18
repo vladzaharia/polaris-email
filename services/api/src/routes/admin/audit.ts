@@ -1,5 +1,8 @@
-// Admin audit routes: chain-status (head + last anchor), paginated chain
-// listing, and the anchor list.
+// Admin audit routes: chain head + paginated chain listing. The audit_log
+// table keeps its in-row chained-hash invariant (each row's row_hash is
+// SHA-256 of `prev_hash || canonical(this row)`); the auditVerify cron
+// walks the chain end-to-end nightly to catch any out-of-band rewrite.
+// External anchoring (off-CF Object Lock writes) was removed.
 import { Hono } from 'hono';
 import { requireScope } from '../../auth.js';
 import type { Env } from '../../env.js';
@@ -11,18 +14,7 @@ auditRoutes.get('/v1/admin/audit/chain-status', requireScope('admin:read'), asyn
   const head = await c.env.DB.prepare(
     `SELECT id, row_hash, at FROM audit_log ORDER BY id DESC LIMIT 1`,
   ).first<{ id: number; row_hash: string; at: number }>();
-  const anchor = await c.env.DB.prepare(
-    `SELECT id, last_audit_id, last_row_hash, signature, signed_at, external_ref
-     FROM audit_anchors ORDER BY id DESC LIMIT 1`,
-  ).first<{
-    id: number;
-    last_audit_id: number;
-    last_row_hash: string;
-    signature: string;
-    signed_at: number;
-    external_ref: string | null;
-  }>();
-  return c.json({ head, latest_anchor: anchor });
+  return c.json({ head });
 });
 
 auditRoutes.get('/v1/admin/audit/chain', requireScope('admin:read'), async (c) => {
@@ -44,17 +36,6 @@ auditRoutes.get('/v1/admin/audit/chain', requireScope('admin:read'), async (c) =
       .bind(limit)
       .all();
   }
-  return c.json({ data: rows.results });
-});
-
-auditRoutes.get('/v1/admin/audit/anchors', requireScope('admin:read'), async (c) => {
-  const limit = Math.min(Math.max(Number.parseInt(c.req.query('limit') ?? '50', 10) || 50, 1), 500);
-  const rows = await c.env.DB.prepare(
-    `SELECT id, last_audit_id, last_row_hash, signature, signed_at, external_ref
-     FROM audit_anchors ORDER BY id DESC LIMIT ?`,
-  )
-    .bind(limit)
-    .all();
   return c.json({ data: rows.results });
 });
 

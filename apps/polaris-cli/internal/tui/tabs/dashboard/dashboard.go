@@ -187,18 +187,26 @@ func (t *Tab) renderChain() string {
 	if t.chain == nil {
 		return t.Theme.Muted.Render("loading audit chain…")
 	}
-	if t.chain.LatestAnchor == nil {
-		return t.Theme.Warn.Render("no anchors yet")
+	if t.chain.Head.ID == 0 {
+		return t.Theme.Muted.Render("audit log empty")
 	}
-	since := time.Since(time.UnixMilli(t.chain.LatestAnchor.SignedAt))
+	since := time.Since(time.UnixMilli(t.chain.Head.At))
 	hdr := t.Theme.Subtitle.Render("Audit chain")
 	body := []string{
 		t.Theme.Muted.Render("head id:    ") + fmt.Sprintf("%d", t.chain.Head.ID),
-		t.Theme.Muted.Render("anchor id:  ") + fmt.Sprintf("%d", t.chain.LatestAnchor.ID),
-		t.Theme.Muted.Render("signed at:  ") + time.UnixMilli(t.chain.LatestAnchor.SignedAt).Format(time.RFC3339),
+		t.Theme.Muted.Render("row hash:   ") + truncMid(t.chain.Head.RowHash, 16),
+		t.Theme.Muted.Render("last entry: ") + time.UnixMilli(t.chain.Head.At).Format(time.RFC3339),
 		t.Theme.Muted.Render("freshness:  ") + freshnessStyle(t.Theme, since).Render(since.Truncate(time.Second).String()+" ago"),
 	}
 	return lipgloss.JoinVertical(lipgloss.Left, hdr, strings.Join(body, "\n"))
+}
+
+// truncMid returns "abcd…wxyz" for long strings, or s unchanged.
+func truncMid(s string, keep int) string {
+	if len(s) <= keep*2+1 {
+		return s
+	}
+	return s[:keep] + "…" + s[len(s)-keep:]
 }
 
 func (t *Tab) renderBridges() string {

@@ -68,7 +68,6 @@ export class MockD1 {
         at: 0,
       },
     ]);
-    this.tables.set('audit_anchors', []);
   }
   prepare(sql: string) {
     return new MockStatement(this, sql);
@@ -639,14 +638,6 @@ export function mkEnv(overrides: Partial<Env> = {}): Env {
     OUTBOUND_QUEUE: new MockQueue<OutboundQueueMessage>() as unknown as Queue<OutboundQueueMessage>,
     API_BASE_URL: 'https://polaris-email-api.workers.dev',
     R2_PUBLIC_HOST: 'r2.mail.plrs.im',
-    // External Object-Lock target test values. The anchor cron
-    // hits putObjectWithLock with these; specific tests mock global fetch
-    // to capture the signed PUT.
-    ANCHOR_S3_ENDPOINT: 'https://s3.us-west-005.backblazeb2.com',
-    ANCHOR_S3_BUCKET: 'polaris-anchors-test',
-    ANCHOR_S3_REGION: 'us-west-005',
-    ANCHOR_S3_ACCESS_KEY_ID: 'test-access-key',
-    ANCHOR_S3_SECRET_ACCESS_KEY: 'test-secret-key',
     POLARIS_SECRET_A: 'test-control-plane-secret',
     ARGON2_PEPPER: 'test-pepper',
     ...overrides,

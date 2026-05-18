@@ -45,11 +45,6 @@ func LoadInputs(doc *state.Doc, envPath string) (*RenderInputs, error) {
 			To:            get("SYNTHETIC_TO"),
 			MonitorDomain: get("SYNTHETIC_MONITOR_DOMAIN"),
 		},
-		Anchor: AnchorInputs{
-			S3Endpoint: get("ANCHOR_S3_ENDPOINT"),
-			S3Bucket:   get("ANCHOR_S3_BUCKET"),
-			S3Region:   get("ANCHOR_S3_REGION"),
-		},
 		OIDC: OIDCInputs{
 			Issuer:   get("OIDC_ISSUER"),
 			ClientID: get("OIDC_CLIENT_ID"),

@@ -23,8 +23,8 @@ type DesiredState struct {
 	D1 []DesiredD1
 
 	// R2 buckets — single archive bucket with EU jurisdiction +
-	// Object Lock COMPLIANCE retention. The audit-anchor bucket lives
-	// on Backblaze B2, not R2, so it is *not* listed here.
+	// Object Lock COMPLIANCE retention for tamper-evidence on the
+	// message-body archive.
 	R2 []DesiredR2
 
 	// KV namespaces by title (the .title field CF stores).
@@ -72,7 +72,7 @@ type DesiredQueue struct {
 //
 // Resource names are NOT environment-prefixed — polaris-email runs in a
 // single production CF account, so resource names are stable across
-// installs. (The legacy staging+anchor accounts were collapsed in O1.)
+// installs.
 func Desired() *DesiredState {
 	return &DesiredState{
 		D1: []DesiredD1{

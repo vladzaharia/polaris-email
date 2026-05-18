@@ -240,7 +240,7 @@ func runHappyPathInfra(ctx context.Context, o happyPathOpts) error {
 
 func phasePreflight(ctx context.Context, o happyPathOpts) error {
 	cfg, _ := config.LoadOrDefault(o.envFile)
-	checks := assembleChecks(cfg, o.envFile, "", false, false)
+	checks := assembleChecks(cfg, o.envFile, "", false)
 	results, sum := preflight.Run(ctx, checks, false)
 	preflight.RenderText(o.out, results, sum)
 	if sum.HasFail() {

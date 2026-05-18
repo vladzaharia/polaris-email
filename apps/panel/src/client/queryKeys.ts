@@ -74,7 +74,7 @@ export const diagnosticsKeys = {
   health: () => [...diagnosticsKeys.all, 'health'] as const,
   queues: () => [...diagnosticsKeys.all, 'queues'] as const,
   recentFailures: () => [...diagnosticsKeys.all, 'recent-failures'] as const,
-  auditAnchor: () => [...diagnosticsKeys.all, 'audit-anchor'] as const,
+  auditChain: () => [...diagnosticsKeys.all, 'audit-chain'] as const,
 };
 
 // Cloudflare-zone discover-and-configure (Phase 2 of CF zone feature).

@@ -26,24 +26,22 @@
    Mitigated by: better-auth with OIDC group gating (`polaris-admins`, default
    IdP is Cloudflare Access), client-side `DestructiveActionDialog`
    confirmation (the operator must type the resource name) on every
-   destructive op (DKIM rotation, mass revoke, anchor key rotation, bridge
-   deregister, mailbox-credential rotate, webhook secret rotate), and every
-   mutation audited via the chained-hash `audit_log` table anchored hourly to
-   Backblaze B2. Sessions are stored in D1. The earlier two-person
+   destructive op (DKIM rotation, mass revoke, bridge deregister,
+   mailbox-credential rotate, webhook secret rotate), and every mutation
+   audited via the chained-hash `audit_log` table. Each row's `row_hash`
+   is `SHA-256(prev_hash || canonical row)` so any out-of-band rewrite
+   breaks the chain; the `audit-verify` cron walks the chain end-to-end
+   nightly. Sessions are stored in D1. The earlier two-person
    `withApproval` flow was removed — real deployments are single-operator
    and the second-admin co-sign step was unusable; type-the-name +
-   audit-log + anchored chain replaces it. The OIDC `groups` claim is
-   capped at 200 entries so a hostile or misconfigured IdP can't DoS the
-   sign-in path with a megabyte-sized array.
+   audit-log replace it. The OIDC `groups` claim is capped at 200 entries
+   so a hostile or misconfigured IdP can't DoS the sign-in path with a
+   megabyte-sized array.
 
 5. **`services/out` ↔ `services/api`** — `send_email` bindings are
    CF-account-scoped. `services/out` is invoked from `services/api` only
    via a Service Binding (not a public fetch), so a stolen API key cannot
-   directly invoke the outbound provider. Note: the previous multi-account
-   topology that gave `services/out` its own Cloudflare account was
-   collapsed — tamper-evidence is now anchored externally via
-   Backblaze B2 (see the "Audit anchors" section below) rather than via
-   account separation.
+   directly invoke the outbound provider.
 
 ## In-scope adversaries
 
@@ -60,7 +58,12 @@
 
 - **Fully compromised Cloudflare root API token** — mitigated by Logpush mirror +
   kill-switch runbook (<https://docs.mail.plrs.im/operators/runbooks/cf-account-compromise>),
-  not prevented.
+  not prevented. The audit-chain hash inside D1 detects in-band rewrites,
+  but a root-level CF compromise can wipe the chain itself; D1 Time-Travel
+  is the recovery surface (point-in-time restore covers ~30 days). The
+  earlier off-platform Backblaze B2 anchor mechanism was removed in favour
+  of this simpler model — operational cost was disproportionate for the
+  threat actually faced.
 - **Recipient recovery after submission** — by design, plaintext recipients are
   not retained server-side; see [`CONSUMER-CONTRACT.md`](CONSUMER-CONTRACT.md).
 
@@ -81,10 +84,6 @@ acceptable at the internal-deployment scale polaris-email targets
 admin-level mailbox access). External or compliance-bound deployments
 would need a different model — either re-introduce signed URLs in front
 of R2 or move bodies behind an authenticated proxy.
-
-Audit anchors are **not** stored in R2 at all — they live in an external
-Backblaze B2 bucket (see the "Audit anchors" section below). No
-polaris-email R2 bucket carries audit material.
 
 ## Cloudflare API token scope (CF_API_TOKEN)
 
@@ -140,29 +139,6 @@ Per-bridge HMAC isolation prevents the **global-key blast radius** failure
 mode (one leaked key everywhere); the v1 trust model accepts the residual
 cross-mailbox-read inside one bridge.
 
-## Anchor signing key rotation
-
-The anchor signing key (`ANCHOR_SIGNING_KEY`) signs each hourly audit
-anchor before it is pushed to Backblaze B2. Rotation is intentionally
-manual and gated:
-
-1. Mint a new signing key out-of-band (`openssl rand -hex 32`) and stash
-   it in the operator's password vault.
-2. With a second admin present (`withApproval('anchor.rotate')`), set the
-   new key as `ANCHOR_SIGNING_KEY_NEXT` via `wrangler secret put` on
-   `services/api`. The cron picks it up on the next anchor write and
-   signs the new anchor with both keys (overlap window).
-3. Confirm the next anchor lands in B2 with both signatures (`polaris-email
-audit anchors --verify`).
-4. Promote: rename `ANCHOR_SIGNING_KEY_NEXT` → `ANCHOR_SIGNING_KEY`,
-   delete the old `ANCHOR_SIGNING_KEY` secret. The next anchor is signed
-   only with the new key.
-5. Audit-log the rotation with the new key's fingerprint.
-
-External verifiers must keep both old + new public keys until every
-in-retention anchor has been verified; the public-key roster is published
-alongside `bin/audit-verify.sh`.
-
 ## `DEV_MODE` operator gate
 
 `DEV_MODE` is a local-development-only flag. It must **never** be set in
@@ -193,30 +169,24 @@ in audit rows. The panel surfaces this via `SecretRevealDialog`
 (`apps/panel/src/components/SecretRevealDialog.tsx`) — a single modal
 the operator must copy out of before dismissing.
 
-## Audit anchors
+## Audit chain integrity
 
-Tamper-evidence is anchored to **Backblaze B2** (external to Cloudflare):
+Each `audit_log` row's `row_hash` is `SHA-256(prev_hash || canonical(row))`.
+A continuous chain that hashes to the latest head is the in-band tamper
+signal — any out-of-band rewrite of an older row invalidates every later
+`row_hash`, and the `audit-verify` cron walks the chain end-to-end nightly
+(`services/api/src/scheduled/audit-verify.ts`). A break records a
+`status='error'` row in `cron_runs` and the panel diagnostics card turns
+red.
 
-- Hourly signed anchors are written to a B2 bucket with **Object Lock in
-  COMPLIANCE mode** and ~7-year retention. COMPLIANCE mode means **no**
-  identity — not the root account, not the B2 support team — can shorten
-  the retention period or delete the object before it expires.
-- The B2 application key used by `services/api` to write anchors is
-  **scoped write-only** (`writeFiles`-only; no `listFiles`,
-  `readFiles`, `deleteFiles`, or `bypassGovernance`). Even a fully
-  compromised Cloudflare account that exfiltrates the key cannot rewrite
-  or delete existing anchors.
-- The B2 credentials are **NOT stored in the Cloudflare account**. They
-  live in the operator's password vault and are seeded as wrangler
-  secrets only at deploy time. A wrangler-level compromise can read the
-  in-flight secret value but, because the key is write-only, cannot use
-  it to rewrite history.
-
-Net property: an adversary who fully owns the polaris-email Cloudflare
-account can still **stop** anchors from being written (denial of
-service) but cannot **rewrite** existing anchors. The audit chain in D1
-diverging from the latest B2 anchor is the tamper-evidence signal — see
-`bin/audit-verify.sh`.
+The chain defends against accidental / sloppy direct-DB-write rewrites;
+it does **not** defend against an adversary who fully owns the Cloudflare
+account (they can recompute the chain). The previous off-platform anchor
+mechanism (Backblaze B2 + Object Lock COMPLIANCE writes from an hourly
+cron) was removed; if you need defence against a CF-root compromise, the
+recovery surface is **D1 Time-Travel** (point-in-time restore covers ~30
+days) plus the weekly D1 export to R2 (operator-owned `backups/d1/`
+prefix, 12-week retention).
 
 ## Cryptographic notes
 
@@ -227,10 +197,9 @@ diverging from the latest B2 anchor is the tamper-evidence signal — see
   Signature header is `X-Polaris-Sig: <lowercase-hex>` — no `v1=` / `v2=`
   prefix. Constant-time compare. Full spec:
   <https://docs.mail.plrs.im/security/hmac-reference>.
-- **Audit chain** SHA-256 `prev_hash` linking; hourly anchor signed and
-  pushed to **Backblaze B2** (Object Lock COMPLIANCE mode, ~7-year
-  retention) — see the "Audit anchors" section above. Anchor signing
-  key is held in the operator vault, not the Cloudflare account.
+- **Audit chain** SHA-256 `prev_hash` linking inside `audit_log` —
+  walked end-to-end nightly by the `audit-verify` cron. See the
+  "Audit chain integrity" section above for the threat model.
 - **Argon2id parameters** OWASP 2024 minimums; declared in `packages/crypto-utils`.
   PBKDF2-SHA256 i=600000 is the Workers-runtime substitute; upgrades land by adding a
   new PHC prefix and rehashing on read.
@@ -239,16 +208,15 @@ diverging from the latest B2 anchor is the tamper-evidence signal — see
 
 - [ ] HMAC test vectors (`packages/test-vectors/vectors.json`) green in both SDK
       webhook verifiers (`@polaris/sdk/webhook`, `polaris-sdk-go`).
-- [ ] Audit hash-chain verified end-to-end with `bin/audit-verify.sh`; latest
-      `audit_anchors` row matches the off-platform anchor mirror.
+- [ ] Audit hash-chain verified end-to-end with `polaris-email audit verify`;
+      `audit-verify` cron writes `status='ok'` to `cron_runs` on its nightly
+      run.
 - [ ] `revocationCheck` drill: revoke a test key, confirm next authenticated request
       returns `key_revoked` within ≤60 s (KV propagation + cache TTL).
 - [ ] R2 Object Lock active in compliance mode on the `polaris-email`
       bucket (bodies + attachments); verified via `wrangler r2 bucket info`.
-- [ ] Backblaze B2 anchor bucket: Object Lock COMPLIANCE mode confirmed
-      via the B2 console; write-only application-key scope verified by
-      attempting `b2 ls` / `b2 rm` with the same key and seeing both
-      denied.
+- [ ] D1 Time-Travel drill: pick a recent bookmark, restore into a copy DB,
+      verify a known operator action lands at the expected row.
 - [ ] End-to-end synthetic green for 7 consecutive days.
 - [ ] External pentest report archived under `SECURITY/pentests/`.
 - [ ] Retention janitor (cron) drill: schedule a fake retention bucket, confirm

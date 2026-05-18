@@ -33,7 +33,7 @@ type Spec struct {
 	Generator func() (string, error)
 	// Optional flags the secret as best-effort: a Spec that has no
 	// Source value AND no Generator is silently skipped, rather than
-	// erroring. Used for OIDC_CLIENT_SECRET and the B2 anchor keys.
+	// erroring. Used for OIDC_CLIENT_SECRET.
 	Optional bool
 	// Shared marks the secret as a candidate for the account-level
 	// Cloudflare Secrets Store. When the cmd layer configures a
@@ -43,8 +43,8 @@ type Spec struct {
 	// secret in `secrets_store_secrets` for the binding to materialise.
 	//
 	// Currently set for POLARIS_SECRET_A only (it lands on every
-	// Worker). Per-Worker-scoped secrets (ARGON2_PEPPER, ANCHOR_*) gain
-	// nothing from the store and stay on the per-Worker path.
+	// Worker). Per-Worker-scoped secrets (ARGON2_PEPPER) gain nothing
+	// from the store and stay on the per-Worker path.
 	Shared bool
 }
 
@@ -283,21 +283,6 @@ func DefaultSpecs(allWorkers []string) []Spec {
 			Name:      "ARGON2_PEPPER",
 			Services:  []string{"api"},
 			Generator: GenerateArgon2Pepper,
-		},
-		{
-			Name:      "ANCHOR_SIGNING_KEY",
-			Services:  []string{"api"},
-			Generator: GenerateAnchorSigningKey,
-		},
-		{
-			Name:     "ANCHOR_S3_ACCESS_KEY_ID",
-			Services: []string{"api"},
-			Optional: true,
-		},
-		{
-			Name:     "ANCHOR_S3_SECRET_ACCESS_KEY",
-			Services: []string{"api"},
-			Optional: true,
 		},
 		{
 			Name:     "OIDC_CLIENT_SECRET",

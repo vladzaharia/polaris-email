@@ -13,12 +13,7 @@
       "database_id": "d1-id",
     },
   ],
-  "r2_buckets": [
-    { "binding": "R2", "bucket_name": "polaris-email", "jurisdiction": "eu" },
-    // Audit anchors moved off-CF in Phase O1 (see services/api/wrangler.jsonc).
-    // Provision the Backblaze B2 bucket + Application Key out-of-band per
-    // infra/terraform/README.md, then `wrangler secret put ANCHOR_S3_*`.
-  ],
+  "r2_buckets": [{ "binding": "R2", "bucket_name": "polaris-email", "jurisdiction": "eu" }],
   "kv_namespaces": [
     { "binding": "KV_NONCE", "id": "kv-nonce-id" },
     { "binding": "KV_IDEMPOTENCY", "id": "kv-idem-id" },
@@ -32,11 +27,6 @@
     // by this hostname; both inbound and outbound message bodies/attachments
     // are served from it. See infra/terraform for the DNS + bucket config.
     "R2_PUBLIC_HOST": "r2.example.com",
-    // External anchor target. Non-secret config only; the
-    // access-key id + secret are pushed via `wrangler secret put`.
-    "ANCHOR_S3_ENDPOINT": "https://s3.example.com",
-    "ANCHOR_S3_BUCKET": "polaris-anchors",
-    "ANCHOR_S3_REGION": "us-west-005",
     "ALERT_WEBHOOK": "https://alerts.example.com/hook",
   },
 }

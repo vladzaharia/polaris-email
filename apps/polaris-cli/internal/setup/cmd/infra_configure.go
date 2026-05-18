@@ -213,16 +213,6 @@ func applyKey(c *config.Config, key, value string) {
 		c.OIDCClientID = value
 	case "OIDC_CLIENT_SECRET":
 		c.OIDCClientSecret = value
-	case "ANCHOR_S3_ENDPOINT":
-		c.AnchorS3Endpoint = value
-	case "ANCHOR_S3_BUCKET":
-		c.AnchorS3Bucket = value
-	case "ANCHOR_S3_REGION":
-		c.AnchorS3Region = value
-	case "ANCHOR_S3_ACCESS_KEY_ID":
-		c.AnchorS3AccessKeyID = value
-	case "ANCHOR_S3_SECRET_ACCESS_KEY":
-		c.AnchorS3SecretAccessKey = value
 	case "R2_PUBLIC_HOST":
 		c.R2PublicHost = value
 	case "BRIDGE_HOST":

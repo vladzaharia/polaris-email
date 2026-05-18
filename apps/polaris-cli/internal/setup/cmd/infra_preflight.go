@@ -30,7 +30,6 @@ func newInfraPreflightCmd() *cobra.Command {
 		outputFmt    string
 		requiredOnly bool
 		noCFProbe    bool
-		noB2Probe    bool
 	)
 	c := &cobra.Command{
 		Use:   "preflight",
@@ -47,12 +46,12 @@ func newInfraPreflightCmd() *cobra.Command {
 				ctx = context.Background()
 			}
 
-			// Best-effort load of .env.deploy so the CF + B2 checks have
-			// inputs to probe with. Missing file is fine — the env-deploy
-			// check itself will report it.
+			// Best-effort load of .env.deploy so the CF check has inputs
+			// to probe with. Missing file is fine — the env-deploy check
+			// itself will report it.
 			cfg, _ := config.LoadOrDefault(envFile)
 
-			checks := assembleChecks(cfg, envFile, repoRoot, noCFProbe, noB2Probe)
+			checks := assembleChecks(cfg, envFile, repoRoot, noCFProbe)
 			results, sum := preflight.Run(ctx, checks, requiredOnly)
 
 			f, err := output.ParseFormat(outputFmt)
@@ -96,13 +95,12 @@ func newInfraPreflightCmd() *cobra.Command {
 	c.Flags().StringVarP(&outputFmt, "output", "o", "table", "output format: table|json|yaml")
 	c.Flags().BoolVar(&requiredOnly, "required-only", false, "skip non-required checks (no scopes, no docker)")
 	c.Flags().BoolVar(&noCFProbe, "no-cf-probe", false, "skip the Cloudflare API scope probe even when CF_API_TOKEN is set")
-	c.Flags().BoolVar(&noB2Probe, "no-b2-probe", false, "skip the Backblaze B2 bucket reachability probe")
 	return c
 }
 
 // assembleChecks builds the standard preflight list. The order matters
 // for output stability — operators eyeball the table.
-func assembleChecks(cfg *config.Config, envFile, repoRoot string, noCFProbe, noB2Probe bool) []preflight.Check {
+func assembleChecks(cfg *config.Config, envFile, repoRoot string, noCFProbe bool) []preflight.Check {
 	checks := []preflight.Check{
 		preflight.CheckPnpm(),
 		preflight.CheckWranglerInstalled(),
@@ -120,12 +118,6 @@ func assembleChecks(cfg *config.Config, envFile, repoRoot string, noCFProbe, noB
 		checks = append(checks, preflight.CheckCFAPIToken(preflight.CFAPIConfig{
 			Token:     cfg.CFAPIToken,
 			AccountID: cfg.CFAccountID,
-		}))
-	}
-	if !noB2Probe {
-		checks = append(checks, preflight.CheckB2Anchor(preflight.B2Config{
-			Endpoint: cfg.AnchorS3Endpoint,
-			Bucket:   cfg.AnchorS3Bucket,
 		}))
 	}
 	return checks

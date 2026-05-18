@@ -16,7 +16,6 @@ type Datasource interface {
 	StatusOverview(ctx context.Context, window string) (*StatsOverview, error)
 	AdminStatus(ctx context.Context) (*AdminStatusCounts, error)
 	AuditChainStatus(ctx context.Context) (*AuditChainStatus, error)
-	AuditAnchors(ctx context.Context, limit int) ([]AnchorRow, error)
 	AuditEntries(ctx context.Context, limit int) ([]AuditEntry, error)
 	Mailboxes(ctx context.Context) ([]Mailbox, error)
 	MailboxDetail(ctx context.Context, id string) (*Mailbox, error)

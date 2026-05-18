@@ -43,17 +43,3 @@ func TestGenerateArgon2Pepper_HexLen(t *testing.T) {
 	}
 }
 
-func TestGenerateAnchorSigningKey_SameShapeAsMaster(t *testing.T) {
-	t.Parallel()
-	v, err := GenerateAnchorSigningKey()
-	if err != nil {
-		t.Fatalf("GenerateAnchorSigningKey: %v", err)
-	}
-	dec, err := base64.RawStdEncoding.DecodeString(v)
-	if err != nil {
-		t.Fatalf("not valid base64: %v", err)
-	}
-	if len(dec) != 32 {
-		t.Errorf("decoded length: want 32, got %d", len(dec))
-	}
-}

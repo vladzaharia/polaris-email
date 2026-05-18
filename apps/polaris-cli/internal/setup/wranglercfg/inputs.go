@@ -38,7 +38,6 @@ type RenderInputs struct {
 	Queues       QueueInputs
 	Hostnames    HostnameInputs
 	Synthetic    SyntheticInputs
-	Anchor       AnchorInputs
 	OIDC         OIDCInputs
 	SecretsStore SecretsStoreInputs
 	AlertWebhook string
@@ -150,15 +149,6 @@ type SyntheticInputs struct {
 	MonitorDomain  string
 }
 
-// AnchorInputs are the non-secret Object-Lock anchor config. The access
-// key id + secret are pushed via `wrangler secret put`, never via this
-// template path.
-type AnchorInputs struct {
-	S3Endpoint string
-	S3Bucket   string
-	S3Region   string
-}
-
 // OIDCInputs are the OIDC client config the panel template bakes in.
 // The client secret is pushed via `wrangler secret put OIDC_CLIENT_SECRET`,
 // not through templates.
@@ -173,7 +163,6 @@ type OIDCInputs struct {
 //   - D1.PolarisEmail.ID (api, in, out, panel)
 //   - all five KV namespaces (api)
 //   - Hostnames.R2Public (api)
-//   - Anchor.S3Endpoint/Bucket/Region (api)
 //   - AlertWebhook (api)
 //   - OIDC.Issuer + OIDC.ClientID (panel)
 //
@@ -199,10 +188,6 @@ func (in *RenderInputs) Validate() error {
 	check("KV.RateLimit.ID (state .kv[\"polaris-email-rate-limit\"].id)", in.KV.RateLimit.ID)
 	check("KV.KeyCache.ID (state .kv[\"polaris-email-key-cache\"].id)", in.KV.KeyCache.ID)
 	check("KV.Revocations.ID (state .kv[\"polaris-email-revocations\"].id)", in.KV.Revocations.ID)
-
-	check("Anchor.S3Endpoint (ANCHOR_S3_ENDPOINT)", in.Anchor.S3Endpoint)
-	check("Anchor.S3Bucket (ANCHOR_S3_BUCKET)", in.Anchor.S3Bucket)
-	check("Anchor.S3Region (ANCHOR_S3_REGION)", in.Anchor.S3Region)
 
 	check("AlertWebhook (ALERT_WEBHOOK)", in.AlertWebhook)
 

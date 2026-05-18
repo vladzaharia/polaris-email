@@ -194,13 +194,6 @@ type AuditChainResult struct {
 	WalkedAt       time.Time `json:"walked_at"`
 }
 
-type AuditAnchor struct {
-	ID        string    `json:"id"`
-	Hash      string    `json:"hash"`
-	R2Key     string    `json:"r2_key"`
-	CreatedAt time.Time `json:"created_at"`
-}
-
 // CostReport is the response from GET /v1/admin/cost.
 type CostReport struct {
 	Month string             `json:"month"` // YYYY-MM

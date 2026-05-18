@@ -30,24 +30,6 @@ export interface Env {
   INLINE_ATTACHMENTS_BYTES_MAX?: string;
 
   // -- scheduled (cron) handlers, absorbed from services/cron in B1 ----------
-  /** Object key prefix for hourly audit anchors. Default `anchors/`. */
-  ANCHOR_R2_PREFIX?: string;
-  /** HMAC signing key (base64) used by the `anchor` cron. */
-  ANCHOR_SIGNING_KEY?: string;
-  /**
-   * External Object-Lock target for audit anchors. Replaces the
-   * prior `R2_ANCHORS` binding. Endpoint + bucket + region live in `vars`;
-   * the access key / secret are set via `wrangler secret put`. Default
-   * vendor: Backblaze B2 (`https://s3.<region>.backblazeb2.com`). See
-   * `packages/object-lock` and `infra/terraform/README.md`.
-   */
-  ANCHOR_S3_ENDPOINT: string;
-  ANCHOR_S3_BUCKET: string;
-  ANCHOR_S3_REGION: string;
-  ANCHOR_S3_ACCESS_KEY_ID?: string;
-  ANCHOR_S3_SECRET_ACCESS_KEY?: string;
-  /** Per-object retain-until offset, days. Default 2555 (7y). */
-  ANCHOR_RETENTION_DAYS?: string;
   /** Webhook URL hit by `staleness` + `synthetic` cron alerts AND the W2d
    *  admin alert pipeline (services/api/src/lib/admin-alert.ts). */
   ALERT_WEBHOOK?: string;

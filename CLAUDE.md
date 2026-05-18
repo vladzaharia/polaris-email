@@ -12,7 +12,7 @@ panel deployed as a Worker. Three Workers, three apps, ~12 packages.
 Start with: `README.md` (component map), the docs site at
 <https://docs.mail.plrs.im> (architecture, message model, runbooks; sources
 under `apps/docs/content/`), `SECURITY.md` (threat model — required reading
-before changing anything touching R2 public URLs, audit anchors, or HMAC).
+before changing anything touching R2 public URLs, the audit chain, or HMAC).
 
 ## Repository layout (polyglot monorepo)
 
@@ -28,7 +28,7 @@ before changing anything touching R2 public URLs, audit anchors, or HMAC).
   one binary. Its own `go.mod` + `Makefile`.
 - `apps/polaris-cli` — Go 1.22, operator CLI (`polaris-email`, alias `pml`).
   Own `go.mod`.
-- `packages/{hmac,schema,pipeline,ids,mime,cf-api,revocation,object-lock,test-vectors,sdk-node}`
+- `packages/{hmac,schema,pipeline,ids,mime,cf-api,revocation,test-vectors,sdk-node}`
   TypeScript libs published as workspace packages.
 - `packages/sdk-go` — the only Go package under `packages/` (its own
   `go.mod`, **no `go.sum`** — pure-stdlib). CI disables module cache for
@@ -169,15 +169,15 @@ for the full surface.
    (`src/queue/fanout.ts`) — the only place outgoing webhooks are signed.
 
 5. **Three Workers, not five.** B1 folded fanout + cron into `services/api`;
-   O1 collapsed the staging + anchor CF accounts into one production
-   account; forensic was removed with zero-payload-by-default. Don't
-   re-add any of these.
+   forensic was removed with zero-payload-by-default. Don't re-add any of
+   these.
 
-6. **Audit anchors live OFF Cloudflare.** Hourly cron in `services/api`
-   pushes signed anchors to Backblaze B2 with Object Lock COMPLIANCE mode
-   (~7 yr retention). The B2 key is operator-vault-only — a fully-
-   compromised CF account cannot rewrite history. Don't move anchor
-   writes inside CF.
+6. **Audit log is in-D1, chain-hashed.** Each row's `row_hash` is
+   SHA-256(prev_hash || canonical row), so any out-of-band rewrite breaks
+   the chain. The `audit-verify` cron walks the chain nightly. Off-platform
+   audit-anchor writes to Backblaze B2 were removed — see SECURITY.md for
+   the accepted trade-off (no defence against a fully-compromised CF
+   account; D1 Time-Travel is the recovery surface for that scenario).
 
 7. **R2 public domain `r2.mail.plrs.im` is intentionally unauthenticated.**
    SHA-256 keys are the unguessability boundary (per). Don't add
@@ -227,9 +227,8 @@ were the canonical one.
   `DestructiveActionDialog` (type-the-resource-name confirmation). The
   prior two-person `withApproval(...)` flow and `approvals` D1 table
   were removed — real deployments are single-operator and the second
-  admin co-sign was unusable. The `audit_log` chained-hash table
-  (anchored hourly to Backblaze B2 with Object Lock) remains the
-  canonical record of who did what.
+  admin co-sign was unusable. The `audit_log` chained-hash table remains
+  the canonical record of who did what.
 - Auth flow: Cloudflare Access → Worker → better-auth `genericOAuth` →
   OIDC. The `databaseHooks.user.create.after` hook role-syncs from the
   OIDC `groups` claim against the `ADMIN_GROUP` var. The claim is
@@ -242,7 +241,8 @@ were the canonical one.
   `.wrangler.merged.json`.
 - Treating the Tailscale compose file as the mail-bridge default.
 - Re-splitting `services/api` into `fanout` / `cron` / `forensic` Workers.
-- Moving audit-anchor writes inside Cloudflare.
+- Reintroducing off-platform audit anchors (Backblaze B2 / Object Lock) —
+  the mechanism was removed; D1 Time-Travel is the recovery surface now.
 - Skipping lefthook with `--no-verify`; fix the underlying lint/fmt issue.
 
 ## Where to look first for X

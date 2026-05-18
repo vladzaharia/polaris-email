@@ -77,7 +77,7 @@ async function forward(c: Context<{ Bindings: Env }>, upstream: string): Promise
 }
 
 // All /api/admin/* paths pass through unchanged. Each mutation still writes
-// an audit_log row downstream; the audit chain (anchored hourly to B2) is
+// an audit_log row downstream; the audit chain (hash-chained in D1) is
 // the canonical record of who did what.
 adminProxyRoutes.all('/api/admin/*', async (c) => {
   const url = new URL(c.req.url);

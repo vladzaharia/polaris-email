@@ -1,7 +1,6 @@
 // Scheduled (cron) dispatcher for polaris-email-api.
 //
 // Cron triggers and their handlers (all routed off `event.cron`):
-//   * `0 * * * *`           — hourly audit anchor                → anchor
 //   * `0 9 * * 1`           — weekly control-plane staleness     → staleness
 //   * `*/5 * * * *`         — synthetic /healthz probe (5 min)   → synthetic
 //   * `0 3 * * *`           — nightly retention janitor           → janitor
@@ -10,18 +9,15 @@
 //   * `0 */6 * * *`         — MTA-STS continuity                  → mtaStsContinuityRun
 //   * `30 */6 * * *`        — DKIM self-verify                    → dkimSelfVerifyRun
 //   * `0 5 * * *`           — feedback window refresh             → feedbackWindowRefresh
-//   * `5 5 * * *`           — anchor B2 backfill (retry NULL ext) → anchorBackfill
 //   * `20 5 * * *`          — full audit chain verification       → auditVerify
 //   * `50 5 * * *`          — policy_decision ↔ message backfill  → policyBackfill
 //   * `0 6 * * 0`           — weekly D1 export to R2 backups      → d1Backup
 //
 // Every handler runs inside withCronTelemetry, which writes a row into
-// cron_runs with (status, duration_ms, message). The anchor/backfill/
-// audit-verify/policy-backfill handlers report their own telemetry
-// (status reflects internal partial-success state); everything else gets
-// blanket ok/error from the wrapper.
-import { anchor } from './anchor.js';
-import { anchorBackfill } from './anchor-backfill.js';
+// cron_runs with (status, duration_ms, message). audit-verify and
+// policy-backfill report their own telemetry (status reflects internal
+// partial-success state); everything else gets blanket ok/error from
+// the wrapper.
 import { auditVerify } from './audit-verify.js';
 import { policyBackfill } from './policy-backfill.js';
 import { janitor } from './janitor.js';
@@ -37,8 +33,6 @@ import type { Env } from '../env.js';
 
 export async function scheduled(event: ScheduledEvent, env: Env): Promise<void> {
   switch (event.cron) {
-    case '0 * * * *':
-      return anchor(env); // anchor writes its own cron_runs row
     case '0 9 * * 1':
       return withCronTelemetry(env, 'staleness', () => staleness(env));
     case '*/5 * * * *':
@@ -89,8 +83,6 @@ export async function scheduled(event: ScheduledEvent, env: Env): Promise<void> 
         console.log('feedback-window-refresh cron:', `written=${r.written}`);
       });
       return;
-    case '5 5 * * *':
-      return anchorBackfill(env); // self-reports telemetry
     case '20 5 * * *':
       return auditVerify(env); // self-reports telemetry
     case '50 5 * * *':
