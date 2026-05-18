@@ -23,7 +23,7 @@
     "@polaris-email/suppressions": "workspace:*"
   },
   "devDependencies": {
-    "typescript": "^5.5.0",
-    "vitest": "^4.1.0"
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.6"
   }
 }

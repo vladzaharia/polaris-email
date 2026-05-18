@@ -35,12 +35,12 @@
     "@docusaurus/module-type-aliases": "^3.10.1",
     "@docusaurus/tsconfig": "^3.10.1",
     "@docusaurus/types": "^3.10.1",
-    "@types/node": "^22.0.0",
+    "@types/node": "^25.8.0",
     "@types/react": "^18.3.0",
     "@types/react-dom": "^18.3.0",
     "oxlint": "^1.65.0",
     "pagefind": "^1.5.2",
-    "typescript": "^5.5.0",
+    "typescript": "^6.0.3",
     "wrangler": "^4.92.0"
   },
   "//": "Note: docusaurus build is broken with webpack >=5.106 (facebook/docusaurus#11923). The pnpm override pinning `webpack` to 5.105.0 lives in the root package.json so it applies to the whole tree."
