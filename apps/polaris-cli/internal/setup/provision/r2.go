@@ -23,19 +23,26 @@ import (
 func createR2Step(client *cfapi.Client, doc *state.Doc) func(context.Context, plan.Entry) error {
 	return func(ctx context.Context, e plan.Entry) error {
 		jur := e.Extra["jurisdiction"]
+		hint := e.Extra["location_hint"]
 		hours := atoi(e.Extra["object_lock_hours"])
+		expiryDays := atoi(e.Extra["lifecycle_expiry_days"])
 
 		bucket, err := client.CreateBucket(ctx, cfapi.CreateBucketInput{
 			Name:         e.Name,
 			Jurisdiction: jur,
+			LocationHint: hint,
 		})
 		if err != nil {
 			return err
 		}
 
-		// Apply Object Lock retention. CF treats the lifecycle PUT as
-		// idempotent (replaces existing rules) so re-runs are safe.
-		if hours > 0 {
+		// Apply retention. The two paths are mutually exclusive per
+		// DesiredR2's contract — Object Lock for tamper-evident
+		// buckets (message bodies), lifecycle expiry for
+		// observability buckets (logs). CF treats the lifecycle PUT
+		// as idempotent (replaces existing rules) so re-runs are safe.
+		switch {
+		case hours > 0:
 			rule := cfapi.ObjectLockRule{
 				ID:             "polaris-email-retention",
 				Enabled:        true,
@@ -45,14 +52,19 @@ func createR2Step(client *cfapi.Client, doc *state.Doc) func(context.Context, pl
 			if err := client.AddObjectLockRule(ctx, e.Name, jur, rule); err != nil {
 				return fmt.Errorf("apply object lock: %w", err)
 			}
+		case expiryDays > 0:
+			if err := client.AddLifecycleExpiryRule(ctx, e.Name, jur, "", expiryDays); err != nil {
+				return fmt.Errorf("apply lifecycle expiry: %w", err)
+			}
 		}
 
 		doc.R2[e.Name] = state.R2Bucket{
-			Name:            bucket.Name,
-			Jurisdiction:    bucket.Jurisdiction,
-			ObjectLockHours: hours,
-			CreatedAt:       time.Now().UTC(),
-			Discovered:      false,
+			Name:                bucket.Name,
+			Jurisdiction:        bucket.Jurisdiction,
+			ObjectLockHours:     hours,
+			LifecycleExpiryDays: expiryDays,
+			CreatedAt:           time.Now().UTC(),
+			Discovered:          false,
 		}
 		return nil
 	}
@@ -69,12 +81,14 @@ func adoptR2Step(doc *state.Doc) func(context.Context, plan.Entry) error {
 			jur = e.Extra["jurisdiction"]
 		}
 		hours := atoi(e.Extra["object_lock_hours"])
+		expiryDays := atoi(e.Extra["lifecycle_expiry_days"])
 		doc.R2[e.Name] = state.R2Bucket{
-			Name:            e.Name,
-			Jurisdiction:    jur,
-			ObjectLockHours: hours,
-			CreatedAt:       time.Now().UTC(),
-			Discovered:      true,
+			Name:                e.Name,
+			Jurisdiction:        jur,
+			ObjectLockHours:     hours,
+			LifecycleExpiryDays: expiryDays,
+			CreatedAt:           time.Now().UTC(),
+			Discovered:          true,
 		}
 		return nil
 	}

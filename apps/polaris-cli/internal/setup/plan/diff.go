@@ -187,8 +187,10 @@ func Diff(desired *DesiredState, observed *state.Doc, live Snapshot) *Plan {
 		for _, d := range desired.R2 {
 			desiredSet[d.Name] = struct{}{}
 			extra := map[string]string{
-				"jurisdiction":      d.Jurisdiction,
-				"object_lock_hours": itoa(d.ObjectLockHours),
+				"jurisdiction":          d.Jurisdiction,
+				"location_hint":         d.LocationHint,
+				"object_lock_hours":     itoa(d.ObjectLockHours),
+				"lifecycle_expiry_days": itoa(d.LifecycleExpiryDays),
 			}
 			liveRec, hasLive := liveMap[d.Name]
 			_, hasState := stateMap[d.Name]

@@ -54,6 +54,18 @@ type Reporter interface {
 // migrations to gate their phases on provision having completed.
 const PhaseName = "provision"
 
+// ApplyOptions are extension knobs the orchestrator can pass to Apply
+// without changing the core signature. Each field is optional;
+// zero-values pick the documented default.
+type ApplyOptions struct {
+	// LogpushHTTPSink, when non-empty, makes the Logpush provision
+	// sub-step skip the R2 auto-provision path and use the supplied
+	// URL instead (e.g. https://in.logs.betterstack.com/?source_token=…).
+	// Empty triggers the auto-R2 path: bucket → token → job, all
+	// auto-created.
+	LogpushHTTPSink string
+}
+
 // Apply walks p.Creates (and p.Adopt) and records each into the state
 // store. The contract:
 //
@@ -73,7 +85,11 @@ const PhaseName = "provision"
 // Apply is concurrency-safe in the sense that it acquires the state
 // store's flock before any mutation; concurrent invocations on the
 // same path serialize cleanly.
-func Apply(ctx context.Context, client *cfapi.Client, store *state.Store, p *plan.Plan, r Reporter) error {
+func Apply(ctx context.Context, client *cfapi.Client, store *state.Store, p *plan.Plan, r Reporter, opts ...ApplyOptions) error {
+	var o ApplyOptions
+	if len(opts) > 0 {
+		o = opts[0]
+	}
 	if client == nil {
 		return errors.New("provision: cfapi client is required")
 	}
@@ -145,6 +161,25 @@ func Apply(ctx context.Context, client *cfapi.Client, store *state.Store, p *pla
 		}
 	}
 
+	// Logpush composes R2 bucket + token + job. Runs unconditionally
+	// (idempotent — guards on state + live presence) after the main
+	// resource loop, since the Logpush job needs the polaris-email-logs
+	// bucket to already exist. Failure is non-fatal at provision time —
+	// observability auto-config is a "nice to have", not a launch
+	// blocker. We surface the error to the reporter but advance the
+	// phase anyway.
+	r.Step("logpush", "polaris-email-workers")
+	if err := ProvisionLogpush(ctx, client, doc, o.LogpushHTTPSink); err != nil {
+		r.StepDone("logpush", "polaris-email-workers", err)
+		// Log + continue; operator can `polaris-email setup infra apply`
+		// again to retry just this step.
+	} else {
+		r.StepDone("logpush", "polaris-email-workers", nil)
+		if err := store.Write(doc); err != nil {
+			return fmt.Errorf("provision: persist state after logpush: %w", err)
+		}
+	}
+
 	// Mark the phase complete. PR 5 reads this to gate the secrets-seed
 	// step on a successful provision.
 	if doc.Phases == nil {
@@ -180,11 +215,17 @@ func ensureMaps(d *state.Doc) {
 	if d.R2 == nil {
 		d.R2 = map[string]state.R2Bucket{}
 	}
+	if d.R2Tokens == nil {
+		d.R2Tokens = map[string]state.R2Token{}
+	}
 	if d.KV == nil {
 		d.KV = map[string]state.Resource{}
 	}
 	if d.Queues == nil {
 		d.Queues = map[string]state.Resource{}
+	}
+	if d.LogpushJobs == nil {
+		d.LogpushJobs = map[string]state.LogpushJob{}
 	}
 }
 

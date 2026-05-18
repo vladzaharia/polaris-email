@@ -36,8 +36,10 @@ type Doc struct {
 	Phases        map[string]Phase        `json:"phases,omitempty"`
 	D1            map[string]Resource     `json:"d1,omitempty"`
 	R2            map[string]R2Bucket     `json:"r2,omitempty"`
+	R2Tokens      map[string]R2Token      `json:"r2_tokens,omitempty"`
 	KV            map[string]Resource     `json:"kv,omitempty"`
 	Queues        map[string]Resource     `json:"queues,omitempty"`
+	LogpushJobs   map[string]LogpushJob   `json:"logpush_jobs,omitempty"`
 	Deploys       map[string]DeployRecord `json:"deploys,omitempty"`
 }
 
@@ -63,10 +65,53 @@ type Resource struct {
 // We don't use the generic Resource because R2 buckets are addressed by
 // name (no separate ID) and the EU jurisdiction + Object Lock retention
 // are essential pieces of operator-visible state.
+//
+// LifecycleExpiryDays is the alternative to ObjectLockHours — when
+// non-zero, the bucket has a delete-after-N-days rule rather than
+// retention COMPLIANCE. The two are mutually exclusive per
+// DesiredR2's contract.
 type R2Bucket struct {
+	Name                string    `json:"name"`
+	Jurisdiction        string    `json:"jurisdiction,omitempty"`
+	ObjectLockHours     int       `json:"object_lock_hours,omitempty"`
+	LifecycleExpiryDays int       `json:"lifecycle_expiry_days,omitempty"`
+	CreatedAt           time.Time `json:"created_at"`
+	Discovered          bool      `json:"discovered,omitempty"`
+}
+
+// R2Token persists an R2 API token the CLI minted (typically for
+// Logpush → R2 ingestion). CF returns the secret EXACTLY ONCE at
+// creation; losing this record means the token is unrecoverable and
+// the operator must re-mint via `polaris-email setup infra apply`.
+//
+// We store the secret in plain text in .deploy-state.json — same
+// posture as the existing config.toml token store; the state file is
+// 0600 and operator-owned.
+type R2Token struct {
+	// ID is the CF-side token identifier (used for delete during
+	// rotation).
+	ID string `json:"id"`
+	// Name is the operator-visible token name.
+	Name string `json:"name"`
+	// Bucket is the bucket the token is scoped to. Logpush tokens are
+	// always single-bucket.
+	Bucket string `json:"bucket"`
+	// AccessKeyID + SecretAccessKey are the S3-compatible creds CF
+	// returns at create time. Treat the secret as sensitive.
+	AccessKeyID     string    `json:"access_key_id"`
+	SecretAccessKey string    `json:"secret_access_key"`
+	CreatedAt       time.Time `json:"created_at"`
+}
+
+// LogpushJob records a Logpush job the CLI created. ID is CF's numeric
+// job id (returned by POST /accounts/{id}/logpush/jobs). The
+// DestinationConf is stored alongside so a future drift-detection pass
+// can spot a job whose destination has been mutated out-of-band.
+type LogpushJob struct {
+	ID              int       `json:"id"`
 	Name            string    `json:"name"`
-	Jurisdiction    string    `json:"jurisdiction,omitempty"`
-	ObjectLockHours int       `json:"object_lock_hours,omitempty"`
+	Dataset         string    `json:"dataset"`
+	DestinationConf string    `json:"destination_conf"`
 	CreatedAt       time.Time `json:"created_at"`
 	Discovered      bool      `json:"discovered,omitempty"`
 }

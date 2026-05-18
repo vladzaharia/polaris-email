@@ -349,15 +349,23 @@ func TestApply_ReporterReceivesEvents(t *testing.T) {
 		t.Fatalf("Apply: %v", err)
 	}
 
-	wantSteps := len(p.Creates)
-	if rec.startTotal != wantSteps {
-		t.Errorf("reporter Start total: want %d, got %d", wantSteps, rec.startTotal)
+	// Start.total counts the planned Create/Adopt entries before the
+	// Logpush sub-step runs (it fires unconditionally at the end).
+	wantStartTotal := len(p.Creates)
+	// Step / StepDone include the always-on Logpush sub-step, so
+	// they're one higher than Start.total. The Logpush sub-step is
+	// expected to FAIL in this test (no /logpush/jobs handler on the
+	// CF fake) — which is fine; the runner advances the phase even on
+	// Logpush failure (observability is non-fatal at provision time).
+	wantStepCalls := wantStartTotal + 1
+	if rec.startTotal != wantStartTotal {
+		t.Errorf("reporter Start total: want %d, got %d", wantStartTotal, rec.startTotal)
 	}
-	if rec.stepCalls != wantSteps {
-		t.Errorf("reporter Step calls: want %d, got %d", wantSteps, rec.stepCalls)
+	if rec.stepCalls != wantStepCalls {
+		t.Errorf("reporter Step calls: want %d, got %d", wantStepCalls, rec.stepCalls)
 	}
-	if rec.stepDoneCalls != wantSteps {
-		t.Errorf("reporter StepDone calls: want %d, got %d", wantSteps, rec.stepDoneCalls)
+	if rec.stepDoneCalls != wantStepCalls {
+		t.Errorf("reporter StepDone calls: want %d, got %d", wantStepCalls, rec.stepDoneCalls)
 	}
 	if !rec.doneCalled {
 		t.Error("reporter Done not called")

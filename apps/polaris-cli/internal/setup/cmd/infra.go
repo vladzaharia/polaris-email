@@ -337,7 +337,9 @@ func phaseApply(ctx context.Context, o happyPathOpts, store *state.Store) error 
 		return nil
 	}
 	rep := provision.NewPlainReporter(o.out)
-	return provision.Apply(ctx, client, store, p, rep)
+	return provision.Apply(ctx, client, store, p, rep, provision.ApplyOptions{
+		LogpushHTTPSink: cfg.LogpushDestinationURL,
+	})
 }
 
 func phaseRender(_ context.Context, o happyPathOpts, store *state.Store) error {

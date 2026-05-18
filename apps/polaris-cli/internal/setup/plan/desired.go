@@ -44,12 +44,27 @@ type DesiredD1 struct {
 }
 
 // DesiredR2 captures the canonical bucket name + the jurisdiction +
-// Object Lock retention window. The Object Lock window is in hours
+// region hint + retention window. The Object Lock window is in hours
 // (CF's REST surface uses hours, not days/months).
+//
+// Jurisdiction is one of "", "eu", "fedramp". Empty means CF's
+// "default" jurisdiction (no compliance scope). LocationHint is one
+// of the documented R2 region codes (WNAM, ENAM, WEUR, EEUR, APAC, OC)
+// — CF uses it to pick the colo region; bucket names are still
+// globally unique within an account.
+//
+// LifecycleExpiryDays is mutually exclusive with ObjectLockHours: when
+// non-zero, the provision step applies a delete-after-N-days lifecycle
+// rule instead of Object Lock COMPLIANCE. Used for the
+// `polaris-email-logs` bucket where we want bounded retention but not
+// tamper-evidence (those logs are operator-side observability, not
+// audit chain anchors).
 type DesiredR2 struct {
-	Name            string
-	Jurisdiction    string
-	ObjectLockHours int
+	Name                string
+	Jurisdiction        string
+	LocationHint        string
+	ObjectLockHours     int
+	LifecycleExpiryDays int
 }
 
 // DesiredKV captures the canonical KV namespace title.
@@ -80,9 +95,27 @@ func Desired() *DesiredState {
 		},
 		R2: []DesiredR2{
 			{
+				// Default-jurisdiction US-west bucket — no compliance
+				// scope ("eu" jurisdiction was the previous default
+				// and is preserved by adoption when an operator's
+				// account already has the bucket there). WNAM region
+				// hint places new buckets in Western North America.
 				Name:            "polaris-email",
-				Jurisdiction:    "eu",
+				Jurisdiction:    "",
+				LocationHint:    "wnam",
 				ObjectLockHours: 2160, // 90 days, COMPLIANCE mode
+			},
+			{
+				// Auto-provisioned logs bucket fed by the Logpush job.
+				// 30-day lifecycle expiry — covers the typical
+				// "fix it within a month" incident-response window
+				// without unbounded R2 spend. Object Lock is
+				// deliberately NOT applied — these are operator-side
+				// observability artifacts, not audit-chain anchors.
+				Name:                "polaris-email-logs",
+				Jurisdiction:        "",
+				LocationHint:        "wnam",
+				LifecycleExpiryDays: 30,
 			},
 		},
 		KV: []DesiredKV{

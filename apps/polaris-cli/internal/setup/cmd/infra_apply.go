@@ -165,7 +165,13 @@ func newInfraApplyCmd() *cobra.Command {
 				defer tr.Done()
 			}
 
-			if err := provision.Apply(ctx, client, store, p, reporter); err != nil {
+			// Pass the optional Logpush HTTP-sink override from .env.deploy
+			// through to provision. Empty means "use the auto-R2 path",
+			// which is the documented default for zero-config Logpush.
+			applyOpts := provision.ApplyOptions{
+				LogpushHTTPSink: cfg.LogpushDestinationURL,
+			}
+			if err := provision.Apply(ctx, client, store, p, reporter, applyOpts); err != nil {
 				return err
 			}
 			fmt.Fprintln(cmd.OutOrStdout(), "\nprovision complete — state written to", store.Path())

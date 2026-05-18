@@ -29,9 +29,9 @@ func TestRender_AllCreates(t *testing.T) {
 	if !strings.Contains(got, "+ create") {
 		t.Errorf("missing create prefix")
 	}
-	// R2 entry should carry the jurisdiction in the suffix.
-	if !strings.Contains(got, "jurisdiction=eu") {
-		t.Errorf("R2 suffix missing jurisdiction=eu: %q", got)
+	// R2 entry should carry its location hint in the suffix.
+	if !strings.Contains(got, "location_hint=wnam") {
+		t.Errorf("R2 suffix missing location_hint=wnam: %q", got)
 	}
 }
 

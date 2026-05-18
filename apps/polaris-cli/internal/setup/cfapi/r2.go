@@ -74,7 +74,7 @@ func (c *Client) GetBucket(ctx context.Context, name, jurisdiction string) (*R2B
 type CreateBucketInput struct {
 	Name         string
 	Jurisdiction string // "eu" for polaris-email
-	LocationHint string // optional ("WEUR", "WNAM", etc.)
+	LocationHint string // optional region code, lowercase per CF docs: "wnam", "enam", "weur", "eeur", "apac", "oc"
 }
 
 // CreateBucket creates an R2 bucket. The EU jurisdiction is set via the
@@ -138,6 +138,48 @@ func (c *Client) AddObjectLockRule(ctx context.Context, bucket, jurisdiction str
 	}
 	body := map[string]any{
 		"rules": []ObjectLockRule{rule},
+	}
+	return c.doWithHeaders(ctx, http.MethodPut, c.accountPath("/r2/buckets/"+url.PathEscape(bucket)+"/lifecycle"), hdrs, body, nil)
+}
+
+// AddLifecycleExpiryRule applies an "expire after N days" lifecycle
+// rule to the named bucket. Used for buckets that don't need Object
+// Lock retention but should age-out their contents (e.g. Logpush logs,
+// D1 backups). Replaces any existing lifecycle rules — CF's PUT
+// semantics on `/lifecycle` are full-replacement, not append.
+//
+// days must be > 0; the rule deletes objects whose age exceeds it.
+// prefix scopes the rule to keys with the given prefix; empty string
+// applies it to the whole bucket.
+func (c *Client) AddLifecycleExpiryRule(ctx context.Context, bucket, jurisdiction, prefix string, days int) error {
+	if bucket == "" {
+		return fmt.Errorf("cfapi: bucket name required")
+	}
+	if days <= 0 {
+		return fmt.Errorf("cfapi: lifecycle expiry days must be > 0, got %d", days)
+	}
+	hdrs := map[string]string{}
+	if jurisdiction != "" {
+		hdrs["cf-r2-jurisdiction"] = jurisdiction
+	}
+	// CF lifecycle rule shape: `conditions.prefix` scopes the rule;
+	// `deleteObjectsTransition.condition` chooses age vs. date — we use
+	// age in seconds (R2's documented unit for the `Age` type).
+	rule := map[string]any{
+		"id":      "polaris-email-expiry",
+		"enabled": true,
+		"conditions": map[string]any{
+			"prefix": prefix,
+		},
+		"deleteObjectsTransition": map[string]any{
+			"condition": map[string]any{
+				"type":             "Age",
+				"maxAge":           days * 86400, // seconds
+			},
+		},
+	}
+	body := map[string]any{
+		"rules": []map[string]any{rule},
 	}
 	return c.doWithHeaders(ctx, http.MethodPut, c.accountPath("/r2/buckets/"+url.PathEscape(bucket)+"/lifecycle"), hdrs, body, nil)
 }

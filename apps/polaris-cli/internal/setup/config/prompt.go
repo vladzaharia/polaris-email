@@ -131,11 +131,7 @@ func Prompt(initial *Config, opts PromptOptions) (*Config, error) {
 		{key: "OIDC_ADMIN_GROUP", desc: "OIDC group whose members get panel admin role", val: &c.AdminGroup, def: defaultIfBlank(c.AdminGroup, "polaris-admins")},
 		{key: "R2_PUBLIC_HOST", desc: "R2 public custom domain (e.g. r2.mail.example.com)", val: &c.R2PublicHost},
 		{key: "BRIDGE_HOST", desc: "Mail-bridge public hostname (optional, e.g. bridge.example.com)", val: &c.BridgeHost},
-		{key: "LOGPUSH_DESTINATION_URL", desc: "Logpush HTTP sink (set this OR the LOGPUSH_R2_* fields below, not both; empty disables Logpush)", val: &c.LogpushDestinationURL, valid: optionalURL},
-		{key: "LOGPUSH_R2_BUCKET", desc: "R2 bucket for CF-native Logpush (optional; mutually exclusive with LOGPUSH_DESTINATION_URL)", val: &c.LogpushR2Bucket},
-		{key: "LOGPUSH_R2_PREFIX", desc: "Key prefix inside the R2 bucket (default 'logs')", val: &c.LogpushR2Prefix, def: defaultIfBlank(c.LogpushR2Prefix, "logs")},
-		{key: "LOGPUSH_R2_ACCESS_KEY_ID", desc: "R2 API token access-key-id (S3-compat; provision via R2 dashboard)", val: &c.LogpushR2AccessKeyID},
-		{key: "LOGPUSH_R2_SECRET_ACCESS_KEY", desc: "R2 API token secret (hidden)", val: &c.LogpushR2SecretAccessKey},
+		{key: "LOGPUSH_DESTINATION_URL", desc: "Optional Logpush HTTP sink. Empty triggers auto-R2 provisioning (recommended); set this to override with an external destination", val: &c.LogpushDestinationURL, valid: optionalURL},
 	}
 	for _, s := range tail {
 		if err := runOne(s.key, s.desc, s.val, s.def, s.valid); err != nil {
