@@ -64,10 +64,20 @@ under Wish (` + "`polaris-email serve --ssh`" + `).`,
 	root.PersistentFlags().StringVarP(&G.OutputFmt, "output", "o", "table", "output format: table|json|yaml")
 	var jsonAlias bool
 	root.PersistentFlags().BoolVar(&jsonAlias, "json", false, "shorthand for --output=json")
-	root.PersistentPreRun = func(_ *cobra.Command, _ []string) {
+	root.PersistentPreRun = func(cmd *cobra.Command, _ []string) {
 		if jsonAlias {
 			G.OutputFmt = "json"
 		}
+		// Opportunistic launch-time upgrade check. CLI subcommands
+		// block + install + re-exec; the TUI / version / setup commands
+		// are excluded — TUI handles its own bottom-infobox flow,
+		// version-itself can't be its own consumer without recursion,
+		// and the multi-phase setup commands shouldn't have their
+		// progress UI interrupted by an upgrader progress bar.
+		if shouldSkipUpgradeCheck(cmd) {
+			return
+		}
+		maybeUpgrade(cmd)
 	}
 	root.PersistentFlags().BoolVar(&G.DryRun, "dry-run", false, "print API calls without executing them")
 

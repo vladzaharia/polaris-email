@@ -26,6 +26,7 @@ import (
 	mailboxesTab "github.com/vladzaharia/polaris-email/apps/polaris-cli/internal/tui/tabs/mailboxes"
 	webhooksTab "github.com/vladzaharia/polaris-email/apps/polaris-cli/internal/tui/tabs/webhooks"
 	"github.com/vladzaharia/polaris-email/apps/polaris-cli/internal/tui/theme"
+	"github.com/vladzaharia/polaris-email/apps/polaris-cli/internal/tui/upgradenotice"
 )
 
 // Identity is display-only metadata about who's running the TUI (set by
@@ -49,6 +50,16 @@ type Model struct {
 	height    int
 	toast     *ToastMsg
 	toastID   int
+	// upgrade is the orange-bordered bottom infobox shown while a
+	// self-upgrade is in flight. Active() returns false outside the
+	// upgrade window — when inactive, View falls through to the
+	// regular status bar. The actual auto-trigger (background goroutine
+	// that detects an update + pumps progress events through the
+	// program) is a v0.1.2 follow-up; for v0.1.1 the model is
+	// integrated so other code paths (e.g. `pml version upgrade`
+	// invoked from inside the TUI's shell-out) can send messages to
+	// it via prog.Send.
+	upgrade upgradenotice.Model
 }
 
 // ProgramOpts configures the embedded program.
@@ -92,6 +103,7 @@ func New(ds datasource.Datasource, cli *client.Client, th *theme.Theme, zm *zone
 		zones:    zm,
 		identity: ident,
 		poller:   polling.NewPoller(),
+		upgrade:  upgradenotice.New(),
 	}
 	m.tabs = []tabs.Tab{
 		dashboardTab.New(ds, th),
@@ -113,9 +125,43 @@ func (m *Model) Init() tea.Cmd {
 
 // Update routes messages.
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// Upgrade-notice routing. Active() flips true on StartMsg; we
+	// short-circuit key handling into the infobox during PhaseRestarting
+	// so Enter / Esc don't leak into the active tab. WindowSizeMsg /
+	// ProgressMsg / InstalledMsg / FailedMsg / tickMsg / FrameMsg
+	// flow into the infobox unconditionally because they're idempotent
+	// when the infobox is idle.
+	switch msg.(type) {
+	case upgradenotice.StartMsg, upgradenotice.ProgressMsg,
+		upgradenotice.InstalledMsg, upgradenotice.FailedMsg:
+		var cmd tea.Cmd
+		m.upgrade, cmd = m.upgrade.Update(msg)
+		return m, cmd
+	case upgradenotice.RestartTriggerMsg:
+		// Parent's responsibility: relaunch the binary. Quit the
+		// Bubbletea program first so the terminal state is restored;
+		// the deferred upgrader.ReExec() in the caller (cmd/tui.go)
+		// then takes over. We signal via a sentinel quit message.
+		return m, tea.Quit
+	}
+	if m.upgrade.Active() {
+		// During an active upgrade, route key events to the infobox so
+		// Enter (restart now) / Esc (cancel) work. Other keys still
+		// pass through to the active tab via the default branch below.
+		if k, ok := msg.(tea.KeyMsg); ok {
+			switch k.String() {
+			case "enter", "esc":
+				var cmd tea.Cmd
+				m.upgrade, cmd = m.upgrade.Update(msg)
+				return m, cmd
+			}
+		}
+	}
+
 	switch x := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = x.Width, x.Height
+		m.upgrade.SetWidth(x.Width)
 		m.resizeActiveTab()
 		return m, nil
 	case tea.MouseMsg:
@@ -198,8 +244,14 @@ func (m *Model) View() string {
 	}
 	tabBar := m.renderTabBar()
 	body := m.tabs[m.active].View()
-	status := m.renderStatus()
-	out := lipgloss.JoinVertical(lipgloss.Left, tabBar, body, status)
+	// Bottom strip: the upgrade infobox displaces the status bar while
+	// an upgrade is in flight (PhaseDownloading / PhaseRestarting /
+	// PhaseFailed). Falls back to renderStatus() when idle/cancelled.
+	bottom := m.renderStatus()
+	if m.upgrade.Active() {
+		bottom = m.upgrade.View()
+	}
+	out := lipgloss.JoinVertical(lipgloss.Left, tabBar, body, bottom)
 	return m.zones.Scan(out)
 }
 

@@ -1,0 +1,91 @@
+# Dev-channel snapshot publisher.
+#
+# Force-replaces a `dev` git tag + GitHub release on every push to main
+# so `polaris-email version channel set dev` users always pull the
+# latest main-branch build. The release is marked `prerelease: true`
+# so it's hidden from `releases/latest` and doesn't affect the stable
+# `curl -fsSL cli.mail.plrs.im | sh` install path.
+#
+# Security: every `github.*` reference flows through an `env:` block
+# and is consumed in shell only via `"$VAR"` quoting — the documented
+# safe pattern. No untrusted input ever ends up unquoted in `run:`.
+name: dev-snapshot
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: dev-snapshot
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+jobs:
+  snapshot:
+    name: build + publish dev
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: apps/polaris-cli/go.mod
+          cache: true
+          cache-dependency-path: apps/polaris-cli/go.sum
+
+      - name: Set up goreleaser
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          install-only: true
+          version: '~> v2'
+
+      - name: goreleaser (snapshot)
+        working-directory: apps/polaris-cli
+        run: goreleaser release --snapshot --clean --skip=publish,homebrew
+
+      # Force-replace the `dev` tag + release. The rename loop turns
+      # `polaris-email_<inc-version>-snapshot_<os>_<arch>.<ext>` into
+      # `polaris-email_dev_<os>_<arch>.<ext>` so the upgrader's
+      # assetName builder finds them. Checksums regenerated against the
+      # renamed files so the upgrader's sha256 verification succeeds.
+      - name: Replace dev release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_SHA: ${{ github.sha }}
+        working-directory: apps/polaris-cli
+        run: |
+          set -eu
+          gh release delete dev --cleanup-tag --yes 2>/dev/null || true
+          cd dist
+          for f in polaris-email_*-snapshot_*; do
+            [ -e "$f" ] || continue
+            new=$(printf '%s' "$f" | sed -E 's/_[^_]+-snapshot_/_dev_/')
+            mv "$f" "$new"
+          done
+          shopt -s nullglob 2>/dev/null || true
+          sha256sum polaris-email_dev_*.tar.gz polaris-email_dev_*.zip 2>/dev/null > checksums.txt || true
+          cd ..
+          short_sha="${GH_SHA:0:7}"
+          gh release create dev \
+            --prerelease \
+            --title "polaris-email dev (sha-${short_sha})" \
+            --notes "Force-replaced on every main-branch push by .github/workflows/dev-snapshot.yml. Pulled by 'polaris-email version channel set dev'." \
+            --target "$GH_SHA" \
+            dist/polaris-email_dev_*.tar.gz \
+            dist/polaris-email_dev_*.zip \
+            dist/checksums.txt
+
+      - name: Attest snapshot provenance
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: 'apps/polaris-cli/dist/polaris-email_dev_*'

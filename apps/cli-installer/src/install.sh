@@ -268,6 +268,16 @@ do_install() {
         xattr -d com.apple.quarantine "$install_dir/$POLARIS_BIN_NAME" 2>/dev/null || true
     fi
 
+    # Write a sentinel file so the built-in upgrader (internal/upgrader)
+    # can distinguish a curl-installed binary from a hand-copied one at
+    # an arbitrary path. The CLI's install-method detection reads this
+    # at `~/.config/polaris-email/install-method` (or whichever
+    # $POLARIS_CONFIG_DIR the operator overrode to).
+    cfg_dir="${XDG_CONFIG_HOME:-${HOME:-/tmp}/.config}/polaris-email"
+    if mkdir -p "$cfg_dir" 2>/dev/null; then
+        printf '%s\n' 'curl' > "$cfg_dir/install-method" 2>/dev/null || true
+    fi
+
     log "installed polaris-email $target_version to $install_dir/$POLARIS_BIN_NAME"
 
     # PATH hint.
