@@ -1,3 +1,5 @@
+//go:build !windows
+
 package state
 
 import (
@@ -19,6 +21,12 @@ type Unlock func() error
 // Callers must hold the exclusive lock for the duration of any read-
 // modify-write of the state file (a "phase"). Reads that are happy with a
 // possibly-stale snapshot can use the shared lock.
+//
+// Windows builds get a no-op shim in lock_windows.go because Windows has
+// no flock(2). Operators on Windows must serialize phases externally
+// (e.g. by not running two `setup infra` invocations against the same
+// .deploy-state.json concurrently). This is consistent with how POSIX-
+// only operator tooling is treated in the Go ecosystem.
 func (s *Store) Lock(exclusive bool) (Unlock, error) {
 	lockPath := s.path + ".lock"
 	// Create with 0600 so the lock file inherits the same access constraints
