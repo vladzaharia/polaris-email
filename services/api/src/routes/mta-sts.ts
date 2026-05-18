@@ -18,9 +18,13 @@
 // Cache discipline (RFC 8461 §3.2):
 //   * The sender computes its own cache TTL from `max_age` in the body.
 //   * The HTTP response's `Cache-Control` is operator-facing only — it
-//     lets the operator's reverse proxy / Cloudflare edge cache the
-//     small policy file briefly to absorb sender retry storms without
-//     hitting D1. 60s is the RFC's worked example.
+//     lets the Cloudflare edge cache the small policy file to absorb
+//     sender retry storms without hitting D1 on every fetch. Bumped to
+//     86400s (1 day) with `public, s-maxage` because the policy is keyed
+//     by Host header (intrinsically per-tenant) and changes only when an
+//     operator toggles mta_sts_mode (rare, manual). On change, an
+//     operator can purge the edge cache via the CF API — see
+//     apps/docs/content/operators/day-2/cache-purge.md (TODO).
 import { Hono } from 'hono';
 import type { Env } from '../env.js';
 
@@ -62,7 +66,9 @@ mtaStsPolicy.get('/.well-known/mta-sts.txt', async (c) => {
       'content-type': 'text/plain; charset=utf-8',
       // Operator-facing edge cache TTL only; the sender ignores this
       // and trusts the in-body `max_age` field instead (RFC 8461 §3.2).
-      'cache-control': 'max-age=60',
+      // `public` so Cloudflare's anonymous edge caches it; `s-maxage`
+      // applies to shared (CDN) caches specifically.
+      'cache-control': 'public, s-maxage=86400, max-age=60',
     },
   });
 });

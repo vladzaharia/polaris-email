@@ -1,0 +1,33 @@
+name: 'Setup Go with module cache'
+description: 'actions/setup-go with cache-dependency-path falling back to go.mod when go.sum is missing. Caller MUST run actions/checkout first.'
+
+inputs:
+  go-version:
+    required: false
+    default: '1.25'
+  working-directory:
+    description: 'Module dir to discover go.sum or go.mod under. Defaults to repo root.'
+    required: false
+    default: '.'
+
+runs:
+  using: composite
+  steps:
+    - id: pick
+      shell: bash
+      run: |
+        wd='${{ inputs.working-directory }}'
+        if [ -f "$wd/go.sum" ]; then
+          echo "path=$wd/go.sum" >> "$GITHUB_OUTPUT"
+        elif [ -f "$wd/go.mod" ]; then
+          # No go.sum -> no external deps. Cache key off go.mod so we still
+          # get module / build cache reuse between runs.
+          echo "path=$wd/go.mod" >> "$GITHUB_OUTPUT"
+        else
+          echo "::error::no go.sum or go.mod under $wd"
+          exit 1
+        fi
+    - uses: actions/setup-go@v6
+      with:
+        go-version: ${{ inputs.go-version }}
+        cache-dependency-path: ${{ steps.pick.outputs.path }}

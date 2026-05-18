@@ -69,3 +69,69 @@ type PushFunc func(ctx context.Context, svc, name, value string) error
 func (f PushFunc) Push(ctx context.Context, svc, name, value string) error {
 	return f(ctx, svc, name, value)
 }
+
+// StorePusher is the account-level analogue of Pusher: pushes a single
+// secret value to a Cloudflare Secrets Store once, regardless of how many
+// Workers reference it via `secrets_store_secrets`.
+type StorePusher interface {
+	PushStore(ctx context.Context, name, value string) error
+}
+
+// WranglerSecretsStorePusher is the production StorePusher. It shells out
+// to `wrangler secrets-store secret create` (or update, on conflict). The
+// storeID identifies the account-level store and is supplied at config
+// time (typically from POLARIS_SECRETS_STORE_ID in .env.deploy).
+type WranglerSecretsStorePusher struct {
+	StoreID string
+}
+
+// PushStore implements StorePusher.
+func (p WranglerSecretsStorePusher) PushStore(ctx context.Context, name, value string) error {
+	if p.StoreID == "" {
+		return fmt.Errorf("secrets: store push %s: StoreID required", name)
+	}
+	if name == "" {
+		return fmt.Errorf("secrets: store push: secret name required")
+	}
+	// `wrangler secrets-store secret create <STORE_ID> --name <NAME>`
+	// reads the value from stdin. The `--remote` flag pins us to the
+	// account-level store (not the local emulator).
+	r, err := wrangler.RunWith(ctx, wrangler.Binary, strings.NewReader(value),
+		"secrets-store", "secret", "create", p.StoreID,
+		"--name", name, "--remote")
+	if err == nil && r != nil && r.ExitCode == 0 {
+		return nil
+	}
+	// Idempotent retry path: a `create` against an existing entry
+	// returns non-zero. Fall through to `update`; if that also fails,
+	// surface the original error.
+	r2, err2 := wrangler.RunWith(ctx, wrangler.Binary, strings.NewReader(value),
+		"secrets-store", "secret", "update", p.StoreID,
+		"--name", name, "--remote")
+	if err2 == nil && r2 != nil && r2.ExitCode == 0 {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("secrets: store push %s: %w", name, err)
+	}
+	return fmt.Errorf("secrets: store push %s: create+update both failed (exit %d, then %d)",
+		name,
+		safeExitCode(r),
+		safeExitCode(r2),
+	)
+}
+
+func safeExitCode(r *wrangler.Result) int {
+	if r == nil {
+		return -1
+	}
+	return r.ExitCode
+}
+
+// StorePushFunc adapts a function into a StorePusher.
+type StorePushFunc func(ctx context.Context, name, value string) error
+
+// PushStore implements StorePusher.
+func (f StorePushFunc) PushStore(ctx context.Context, name, value string) error {
+	return f(ctx, name, value)
+}

@@ -20,6 +20,13 @@
   "assets": {
     "directory": "dist/client",
     "binding": "ASSETS",
+    // SPA fallback: TanStack Router does client-side routing under
+    // /panel/*. Without this flag a direct GET to /panel/dashboard
+    // (e.g. an operator bookmark or a refresh after navigating) would
+    // 404 because dist/client has no matching path. `single-page-application`
+    // tells Workers Static Assets to serve index.html for any 404, and
+    // the client router takes it from there.
+    "not_found_handling": "single-page-application",
   },
   "d1_databases": [
     {
@@ -30,6 +37,8 @@
     },
   ],
   "services": [{ "binding": "API", "service": "polaris-email-api" }],
+  // Tail consumer: forwards error/warn logs to services/tail.
+  "tail_consumers": [{ "service": "polaris-email-tail" }],
   "vars": {
     "ADMIN_GROUP": "polaris-admins",
     // Cookie scope. Default assumes panel runs at api.polaris.example.com/panel

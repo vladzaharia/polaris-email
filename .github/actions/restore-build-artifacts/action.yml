@@ -1,0 +1,47 @@
+name: 'Restore build artifacts'
+description: 'Optional download of build artifacts produced by Layer 2 jobs (vectors.json, panel dist, docs dist, polaris-cli binary).'
+
+inputs:
+  vectors:
+    description: 'Download packages/test-vectors/vectors.json'
+    required: false
+    default: 'false'
+  panel:
+    description: 'Download apps/panel/dist/'
+    required: false
+    default: 'false'
+  docs:
+    description: 'Download apps/docs/build/'
+    required: false
+    default: 'false'
+  polaris-cli:
+    description: 'Download apps/polaris-cli/bin/'
+    required: false
+    default: 'false'
+
+runs:
+  using: composite
+  steps:
+    - if: inputs.vectors == 'true'
+      uses: actions/download-artifact@v4
+      with:
+        name: vectors-json
+        path: packages/test-vectors/
+    - if: inputs.panel == 'true'
+      uses: actions/download-artifact@v4
+      with:
+        name: panel-dist
+        path: apps/panel/dist/
+    - if: inputs.docs == 'true'
+      uses: actions/download-artifact@v4
+      with:
+        name: docs-dist
+        path: apps/docs/build/
+    - if: inputs.polaris-cli == 'true'
+      uses: actions/download-artifact@v4
+      with:
+        name: polaris-cli-bin
+        path: apps/polaris-cli/bin/
+    - if: inputs.polaris-cli == 'true'
+      shell: bash
+      run: chmod +x apps/polaris-cli/bin/* 2>/dev/null || true

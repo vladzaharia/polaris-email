@@ -164,6 +164,44 @@ resource "cloudflare_workers_custom_domain" "cli_installer" {
 #   environment = "production"
 # }
 
+# -----------------------------------------------------------------------------
+# R2 lifecycle rules — age out message bodies, attachments, and weekly D1
+# backups. Acts as a backstop for the janitor cron's reference-counted
+# delete loop; deletes safely-orphaned objects R2 cannot.
+# -----------------------------------------------------------------------------
+#
+# module "r2_lifecycle_polaris_email" {
+#   source        = "../../modules/r2-lifecycle"
+#   cf_account_id = var.cloudflare_account_id
+#   bucket_name   = "polaris-email"
+# }
+
+# -----------------------------------------------------------------------------
+# Logpush — ship Worker logs to an external HTTP sink (B2 in plan).
+#
+# All four production Workers + the new services/tail Worker emit into the
+# `workers_trace_events` dataset. The job below forwards exception outcomes
+# only by default (low volume, high signal). Bump `var.filter` to "" to
+# forward everything — useful during incidents, expensive at steady state.
+#
+# Operator: set vars.LOGPUSH_DESTINATION_URL in `.env.deploy` (it's
+# threaded through `polaris-email setup infra render` for future symmetry
+# with the rest of the deploy config). For Better Stack, the URL is
+# `https://in.logs.betterstack.com/?source_token=<TOKEN>`.
+# -----------------------------------------------------------------------------
+#
+# module "logpush_workers" {
+#   source            = "../../modules/logpush"
+#   cf_account_id     = var.cloudflare_account_id
+#   destination_url   = var.logpush_destination_url
+# }
+#
+# variable "logpush_destination_url" {
+#   type        = string
+#   sensitive   = true
+#   description = "HTTP sink for Workers logs. See modules/logpush for format."
+# }
+
 # Workers custom domain for the docs site (apps/docs).
 #
 # Binds the `polaris-email-docs` Worker (deployed via wrangler) to

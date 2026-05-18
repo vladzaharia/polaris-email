@@ -1,0 +1,20 @@
+name: 'Setup Node + pnpm'
+description: 'pnpm + Node 22 setup with workspace install. Caller MUST run actions/checkout first.'
+
+inputs:
+  install:
+    description: 'Run pnpm install. Set to false when the caller will restore node_modules from artifact.'
+    required: false
+    default: 'true'
+
+runs:
+  using: composite
+  steps:
+    - uses: pnpm/action-setup@v6
+    - uses: actions/setup-node@v6
+      with:
+        node-version: 22
+        cache: pnpm
+    - if: inputs.install == 'true'
+      shell: bash
+      run: pnpm install --frozen-lockfile

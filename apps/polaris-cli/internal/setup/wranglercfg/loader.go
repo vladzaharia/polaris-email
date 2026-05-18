@@ -54,7 +54,11 @@ func LoadInputs(doc *state.Doc, envPath string) (*RenderInputs, error) {
 			Issuer:   get("OIDC_ISSUER"),
 			ClientID: get("OIDC_CLIENT_ID"),
 		},
+		SecretsStore: SecretsStoreInputs{
+			StoreID: get("POLARIS_SECRETS_STORE_ID"),
+		},
 		AlertWebhook: get("ALERT_WEBHOOK"),
+		LogpushURL:   get("LOGPUSH_DESTINATION_URL"),
 	}
 
 	if doc != nil {

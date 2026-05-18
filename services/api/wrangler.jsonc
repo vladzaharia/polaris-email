@@ -37,25 +37,38 @@
     { "binding": "KV_KEY_CACHE", "id": "REPLACE_WITH_LOCAL" },
     { "binding": "KV_REVOCATIONS", "id": "REPLACE_WITH_LOCAL" },
   ],
-  // Cron triggers absorbed from services/cron. Schedules:
-  //   `0 * * * *`  hourly  → anchor (audit anchor)
-  //   `0 9 * * 1`  weekly  → staleness (control-plane secret freshness)
-  //   `* * * * *`  minutely → synthetic (/healthz probe)
-  //   `0 3 * * *`  nightly → janitor (retention sweep)
+  // Cron triggers absorbed from services/cron. Schedules below are
+  // re-staggered to avoid the 4-handler 05:00–05:45 D1-contention cluster;
+  // synthetic dropped to */5 to cut KV churn 5x while keeping a 10-min
+  // worst-case detection window paired with the 2-failure threshold.
+  //   `*/5 * * * *`  every 5 min  → synthetic (/healthz probe)
+  //   `0 * * * *`    hourly       → anchor (audit anchor)
+  //   `0 9 * * 1`    weekly       → staleness (control-plane secret freshness)
+  //   `0 3 * * *`    nightly      → janitor (retention sweep)
+  //   `*/15 * * * *` qtr-hourly   → sender-abuse-threshold
+  //   `0 4 * * *`    daily 04:00  → dmarc-promote
+  //   `0 */6 * * *`  6-hourly     → mta-sts-continuity
+  //   `30 */6 * * *` 6-hourly+30  → dkim-self-verify
+  //   `0 5 * * *`    daily 05:00  → feedback-window-refresh
+  //   `5 5 * * *`    daily 05:05  → anchor-backfill (was 15 5)
+  //   `20 5 * * *`   daily 05:20  → audit-verify    (was 30 5)
+  //   `50 5 * * *`   daily 05:50  → policy-backfill (was 45 5)
+  //   `0 6 * * 0`    weekly Sun   → d1-backup (B5)
   "triggers": {
     "crons": [
+      "*/5 * * * *",
       "0 * * * *",
       "0 9 * * 1",
-      "* * * * *",
       "0 3 * * *",
       "*/15 * * * *",
       "0 4 * * *",
       "0 */6 * * *",
       "30 */6 * * *",
       "0 5 * * *",
-      "15 5 * * *",
-      "30 5 * * *",
-      "45 5 * * *",
+      "5 5 * * *",
+      "20 5 * * *",
+      "50 5 * * *",
+      "0 6 * * 0",
     ],
   },
   // FANOUT_QUEUE is bound both as a consumer (webhook fan-out worker) and a
@@ -80,6 +93,13 @@
       },
     ],
   },
+  // Tail consumer: forwards error/warn logs to services/tail, which POSTs
+  // them to ALERT_WEBHOOK. Configured here for symmetry with services/in,
+  // services/out, apps/panel; the same Tail Worker handles all four.
+  "tail_consumers": [{ "service": "polaris-email-tail" }],
+  // Analytics Engine: per-domain inbound rate, send_email outcomes, webhook
+  // delivery latency. Queried via the CF SQL API in /v1/admin/metrics/*.
+  "analytics_engine_datasets": [{ "binding": "ANALYTICS", "dataset": "polaris_metrics" }],
   "vars": {
     "API_BASE_URL": "https://polaris-email-api.workers.dev",
     // Public R2 custom domain for message bodies + attachments. Keys

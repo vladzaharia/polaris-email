@@ -47,6 +47,21 @@ export interface FanoutEvent {
   data?: Record<string, unknown>;
 }
 
+/**
+ * Bucket HTTP status into a coarse class for Analytics Engine indexing.
+ *   * 2xx  → 'succeeded' at this layer
+ *   * 4xx  → 'client' (subscriber misconfigured / invalid signature)
+ *   * 5xx  → 'server' (subscriber transient error)
+ *   * 0    → 'net'    (transport error, never reached HTTP layer)
+ */
+function statusClass(status: number): string {
+  if (status === 0) return 'net';
+  if (status >= 200 && status < 300) return 'succeeded';
+  if (status >= 400 && status < 500) return 'client';
+  if (status >= 500 && status < 600) return 'server';
+  return 'other';
+}
+
 interface SubRow {
   id: string;
   url: string;
@@ -238,6 +253,13 @@ async function deliverToSub(env: Env, ev: FanoutEvent, sub: SubRow, body: string
       latency_ms: latencyMs,
     }),
   );
+  // Analytics Engine: per-subscriber delivery outcome + latency. Status
+  // class is one of `2xx`, `4xx`, `5xx`, `net` (transport error pre-HTTP).
+  env.ANALYTICS?.writeDataPoint({
+    indexes: [sub.id, statusClass(result.status)],
+    blobs: [result.ok ? 'succeeded' : 'failed', String(result.status)],
+    doubles: [latencyMs],
+  });
   if (result.ok) {
     await env.DB.prepare(
       `UPDATE message_deliveries

@@ -39,4 +39,9 @@
     "ANCHOR_S3_REGION": "{{ .Anchor.S3Region }}",
     "ALERT_WEBHOOK": "{{ .AlertWebhook }}",
   },
+{{- if .SecretsStore.StoreID }}
+  "secrets_store_secrets": [
+    { "binding": "POLARIS_SECRET_A", "store_id": "{{ .SecretsStore.StoreID }}", "secret_name": "POLARIS_SECRET_A" },
+  ],
+{{- end }}
 }

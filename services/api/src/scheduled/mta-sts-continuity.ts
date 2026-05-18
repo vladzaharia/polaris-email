@@ -10,7 +10,10 @@
 
 import { ulid } from '@polaris-email/ids';
 import { sendAlert } from '../lib/admin-alert.js';
+import { runBatched } from '../lib/batch.js';
 import type { Env } from '../env.js';
+
+const DOMAIN_PARALLELISM = 10;
 
 interface DomainRow {
   id: string;
@@ -74,97 +77,97 @@ export interface MtaStsContinuityResult {
   failed: number;
 }
 
+async function checkOneDomain(env: Env, d: DomainRow): Promise<boolean> {
+  const start = Date.now();
+  const expected = d.mta_sts_policy_id;
+  if (!expected) {
+    await recordRun(env, {
+      target: d.name,
+      ok: false,
+      latency_ms: Date.now() - start,
+      detail: { reason: 'no_policy_id_on_row' },
+    });
+    return false;
+  }
+  const txts = await dohTxt('_mta-sts.' + d.name).catch(() => [] as string[]);
+  const observedIds = txts
+    .map((t) => /id=([0-9A-Za-z]+)/.exec(t)?.[1])
+    .filter((s): s is string => !!s);
+  const dnsOk = observedIds.includes(expected);
+  let policyOk = false;
+  let fetchStatus: number | null = null;
+  let maxAge: string | null = null;
+  try {
+    const r = await fetch('https://mta-sts.' + d.name + '/.well-known/mta-sts.txt', {
+      signal: AbortSignal.timeout(5_000),
+    });
+    fetchStatus = r.status;
+    if (r.ok) {
+      const body = await r.text();
+      const maxAgeMatch = /max_age:\s*(\d+)/.exec(body);
+      maxAge = maxAgeMatch?.[1] ?? null;
+      policyOk = body.includes('STSv1');
+    }
+  } catch {
+    /* ignore */
+  }
+  const allOk = dnsOk && policyOk;
+  await recordRun(env, {
+    target: d.name,
+    ok: allOk,
+    latency_ms: Date.now() - start,
+    detail: {
+      expected_policy_id: expected,
+      observed_policy_ids: observedIds,
+      dns_ok: dnsOk,
+      policy_ok: policyOk,
+      fetch_status: fetchStatus,
+      max_age: maxAge,
+    },
+  });
+  if (!allOk) {
+    try {
+      await sendAlert(env, {
+        alert_type: 'tls_rpt_failure_burst',
+        severity: 'warn',
+        target: 'domain:' + d.id,
+        subject: '[POLARIS][WARN] MTA-STS drift detected for ' + d.name,
+        body:
+          'MTA-STS continuity check failed for ' +
+          d.name +
+          '. Expected policy_id ' +
+          expected +
+          ', observed ' +
+          (observedIds.join(', ') || '(none)') +
+          '. DNS ok=' +
+          String(dnsOk) +
+          ' policy_ok=' +
+          String(policyOk),
+        payload: {
+          domain: d.name,
+          expected,
+          observed: observedIds,
+          dnsOk,
+          policyOk,
+          fetchStatus,
+        },
+      });
+    } catch {
+      /* non-fatal */
+    }
+  }
+  return allOk;
+}
+
 export async function mtaStsContinuityRun(env: Env): Promise<MtaStsContinuityResult> {
   const rows = await env.DB.prepare(
     `SELECT id, name, mta_sts_policy_id, mta_sts_max_age
      FROM mail_domains
      WHERE mta_sts_mode = 'enforce' AND status NOT IN ('disabled')`,
   ).all<DomainRow>();
-  let ok = 0;
-  let failed = 0;
-  for (const d of rows.results ?? []) {
-    const start = Date.now();
-    const expected = d.mta_sts_policy_id;
-    if (!expected) {
-      await recordRun(env, {
-        target: d.name,
-        ok: false,
-        latency_ms: Date.now() - start,
-        detail: { reason: 'no_policy_id_on_row' },
-      });
-      failed++;
-      continue;
-    }
-    const txts = await dohTxt('_mta-sts.' + d.name).catch(() => [] as string[]);
-    const observedIds = txts
-      .map((t) => /id=([0-9A-Za-z]+)/.exec(t)?.[1])
-      .filter((s): s is string => !!s);
-    const dnsOk = observedIds.includes(expected);
-    let policyOk = false;
-    let fetchStatus: number | null = null;
-    let maxAge: string | null = null;
-    try {
-      const r = await fetch('https://mta-sts.' + d.name + '/.well-known/mta-sts.txt', {
-        signal: AbortSignal.timeout(5_000),
-      });
-      fetchStatus = r.status;
-      if (r.ok) {
-        const body = await r.text();
-        const maxAgeMatch = /max_age:\s*(\d+)/.exec(body);
-        maxAge = maxAgeMatch?.[1] ?? null;
-        policyOk = body.includes('STSv1');
-      }
-    } catch {
-      /* ignore */
-    }
-    const allOk = dnsOk && policyOk;
-    await recordRun(env, {
-      target: d.name,
-      ok: allOk,
-      latency_ms: Date.now() - start,
-      detail: {
-        expected_policy_id: expected,
-        observed_policy_ids: observedIds,
-        dns_ok: dnsOk,
-        policy_ok: policyOk,
-        fetch_status: fetchStatus,
-        max_age: maxAge,
-      },
-    });
-    if (allOk) {
-      ok++;
-    } else {
-      failed++;
-      try {
-        await sendAlert(env, {
-          alert_type: 'tls_rpt_failure_burst',
-          severity: 'warn',
-          target: 'domain:' + d.id,
-          subject: '[POLARIS][WARN] MTA-STS drift detected for ' + d.name,
-          body:
-            'MTA-STS continuity check failed for ' +
-            d.name +
-            '. Expected policy_id ' +
-            expected +
-            ', observed ' +
-            (observedIds.join(', ') || '(none)') +
-            '. DNS ok=' +
-            String(dnsOk) +
-            ' policy_ok=' +
-            String(policyOk),
-          payload: {
-            domain: d.name,
-            expected,
-            observed: observedIds,
-            dnsOk,
-            policyOk,
-            fetchStatus,
-          },
-        });
-      } catch {
-        /* non-fatal */
-      }
-    }
-  }
-  return { candidates: rows.results?.length ?? 0, ok, failed };
+  const domains: DomainRow[] = rows.results ?? [];
+  const outcomes = await runBatched(domains, DOMAIN_PARALLELISM, (d) => checkOneDomain(env, d));
+  const ok = outcomes.filter((x) => x).length;
+  const failed = outcomes.length - ok;
+  return { candidates: domains.length, ok, failed };
 }

@@ -14,4 +14,9 @@
   ],
   "r2_buckets": [{ "binding": "R2", "bucket_name": "polaris-email", "jurisdiction": "eu" }],
   "kv_namespaces": [{ "binding": "KV_RATE_LIMIT", "id": "{{ .KV.RateLimit.ID }}" }],
+{{- if .SecretsStore.StoreID }}
+  "secrets_store_secrets": [
+    { "binding": "POLARIS_SECRET_A", "store_id": "{{ .SecretsStore.StoreID }}", "secret_name": "POLARIS_SECRET_A" },
+  ],
+{{- end }}
 }
