@@ -24,7 +24,7 @@ This walkthrough covers:
 4. Service tokens for daemons that need to reach the admin API
    behind Access.
 5. Group-based role sync via the OIDC `groups` claim and the
-   `ADMIN_GROUP` env var the panel reads.
+   `OIDC_ADMIN_GROUP` env var the panel reads.
 
 :::note
 We've validated this with Google OIDC and GitHub OIDC. Other IdPs
@@ -43,12 +43,12 @@ Pick the relevant template and fill in the IdP's client id, client
 secret, and (for generic OIDC) the issuer / discovery URL. Required
 scopes for polaris-email:
 
-| Scope                    | Why                                                                                                                                              |
-| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `openid`                 | Required for OIDC.                                                                                                                               |
-| `email`                  | Better-auth uses the email as the user's primary identifier.                                                                                     |
-| `profile`                | Optional but recommended for display name + avatar.                                                                                              |
-| `groups` (or equivalent) | The panel's `ADMIN_GROUP` check reads this claim. Configure the IdP to include group membership in either the id_token or the userinfo endpoint. |
+| Scope                    | Why                                                                                                                                                   |
+| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `openid`                 | Required for OIDC.                                                                                                                                    |
+| `email`                  | Better-auth uses the email as the user's primary identifier.                                                                                          |
+| `profile`                | Optional but recommended for display name + avatar.                                                                                                   |
+| `groups` (or equivalent) | The panel's `OIDC_ADMIN_GROUP` check reads this claim. Configure the IdP to include group membership in either the id_token or the userinfo endpoint. |
 
 **Important:** the panel's role-sync code accepts the groups claim
 under any of these names: `groups`, `roles`, `cf-access-groups`,
@@ -74,7 +74,7 @@ sidecar groups source.
 
 GitHub doesn't emit a `groups` claim natively. Access can synthesize
 one from GitHub team membership when you use the GitHub IdP type;
-pick the org and add the teams you intend to use as `ADMIN_GROUP`
+pick the org and add the teams you intend to use as `OIDC_ADMIN_GROUP`
 values. The synthesised claim arrives under `cf-access-groups`.
 
 ## 2. Wire the `access-app` Terraform module
@@ -227,7 +227,7 @@ The flow:
 
 1. Extract the `groups` claim from either the OIDC userinfo response
    or the decoded id_token JWT payload.
-2. Check whether `env.ADMIN_GROUP` (default `polaris-admins`) appears
+2. Check whether `env.OIDC_ADMIN_GROUP` (default `polaris-admins`) appears
    in the list.
 3. Write the boolean to the `user.admin` column in D1.
 
@@ -236,14 +236,14 @@ on the next login**, not retroactively on the current session — if
 you need to revoke a session immediately, delete the row from the
 `session` table (or have the user sign out).
 
-Configure `ADMIN_GROUP` per environment in the panel's
+Configure `OIDC_ADMIN_GROUP` per environment in the panel's
 `wrangler.local.jsonc` (committed default in
 `wrangler.jsonc` is `polaris-admins`):
 
 ```jsonc
 {
   "vars": {
-    "ADMIN_GROUP": "polaris-admins",
+    "OIDC_ADMIN_GROUP": "polaris-admins",
   },
 }
 ```
@@ -281,7 +281,7 @@ After `terraform apply`:
    A misconfigured `OIDC_REDIRECT_URL` shows up here immediately.
 3. Sign in as a non-admin. The panel should accept the session but
    refuse to render any admin route (every admin route runs the
-   `requireAdmin(ADMIN_GROUP)` middleware).
+   `requireAdmin(OIDC_ADMIN_GROUP)` middleware).
 4. Service-token check: `curl -H 'CF-Access-Client-Id: …' -H 'CF-Access-Client-Secret: …' https://<panel-host>/api/healthz`
    should return `200 ok`. Drop the headers, expect a redirect to
    the Access login page.

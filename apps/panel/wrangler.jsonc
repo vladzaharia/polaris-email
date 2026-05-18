@@ -40,7 +40,7 @@
   // Tail consumer: forwards error/warn logs to services/tail.
   "tail_consumers": [{ "service": "polaris-email-tail" }],
   "vars": {
-    "ADMIN_GROUP": "polaris-admins",
+    "OIDC_ADMIN_GROUP": "polaris-admins",
     // Cookie scope. Default assumes panel runs at api.polaris.example.com/panel
     // (same host as the API), so Path=/panel + no Domain. For subdomain mode
     // (panel.polaris.example.com + api.polaris.example.com), override locally:

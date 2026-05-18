@@ -12,7 +12,7 @@ export interface Env {
   ASSETS: Fetcher;
 
   // Vars
-  ADMIN_GROUP: string;
+  OIDC_ADMIN_GROUP: string;
   COOKIE_PATH: string;
   COOKIE_DOMAIN?: string;
   /**
@@ -36,6 +36,18 @@ export interface Env {
   OIDC_CLIENT_ID?: string;
   OIDC_CLIENT_SECRET?: string;
   OIDC_REDIRECT_URL?: string;
+  /**
+   * Space-separated OIDC scopes. Must include `groups` (or your IdP's
+   * equivalent) for role-sync to work. Empty → defaults to
+   * "openid email profile groups" at sign-in time.
+   */
+  OIDC_SCOPES?: string;
+  /**
+   * Primary OIDC claim path that holds group membership. Defaults to
+   * `groups`. Legacy alternates (`roles`, `cf-access-groups`,
+   * `cf_access_groups`) are still checked as fallbacks.
+   */
+  OIDC_GROUPS_CLAIM?: string;
 
   // Better-auth signing secret.
   BETTER_AUTH_SECRET?: string;

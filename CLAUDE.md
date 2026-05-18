@@ -231,7 +231,7 @@ were the canonical one.
   the canonical record of who did what.
 - Auth flow: Cloudflare Access → Worker → better-auth `genericOAuth` →
   OIDC. The `databaseHooks.user.create.after` hook role-syncs from the
-  OIDC `groups` claim against the `ADMIN_GROUP` var. The claim is
+  OIDC `groups` claim against the `OIDC_ADMIN_GROUP` var. The claim is
   capped at 200 entries to bound the sign-in path.
 
 ## Things to avoid

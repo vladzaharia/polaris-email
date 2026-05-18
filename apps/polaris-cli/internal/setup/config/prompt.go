@@ -126,8 +126,12 @@ func Prompt(initial *Config, opts PromptOptions) (*Config, error) {
 		{key: "OIDC_ISSUER", desc: "Panel OIDC issuer URL (optional)", val: &c.OIDCIssuer, valid: optionalURL},
 		{key: "OIDC_CLIENT_ID", desc: "Panel OIDC client ID (optional)", val: &c.OIDCClientID},
 		{key: "OIDC_CLIENT_SECRET", desc: "Panel OIDC client secret (optional)", val: &c.OIDCClientSecret},
+		{key: "OIDC_SCOPES", desc: "Space-separated OIDC scopes (must include groups for role sync)", val: &c.OIDCScopes, def: defaultIfBlank(c.OIDCScopes, "openid email profile groups")},
+		{key: "OIDC_GROUPS_CLAIM", desc: "Claim path that holds group membership", val: &c.OIDCGroupsClaim, def: defaultIfBlank(c.OIDCGroupsClaim, "groups")},
+		{key: "OIDC_ADMIN_GROUP", desc: "OIDC group whose members get panel admin role", val: &c.AdminGroup, def: defaultIfBlank(c.AdminGroup, "polaris-admins")},
 		{key: "R2_PUBLIC_HOST", desc: "R2 public custom domain (e.g. r2.mail.example.com)", val: &c.R2PublicHost},
 		{key: "BRIDGE_HOST", desc: "Mail-bridge public hostname (optional, e.g. bridge.example.com)", val: &c.BridgeHost},
+		{key: "LOGPUSH_DESTINATION_URL", desc: "Logpush HTTP sink (optional; leave empty to disable Logpush)", val: &c.LogpushDestinationURL, valid: optionalURL},
 	}
 	for _, s := range tail {
 		if err := runOne(s.key, s.desc, s.val, s.def, s.valid); err != nil {

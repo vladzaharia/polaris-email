@@ -19,6 +19,9 @@
     "POLARIS_API_HOSTNAME": "{{ .Hostnames.PolarisAPI }}",
     "OIDC_ISSUER": "{{ .OIDC.Issuer }}",
     "OIDC_CLIENT_ID": "{{ .OIDC.ClientID }}",
+    "OIDC_SCOPES": "{{ .OIDC.Scopes }}",
+    "OIDC_GROUPS_CLAIM": "{{ .OIDC.GroupsClaim }}",
+    "OIDC_ADMIN_GROUP": "{{ .OIDC.AdminGroup }}",
   },
 {{- if .SecretsStore.StoreID }}
   "secrets_store_secrets": [

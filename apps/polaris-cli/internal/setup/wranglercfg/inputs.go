@@ -152,9 +152,17 @@ type SyntheticInputs struct {
 // OIDCInputs are the OIDC client config the panel template bakes in.
 // The client secret is pushed via `wrangler secret put OIDC_CLIENT_SECRET`,
 // not through templates.
+//
+// Scopes / GroupsClaim / AdminGroup default to sensible values in
+// LoadInputs when their .env.deploy counterparts are blank — the panel
+// happy path is `openid email profile groups` requested, `groups` claim
+// read, `polaris-admins` group elevated.
 type OIDCInputs struct {
-	Issuer   string
-	ClientID string
+	Issuer       string
+	ClientID     string
+	Scopes       string
+	GroupsClaim  string
+	AdminGroup   string
 }
 
 // Validate enforces every required field is populated. The current

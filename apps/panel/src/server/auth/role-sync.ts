@@ -25,7 +25,11 @@ import { and, eq } from 'drizzle-orm';
 import type { Env } from '../env.js';
 import * as schema from './schema.js';
 
-const GROUP_CLAIMS = ['groups', 'roles', 'cf-access-groups', 'cf_access_groups'] as const;
+// Default claim search order when `env.OIDC_GROUPS_CLAIM` is unset.
+// First match wins. Includes Cloudflare Access's `cf-access-groups`
+// shape (both hyphen and underscore variants because IdPs differ on
+// JSON-claim canonicalisation).
+const DEFAULT_GROUP_CLAIMS = ['groups', 'roles', 'cf-access-groups', 'cf_access_groups'] as const;
 
 type Db = DrizzleD1Database<typeof schema>;
 
@@ -42,12 +46,26 @@ export async function syncRolesFromGroups(
   db?: Db,
 ): Promise<void> {
   if (!userId) return;
-  const isAdmin = groups.includes(env.ADMIN_GROUP);
+  const isAdmin = groups.includes(env.OIDC_ADMIN_GROUP);
   const database = db ?? drizzle(env.DB, { schema });
   await database
     .update(schema.user)
     .set({ admin: isAdmin, updatedAt: new Date() })
     .where(eq(schema.user.id, userId));
+}
+
+// claimsToSearch returns the ordered list of claim keys to inspect. If
+// the operator has set OIDC_GROUPS_CLAIM we try it first; the legacy
+// alternates remain as fallbacks so an IdP swap that goes from `groups`
+// to `roles` (or vice versa) doesn't immediately lock everyone out.
+function claimsToSearch(env: Env): readonly string[] {
+  const configured = env.OIDC_GROUPS_CLAIM?.trim();
+  if (!configured) return DEFAULT_GROUP_CLAIMS;
+  if (DEFAULT_GROUP_CLAIMS.includes(configured as (typeof DEFAULT_GROUP_CLAIMS)[number])) {
+    // Already in the legacy list; just promote it to the front.
+    return [configured, ...DEFAULT_GROUP_CLAIMS.filter((c) => c !== configured)];
+  }
+  return [configured, ...DEFAULT_GROUP_CLAIMS];
 }
 
 /**
@@ -66,7 +84,7 @@ export async function syncRolesFromUserInfo(
     await syncRolesForUserId(env, userId, db);
     return;
   }
-  const groups = extractGroups(userInfo);
+  const groups = extractGroups(userInfo, claimsToSearch(env));
   await syncRolesFromGroups(env, userId, groups, db);
 }
 
@@ -96,16 +114,17 @@ export async function syncRolesForUserId(env: Env, userId: string, db?: Db): Pro
   const row = accountRow[0];
   if (!row) return;
 
+  const claims = claimsToSearch(env);
   let groups: string[] | null = null;
   if (row.idToken) {
     const payload = decodeJwtPayload(row.idToken);
-    if (payload) groups = extractGroups(payload);
+    if (payload) groups = extractGroups(payload, claims);
   }
   if (!groups || groups.length === 0) {
     // Fall back to userinfo if we have an access token + issuer.
     if (row.accessToken && env.OIDC_ISSUER) {
       const userInfo = await fetchUserInfo(env.OIDC_ISSUER, row.accessToken);
-      if (userInfo) groups = extractGroups(userInfo);
+      if (userInfo) groups = extractGroups(userInfo, claims);
     }
   }
   await syncRolesFromGroups(env, userId, groups ?? [], database);
@@ -133,8 +152,11 @@ export async function afterSignInRoleSync(
 // realistic group membership for a single user.
 const MAX_GROUPS = 200;
 
-function extractGroups(claims: Record<string, unknown>): string[] {
-  for (const claim of GROUP_CLAIMS) {
+function extractGroups(
+  claims: Record<string, unknown>,
+  claimOrder: readonly string[] = DEFAULT_GROUP_CLAIMS,
+): string[] {
+  for (const claim of claimOrder) {
     const v = claims[claim];
     if (Array.isArray(v)) {
       if (v.length > MAX_GROUPS) return [];

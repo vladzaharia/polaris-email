@@ -46,8 +46,11 @@ func LoadInputs(doc *state.Doc, envPath string) (*RenderInputs, error) {
 			MonitorDomain: get("SYNTHETIC_MONITOR_DOMAIN"),
 		},
 		OIDC: OIDCInputs{
-			Issuer:   get("OIDC_ISSUER"),
-			ClientID: get("OIDC_CLIENT_ID"),
+			Issuer:      get("OIDC_ISSUER"),
+			ClientID:    get("OIDC_CLIENT_ID"),
+			Scopes:      defaultEmpty(get("OIDC_SCOPES"), "openid email profile groups"),
+			GroupsClaim: defaultEmpty(get("OIDC_GROUPS_CLAIM"), "groups"),
+			AdminGroup:  defaultEmpty(get("OIDC_ADMIN_GROUP"), "polaris-admins"),
 		},
 		SecretsStore: SecretsStoreInputs{
 			StoreID: get("POLARIS_SECRETS_STORE_ID"),
@@ -133,6 +136,16 @@ func nameOr(name, fallback string) string {
 		return fallback
 	}
 	return name
+}
+
+// defaultEmpty returns fallback when the trimmed input is the empty
+// string. Used to soft-default OIDC scopes / groups claim / admin group
+// without requiring the operator to fill them in explicitly.
+func defaultEmpty(s, fallback string) string {
+	if strings.TrimSpace(s) == "" {
+		return fallback
+	}
+	return s
 }
 
 func pick(a, b string) string {

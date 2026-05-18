@@ -57,6 +57,23 @@ type Config struct {
 	OIDCIssuer string `json:"OIDC_ISSUER" yaml:"OIDC_ISSUER"`
 	// OIDCClientID is the OIDC client ID for the admin panel.
 	OIDCClientID string `json:"OIDC_CLIENT_ID" yaml:"OIDC_CLIENT_ID"`
+	// OIDCScopes is the space-separated list of scopes the panel requests
+	// from the IdP. Must include `groups` (or a provider-specific
+	// equivalent) for role sync to work. Defaults to
+	// "openid email profile groups" when empty.
+	OIDCScopes string `json:"OIDC_SCOPES" yaml:"OIDC_SCOPES"`
+	// OIDCGroupsClaim is the JSON path inside the ID token where group
+	// membership lives. Most IdPs use `groups`; Okta historically uses
+	// `groups`, Auth0 a custom claim, etc. Defaults to "groups".
+	OIDCGroupsClaim string `json:"OIDC_GROUPS_CLAIM" yaml:"OIDC_GROUPS_CLAIM"`
+	// AdminGroup is the OIDC `groups` claim value that grants panel admin
+	// role. Threaded into apps/panel as a `vars.OIDC_ADMIN_GROUP` override
+	// at render time. Defaults to "polaris-admins" if empty.
+	AdminGroup string `json:"OIDC_ADMIN_GROUP" yaml:"OIDC_ADMIN_GROUP"`
+	// LogpushDestinationURL is the HTTP sink Workers logs are shipped to.
+	// Threaded as TF_VAR_logpush_destination_url at `setup infra apply`
+	// time. Empty disables Logpush.
+	LogpushDestinationURL string `json:"LOGPUSH_DESTINATION_URL" yaml:"LOGPUSH_DESTINATION_URL"`
 
 	// --- secrets ---
 
@@ -83,8 +100,12 @@ var FieldOrder = []string{
 	"OIDC_ISSUER",
 	"OIDC_CLIENT_ID",
 	"OIDC_CLIENT_SECRET",
+	"OIDC_SCOPES",
+	"OIDC_GROUPS_CLAIM",
+	"OIDC_ADMIN_GROUP",
 	"R2_PUBLIC_HOST",
 	"BRIDGE_HOST",
+	"LOGPUSH_DESTINATION_URL",
 }
 
 // SecretFields lists the .env.deploy keys whose values must be hidden
@@ -104,19 +125,23 @@ func (c *Config) AsMap() map[string]string {
 		return map[string]string{}
 	}
 	return map[string]string{
-		"CF_ACCOUNT_ID":               c.CFAccountID,
-		"POLARIS_API_HOSTNAME":        c.PolarisAPIHostname,
-		"CF_API_TOKEN":                c.CFAPIToken,
-		"CF_ZONE_ID":                  c.CFZoneID,
-		"SYNTHETIC_MONITOR_DOMAIN":    c.SyntheticMonitorDomain,
-		"ALERT_WEBHOOK":               c.AlertWebhook,
-		"SYNTHETIC_FROM":              c.SyntheticFrom,
-		"SYNTHETIC_TO":                c.SyntheticTo,
-		"OIDC_ISSUER":                 c.OIDCIssuer,
-		"OIDC_CLIENT_ID":              c.OIDCClientID,
-		"OIDC_CLIENT_SECRET":          c.OIDCClientSecret,
-		"R2_PUBLIC_HOST":              c.R2PublicHost,
-		"BRIDGE_HOST":                 c.BridgeHost,
+		"CF_ACCOUNT_ID":            c.CFAccountID,
+		"POLARIS_API_HOSTNAME":     c.PolarisAPIHostname,
+		"CF_API_TOKEN":             c.CFAPIToken,
+		"CF_ZONE_ID":               c.CFZoneID,
+		"SYNTHETIC_MONITOR_DOMAIN": c.SyntheticMonitorDomain,
+		"ALERT_WEBHOOK":            c.AlertWebhook,
+		"SYNTHETIC_FROM":           c.SyntheticFrom,
+		"SYNTHETIC_TO":             c.SyntheticTo,
+		"OIDC_ISSUER":              c.OIDCIssuer,
+		"OIDC_CLIENT_ID":           c.OIDCClientID,
+		"OIDC_CLIENT_SECRET":       c.OIDCClientSecret,
+		"OIDC_SCOPES":              c.OIDCScopes,
+		"OIDC_GROUPS_CLAIM":        c.OIDCGroupsClaim,
+		"OIDC_ADMIN_GROUP":              c.AdminGroup,
+		"R2_PUBLIC_HOST":           c.R2PublicHost,
+		"BRIDGE_HOST":              c.BridgeHost,
+		"LOGPUSH_DESTINATION_URL":  c.LogpushDestinationURL,
 	}
 }
 
@@ -148,10 +173,18 @@ func (c *Config) setField(key, value string) bool {
 		c.OIDCClientID = value
 	case "OIDC_CLIENT_SECRET":
 		c.OIDCClientSecret = value
+	case "OIDC_SCOPES":
+		c.OIDCScopes = value
+	case "OIDC_GROUPS_CLAIM":
+		c.OIDCGroupsClaim = value
+	case "OIDC_ADMIN_GROUP":
+		c.AdminGroup = value
 	case "R2_PUBLIC_HOST":
 		c.R2PublicHost = value
 	case "BRIDGE_HOST":
 		c.BridgeHost = value
+	case "LOGPUSH_DESTINATION_URL":
+		c.LogpushDestinationURL = value
 	default:
 		return false
 	}

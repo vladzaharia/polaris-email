@@ -19,5 +19,8 @@
     "POLARIS_API_HOSTNAME": "api.example.com",
     "OIDC_ISSUER": "https://oidc.example.com",
     "OIDC_CLIENT_ID": "client-abc",
+    "OIDC_SCOPES": "openid email profile groups",
+    "OIDC_GROUPS_CLAIM": "groups",
+    "OIDC_ADMIN_GROUP": "polaris-admins",
   },
 }

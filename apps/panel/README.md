@@ -56,12 +56,12 @@ Bindings (declared in `wrangler.jsonc`):
 Vars (committed defaults in `wrangler.jsonc`, override in
 `wrangler.local.jsonc`):
 
-| Var             | Default          | Purpose                                                                                   |
-| --------------- | ---------------- | ----------------------------------------------------------------------------------------- |
-| `ADMIN_GROUP`   | `polaris-admins` | OIDC `groups` claim required for admin role-sync.                                         |
-| `COOKIE_PATH`   | `/panel`         | Session cookie `Path`. Override to `/` for subdomain deployment mode.                     |
-| `COOKIE_DOMAIN` | _(unset)_        | Set to `.example.com` when the panel and API live on different subdomains.                |
-| `DEV_MODE`      | _(unset)_        | When `"1"`, relaxes secure-cookie checks and enables `/api/dev/login` for local dev only. |
+| Var                | Default          | Purpose                                                                                   |
+| ------------------ | ---------------- | ----------------------------------------------------------------------------------------- |
+| `OIDC_ADMIN_GROUP` | `polaris-admins` | OIDC `groups` claim required for admin role-sync.                                         |
+| `COOKIE_PATH`      | `/panel`         | Session cookie `Path`. Override to `/` for subdomain deployment mode.                     |
+| `COOKIE_DOMAIN`    | _(unset)_        | Set to `.example.com` when the panel and API live on different subdomains.                |
+| `DEV_MODE`         | _(unset)_        | When `"1"`, relaxes secure-cookie checks and enables `/api/dev/login` for local dev only. |
 
 Secrets (`wrangler secret put`):
 
@@ -86,7 +86,7 @@ already cleared Access reach the Worker. Inside the Worker, better-auth
 uses its `genericOAuth` plugin to delegate sign-in to the same OIDC
 issuer Access exposes. On first sign-in the `databaseHooks.user.create.after`
 hook runs `afterSignInRoleSync(env, userId, claims)`, which inspects the
-OIDC `groups` claim against `ADMIN_GROUP` and writes the `admin` flag
+OIDC `groups` claim against `OIDC_ADMIN_GROUP` and writes the `admin` flag
 onto the user row. Subsequent requests hit `auth.api.getSession`, which
 returns the user + session from D1; a missing or expired session
 short-circuits to a redirect. Sensitive actions (DLQ drop, credential

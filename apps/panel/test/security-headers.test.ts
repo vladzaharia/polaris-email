@@ -20,7 +20,7 @@ function mkEnv(overrides: Partial<Env> = {}): Env {
     DB: {} as D1Database,
     API: stubFetcher,
     ASSETS: stubFetcher,
-    ADMIN_GROUP: 'polaris-admins',
+    OIDC_ADMIN_GROUP: 'polaris-admins',
     COOKIE_PATH: '/panel',
     ...overrides,
   };

@@ -34,7 +34,7 @@ describe('Dashboard contract', () => {
       DB: {} as D1Database,
       API: stubFetcher,
       ASSETS: stubFetcher,
-      ADMIN_GROUP: 'polaris-admins',
+      OIDC_ADMIN_GROUP: 'polaris-admins',
       COOKIE_PATH: '/panel',
     };
     const polaris = makePolaris(env);

@@ -1,0 +1,87 @@
+# Cross-platform CLI release pipeline for `polaris-email`.
+#
+# Triggers on tag push (`v*` or `polaris-cli-v*`). Runs goreleaser to build
+# darwin/{amd64,arm64} + linux/{amd64,arm64} + windows/amd64 archives, then
+# publishes them to a GitHub Release. The release is created as a draft —
+# bump it to published in the UI once smoke-tested.
+#
+# The published artifacts are exactly what apps/cli-installer/src/install.sh
+# expects:
+#   - polaris-email_{version}_{os}_{arch}.tar.gz  (or .zip on windows)
+#   - checksums.txt
+# So `curl -fsSL cli.mail.plrs.im | sh` will resolve the new tag from the
+# GitHub releases API and pull these archives — no separate registry needed.
+#
+# The bridge container image is handled by mail-bridge-image.yml (publishes
+# to GHCR on the same tag event).
+#
+# Security note: this workflow does not interpolate any untrusted input
+# into shell `run:` blocks. The only `github.event.inputs.*` reference is
+# inside an `if:` expression, which GitHub evaluates as a literal string
+# match (no shell context). The goreleaser binary is the only thing that
+# reads tag names and they flow only as ldflag values, never as shell.
+name: release-cli
+
+on:
+  push:
+    tags:
+      - 'v*'
+      - 'polaris-cli-v*'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Snapshot build only (no publish)'
+        required: false
+        default: 'false'
+
+concurrency:
+  group: release-cli-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+jobs:
+  release:
+    name: goreleaser
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: apps/polaris-cli/go.mod
+          cache: true
+          cache-dependency-path: apps/polaris-cli/go.sum
+
+      - name: Set up goreleaser
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          install-only: true
+          version: '~> v2'
+
+      - name: goreleaser (snapshot)
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'true'
+        working-directory: apps/polaris-cli
+        run: goreleaser release --snapshot --clean --skip=publish
+
+      - name: goreleaser (release)
+        if: github.event_name != 'workflow_dispatch' || github.event.inputs.dry_run != 'true'
+        working-directory: apps/polaris-cli
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
+        run: goreleaser release --clean
+
+      - name: Attest archive provenance
+        if: github.event_name == 'push'
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: 'apps/polaris-cli/dist/polaris-email_*.tar.gz'

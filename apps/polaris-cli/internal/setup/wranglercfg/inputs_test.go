@@ -104,8 +104,11 @@ func fullyPopulatedInputs() *RenderInputs {
 			MonitorDomain: "example.com",
 		},
 		OIDC: OIDCInputs{
-			Issuer:   "https://oidc.example.com",
-			ClientID: "client-abc",
+			Issuer:      "https://oidc.example.com",
+			ClientID:    "client-abc",
+			Scopes:      "openid email profile groups",
+			GroupsClaim: "groups",
+			AdminGroup:  "polaris-admins",
 		},
 		AlertWebhook: "https://alerts.example.com/hook",
 	}

@@ -80,7 +80,12 @@ export function makeAuth(env: Env): Auth {
               : '',
             clientId: env.OIDC_CLIENT_ID ?? '',
             clientSecret: env.OIDC_CLIENT_SECRET ?? '',
-            scopes: ['openid', 'email', 'profile', 'groups'],
+            // Scopes are operator-configurable via OIDC_SCOPES
+            // (space-separated). The `groups` scope is required for
+            // role-sync; the configure wizard defaults to
+            // "openid email profile groups", which yields the same set
+            // as the historical hardcoded list.
+            scopes: (env.OIDC_SCOPES ?? 'openid email profile groups').split(/\s+/).filter(Boolean),
             mapProfileToUser: (profile: Record<string, unknown>) => {
               // Defer the actual role-sync until after the user row exists.
               // We stash the raw profile on the returned object so the
