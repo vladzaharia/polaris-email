@@ -72,13 +72,30 @@ jobs:
         working-directory: apps/polaris-cli
         run: goreleaser release --snapshot --clean --skip=publish
 
+      # Detect whether the Homebrew tap PAT is configured. If absent we
+      # skip the brew publish step (goreleaser would otherwise fall back
+      # to GITHUB_TOKEN and 403 against vladzaharia/homebrew-tap). The
+      # check uses the secret's presence only — never echoes its value.
+      - name: Detect Homebrew tap secret
+        id: brew-gate
+        env:
+          HAS_TAP_PAT: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN != '' }}
+        run: |
+          if [ "$HAS_TAP_PAT" = "true" ]; then
+            echo "skip_flag=" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip_flag=--skip=homebrew" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: goreleaser (release)
         if: github.event_name != 'workflow_dispatch' || github.event.inputs.dry_run != 'true'
         working-directory: apps/polaris-cli
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
-        run: goreleaser release --clean
+          SKIP_FLAG: ${{ steps.brew-gate.outputs.skip_flag }}
+        # SKIP_FLAG is "--skip=homebrew" or empty; never operator input.
+        run: goreleaser release --clean $SKIP_FLAG
 
       - name: Attest archive provenance
         if: github.event_name == 'push'
