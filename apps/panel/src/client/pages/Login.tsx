@@ -44,11 +44,17 @@ export function Login() {
     setErr(null);
     setPending(true);
     try {
+      // eslint-disable-next-line no-console
+      console.log('[panel/login] mount at', window.location.href, '— starting sign-in');
       const url = await startSignIn();
+      // eslint-disable-next-line no-console
+      console.log('[panel/login] navigating to IdP:', url);
       window.location.assign(url);
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
       setPending(false);
+      // eslint-disable-next-line no-console
+      console.error('[panel/login] sign-in error:', e);
     }
   }
 
@@ -58,7 +64,12 @@ export function Login() {
     // against starting two sign-in flows.
     if (autoTried.current) return;
     autoTried.current = true;
-    if (callbackError()) return;
+    const e = callbackError();
+    if (e) {
+      // eslint-disable-next-line no-console
+      console.warn('[panel/login] callback error param present, skipping auto-redirect:', e);
+      return;
+    }
     void go();
   }, []);
 

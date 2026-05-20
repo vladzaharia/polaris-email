@@ -21,13 +21,19 @@
   "assets": {
     "directory": "dist/client",
     "binding": "ASSETS",
-    // SPA fallback: TanStack Router does client-side routing under
-    // /panel/*. Without this flag a direct GET to /panel/dashboard
-    // (e.g. an operator bookmark or a refresh after navigating) would
-    // 404 because dist/client has no matching path. `single-page-application`
-    // tells Workers Static Assets to serve index.html for any 404, and
-    // the client router takes it from there.
+    // SPA fallback: TanStack Router does client-side routing. Without
+    // this flag a direct GET to /mailboxes (operator bookmark, refresh)
+    // 404s because dist/client has no matching path.
+    // `single-page-application` tells Workers Static Assets to serve
+    // index.html for any 404, and the client router takes it from there.
     "not_found_handling": "single-page-application",
+    // Run the Worker FIRST for these patterns — assets/SPA-fallback is
+    // checked only if the Worker doesn't claim them. Without this, the
+    // Workers Assets router would intercept dynamic paths like the
+    // OAuth callback, serve the cached SPA index.html, and the
+    // better-auth handler would never run — causing an endless IdP
+    // bounce because no session cookie ever gets set.
+    "run_worker_first": ["/api/*", "/healthz"],
   },
   "d1_databases": [
     {
@@ -42,11 +48,12 @@
   "tail_consumers": [{ "service": "polaris-email-tail" }],
   "vars": {
     "OIDC_ADMIN_GROUP": "polaris-admins",
-    // Cookie scope. Default assumes panel runs at api.polaris.example.com/panel
-    // (same host as the API), so Path=/panel + no Domain. For subdomain mode
-    // (panel.polaris.example.com + api.polaris.example.com), override locally:
-    //   COOKIE_DOMAIN=".polaris.example.com"
-    "COOKIE_PATH": "/panel",
+    // Cookie scope. The runtime defaults to Path=/ which matches the
+    // canonical "panel served at its own subdomain" deploy. For deploys
+    // that mount the panel on a subpath (e.g. api.example.com/panel),
+    // override locally:
+    //   COOKIE_PATH="/panel"
+    //   COOKIE_DOMAIN=".example.com"  // if sharing cookies with the API host
     // Phase 3e.3 — DEV_MODE / ENVIRONMENT contract:
     //   * `DEV_MODE=1` enables the /api/dev/login backdoor in
     //     routes/session.ts. MUST never be set in production.

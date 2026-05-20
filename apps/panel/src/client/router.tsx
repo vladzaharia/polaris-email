@@ -29,16 +29,29 @@ async function hasSession(): Promise<boolean> {
     const res = await fetch('/api/auth/get-session', { credentials: 'include' });
     if (!res.ok) return true;
     const body = (await res.json()) as unknown;
-    return body !== null && body !== undefined;
-  } catch {
+    const ok = body !== null && body !== undefined;
+    // eslint-disable-next-line no-console
+    console.log('[panel/auth] get-session ->', { status: res.status, body, ok });
+    return ok;
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.error('[panel/auth] get-session threw, failing open:', e);
     return true;
   }
 }
 
 const rootRoute = createRootRoute({
   beforeLoad: async ({ location }) => {
+    // eslint-disable-next-line no-console
+    console.log('[panel/router] beforeLoad', {
+      pathname: location.pathname,
+      search: location.search,
+      cookie: document.cookie,
+    });
     if (location.pathname === '/login') return;
     if (!(await hasSession())) {
+      // eslint-disable-next-line no-console
+      console.log('[panel/router] no session, redirecting to /login');
       throw redirect({ to: '/login' });
     }
   },
