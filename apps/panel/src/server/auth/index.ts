@@ -56,7 +56,12 @@ export function makeAuth(env: Env): Auth {
   const cached = authCache.get(env);
   if (cached) return cached;
   const db = drizzle(env.DB, { schema });
-  const cookiePath = env.COOKIE_PATH || '/panel';
+  // Cookie path defaults to '/'. The panel is deployed as its own Worker
+  // on its own hostname; every route hangs off the root, so a narrower
+  // path scopes the session cookie OUT of the very requests that need it
+  // (`/api/auth/get-session`, `/api/admin/*`). COOKIE_PATH stays as an
+  // escape hatch for deployments that mount the panel on a subpath.
+  const cookiePath = env.COOKIE_PATH || '/';
   const instance = betterAuth({
     database: drizzleAdapter(db, {
       provider: 'sqlite',
@@ -142,8 +147,10 @@ export function makeAuth(env: Env): Auth {
         //     allowed (so OIDC redirects survive); cross-site form POSTs are
         //     blocked, which is sufficient for CSRF mitigation given the
         //     panel's same-origin XHR pattern.
-        // The `path` is scoped to the panel mount so the cookie isn't
-        // smeared across other apps on the same parent domain.
+        // `path` defaults to '/' (see cookiePath above) so the cookie is
+        // sent on every panel request. Operators serving the panel on a
+        // subpath (e.g. behind a path-routed proxy) set COOKIE_PATH to
+        // narrow the scope.
         sessionToken: {
           name: 'polaris_panel_session',
           attributes: {

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { PageCard } from '../layouts/PageCard.js';
 import { Button } from '../components/ui/button.js';
 
@@ -26,11 +26,21 @@ async function startSignIn(): Promise<string> {
   return body.url;
 }
 
-export function Login() {
-  const [err, setErr] = useState<string | null>(null);
-  const [pending, setPending] = useState(false);
+// URL params better-auth may set on a failed callback. When present we
+// skip auto-redirect and surface the message so the user isn't stuck in
+// an IdP ↔ panel bounce loop. Examples observed: ?error=oauth_error,
+// ?error=access_denied.
+function callbackError(): string | null {
+  const params = new URLSearchParams(window.location.search);
+  return params.get('error');
+}
 
-  async function onClick() {
+export function Login() {
+  const [err, setErr] = useState<string | null>(() => callbackError());
+  const [pending, setPending] = useState(false);
+  const autoTried = useRef(false);
+
+  async function go() {
     setErr(null);
     setPending(true);
     try {
@@ -42,10 +52,27 @@ export function Login() {
     }
   }
 
+  useEffect(() => {
+    // Auto-redirect on first mount unless we landed here because of an
+    // IdP error. StrictMode double-invokes effects in dev; the ref guards
+    // against starting two sign-in flows.
+    if (autoTried.current) return;
+    autoTried.current = true;
+    if (callbackError()) return;
+    void go();
+  }, []);
+
   return (
-    <PageCard title="Sign in" description="OIDC via Cloudflare Access (or another configured IdP).">
-      <Button onClick={onClick} disabled={pending}>
-        {pending ? 'Redirecting…' : 'Continue with SSO'}
+    <PageCard
+      title="Sign in"
+      description={
+        err
+          ? 'Sign-in did not complete — retry below or check the IdP configuration.'
+          : 'Redirecting to your identity provider…'
+      }
+    >
+      <Button onClick={go} disabled={pending}>
+        {pending ? 'Redirecting…' : err ? 'Retry SSO' : 'Continue with SSO'}
       </Button>
       {err ? <p className="mt-2 text-sm text-destructive">{err}</p> : null}
     </PageCard>
