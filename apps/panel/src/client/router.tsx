@@ -12,13 +12,36 @@ import {
   createRootRoute,
   createRoute,
   lazyRouteComponent,
+  redirect,
 } from '@tanstack/react-router';
 import { RootLayout } from './layouts/RootLayout.js';
 import { SidebarLayout } from './layouts/SidebarLayout.js';
 import { RouteError } from './components/RouteError.js';
 import { PageSkeleton } from './components/PageSkeleton.js';
 
+// Probe better-auth for the current session. Returns true if signed in,
+// false if anonymous, true (fail-open) on network/server hiccups so a
+// transient panel hiccup doesn't lock the operator out — the protected
+// admin API calls themselves still 401 in that case, surfacing the auth
+// failure in-page rather than via a redirect loop.
+async function hasSession(): Promise<boolean> {
+  try {
+    const res = await fetch('/api/auth/get-session', { credentials: 'include' });
+    if (!res.ok) return true;
+    const body = (await res.json()) as unknown;
+    return body !== null && body !== undefined;
+  } catch {
+    return true;
+  }
+}
+
 const rootRoute = createRootRoute({
+  beforeLoad: async ({ location }) => {
+    if (location.pathname === '/login') return;
+    if (!(await hasSession())) {
+      throw redirect({ to: '/login' });
+    }
+  },
   component: () => (
     <RootLayout>
       <SidebarLayout>
