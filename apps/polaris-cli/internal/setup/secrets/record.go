@@ -13,8 +13,8 @@ import (
 	"time"
 )
 
-// DefaultRecordPath mirrors bin/_lib.sh's SECRETS_CREATED constant — the
-// file lives next to .deploy-state.json at the repo root.
+// DefaultRecordPath is the audit-row file location, next to
+// .deploy-state.json at the repo root.
 const DefaultRecordPath = "secrets.created.json"
 
 // Entry is one (name, service, sha256_of_value, created_at) row in the

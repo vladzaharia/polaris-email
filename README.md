@@ -81,8 +81,13 @@ Shared packages:
 - `packages/cf-api` — Cloudflare API wrapper (zones, DNS, Email Routing/Service, DKIM).
 - `packages/revocation` — KV-backed credential revocation primitive (≤60s propagation).
 
-Infrastructure: `infra/terraform/` defines zone + access-app + logpush +
-r2-lifecycle modules under a single per-account prod root.
+Infrastructure provisioning lives entirely in the Go CLI's `setup infra`
+phases — the account-level Cloudflare resources (D1, R2 buckets, KV,
+queues, Logpush, R2 tokens) are created by `polaris-email setup infra
+apply`; per-Worker bindings + custom domains are declared in each
+service's `wrangler.jsonc`. Per-domain DNS records, Email Routing, and
+Email Service onboarding flow through `POST /v1/admin/domains` and the
+shared `packages/cf-api/` wrapper.
 
 ## Endpoint summary
 

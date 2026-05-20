@@ -15,18 +15,18 @@ type Pusher interface {
 	Push(ctx context.Context, svc, name, value string) error
 }
 
-// WranglerPusher is the production Pusher. workerName resolves the
+// WranglerPusher is the production Pusher. WorkerName resolves the
 // service short-name (api, out, in, panel, ...) to the wrangler-side
-// Worker name. When nil, the service short-name is used verbatim — that
-// matches our current convention where the Worker is named after the
-// service directory.
+// Worker name. When nil, the project's canonical `polaris-email-<svc>`
+// mapping is used — that matches every wrangler.jsonc's `name` field.
+// Callers can override for tests or non-canonical deployments.
 type WranglerPusher struct {
 	WorkerName func(svc string) string
 }
 
 // Push implements Pusher.
 func (p WranglerPusher) Push(ctx context.Context, svc, name, value string) error {
-	worker := svc
+	worker := "polaris-email-" + svc
 	if p.WorkerName != nil {
 		worker = p.WorkerName(svc)
 	}

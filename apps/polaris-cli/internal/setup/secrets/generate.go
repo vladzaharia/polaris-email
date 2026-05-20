@@ -1,7 +1,6 @@
-// Package secrets handles the phase-5 work of bin/bootstrap.sh:
-// generating master secrets, pushing them at every Worker via
-// `wrangler secret put`, and recording a sha256-only audit row in
-// secrets.created.json.
+// Package secrets generates master secrets, pushes them at every
+// Worker via `wrangler secret put`, and records a sha256-only audit
+// row in secrets.created.json.
 //
 // Design constraints:
 //

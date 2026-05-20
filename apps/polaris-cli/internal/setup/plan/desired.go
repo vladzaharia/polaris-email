@@ -5,8 +5,8 @@
 //
 // The desired state is a constant — this package owns the canonical list
 // of "what every polaris-email install needs". When that list changes
-// (e.g. a new KV namespace is added in a future PR), update [Desired]
-// here and the diff path automatically surfaces a Create for it.
+// (e.g. a new KV namespace is added), update [Desired] here and the
+// diff path automatically surfaces a Create for it.
 //
 // This package is deliberately stdlib-only and has no imports from
 // cfapi/state beyond the typed shapes those packages export — keeps the
@@ -65,6 +65,12 @@ type DesiredR2 struct {
 	LocationHint        string
 	ObjectLockHours     int
 	LifecycleExpiryDays int
+	// PublicDomain, when set, instructs the provision phase to bind that
+	// hostname as the bucket's public custom domain. Empty means "leave
+	// the bucket privately addressable" (the default for log buckets).
+	// Populated from .env.deploy's R2_PUBLIC_HOST in the apply caller, not
+	// in this constant.
+	PublicDomain string
 }
 
 // DesiredKV captures the canonical KV namespace title.
@@ -81,13 +87,15 @@ type DesiredQueue struct {
 }
 
 // Desired returns the constant DesiredState every polaris-email install
-// requires. The list mirrors phases 2–6 of bin/bootstrap.sh — adding or
-// removing a resource here without updating that script (or its
-// successors) breaks the parity gate.
+// requires.
 //
 // Resource names are NOT environment-prefixed — polaris-email runs in a
 // single production CF account, so resource names are stable across
 // installs.
+//
+// The R2 `PublicDomain` field is left zero here; the apply caller fills
+// it in from .env.deploy's R2_PUBLIC_HOST via WithR2PublicDomain before
+// passing the result to Diff.
 func Desired() *DesiredState {
 	return &DesiredState{
 		D1: []DesiredD1{
@@ -133,4 +141,20 @@ func Desired() *DesiredState {
 			{Name: "polaris-email-fanout-dlq", DLQ: true},
 		},
 	}
+}
+
+// WithR2PublicDomain sets the PublicDomain field on the bucket named
+// "polaris-email" (the archive bucket — the only one we publicly serve)
+// and returns the state for chaining. Empty host is a no-op so callers
+// can pass through whatever .env.deploy gives them without branching.
+func WithR2PublicDomain(d *DesiredState, host string) *DesiredState {
+	if d == nil || host == "" {
+		return d
+	}
+	for i := range d.R2 {
+		if d.R2[i].Name == "polaris-email" {
+			d.R2[i].PublicDomain = host
+		}
+	}
+	return d
 }

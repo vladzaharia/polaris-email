@@ -16,9 +16,6 @@ var versionPattern = regexp.MustCompile(`(\d+\.\d+\.\d+(?:[-+][\w.]+)?)`)
 // Detect runs `wrangler --version` and extracts the semver string. The
 // returned string is the raw version (e.g. "4.20.1"), or "" if the
 // output didn't contain anything parseable.
-//
-// PR 1 only requires a one-shot detection; PR 6 will tighten this to
-// fail when the major version is below 4.
 func Detect(ctx context.Context) (string, error) {
 	res, err := Run(ctx, "--version")
 	if err != nil {

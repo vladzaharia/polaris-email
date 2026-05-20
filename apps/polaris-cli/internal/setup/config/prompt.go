@@ -7,10 +7,9 @@ import (
 )
 
 // PromptOptions controls Prompt() behavior. Path is the .env.deploy
-// location used for the "save after every prompt" durability property
-// — see [bin/configure.sh] for the original implementation. Save is the
-// hook the prompt loop calls after each accepted field; tests substitute
-// an in-memory recorder.
+// location used for the "save after every prompt" durability property.
+// Save is the hook the prompt loop calls after each accepted field;
+// tests substitute an in-memory recorder.
 type PromptOptions struct {
 	Path string
 	Save func(*Config) error
@@ -130,7 +129,6 @@ func Prompt(initial *Config, opts PromptOptions) (*Config, error) {
 		{key: "OIDC_GROUPS_CLAIM", desc: "Claim path that holds group membership", val: &c.OIDCGroupsClaim, def: defaultIfBlank(c.OIDCGroupsClaim, "groups")},
 		{key: "OIDC_ADMIN_GROUP", desc: "OIDC group whose members get panel admin role", val: &c.AdminGroup, def: defaultIfBlank(c.AdminGroup, "polaris-admins")},
 		{key: "R2_PUBLIC_HOST", desc: "R2 public custom domain (e.g. r2.mail.example.com)", val: &c.R2PublicHost},
-		{key: "BRIDGE_HOST", desc: "Mail-bridge public hostname (optional, e.g. bridge.example.com)", val: &c.BridgeHost},
 		{key: "LOGPUSH_DESTINATION_URL", desc: "Optional Logpush HTTP sink. Empty triggers auto-R2 provisioning (recommended); set this to override with an external destination", val: &c.LogpushDestinationURL, valid: optionalURL},
 	}
 	for _, s := range tail {

@@ -1,18 +1,17 @@
-// Package config is the typed Go port of .env.deploy and bin/configure.sh.
+// Package config is the typed handle for .env.deploy.
 //
-// The file on disk stays shell-sourceable (KEY="VALUE" lines, # comments)
-// so the existing bin/* scripts can continue to source it. The Go side
-// just gives us a typed handle: parse + validate + atomic save + huh
-// prompt loop, all under unit test.
+// The file on disk stays shell-sourceable (KEY="VALUE" lines, # comments).
+// The Go side provides parse + validate + atomic save + huh prompt loop,
+// all under unit test.
 //
 // Adding a new field: add it to the [Config] struct (with the right
 // json tag — that's the .env.deploy key), append it to [FieldOrder], and
 // add a matching prompt in prompt.go.
 package config
 
-// Config is the typed mirror of every field bin/configure.sh writes to
-// .env.deploy. The json tag is the on-disk variable name; struct field
-// order does NOT determine on-disk order — see [FieldOrder] for that.
+// Config is the typed mirror of every field in .env.deploy. The json
+// tag is the on-disk variable name; struct field order does NOT
+// determine on-disk order — see [FieldOrder] for that.
 //
 // All fields are strings: .env.deploy is shell-sourceable, so even
 // numeric or boolean-looking values are stored as their string form. We
@@ -39,10 +38,6 @@ type Config struct {
 	// R2PublicHost is the operator-owned custom domain attached to the
 	// `polaris-email` R2 bucket (e.g. r2.mail.example.com).
 	R2PublicHost string `json:"R2_PUBLIC_HOST" yaml:"R2_PUBLIC_HOST"`
-	// BridgeHost is the on-prem mail-bridge's public hostname; used to
-	// construct webhook callback URLs. Empty when the bridge isn't
-	// deployed.
-	BridgeHost string `json:"BRIDGE_HOST" yaml:"BRIDGE_HOST"`
 	// AlertWebhook is the webhook URL that synthetic + staleness alerts
 	// POST to on failure.
 	AlertWebhook string `json:"ALERT_WEBHOOK" yaml:"ALERT_WEBHOOK"`
@@ -80,8 +75,8 @@ type Config struct {
 
 	// --- secrets ---
 
-	// CFAPIToken is the bearer token bin/deploy.sh + setup infra
-	// provision use against the Cloudflare REST API.
+	// CFAPIToken is the bearer token `setup infra` uses against the
+	// Cloudflare REST API.
 	CFAPIToken string `json:"CF_API_TOKEN" yaml:"CF_API_TOKEN"`
 	// OIDCClientSecret is the OIDC client secret seeded into the panel
 	// Worker via `wrangler secret put` at bootstrap time.
@@ -89,8 +84,6 @@ type Config struct {
 }
 
 // FieldOrder is the canonical order .env.deploy is serialized in.
-// Mirrors the ENV_VARS array in bin/configure.sh — keep them in sync
-// (a `make parity` check could enforce this in a future PR).
 var FieldOrder = []string{
 	"CF_ACCOUNT_ID",
 	"POLARIS_API_HOSTNAME",
@@ -107,7 +100,6 @@ var FieldOrder = []string{
 	"OIDC_GROUPS_CLAIM",
 	"OIDC_ADMIN_GROUP",
 	"R2_PUBLIC_HOST",
-	"BRIDGE_HOST",
 	"LOGPUSH_DESTINATION_URL",
 }
 
@@ -143,7 +135,6 @@ func (c *Config) AsMap() map[string]string {
 		"OIDC_GROUPS_CLAIM":        c.OIDCGroupsClaim,
 		"OIDC_ADMIN_GROUP":              c.AdminGroup,
 		"R2_PUBLIC_HOST":           c.R2PublicHost,
-		"BRIDGE_HOST":              c.BridgeHost,
 		"LOGPUSH_DESTINATION_URL":  c.LogpushDestinationURL,
 	}
 }
@@ -184,8 +175,6 @@ func (c *Config) setField(key, value string) bool {
 		c.AdminGroup = value
 	case "R2_PUBLIC_HOST":
 		c.R2PublicHost = value
-	case "BRIDGE_HOST":
-		c.BridgeHost = value
 	case "LOGPUSH_DESTINATION_URL":
 		c.LogpushDestinationURL = value
 	default:

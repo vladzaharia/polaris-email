@@ -1,10 +1,7 @@
-// Package preflight ports bin/preflight.sh to typed Go. Every prerequisite
-// is a [Check] with a single Run function returning a [Result]; the
-// [Runner] aggregates results and decides the exit code.
-//
-// Design parity with the shell script is load-bearing — the `make parity`
-// CI gate diffs the two flows. Adding a new check here also requires
-// touching bin/preflight.sh (or vice versa) so the two stay in sync.
+// Package preflight verifies the local environment before cold-start.
+// Every prerequisite is a [Check] with a single Run function returning
+// a [Result]; the [Runner] aggregates results and decides the exit
+// code.
 package preflight
 
 import "context"

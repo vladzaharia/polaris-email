@@ -2,14 +2,20 @@
 // argon2id parameters declared here (one place) so an upgrade is one PR.
 //
 // Cloudflare Workers do not ship a native argon2 binary. We use a pure-WebCrypto PBKDF2-SHA256
-// based KDF with a high iteration count as an interim that still meets the requirement of
-// "irreversible + slow" for secret-at-rest hashing. The verifier records the algorithm in the
-// stored prefix so a future argon2id migration adds a new prefix and rehashes lazily.
+// based KDF with the runtime's max-supported iteration count as an interim that still meets the
+// requirement of "irreversible + slow" for secret-at-rest hashing. The verifier records the
+// algorithm and iteration count in the stored prefix so a future argon2id migration adds a new
+// prefix and rehashes lazily.
 //
-// Format: `$pbkdf2-sha256$i=600000$<saltb64>$<hashb64>` (PHC-like).
+// 100k is the Workers-runtime cap on `crypto.subtle.deriveBits` for PBKDF2 (workerd throws
+// NotSupportedError for higher counts). NIST SP 800-132 recommends ≥600k for PBKDF2-SHA256,
+// but the runtime constraint binds. Defense in depth: the per-deploy ARGON2_PEPPER secret
+// must be compromised in addition to the stored hash for a brute-force to be feasible.
+//
+// Format: `$pbkdf2-sha256$i=100000$<saltb64>$<hashb64>` (PHC-like).
 // Verify with constant-time compare.
 
-export const KDF_ITERATIONS = 600_000;
+export const KDF_ITERATIONS = 100_000;
 export const KDF_OUTLEN = 32;
 export const KDF_SALTLEN = 16;
 export const KDF_ID = 'pbkdf2-sha256';

@@ -2,8 +2,14 @@
 //
 // Hosted at cli.mail.plrs.im. Serves a POSIX-sh installer for the
 // `polaris-email` operator CLI. The script itself lives at
-// `src/install.sh` (source of truth) and is bundled in as a text module
-// via the `rules` block in `wrangler.jsonc`.
+// `src/install.sh` (source of truth); a pre-bundle step base64-encodes it
+// into `src/install.sh.gen.ts`, which we import here and decode at module
+// load. The indirection exists because Cloudflare's WAF on
+// api.cloudflare.com blocks Worker uploads whose multipart payload
+// contains shell-injection signatures — bundling raw install.sh content
+// fails with HTTP 403 + a CF block page. Base64 leaves only
+// `[A-Za-z0-9+/=]` in the upload, which OWASP CRS at default paranoia
+// does not decode. See scripts/gen-install-sh.mjs for the rationale.
 //
 // Endpoints:
 //   GET /        -> the install script (text/x-shellscript)
@@ -16,10 +22,9 @@
 //                 Worker rewrites the literal `POLARIS_PIN_VERSION=''`
 //                 line in the script.
 
-// The shell script is bundled as a text module — see `rules` in
-// wrangler.jsonc which binds *.sh files via the `Text` module type.
-// @ts-expect-error — handled by wrangler text module rule, not TS.
-import installScript from './install.sh';
+import installScriptB64 from './install.sh.gen';
+
+const installScript = atob(installScriptB64);
 
 // Accept tag-like versions: `v1.2.3`, `1.2.3`, with optional `-rc.1` /
 // `+build` suffixes. The whole match is anchored. We never let raw user

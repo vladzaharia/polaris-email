@@ -22,15 +22,14 @@ import (
 	"github.com/vladzaharia/polaris-email/apps/polaris-cli/internal/setup/smoke"
 )
 
-// defaultBootstrapOutput mirrors bin/_lib.sh::BOOTSTRAP_OUTPUT — the
-// JSON blob containing the admin key id + secret that PR 7 will mint.
+// defaultBootstrapOutput is the JSON blob containing the admin key id
+// + secret written by the genesis-seal phase.
 const defaultBootstrapOutput = ".bootstrap-output.json"
 
-// bootstrapOutput is the small JSON shape `bin/bootstrap.sh` (and PR 7)
-// writes to .bootstrap-output.json. We declare it locally so the smoke
-// command doesn't have to import another package just for the shape.
-// MailboxID is carried so `setup infra rotate-admin-key` can mint the
-// replacement key against the same operator mailbox.
+// bootstrapOutput is the JSON shape written to .bootstrap-output.json
+// by the genesis-seal phase. MailboxID is carried so
+// `setup infra rotate-admin-key` can mint the replacement key against
+// the same operator mailbox.
 type bootstrapOutput struct {
 	AdminKeyID     string `json:"admin_key_id"`
 	AdminKeySecret string `json:"admin_key_secret"`
@@ -51,7 +50,7 @@ func newInfraSmokeCmd() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "smoke",
 		Short: "End-to-end smoke test: healthz + signed status + synthetic outbound",
-		Long: "Run the three checks bin/smoke.sh runs, in Go:\n" +
+		Long: "Run three end-to-end checks:\n" +
 			"\n" +
 			"  1. GET /healthz → 200\n" +
 			"  2. Signed GET /v1/admin/status → mailboxes + domains present\n" +

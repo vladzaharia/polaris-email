@@ -2,9 +2,16 @@
 // Go text/template syntax and are substituted by the Go renderer in
 // apps/polaris-cli/internal/setup/wranglercfg from .deploy-state.json +
 // .env.deploy. Do NOT hand-edit the materialized wrangler.local.jsonc —
-// re-run `polaris-email setup infra render` (or `make configure`).
+// re-run `polaris-email setup infra render`.
 {
   "account_id": "{{ .Account.ID }}",
+  // Workers Custom Domain binding for the admin UI. wrangler manages the
+  // binding idempotently: provisioned on first deploy, retained on
+  // subsequent deploys, cleaned up on Worker delete. The hostname comes
+  // from POLARIS_PANEL_HOSTNAME in .env.deploy.
+  "routes": [
+    { "pattern": "{{ .Hostnames.Panel }}", "custom_domain": true },
+  ],
   // Panel binds to the same `polaris-email` D1 as services/api so better-auth
   // can read the auth + sessions tables alongside the mailbox-centric schema.
   "d1_databases": [
@@ -17,6 +24,10 @@
   "vars": {
     // Public hostnames threaded into OIDC redirect URLs and cookie config.
     "POLARIS_API_HOSTNAME": "{{ .Hostnames.PolarisAPI }}",
+    // better-auth requires its own base URL so callbacks and redirects
+    // resolve correctly. Without it the runtime logs every request with
+    // "Base URL could not be determined".
+    "BETTER_AUTH_URL": "https://{{ .Hostnames.Panel }}",
     "OIDC_ISSUER": "{{ .OIDC.Issuer }}",
     "OIDC_CLIENT_ID": "{{ .OIDC.ClientID }}",
     "OIDC_SCOPES": "{{ .OIDC.Scopes }}",

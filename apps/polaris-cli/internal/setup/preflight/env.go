@@ -34,11 +34,8 @@ func CheckEnvDeploy(envPath string) Check {
 		Run: func(ctx context.Context) Result {
 			_ = ctx
 			if _, err := os.Stat(envPath); os.IsNotExist(err) {
-				// The shell script downgrades this to warn ("run make
-				// configure before make bootstrap"); we keep the same
-				// semantics so the parity gate is clean.
 				return warn(".env.deploy missing",
-					"run `polaris-email setup infra configure` before `setup infra bootstrap`")
+					"run `polaris-email setup infra configure` before `setup infra apply`")
 			} else if err != nil {
 				return fail(fmt.Sprintf("stat .env.deploy: %v", err), "check filesystem permissions")
 			}

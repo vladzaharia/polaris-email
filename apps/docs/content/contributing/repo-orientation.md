@@ -102,16 +102,22 @@ dependency, update `.github/workflows/ci.yml` too.
 
 ## Infrastructure
 
-`infra/terraform/` owns the slow-moving, state-shaped Cloudflare
-resources — DNS, Email Routing rules, Email Service onboarding,
-Cloudflare Access apps, the R2 public custom-domain wiring, Logpush
-jobs, and R2 lifecycle rules — inside the single `polaris-prod`
-account.
+`polaris-email setup infra apply` (the Go CLI's `apply` phase) owns the
+account-level Cloudflare resources — D1, R2 buckets (with lifecycle +
+Object Lock rules), KV namespaces, Queues, Logpush jobs, R2 API
+tokens, and the R2 public custom-domain binding — inside the single
+`polaris-prod` account.
 
 Wrangler (per-Worker `wrangler.jsonc` / `wrangler.local.jsonc`) owns
-the code-velocity resources within the same account: Workers, D1, KV,
-R2 buckets, Queues. The two never overlap, and the API tokens that
-drive each pipeline are scoped so they can't.
+the Worker-scoped resources: Workers themselves, their bindings, and
+their custom-domain routes (e.g. `cli.mail.plrs.im`, `docs.mail.plrs.im`).
+
+Per-domain DNS (MX, SPF, DKIM, DMARC), Email Routing rules, and
+Email Service onboarding flow through the admin API (`POST
+/v1/admin/domains` → `services/api/src/routes/admin/domains.ts` →
+`packages/cf-api/`). Cloudflare Access for the admin panel is
+operator-configured manually in the Zero Trust dashboard — there is no
+auto-provisioning surface for it.
 
 Tamper-evidence on `audit_log` is the in-row chained-hash invariant
 plus the nightly `audit-verify` cron. See

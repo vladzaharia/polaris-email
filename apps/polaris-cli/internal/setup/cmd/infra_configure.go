@@ -13,8 +13,7 @@ import (
 	"github.com/vladzaharia/polaris-email/apps/polaris-cli/internal/setup/config"
 )
 
-// newInfraConfigureCmd wires `polaris-email setup infra configure` —
-// the Go port of bin/configure.sh.
+// newInfraConfigureCmd wires `polaris-email setup infra configure`.
 //
 // Modes:
 //
@@ -28,9 +27,8 @@ import (
 //	--validate                 run Validate() against the loaded/merged config
 //	                           and exit; do not write.
 //
-// The "save after every prompt" durability property of the shell
-// script is preserved — the prompt loop in package config calls Save
-// after each accepted field, so Ctrl-C halfway is safe.
+// The prompt loop in package config calls Save after each accepted
+// field, so Ctrl-C halfway through is safe.
 func newInfraConfigureCmd() *cobra.Command {
 	var (
 		envFile        string
@@ -44,8 +42,8 @@ func newInfraConfigureCmd() *cobra.Command {
 		Long: "Rebuild the .env.deploy file polaris-email reads for cold-start.\n" +
 			"\n" +
 			"Default mode prompts for each field with the current value as the\n" +
-			"default (matching bin/configure.sh exactly). Each accepted value\n" +
-			"is persisted atomically so a Ctrl-C halfway through is safe.\n" +
+			"default. Each accepted value is persisted atomically so a Ctrl-C\n" +
+			"halfway through is safe.\n" +
 			"\n" +
 			"--non-interactive validates the existing file + any env-var\n" +
 			"overrides without prompting; useful in CI.\n" +
@@ -69,7 +67,6 @@ func newInfraConfigureCmd() *cobra.Command {
 			}
 
 			// Env-var overrides: any matching variable in os.Environ() wins.
-			// Mirrors bin/configure.sh's reliance on the surrounding shell.
 			mergeEnv(cfg)
 
 			if validateOnly {
@@ -173,9 +170,8 @@ func mergeConfig(dst, src *config.Config) {
 }
 
 // mergeEnv merges any matching $KEY from the surrounding environment
-// into c. This mirrors bin/configure.sh's `source "$ENV_FILE"` then
-// "use whatever's in the shell" behavior. Empty env values are ignored
-// — explicit-empty-via-env is a footgun, not a feature.
+// into c. Empty env values are ignored — explicit-empty-via-env is a
+// footgun, not a feature.
 func mergeEnv(c *config.Config) {
 	for _, k := range config.FieldOrder {
 		v := os.Getenv(k)
@@ -215,8 +211,6 @@ func applyKey(c *config.Config, key, value string) {
 		c.OIDCClientSecret = value
 	case "R2_PUBLIC_HOST":
 		c.R2PublicHost = value
-	case "BRIDGE_HOST":
-		c.BridgeHost = value
 	}
 }
 

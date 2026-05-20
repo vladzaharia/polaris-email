@@ -50,6 +50,19 @@ func (c *Client) GetDatabase(ctx context.Context, uuid string) (*D1Database, err
 	return &db, nil
 }
 
+// DeleteDatabase removes a D1 database by UUID. 404 is treated as
+// success (idempotent — the database was already gone).
+func (c *Client) DeleteDatabase(ctx context.Context, uuid string) error {
+	if uuid == "" {
+		return fmt.Errorf("cfapi: D1 UUID required")
+	}
+	err := c.do(ctx, http.MethodDelete, c.accountPath("/d1/database/"+url.PathEscape(uuid)), nil, nil)
+	if err == nil || IsNotFound(err) {
+		return nil
+	}
+	return err
+}
+
 // CreateDatabase creates a new D1 database with the given name. If the
 // database already exists (HTTP 409 or CF "already exists" code), it
 // re-lists and returns the existing record — this is the idempotency

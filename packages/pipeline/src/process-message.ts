@@ -1,8 +1,9 @@
 // Unified message pipeline.
 //
 // `processMessage()` is the single entry point for both inbound (CF Email
-// Routing -> services/in) and outbound (REST /v1/messages, SMTP /v1/send/raw
-// -> services/api) flows. All callers normalize their bytes into canonical
+// Routing -> services/in) and outbound (REST /v1/messages JSON or
+// message/rfc822 -> services/api) flows. All callers normalize their bytes
+// into canonical
 // RFC822 and call this function. It:
 //
 //   1. SHA-256 the canonical bytes and HEAD-then-PUT to R2 (reference-counted

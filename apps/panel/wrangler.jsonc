@@ -1,5 +1,6 @@
-// polaris-email-panel Worker — committed config. Real IDs live in wrangler.local.jsonc
-// (gitignored) and are merged by bin/deploy.sh before `wrangler deploy`.
+// polaris-email-panel Worker — committed config. Real IDs live in
+// wrangler.local.jsonc (gitignored) and are merged in before `wrangler deploy`
+// by `polaris-email setup infra deploy`.
 //
 // The panel binds to the SAME `polaris-email` D1 as services/api (auth tables
 // live there alongside the canonical schema), and reaches services/api over a

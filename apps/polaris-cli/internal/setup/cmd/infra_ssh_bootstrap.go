@@ -2,12 +2,11 @@
 // api_key needed by `polaris-email serve --ssh` and seeds a fresh SSH
 // host key (if none exists).
 //
-// This is the cold-start counterpart to `bin/bootstrap.sh`: that script
-// mints the admin api_key (full admin:rotate); ssh-bootstrap then uses
-// that admin key to issue a second, scope-limited api_key with ONLY
-// `admin:impersonate`. The two-key separation is the threat-model
-// foundation that keeps a compromised SSH host from escalating beyond
-// "act-as registered operators".
+// The genesis-seal phase mints the admin api_key (full admin:rotate);
+// ssh-bootstrap then uses that admin key to issue a second,
+// scope-limited api_key with ONLY `admin:impersonate`. The two-key
+// separation is the threat-model foundation that keeps a compromised
+// SSH host from escalating beyond "act-as registered operators".
 package cmd
 
 import (
@@ -56,7 +55,7 @@ func newInfraSSHBootstrapCmd() *cobra.Command {
 		Short: "Mint the admin:impersonate api_key + SSH host key for `serve --ssh`",
 		Long: `Cold-start the Wish-fronted TUI server.
 
-Reads .bootstrap-output.json (the admin api_key minted by ` + "`bin/bootstrap.sh`" + `)
+Reads .bootstrap-output.json (the admin api_key minted by the genesis-seal phase)
 and uses it to issue a NEW api_key whose only scope is admin:impersonate.
 
 The resulting bearer is written to .ssh-bootstrap-output.json so

@@ -22,8 +22,7 @@ import (
 
 // newInfraSecretsCmd wires `polaris-email setup infra secrets`. The
 // `seed` leaf is the primary entry; `list`, `rotate`, and `from-vault`
-// are knob-turning subcommands operators reach for during maintenance
-// (PR 5 doesn't ship rotation yet — it's a placeholder).
+// are knob-turning subcommands operators reach for during maintenance.
 func newInfraSecretsCmd() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "secrets",
@@ -130,7 +129,7 @@ func newInfraSecretsSeedCmd() *cobra.Command {
 				return err
 			}
 			// `generated` is intentionally not logged — it carries
-			// plaintext values for genesis-seal. PR 7 will consume it.
+			// plaintext values for the genesis-seal phase to consume.
 			_ = generated
 			fmt.Fprintf(cmd.OutOrStdout(), "secrets: seed complete (%d audit row(s) at %s)\n",
 				countRecords(rec), rec.Path)

@@ -515,8 +515,7 @@ func (d *Descriptor) LoadInputFile(path string) (setup.Input, error) {
 	return WrapInput(in), nil
 }
 
-// ApplyFlags implements setup.FlagApplier. Mirrors the
-// applyFlagOverrides helper in PR 9's setup_bridge.go.
+// ApplyFlags implements setup.FlagApplier.
 func (d *Descriptor) ApplyFlags(in setup.Input, dir, imageTag string) error {
 	concrete, err := UnwrapInput(in)
 	if err != nil {

@@ -1,9 +1,8 @@
 // Template merged on top of wrangler.jsonc by `polaris-email setup infra
-// deploy` (and, during the parity period, bin/deploy.sh). Placeholders use
-// Go text/template syntax and are substituted by the Go renderer in
-// apps/polaris-cli/internal/setup/wranglercfg from .deploy-state.json +
-// .env.deploy. Do NOT hand-edit the materialized wrangler.local.jsonc —
-// re-run `polaris-email setup infra render` (or `make configure`) instead.
+// deploy`. Placeholders use Go text/template syntax and are substituted
+// by the Go renderer in apps/polaris-cli/internal/setup/wranglercfg from
+// .deploy-state.json + .env.deploy. Do NOT hand-edit the materialized
+// wrangler.local.jsonc — re-run `polaris-email setup infra render` instead.
 {
   "account_id": "cf-account-id",
   "d1_databases": [
@@ -25,7 +24,8 @@
     "API_BASE_URL": "https://api.example.com",
     // R2 public custom domain. The R2 bucket `polaris-email` is fronted
     // by this hostname; both inbound and outbound message bodies/attachments
-    // are served from it. See infra/terraform for the DNS + bucket config.
+    // are served from it. The binding is provisioned during
+    // `polaris-email setup infra apply` from R2_PUBLIC_HOST in .env.deploy.
     "R2_PUBLIC_HOST": "r2.example.com",
     "ALERT_WEBHOOK": "https://alerts.example.com/hook",
   },

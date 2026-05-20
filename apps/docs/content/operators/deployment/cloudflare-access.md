@@ -77,146 +77,92 @@ one from GitHub team membership when you use the GitHub IdP type;
 pick the org and add the teams you intend to use as `OIDC_ADMIN_GROUP`
 values. The synthesised claim arrives under `cf-access-groups`.
 
-## 2. Wire the `access-app` Terraform module
+## 2. Create the Access application
 
-The
-[`infra/terraform/modules/access-app`](https://github.com/vladzaharia/polaris-email/tree/main/infra/terraform/modules/access-app)
-module wraps `cloudflare_access_application` and a single allow-by-email
-policy. Reference it from a per-environment root:
+In the Cloudflare Zero Trust dashboard, **Access → Applications →
+Add an application → Self-hosted**:
 
-```hcl
-module "panel_access" {
-  source = "../../modules/access-app"
+| Field                    | Value                                                       |
+| ------------------------ | ----------------------------------------------------------- |
+| Application name         | `polaris-email-panel`                                       |
+| Session duration         | `1 hour` (keep short for admin surfaces)                    |
+| Application domain       | `panel.example.com` (the FQDN you'll front the panel on)    |
+| Identity providers       | Tick the IdPs configured in step 1                          |
 
-  cf_account_id = var.cf_account_id
-  cf_zone_id    = var.panel_zone_id
+Then add **one allow policy** with:
 
-  app_name = "polaris-email-panel"
-  domain   = "panel.example.com"
+- Decision: **Allow**
+- Include rule: either an explicit email list (`Emails: ops@example.com, …`)
+  or a group rule once your IdP's `groups` claim is wired
+- (Recommended) Require rule: **Authentication method = WebAuthn**
+  (`swk` AuthnContext) to force a hardware-key prompt at session start
+  — see §3
 
-  # Keep short for an admin surface — the panel itself runs an
-  # independent better-auth session, so a 1h Access session is plenty.
-  session_duration = "1h"
+When you save the application, Cloudflare prints the **Application
+AUD tag** — copy this; it goes into the panel Worker's
+`CF_ACCESS_AUD` env var so the panel can validate the `Cf-Access-Jwt-Assertion`
+header end-to-end.
 
-  # Whitelist the IdP IDs from step 1. Fetch via the
-  # cloudflare_access_identity_provider data source or copy from
-  # the Access dashboard.
-  identity_provider_ids = [
-    var.idp_google_oidc_id,
-    var.idp_github_oidc_id,
-  ]
-
-  # Comma-list of operator emails permitted through. Prefer
-  # group-based policies once you've validated the IdP claim shape.
-  allowed_emails = [
-    "ops@example.com",
-    "secops@example.com",
-  ]
-
-  # See §3 below. Defaults to true.
-  require_webauthn_step_up = true
-}
-```
-
-Inputs are declared in
-[`variables.tf`](https://github.com/vladzaharia/polaris-email/blob/main/infra/terraform/modules/access-app/variables.tf):
-
-| Variable                   | Required | Default | Purpose                                                                     |
-| -------------------------- | -------- | ------- | --------------------------------------------------------------------------- |
-| `cf_account_id`            | yes      | —       | Account hosting the Access app.                                             |
-| `cf_zone_id`               | yes      | —       | Zone the app is bound to. Must be in the same account.                      |
-| `app_name`                 | yes      | —       | Shown in the Access dashboard and on the login page.                        |
-| `domain`                   | yes      | —       | Fully-qualified domain Access protects (e.g. `panel.example.com`).          |
-| `session_duration`         | no       | `1h`    | Keep short for admin surfaces.                                              |
-| `identity_provider_ids`    | yes      | —       | List of allowed IdP IDs.                                                    |
-| `allowed_emails`           | no       | `[]`    | Email-based allow policy. Use sparingly; prefer group policies once stable. |
-| `require_webauthn_step_up` | no       | `true`  | Adds an `auth_method = "swk"` require-block (see §3).                       |
-
-Outputs:
-
-| Output           | Purpose                                                                     |
-| ---------------- | --------------------------------------------------------------------------- |
-| `application_id` | Used elsewhere to wire `cloudflare_access_service_token`.                   |
-| `aud`            | The AUD claim. Workers verifying `Cf-Access-Jwt-Assertion` must match this. |
-| `domain`         | Echoed for convenience.                                                     |
-
-Apply with `terraform plan` → `terraform apply` per environment. The
-panel hostname now redirects unauthenticated requests to the Access
+The panel hostname now redirects unauthenticated requests to the Access
 login page; only post-auth traffic reaches the Worker.
 
 ## 3. WebAuthn step-up for sensitive actions
 
-The module defaults `require_webauthn_step_up = true`, which adds a
-`require { auth_method = "swk" }` block to the allow policy. `swk` is
-the SAML AuthnContext URI for software-backed hardware keys; in
-practice this means **YubiKey, Apple Touch ID, Windows Hello, or any
-WebAuthn-capable authenticator** must be presented at session start.
+The recommended policy above adds an
+**Authentication method = WebAuthn** require-block, which forces
+**YubiKey, Apple Touch ID, Windows Hello, or any WebAuthn-capable
+authenticator** to be presented at session start.
 
-Disable it (`require_webauthn_step_up = false`) only if you have a
-specific operational reason — e.g. you're running an emergency
-break-glass app in a separate environment where the WebAuthn ceremony
-is itself the blocker.
+Disable this require-block only if you have a specific operational
+reason — e.g. an emergency break-glass app in a separate environment
+where the WebAuthn ceremony is itself the blocker.
 
-:::warning Out of date
-The panel's `apps/panel/README.md` still describes a server-side
-`withApproval(action)` two-person co-sign for destructive actions.
-That flow was removed — real deployments are single-operator, and
-the second-admin co-sign was unusable. Destructive actions are now
-gated **client-side** via `DestructiveActionDialog`
-(type-the-resource-name confirmation) inside the panel; the
+Destructive actions inside the panel are gated **client-side** via
+`DestructiveActionDialog` (type-the-resource-name confirmation); the
 chained-hash `audit_log` table remains the canonical record of who did
 what. WebAuthn step-up at the Access layer is the right place to
 enforce hardware-key presence for admin sessions.
-:::
 
 Inside the Worker, the panel verifies the `Cf-Access-Jwt-Assertion`
-header against the JWKS published at `https://<your-team>.cloudflareaccess.com/cdn-cgi/access/certs`.
-The `aud` output above is what the Worker checks against the JWT's
-`aud` claim — wire it in via a Terraform output → wrangler var so the
-panel can validate end-to-end.
+header against the JWKS published at
+`https://<your-team>.cloudflareaccess.com/cdn-cgi/access/certs`. The
+AUD tag from the application setup is what the Worker checks against
+the JWT's `aud` claim — set it as `CF_ACCESS_AUD` in
+`apps/panel/wrangler.local.jsonc` and redeploy.
 
 ## 4. Service tokens for daemons
 
-Daemons that need to reach the admin API behind Access (e.g. a
-custom data-export job, a CI runner that mints synthetic credentials)
+Daemons that need to reach the admin API behind Access (e.g. a custom
+data-export job, a CI runner that mints synthetic credentials)
 authenticate with a **Cloudflare Access service token**. Mint one per
 caller — never share.
 
-```hcl
-resource "cloudflare_access_service_token" "exporter" {
-  account_id = var.cf_account_id
-  name       = "polaris-export-job"
-}
+In the Zero Trust dashboard, **Access → Service Auth → Service Tokens
+→ Create Service Token**:
 
-resource "cloudflare_access_policy" "exporter_allow" {
-  account_id     = var.cf_account_id
-  zone_id        = var.panel_zone_id
-  application_id = module.panel_access.application_id
-  name           = "${module.panel_access.app_name}-svc-exporter"
-  precedence     = 10
-  decision       = "non_identity"
+- Token name: `polaris-export-job` (one per caller)
+- Duration: e.g. 1 year
 
-  include {
-    service_token = [cloudflare_access_service_token.exporter.id]
-  }
-}
-```
+Cloudflare prints the **Client ID** and **Client Secret** once; save
+both immediately. Then add a non-identity policy to the panel
+application (or a separate Access app) with:
 
-The `non_identity` decision lets a service token bypass the
-human-identity policy. The caller presents the token's
-`CF-Access-Client-Id` and `CF-Access-Client-Secret` headers on every
-request; Access validates them before the request reaches the
-Worker. **Inside** the Worker, the API still requires its own HMAC
-signature — Access only gates _who can knock_; polaris-email's HMAC
-auth is what actually authorises the action.
+- Decision: **Service Auth**
+- Include rule: **Service Token = polaris-export-job**
+
+The caller presents the token's `CF-Access-Client-Id` and
+`CF-Access-Client-Secret` headers on every request; Access validates
+them before the request reaches the Worker. **Inside** the Worker, the
+API still requires its own HMAC signature — Access only gates _who can
+knock_; polaris-email's HMAC auth is what actually authorises the
+action.
 
 This compounds nicely: a stolen service token is useless without an
-HMAC key, and a stolen HMAC key is useless against the admin
-endpoints (which sit behind Access) without a service token.
+HMAC key, and a stolen HMAC key is useless against the admin endpoints
+(which sit behind Access) without a service token.
 
-Rotation: regenerate the service token via Terraform (the resource
-is replace-only on rotation) and push the new credentials to the
-caller. Old token revokes immediately.
+Rotation: rotate the service token from the same dashboard surface.
+The old credentials revoke immediately when you generate the new pair.
 
 ## 5. Group-based role sync via the OIDC groups claim
 
@@ -271,7 +217,7 @@ you have a concrete second hat.
 
 ## Verifying the wiring
 
-After `terraform apply`:
+After saving the application and redeploying the panel Worker:
 
 1. Open the panel URL in a private window. Expect the Access login
    page, then your IdP's sign-in flow, then (if WebAuthn step-up is
@@ -290,4 +236,4 @@ If any of those misbehave, the
 [panel auth loops row in the troubleshooting matrix](/operators/troubleshooting/decision-matrix)
 covers the common failures.
 
-<!-- Verified against: infra/terraform/modules/access-app/main.tf, infra/terraform/modules/access-app/variables.tf, infra/terraform/modules/access-app/outputs.tf, apps/panel/README.md, apps/panel/src/server/auth/role-sync.ts, services/api/src/auth.ts @ eeee222cdf8359f8f2bf1013a103abdb3c705f06 -->
+<!-- Verified against: apps/panel/src/server/auth/role-sync.ts, services/api/src/auth.ts @ eeee222cdf8359f8f2bf1013a103abdb3c705f06 -->

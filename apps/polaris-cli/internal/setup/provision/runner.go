@@ -8,8 +8,7 @@
 // (<10s) that parallelism would only buy noisy progress output, and
 // serializing keeps the dependency-order contract simple: D1 → R2 →
 // KV → Queues. (Nothing today actually depends on D1 being created
-// before KV, but the order matches bin/bootstrap.sh and makes the
-// progress bar feel predictable.)
+// before KV, but the order makes the progress bar feel predictable.)
 //
 // Failure handling: the first error bails. The state file already
 // reflects every successful create up to the failure, so re-running
@@ -50,8 +49,7 @@ type Reporter interface {
 }
 
 // PhaseName is the key used inside state.Doc.Phases for provision
-// completion. PR 5 reuses this constant when seeding secrets / running
-// migrations to gate their phases on provision having completed.
+// completion. Downstream phases (secrets, migrate) gate on this.
 const PhaseName = "provision"
 
 // ApplyOptions are extension knobs the orchestrator can pass to Apply
@@ -180,8 +178,8 @@ func Apply(ctx context.Context, client *cfapi.Client, store *state.Store, p *pla
 		}
 	}
 
-	// Mark the phase complete. PR 5 reads this to gate the secrets-seed
-	// step on a successful provision.
+	// Mark the phase complete. Downstream phases (secrets, migrate) read
+	// this to gate on a successful provision.
 	if doc.Phases == nil {
 		doc.Phases = map[string]state.Phase{}
 	}

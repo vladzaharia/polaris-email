@@ -10,18 +10,17 @@ import (
 	"github.com/vladzaharia/polaris-email/apps/polaris-cli/internal/setup/state"
 )
 
-// newInfraMigrateCmd wires `polaris-email setup infra migrate` — the
-// Go port of phase 4 of bin/bootstrap.sh.
+// newInfraMigrateCmd wires `polaris-email setup infra migrate`.
 func newInfraMigrateCmd() *cobra.Command {
 	var (
 		dbName    string
 		statePath string
 		local     bool
 		verbose   bool
-		// to is parsed but not yet wired (wrangler accepts `--to
-		// <filename>` to stop at a specific migration; the Go wrapper
-		// doesn't expose it yet because the cold-start flow always
-		// migrates to head).
+		// to is accepted but unimplemented — the runtime returns an
+		// error if set. wrangler supports `--to <filename>` to stop at
+		// a specific migration, but the Go wrapper doesn't pass it
+		// through today.
 		to string
 	)
 	c := &cobra.Command{
@@ -32,16 +31,16 @@ func newInfraMigrateCmd() *cobra.Command {
 			"phase completion into .deploy-state.json, and prints a tidy\n" +
 			"summary (count + latest migration filename).\n" +
 			"\n" +
-			"The cold-start runner (PR 7) calls this between secret seeding\n" +
-			"and Worker deploy. Operators can also run it ad-hoc after\n" +
-			"adding a new migration to services/api/migrations/.",
+			"The cold-start runner calls this between secret seeding and\n" +
+			"Worker deploy. Operators can also run it ad-hoc after adding a\n" +
+			"new migration to services/api/migrations/.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
 			if ctx == nil {
 				ctx = context.Background()
 			}
 			if to != "" {
-				return fmt.Errorf("--to is not yet wired through wrangler")
+				return fmt.Errorf("--to is accepted but unimplemented today")
 			}
 			store := state.Open(pickPath(statePath, defaultStatePath))
 			res, err := migrate.Apply(ctx, dbName, !local, store)
@@ -65,6 +64,6 @@ func newInfraMigrateCmd() *cobra.Command {
 	c.Flags().StringVar(&statePath, "state-path", "", "override .deploy-state.json path")
 	c.Flags().BoolVar(&local, "local", false, "apply migrations to the local D1 binding instead of --remote")
 	c.Flags().BoolVar(&verbose, "verbose", false, "include the raw wrangler output in the summary")
-	c.Flags().StringVar(&to, "to", "", "stop at the named migration filename (not yet wired)")
+	c.Flags().StringVar(&to, "to", "", "stop at the named migration filename (accepted but unimplemented — returns an error today)")
 	return c
 }

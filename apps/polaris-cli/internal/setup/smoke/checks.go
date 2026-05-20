@@ -1,5 +1,5 @@
-// Package smoke is the Go port of bin/smoke.sh. It runs three checks
-// end-to-end against a deployed polaris-email stack:
+// Package smoke runs three end-to-end checks against a deployed
+// polaris-email stack:
 //
 //  1. GET /healthz → 200 (anonymous, no signing).
 //  2. Signed GET /v1/admin/status → mailbox + domain counts non-nil.
@@ -125,8 +125,7 @@ func CheckHealthz(ctx context.Context, cfg Config) Result {
 }
 
 // CheckAdminStatus runs the signed GET /v1/admin/status check. Asserts
-// `mailboxes` and `domains` keys both exist in the response — matching
-// bin/smoke.sh's jq filter.
+// `mailboxes` and `domains` keys both exist in the response.
 func CheckAdminStatus(ctx context.Context, cfg Config) Result {
 	start := time.Now()
 	r := Result{Name: "admin-status"}
@@ -274,8 +273,7 @@ func sleepCtx(ctx context.Context, d time.Duration) error {
 }
 
 // RunAll runs all three checks in sequence and returns the slice.
-// Order is healthz → admin-status → synthetic-outbound to match the
-// bin/smoke.sh flow.
+// Order: healthz → admin-status → synthetic-outbound.
 func RunAll(ctx context.Context, cfg Config) []Result {
 	return []Result{
 		CheckHealthz(ctx, cfg),

@@ -1,6 +1,6 @@
 // polaris-email-docs Worker — committed config. Real IDs / routes live in
-// wrangler.local.jsonc (gitignored) and are merged by bin/deploy.sh before
-// `wrangler deploy`.
+// wrangler.local.jsonc (gitignored) and are merged in before `wrangler
+// deploy` by `polaris-email setup infra deploy`.
 //
 // The docs site is a Docusaurus v3 static build (output: ./build) served
 // via the Workers Assets binding, with a thin Hono server that adds CSP

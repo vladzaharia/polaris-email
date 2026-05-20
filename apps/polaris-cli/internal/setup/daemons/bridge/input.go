@@ -2,10 +2,6 @@
 // `polaris-email setup bridge`. It owns the wizard prompts, the
 // compose/env/bridge.toml templates, prechecks, post-up health probes,
 // and the on-disk layout in `<dir>/`.
-//
-// PR 9 ships this as one concrete piece. PR 10 will extract the
-// generalised Daemon interface; until then the file shapes here are
-// the source of truth.
 package bridge
 
 import (

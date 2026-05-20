@@ -10,15 +10,7 @@
 #   bin/dev.sh --project in-workers     # watch only services/in
 set -uo pipefail
 
-# Source shared helpers if present, but don't fail in trimmed checkouts.
-LIB="$(dirname "$0")/_lib.sh"
-if [[ -f "$LIB" ]]; then
-  # shellcheck source=bin/_lib.sh
-  source "$LIB"
-  cd "$ROOT" || exit 1
-else
-  cd "$(dirname "$0")/.." || exit 1
-fi
+cd "$(dirname "$0")/.." || exit 1
 
 # If the caller passed --project, forward as-is; otherwise default to all three.
 if [[ "$#" -gt 0 ]]; then

@@ -3,8 +3,7 @@
 // descriptor (mail-bridge, submission-daemon, ...) implements, plus a
 // small thread-safe registry the cobra command generator consumes.
 //
-// PR 10 extracts these abstractions from PR 9's concrete mail-bridge
-// code. Adding a second daemon is a self-contained change: drop a new
+// Adding a second daemon is a self-contained change: drop a new
 // directory under `internal/setup/daemons/<name>/`, implement the
 // interface, register via `init()`, and blank-import the package from
 // `internal/setup/cmd/setup.go`. The cobra leaves are generated — no

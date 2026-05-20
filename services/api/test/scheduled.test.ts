@@ -142,7 +142,7 @@ describe('scheduled dispatch', () => {
     });
   });
 
-  it('nightly cron runs janitor (empty tenants → no-op)', async () => {
+  it('nightly cron runs janitor (empty mailboxes → no-op)', async () => {
     const env = {
       DB: {
         prepare(sql: string) {

@@ -1,5 +1,5 @@
-// Package deploy is the Go port of phase 6 of bin/bootstrap.sh and the
-// full bin/deploy.sh. For each registered service it:
+// Package deploy is the Worker-deploy runner. For each registered
+// service it:
 //
 //  1. (optional) builds the client bundle via `pnpm --filter <name> run
 //     build:client` — panel + docs ship a static site alongside the
@@ -46,8 +46,7 @@ type Service struct {
 //   - docs is independent but lighter-weight; defer it.
 //   - cli-installer is installer scaffolding, deploy last.
 //
-// Adding a service: append it to this slice AND to the matching list
-// in bin/_lib.sh::POLARIS_SERVICES until PR 14 retires the shell.
+// Adding a service: append it to this slice.
 var Services = []Service{
 	{Name: "tail", Path: "services/tail"},
 	{Name: "api", Path: "services/api"},

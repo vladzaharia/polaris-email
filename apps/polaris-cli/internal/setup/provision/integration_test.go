@@ -10,8 +10,8 @@
 //
 // The test creates the standard polaris-email desired state in a
 // scratch directory. It does NOT delete the resources afterwards —
-// operators are expected to clean up via the dashboard or `setup
-// infra rollback` (PR 13).
+// operators are expected to clean up via the dashboard or
+// `setup infra rollback`.
 
 package provision
 

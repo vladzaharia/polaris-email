@@ -68,7 +68,7 @@ type Reporter interface {
 //
 // The returned map is name → value for every secret the runner generated
 // itself this run. The cmd leaf passes this back to the caller so the
-// genesis-seal step (PR 7) can sign with POLARIS_SECRET_A without ever
+// genesis-seal phase can sign with POLARIS_SECRET_A without ever
 // touching disk. Values resolved from a Source are NOT included — the
 // caller can fetch them again from the same source if needed.
 //
@@ -231,9 +231,9 @@ func resolveValue(
 	for _, src := range srcs {
 		v, err := src.Load(ctx, s.Name)
 		if err != nil {
-			// Source errored — log via the per-source mechanism in a
-			// future PR. For now we just continue: a noisy source
-			// should not block a working chain.
+			// Source errored — continue silently. A noisy source should
+			// not block a working chain. TODO: surface per-source
+			// diagnostics via the Reporter.
 			continue
 		}
 		if v != "" {
@@ -260,10 +260,10 @@ func resolveValue(
 	return "", false, fmt.Errorf("%s: no source produced a value and no generator is configured", s.Name)
 }
 
-// DefaultSpecs returns the canonical spec list that bin/bootstrap.sh
-// phase-5 implements. Services is keyed off the same list the rest of
-// the deploy flow uses, so adding a new Worker only requires adding it
-// to the cmd-side service list — not to every spec individually.
+// DefaultSpecs returns the canonical spec list for cold-start. Services
+// is keyed off the same list the rest of the deploy flow uses, so
+// adding a new Worker only requires adding it to the cmd-side service
+// list — not to every spec individually.
 //
 // Most callers should construct their own slice off this (and adjust
 // the .Services entries) so the test fixtures stay self-contained.
@@ -288,6 +288,15 @@ func DefaultSpecs(allWorkers []string) []Spec {
 			Name:     "OIDC_CLIENT_SECRET",
 			Services: []string{"panel"},
 			Optional: true,
+		},
+		{
+			// better-auth cookie / verification signing key. Required —
+			// better-auth throws BetterAuthError on every request without
+			// it. 32 random bytes base64-raw matches the panel's
+			// historical shape; the value never leaves wrangler stdin.
+			Name:      "BETTER_AUTH_SECRET",
+			Services:  []string{"panel"},
+			Generator: GenerateMasterSecret,
 		},
 	}
 }

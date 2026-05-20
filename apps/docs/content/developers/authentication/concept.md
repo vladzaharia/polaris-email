@@ -95,7 +95,7 @@ opposite problems.
 You are signing this request:
 
 ```
-POST /v1/send/raw?mode=test HTTP/1.1
+POST /v1/messages?mode=test HTTP/1.1
 Host: api.mail.plrs.im
 X-Polaris-Key-Id: ULID-OF-YOUR-KEY
 X-Polaris-Ts:    1700000000000
@@ -111,7 +111,7 @@ With secret `XBNRJYZ8WS5KQDVPM7T4F2H6CG3A1E9N`, the canonical string is
 ```text
 polaris-api
 POST
-/v1/send/raw
+/v1/messages
 mode=test
 1700000000000
 AAAABBBBCCCCDDDD
@@ -122,7 +122,7 @@ The last line is the SHA-256 hex of the body bytes. HMAC-SHA256 of that
 string under the secret gives:
 
 ```text
-X-Polaris-Sig: 3dc5920cc9bd7db06e6001fd75bb3225802c01381e3b079fec05a6e70dae0c27
+X-Polaris-Sig: 79f7c3e0d7b2bcc835fc9f6f70116fd7160af3ef2235491da4266776c860d7b1
 ```
 
 Send the four `X-Polaris-*` headers and you authenticate. Change any

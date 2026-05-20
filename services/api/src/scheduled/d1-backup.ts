@@ -1,4 +1,4 @@
-// Weekly D1 export → R2 backups prefix. Cron: `0 6 * * 0` (Sunday 06:00 UTC).
+// Weekly D1 export → R2 backups prefix. Cron: `0 6 * * 7` (Sunday 06:00 UTC).
 //
 // Why: D1 Time-Travel covers ~30 days of point-in-time recovery, but only
 // while the database itself exists. Operator-owned weekly exports stored

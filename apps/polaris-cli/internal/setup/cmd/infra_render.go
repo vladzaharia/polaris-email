@@ -12,21 +12,12 @@ import (
 	"github.com/vladzaharia/polaris-email/apps/polaris-cli/internal/setup/wranglercfg"
 )
 
-// defaultEnvDeployPath is the conventional .env.deploy location. The
-// shell scripts treat this as repo-root-relative; the Go CLI inherits
-// the same convention so `make configure` and `polaris-email setup
-// infra render` agree on which file they're reading.
+// defaultEnvDeployPath is the conventional repo-root-relative
+// .env.deploy location.
 const defaultEnvDeployPath = ".env.deploy"
 
 // renderableServices is the canonical list of Workers whose
 // `wrangler.local.template.jsonc` this command knows how to render.
-// Keep this in lockstep with bin/_lib.sh's POLARIS_SERVICES — the two
-// must agree during the parity period so the fallback shell path
-// doesn't try to render a service the Go path doesn't, or vice versa.
-//
-// The cli-installer template is rendered too because PR 6 already
-// migrated it to the {{ .X.Y }} syntax; including it here means
-// re-deploying the installer doesn't need a separate render path.
 var renderableServices = []renderableService{
 	{Name: "api", Dir: "services/api"},
 	{Name: "in", Dir: "services/in"},
@@ -48,8 +39,8 @@ type renderableService struct {
 //   - `--dry-run` prints the rendered bytes to stdout (or to --service's
 //     output) instead of writing. Useful for diffing.
 //   - `--merge <base> <overlay>` parses two JSONC files, deep-merges
-//     them, and emits the result. This is the replacement for the
-//     `sed | jq -s '.[0] * .[1]'` dance in bin/deploy.sh.
+//     them, and emits the result. The deploy phase uses the same merger
+//     to combine wrangler.jsonc + wrangler.local.jsonc.
 func newInfraRenderCmd() *cobra.Command {
 	var (
 		statePath  string
@@ -70,11 +61,7 @@ func newInfraRenderCmd() *cobra.Command {
 			"Templates use Go text/template syntax (`{{ .Account.ID }}`,\n" +
 			"`{{ .D1.PolarisEmail.ID }}`, etc.) with missingkey=error so any\n" +
 			"undefined reference is a hard failure instead of a silent empty\n" +
-			"string.\n" +
-			"\n" +
-			"This command replaces bin/render-wrangler-local.sh. During the\n" +
-			"parity period the shell still wraps it as a fallback; PR 14\n" +
-			"retires the fallback path.",
+			"string.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			// --merge short-circuits the render flow.
 			if mergeBase != "" || mergeOver != "" {
@@ -89,7 +76,7 @@ func newInfraRenderCmd() *cobra.Command {
 	c.Flags().StringVar(&serviceArg, "service", "", "render only the named service (api|in|out|panel|cli-installer)")
 	c.Flags().BoolVar(&dryRun, "dry-run", false, "print rendered bytes to stdout instead of writing wrangler.local.jsonc")
 
-	// One-shot merge mode (replaces the sed+jq dance in bin/deploy.sh).
+	// One-shot merge mode: deep-merge two JSONC files.
 	c.Flags().StringVar(&mergeBase, "merge", "", "JSONC base file; pairs with --overlay (one-shot deep-merge, no render)")
 	c.Flags().StringVar(&mergeOver, "overlay", "", "JSONC overlay file for --merge")
 	c.Flags().StringVarP(&outputPath, "output", "o", "", "write merge result to this path (default: stdout)")
@@ -157,9 +144,8 @@ func runRender(cmd *cobra.Command, statePath, envPath, serviceArg string, dryRun
 }
 
 // runMerge implements `setup infra render --merge BASE --overlay OVERLAY
-// [-o OUT]`. It exists so bin/deploy.sh can drop the
-// `sed -E ... | jq -s '.[0] * .[1]'` pipeline and shell out to the same
-// JSONC-comment-preserving merger the render flow uses internally.
+// [-o OUT]`. Deep-merges two JSONC files using the same
+// comment-preserving merger the render flow uses internally.
 func runMerge(cmd *cobra.Command, base, overlay, outPath string) error {
 	if base == "" || overlay == "" {
 		return fmt.Errorf("--merge and --overlay must both be set (got base=%q overlay=%q)", base, overlay)

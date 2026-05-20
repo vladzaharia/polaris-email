@@ -7,11 +7,11 @@ served from the Workers Assets binding, and sessions are managed by
 talking to the same `polaris-email` D1 database used by `services/api`.
 Authentication is delegated to an OIDC IdP (Cloudflare Access by
 default); the panel sits behind a Cloudflare Access app for an
-additional zero-trust gate. Destructive actions are gated on a
-two-person `withApproval` flow: the requester opens an approval row, a
-second admin approves it, and the mutation is then re-issued with the
-approval id. The server returns HTTP `428 Precondition Required` with
-`{ code: 'approval_required' }` until that header is present.
+additional zero-trust gate. Destructive actions are gated client-side
+via `DestructiveActionDialog` (type-the-resource-name confirmation);
+every mutation lands in the chained-hash `audit_log` table, and
+WebAuthn step-up at the Cloudflare Access layer enforces hardware-key
+presence for admin sessions.
 
 ## Dev commands
 
@@ -91,12 +91,10 @@ onto the user row. Subsequent requests hit `auth.api.getSession`, which
 returns the user + session from D1; a missing or expired session
 short-circuits to a redirect. Sensitive actions (DLQ drop, credential
 rotate/revoke, bridge HMAC rotate, DKIM rotate, mailbox sender/receiver
-disable, webhook subscription delete, …) are wrapped in
-`withApproval(action)` middleware: the route returns
-`428 Precondition Required` with `{ code: 'approval_required', action }`
-unless the request carries an `x-polaris-approval-id` header pointing at
-an `approved` row in the `approvals` table that was approved by a
-_different_ admin than the caller.
+disable, webhook subscription delete, …) require typing the resource
+name into `DestructiveActionDialog` on the client; the server logs the
+mutation to the chained-hash `audit_log`, and Cloudflare Access enforces
+WebAuthn step-up at the front door.
 
 ## Route inventory
 
@@ -113,7 +111,7 @@ code-based for type-safety against the tsc-only client build):
   attachment download).
 - `/webhook-subs` / `/webhook-subs/$id` — webhook subscriptions.
 - `/routing` / `/routing/$id` — inbound routing rules.
-- `/dlq` — webhook DLQ browser (replay / drop with two-person gate).
-- `/daemons` / `/daemons/$id` — submission-daemon registry.
+- `/dlq` — webhook DLQ browser (replay / drop with type-to-confirm gate).
+- `/bridges` / `/bridges/$id` — mail-bridge registry.
 - `/test-send` — interactive sender for smoke-testing live + test mode.
 - `/settings/account` — current user profile + sign-out.

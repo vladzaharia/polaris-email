@@ -93,7 +93,7 @@ func Validate(c *Config) error {
 		}
 	}
 
-	// Hostnames — POLARIS_API_HOSTNAME, R2_PUBLIC_HOST, BRIDGE_HOST.
+	// Hostnames — POLARIS_API_HOSTNAME, R2_PUBLIC_HOST.
 	// We reject anything containing scheme or path components — the
 	// shell scripts assume bare hostnames.
 	for _, f := range []struct {
@@ -101,7 +101,6 @@ func Validate(c *Config) error {
 	}{
 		{"POLARIS_API_HOSTNAME", c.PolarisAPIHostname},
 		{"R2_PUBLIC_HOST", c.R2PublicHost},
-		{"BRIDGE_HOST", c.BridgeHost},
 	} {
 		if f.Val == "" {
 			continue

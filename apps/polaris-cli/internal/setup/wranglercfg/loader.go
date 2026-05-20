@@ -9,11 +9,8 @@ import (
 	"github.com/vladzaharia/polaris-email/apps/polaris-cli/internal/setup/state"
 )
 
-// LoadInputs bridges PR 1's state.Doc and the (still-shell) .env.deploy
-// file into a RenderInputs ready to feed Render. PR 2 will land a typed
-// config package; once it's on main, this function will gain a
-// *config.Config parameter and fall back to direct env-file parsing only
-// when called from contexts that haven't loaded one yet.
+// LoadInputs bridges state.Doc and the .env.deploy file into a
+// RenderInputs ready to feed Render.
 //
 // envPath may be empty, in which case LoadInputs only consults the
 // process environment (useful for tests that t.Setenv their values).
@@ -37,8 +34,8 @@ func LoadInputs(doc *state.Doc, envPath string) (*RenderInputs, error) {
 		},
 		Hostnames: HostnameInputs{
 			PolarisAPI: get("POLARIS_API_HOSTNAME"),
+			Panel:      get("POLARIS_PANEL_HOSTNAME"),
 			R2Public:   get("R2_PUBLIC_HOST"),
-			Bridge:     get("BRIDGE_HOST"),
 		},
 		Synthetic: SyntheticInputs{
 			From:          get("SYNTHETIC_FROM"),
@@ -84,9 +81,9 @@ func populateR2(out *R2Inputs, doc *state.Doc) {
 	}
 }
 
-// kvStateKeys maps the canonical state-file key (the human name used by
-// bin/bootstrap.sh) onto the typed RenderInputs field. Keeping this in
-// one place makes "where does .KV.Foo come from?" trivially greppable.
+// kvStateKeys maps the canonical state-file key onto the typed
+// RenderInputs field. Keeping this in one place makes "where does
+// .KV.Foo come from?" trivially greppable.
 var kvStateKeys = map[string]func(*KVInputs, state.Resource){
 	"polaris-email-nonce":       func(k *KVInputs, r state.Resource) { k.Nonce = toKV(r) },
 	"polaris-email-idempotency": func(k *KVInputs, r state.Resource) { k.Idempotency = toKV(r) },
@@ -155,11 +152,11 @@ func pick(a, b string) string {
 	return b
 }
 
-// loadEnvFile is a deliberately small .env parser sufficient for the
-// shape bin/configure.sh emits: lines like KEY="value", KEY=value, and
-// `#` comments. We do NOT do shell expansion (no $VAR substitution),
-// process substitution, or quoting tricks — anyone who wants those
-// features should be using a real shell, not relying on this loader.
+// loadEnvFile is a deliberately small .env parser: lines like
+// KEY="value", KEY=value, and `#` comments. We do NOT do shell
+// expansion (no $VAR substitution), process substitution, or quoting
+// tricks — anyone who wants those features should be using a real
+// shell, not relying on this loader.
 //
 // Returning an empty map for "file does not exist" is intentional:
 // LoadInputs falls back to the process environment so the CLI can

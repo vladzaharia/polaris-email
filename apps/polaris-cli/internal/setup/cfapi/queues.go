@@ -65,6 +65,82 @@ func (c *Client) CreateQueue(ctx context.Context, name string) (*Queue, error) {
 	return nil, err
 }
 
+// DeleteQueue removes a queue by ID. 404 is treated as success.
+//
+// CF refuses to delete a queue that's still referenced by either:
+//   (a) a Worker consumer binding (`queues.consumers[].queue` in
+//       another script's wrangler.jsonc), or
+//   (b) another queue's `dead_letter_queue` setting.
+// Detach with DeleteQueueConsumer / UnsetQueueDLQ before calling
+// DeleteQueue when those references exist.
+func (c *Client) DeleteQueue(ctx context.Context, id string) error {
+	if id == "" {
+		return fmt.Errorf("cfapi: queue id required")
+	}
+	err := c.do(ctx, http.MethodDelete, c.accountPath("/queues/"+url.PathEscape(id)), nil, nil)
+	if err == nil || IsNotFound(err) {
+		return nil
+	}
+	return err
+}
+
+// QueueConsumer is one entry from GET /accounts/{id}/queues/{queue_id}/consumers.
+// `Script` is the Worker name; `ConsumerID` identifies this specific
+// binding (a Worker may consume multiple queues, each a separate
+// QueueConsumer row).
+type QueueConsumer struct {
+	ConsumerID string `json:"consumer_id"`
+	Type       string `json:"type"` // "worker", "http_pull", …
+	Script     string `json:"script_name,omitempty"`
+}
+
+// ListQueueConsumers returns every consumer bound to the named queue.
+func (c *Client) ListQueueConsumers(ctx context.Context, queueID string) ([]QueueConsumer, error) {
+	if queueID == "" {
+		return nil, fmt.Errorf("cfapi: queue id required")
+	}
+	var consumers []QueueConsumer
+	if err := c.do(ctx, http.MethodGet,
+		c.accountPath("/queues/"+url.PathEscape(queueID)+"/consumers"),
+		nil, &consumers); err != nil {
+		return nil, err
+	}
+	return consumers, nil
+}
+
+// DeleteQueueConsumer unbinds a single Worker-consumer from a queue.
+// 404 is treated as success.
+func (c *Client) DeleteQueueConsumer(ctx context.Context, queueID, consumerID string) error {
+	if queueID == "" || consumerID == "" {
+		return fmt.Errorf("cfapi: queue id + consumer id required")
+	}
+	err := c.do(ctx, http.MethodDelete,
+		c.accountPath("/queues/"+url.PathEscape(queueID)+"/consumers/"+url.PathEscape(consumerID)),
+		nil, nil)
+	if err == nil || IsNotFound(err) {
+		return nil
+	}
+	return err
+}
+
+// QueueSettings carries the mutable knobs PATCH /queues/{id} accepts.
+// Only DeadLetterQueue is wired today — extend when reset all (or
+// another caller) needs more knobs.
+type QueueSettings struct {
+	DeadLetterQueue *string `json:"dead_letter_queue,omitempty"`
+}
+
+// PatchQueue updates one or more queue settings. Pass an empty string
+// pointer for DeadLetterQueue to clear the DLQ binding (lets the DLQ
+// itself be deleted afterwards).
+func (c *Client) PatchQueue(ctx context.Context, queueID string, settings QueueSettings) error {
+	if queueID == "" {
+		return fmt.Errorf("cfapi: queue id required")
+	}
+	body := map[string]any{"settings": settings}
+	return c.do(ctx, http.MethodPatch, c.accountPath("/queues/"+url.PathEscape(queueID)), body, nil)
+}
+
 func (c *Client) findQueueByName(ctx context.Context, name string) (*Queue, error) {
 	all, err := c.ListQueues(ctx)
 	if err != nil {

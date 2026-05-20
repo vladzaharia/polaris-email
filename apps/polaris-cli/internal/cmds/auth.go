@@ -13,11 +13,10 @@ import (
 	polarissdk "github.com/polaris-email/polaris-sdk-go"
 )
 
-// newAuthCmd returns the `polaris-email auth` subcommand group. Today it
-// exposes `auth sign` (the canonical shell-callable signer that replaces the
-// old `bin/_lib.sh:polaris_sign()` helper) and `auth verify` (D2: a
-// shell-callable verifier so operators can debug bad-signature reports
-// without writing Go).
+// newAuthCmd returns the `polaris-email auth` subcommand group. It
+// exposes `auth sign` (the canonical shell-callable signer) and
+// `auth verify` (so operators can debug bad-signature reports without
+// writing Go).
 func newAuthCmd() *cobra.Command {
 	c := &cobra.Command{Use: "auth", Short: "Authentication helpers"}
 	c.AddCommand(authSignCmd(), authVerifyCmd())

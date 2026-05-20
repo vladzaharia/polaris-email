@@ -1,7 +1,5 @@
-// Package wranglercfg renders services/*/wrangler.local.jsonc files and
-// merges them with services/*/wrangler.jsonc, replacing the legacy
-// bin/render-wrangler-local.sh envsubst pass and the regex+jq merge in
-// bin/deploy.sh.
+// Package wranglercfg renders services/*/wrangler.local.jsonc files
+// and merges them with services/*/wrangler.jsonc.
 //
 // Templates use Go's text/template syntax (`{{ .X.Y }}`) with
 // missingkey=error so any undefined reference is a hard failure instead
@@ -133,13 +131,14 @@ type Queue struct {
 // HostnameInputs are the public hostnames the templates bake into vars.
 type HostnameInputs struct {
 	// PolarisAPI is the public API hostname (e.g. api.mail.plrs.im).
+	// Bound to polaris-email-api as a Workers Custom Domain.
 	PolarisAPI string
+	// Panel is the public admin-UI hostname (e.g. mail.plrs.im).
+	// Bound to polaris-email-panel as a Workers Custom Domain.
+	Panel string
 	// R2Public is the unauthenticated R2 custom domain
 	// (e.g. r2.mail.plrs.im). See SECURITY.md.
 	R2Public string
-	// Bridge is the on-prem mail-bridge host the API contacts for
-	// outbound submission and IMAP probes.
-	Bridge string
 }
 
 // SyntheticInputs are the synthetic-monitor-loop config knobs.
@@ -167,16 +166,14 @@ type OIDCInputs struct {
 
 // Validate enforces every required field is populated. The current
 // service set requires:
-//   - Account.ID + Hostnames.PolarisAPI (all four Workers)
+//   - Account.ID + Hostnames.PolarisAPI + Hostnames.Panel (all Workers)
 //   - D1.PolarisEmail.ID (api, in, out, panel)
 //   - all five KV namespaces (api)
 //   - Hostnames.R2Public (api)
-//   - AlertWebhook (api)
 //   - OIDC.Issuer + OIDC.ClientID (panel)
 //
-// Synthetic.* and Hostnames.Bridge are optional — the current api/in/out
-// templates don't reference them, but they are reserved in the shape so
-// follow-on PRs can wire them without re-validating the struct.
+// AlertWebhook + Synthetic.* fields are optional — the templates
+// reference them but the runtime no-ops on empty strings.
 func (in *RenderInputs) Validate() error {
 	var missing []string
 	check := func(name, value string) {
@@ -187,6 +184,7 @@ func (in *RenderInputs) Validate() error {
 
 	check("Account.ID (CF_ACCOUNT_ID)", in.Account.ID)
 	check("Hostnames.PolarisAPI (POLARIS_API_HOSTNAME)", in.Hostnames.PolarisAPI)
+	check("Hostnames.Panel (POLARIS_PANEL_HOSTNAME)", in.Hostnames.Panel)
 	check("Hostnames.R2Public (R2_PUBLIC_HOST)", in.Hostnames.R2Public)
 
 	check("D1.PolarisEmail.ID (state .d1[\"polaris-email\"].id)", in.D1.PolarisEmail.ID)
@@ -197,8 +195,6 @@ func (in *RenderInputs) Validate() error {
 	check("KV.KeyCache.ID (state .kv[\"polaris-email-key-cache\"].id)", in.KV.KeyCache.ID)
 	check("KV.Revocations.ID (state .kv[\"polaris-email-revocations\"].id)", in.KV.Revocations.ID)
 
-	check("AlertWebhook (ALERT_WEBHOOK)", in.AlertWebhook)
-
 	check("OIDC.Issuer (OIDC_ISSUER)", in.OIDC.Issuer)
 	check("OIDC.ClientID (OIDC_CLIENT_ID)", in.OIDC.ClientID)
 
@@ -206,7 +202,7 @@ func (in *RenderInputs) Validate() error {
 		return nil
 	}
 	return fmt.Errorf(
-		"wranglercfg: %d required input(s) missing — rerun `make configure` (for env values) or `make bootstrap` (for resource IDs):\n  - %s",
+		"wranglercfg: %d required input(s) missing — rerun `polaris-email setup infra configure` (for env values) or `polaris-email setup infra apply` (for resource IDs):\n  - %s",
 		len(missing),
 		strings.Join(missing, "\n  - "),
 	)

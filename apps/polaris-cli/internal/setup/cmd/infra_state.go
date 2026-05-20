@@ -16,8 +16,7 @@ import (
 )
 
 // defaultStatePath is the location every setup command reads/writes
-// state from. It is intentionally repo-root-relative; PR 4 will let
-// `--state-path` flag override it.
+// state from. Repo-root-relative; `--state-path` overrides per leaf.
 const defaultStatePath = ".deploy-state.json"
 
 // newInfraStateCmd builds the `setup infra state` subtree with three
@@ -94,10 +93,7 @@ func newStateRebuildCmd() *cobra.Command {
 		Short: "Rebuild .deploy-state.json from a live Cloudflare account (read-only API calls)",
 		Long: "Rebuild .deploy-state.json by listing every D1/R2/KV/Queues\n" +
 			"resource under the configured account. Resources reconstructed\n" +
-			"this way are flagged `discovered: true`.\n" +
-			"\n" +
-			"PR 1 ships a minimal implementation — drift detection vs an\n" +
-			"existing state file lands in PR 5.",
+			"this way are flagged `discovered: true`.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if token == "" {
 				token = os.Getenv("CLOUDFLARE_API_TOKEN")

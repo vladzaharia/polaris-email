@@ -11,7 +11,7 @@
 //   * `0 5 * * *`           — feedback window refresh             → feedbackWindowRefresh
 //   * `20 5 * * *`          — full audit chain verification       → auditVerify
 //   * `50 5 * * *`          — policy_decision ↔ message backfill  → policyBackfill
-//   * `0 6 * * 0`           — weekly D1 export to R2 backups      → d1Backup
+//   * `0 6 * * 7`           — weekly D1 export to R2 backups      → d1Backup
 //
 // Every handler runs inside withCronTelemetry, which writes a row into
 // cron_runs with (status, duration_ms, message). audit-verify and
@@ -87,10 +87,9 @@ export async function scheduled(event: ScheduledEvent, env: Env): Promise<void> 
       return auditVerify(env); // self-reports telemetry
     case '50 5 * * *':
       return policyBackfill(env); // self-reports telemetry
-    case '0 6 * * 0':
-      // d1-backup wired in PR9 — register the cron case here so dispatcher
-      // doesn't log "unknown cron" once wrangler.jsonc adds the schedule.
-      // Handler is added in services/api/src/scheduled/d1-backup.ts.
+    case '0 6 * * 7':
+      // Weekly D1 export to R2. `7` is Sunday in CF's cron parser (it
+      // rejects `0` for day-of-week despite docs saying otherwise).
       return withCronTelemetry(env, 'd1-backup', async () => {
         const mod = await import('./d1-backup.js');
         await mod.d1Backup(env);

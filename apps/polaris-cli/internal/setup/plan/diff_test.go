@@ -157,9 +157,8 @@ func TestDiff_StateButNoLive_DriftPath(t *testing.T) {
 
 func TestDiff_StateOnlyForUndesired_NotDrift(t *testing.T) {
 	t.Parallel()
-	// Imagine a future PR removes a KV namespace from Desired(). The
-	// stale entry in state should not show up as Drift — it's just
-	// vestigial.
+	// A KV namespace that was removed from Desired() but still lingers
+	// in state should not show up as Drift — it's just vestigial.
 	d := &DesiredState{
 		KV: []DesiredKV{
 			{Title: "polaris-email-nonce"},

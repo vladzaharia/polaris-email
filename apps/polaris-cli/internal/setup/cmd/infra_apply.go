@@ -17,13 +17,6 @@ import (
 	"github.com/vladzaharia/polaris-email/apps/polaris-cli/internal/setup/state"
 )
 
-// provisionOptInEnv is the env-var gate operators must opt into before
-// `setup infra apply` will make any CF write. Mirrors the rollout plan
-// — we keep the bin/bootstrap.sh fallback authoritative until the soak
-// window passes; setting POLARIS_SETUP_PROVISION=1 promotes the Go
-// path.
-const provisionOptInEnv = "POLARIS_SETUP_PROVISION"
-
 // newInfraApplyCmd wires `polaris-email setup infra apply` — the
 // write side of plan/apply. It walks plan.Diff().Creates in the same
 // terraform-style flow, but actually invokes cfapi.Create* for each
@@ -32,7 +25,6 @@ const provisionOptInEnv = "POLARIS_SETUP_PROVISION"
 //
 // Safety properties:
 //
-//   - Behind POLARIS_SETUP_PROVISION=1 for the soak window.
 //   - Confirms with huh.NewConfirm unless --yes (or stdin isn't a TTY).
 //   - --dry-run exits after the plan stage; no CF writes.
 //   - Resumes cleanly on re-invocation: state is committed after every
@@ -52,37 +44,16 @@ func newInfraApplyCmd() *cobra.Command {
 		Short: "Create the Cloudflare resources polaris-email needs (idempotent)",
 		Long: "Walk the create-plan and provision missing Cloudflare resources.\n" +
 			"\n" +
-			"This is the Go-native replacement for phases 2–6 of\n" +
-			"bin/bootstrap.sh (D1 + R2 + 5 KV + 5 queues). During the soak\n" +
-			"window the command refuses to run unless\n" +
-			"POLARIS_SETUP_PROVISION=1 is set in the environment — the shell\n" +
-			"path remains authoritative until then.\n" +
-			"\n" +
 			"State is written to .deploy-state.json atomically after every\n" +
 			"successful resource create, so an aborted run (Ctrl-C, kill\n" +
 			"-9, transient CF outage) resumes cleanly on the next apply.\n" +
 			"\n" +
 			"--dry-run still computes the plan + prints it, but stops short\n" +
-			"of any HTTP write.\n" +
-			"\n" +
-			"Out of scope (handled by later PRs): D1 migrations, secret\n" +
-			"seeding, Worker deploys, genesis-seal.",
+			"of any HTTP write.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
 			if ctx == nil {
 				ctx = context.Background()
-			}
-
-			// Opt-in gate. Soak window.
-			if !dryRun {
-				if v := os.Getenv(provisionOptInEnv); v != "1" && v != "true" {
-					return fmt.Errorf(
-						"%s is not set — refusing to run during the soak window.\n"+
-							"Set %s=1 to promote the Go provision path over bin/bootstrap.sh.\n"+
-							"(Use --dry-run to preview the plan without the opt-in.)",
-						provisionOptInEnv, provisionOptInEnv,
-					)
-				}
 			}
 
 			cfg, _ := config.LoadOrDefault(envFile)
@@ -119,7 +90,7 @@ func newInfraApplyCmd() *cobra.Command {
 				}
 			}
 
-			p := plan.Diff(plan.Desired(), doc, snap)
+			p := plan.Diff(plan.WithR2PublicDomain(plan.Desired(), cfg.R2PublicHost), doc, snap)
 			plan.Render(cmd.OutOrStdout(), p)
 
 			if !p.HasCreates() && len(p.Adopt) == 0 {

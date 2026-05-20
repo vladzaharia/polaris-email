@@ -46,8 +46,10 @@ URL can read the bytes forever. Read the
 [threat model](/security/threat-model) before placing a CDN, signing
 layer, or authenticated proxy in front of it.
 
-Terraform under `infra/terraform/` owns the DNS record and the R2 custom
-hostname binding.
+The R2 custom-domain binding is provisioned during `polaris-email setup
+infra apply` from the `R2_PUBLIC_HOST` value in `.env.deploy` (see
+`apps/polaris-cli/internal/setup/cfapi/r2.go` and `provision/r2.go`).
+Cloudflare auto-issues and renews the TLS cert for the bound hostname.
 
 ## API and panel hostnames
 
@@ -66,8 +68,8 @@ front them on a custom hostname:
    ]
    ```
 
-3. Redeploy the Worker (`make deploy SERVICE=services/api` or
-   `SERVICE=apps/panel`).
+3. Redeploy the Worker (`polaris-email setup infra deploy service api`
+   or `polaris-email setup infra deploy service panel`).
 
 In CI, the production hostname lands via the
 `POLARIS_API_HOSTNAME` repo variable consumed by `.env.deploy`.
@@ -101,26 +103,25 @@ Worker; you do not register a separate Worker per tenant. Cloudflare
 issues and renews the TLS cert for each `mta-sts.{tenant}` hostname on
 its own.
 
-`bin/backfill-mta-sts.sh` enables MTA-STS + TLS-RPT across every
-verified, inbound-enabled domain in one pass. Idempotent.
+To enable MTA-STS + TLS-RPT across the existing fleet of verified
+inbound-enabled domains, loop the per-domain admin endpoints
+(`/mta-sts/enable`, `/tls-rpt/enable`) via curl or the `polaris-email`
+admin TUI — they are idempotent.
 
-## Terraform vs. wrangler
+## Infrastructure-as-code split
 
-The infrastructure-as-code split runs along a deploy-cadence boundary:
-
-- **Terraform** (`infra/terraform/`) owns the slow-moving, state-shaped
-  Cloudflare resources inside the polaris-prod account — DNS, Email
-  Routing, Email Service onboarding, Cloudflare Access apps, and the
-  R2 public custom-domain wiring.
+- **`polaris-email setup infra apply`** (Go CLI) owns the account-level
+  Cloudflare resources: D1, R2 buckets (with lifecycle + Object Lock),
+  KV namespaces, queues, Logpush jobs, R2 API tokens, and the R2
+  public custom-domain binding.
 - **Wrangler** (each `services/*/wrangler.jsonc` and
-  `apps/*/wrangler.jsonc`) owns the code-velocity resources within the
-  same account: Workers, D1, KV, R2 buckets, Queues, and any per-Worker
-  custom-domain routes.
-
-The two never overlap, and the API tokens that drive each pipeline are
-scoped so they cannot. See
-[`infra/terraform/README.md`](https://github.com/polaris/polaris-email/blob/main/infra/terraform/README.md)
-for the full inventory and the drift policy.
+  `apps/*/wrangler.jsonc`) owns the Worker-scoped resources: Workers
+  themselves, their bindings, and their custom-domain routes.
+- **The admin API** (`POST /v1/admin/domains` →
+  `packages/cf-api/`) owns per-domain DNS records, Email Routing
+  catch-all rules, MTA-STS / TLS-RPT publication, and DKIM rotation.
+- **Cloudflare Access** for the admin panel is configured manually in
+  the Zero Trust dashboard (no auto-provisioning surface).
 
 ## Routine redeploy
 

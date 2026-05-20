@@ -1,11 +1,15 @@
 // polaris-email-cli-installer Worker — committed config. Real account ID
-// and any deploy-time overrides live in wrangler.local.jsonc (gitignored)
-// and are merged by bin/deploy.sh before `wrangler deploy`.
+// lives in wrangler.local.jsonc (gitignored) and is merged in before
+// `wrangler deploy`.
 //
 // This Worker hosts the POSIX-sh installer at https://cli.mail.plrs.im.
-// `src/install.sh` is bundled as a text module via the `rules` block below;
-// the Worker rewrites the `POLARIS_PIN_VERSION=` line when the request
-// includes a `?v=<tag>` query param.
+// `src/install.sh` is the source of truth; the `build.command` hook below
+// base64-encodes it into `src/install.sh.gen.ts` before bundling, which is
+// then imported and decoded by the Worker at module load. The indirection
+// exists because Cloudflare's WAF on api.cloudflare.com blocks Worker
+// uploads whose multipart payload contains shell-injection signatures —
+// bundling raw install.sh content fails with HTTP 403 + a CF block page.
+// See scripts/gen-install-sh.mjs for the full rationale.
 {
   "$schema": "https://json-schema.org/draft-07/schema",
   "name": "polaris-email-cli-installer",
@@ -13,15 +17,15 @@
   "compatibility_date": "2026-04-15",
   "observability": { "enabled": true },
   "logpush": true,
-  // Bundle `*.sh` files into the Worker as UTF-8 text. The default export of
-  // the import is the file contents as a string.
-  "rules": [
-    {
-      "type": "Text",
-      "globs": ["**/*.sh"],
-      "fallthrough": false,
-    },
-  ],
+  // Regenerate src/install.sh.gen.ts from src/install.sh before every
+  // bundle, so the served script can never drift from the on-disk source.
+  "build": {
+    "command": "node scripts/gen-install-sh.mjs",
+  },
+  // Bind cli.mail.plrs.im as a Workers Custom Domain. Wrangler manages
+  // the binding idempotently: the existing CF-side binding (originally
+  // created by terraform) is adopted on first deploy.
+  "routes": [{ "pattern": "cli.mail.plrs.im", "custom_domain": true }],
   "vars": {
     "ENVIRONMENT": "production",
   },

@@ -33,9 +33,8 @@ before changing anything touching R2 public URLs, the audit chain, or HMAC).
 - `packages/sdk-go` — the only Go package under `packages/` (its own
   `go.mod`, **no `go.sum`** — pure-stdlib). CI disables module cache for
   this job; if you add an external dep, update `.github/workflows/ci.yml`.
-- `infra/terraform/` — zone + access-app modules; per-env roots.
-- `bin/` — narrow operational scripts only (`killswitch-*.sh`,
-  `backfill-*.sh`, `smoke-mta-sts.sh`, `dev.sh`). The cold-start /
+- `bin/` — narrow operational scripts only (`killswitch-mx-flip.sh`,
+  `killswitch-r2-pause.sh`, `dev.sh`). The cold-start /
   deploy / smoke / rollback orchestration lives in the `polaris-email`
   Go CLI under `apps/polaris-cli/internal/setup/`.
 
@@ -96,8 +95,7 @@ polaris-email setup infra state rebuild      # reconstruct .deploy-state.json fr
 ```
 
 Install the CLI with `curl -fsSL cli.mail.plrs.im | sh`. The root `Makefile`
-is now a thin migration banner — see `make help` for the mapping from the
-old `make bootstrap` / `make deploy` targets to the CLI verbs.
+is a thin migration banner; see `make help`.
 
 Day-to-day operator workflows (issue keys, onboard domains, rotate creds,
 replay DLQ) all live in the `polaris-email` Go binary. The same binary is

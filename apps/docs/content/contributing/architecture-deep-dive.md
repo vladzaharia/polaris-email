@@ -15,7 +15,7 @@ this page assumes you are about to open the repo in an editor.
 ## Polyglot monorepo layout
 
 ```
-services/{api,in,out}        — Cloudflare Workers (TypeScript + Hono)
+services/{api,in,out,tail}   — Cloudflare Workers (TypeScript + Hono)
 apps/panel                   — Hono + React 19 + TanStack Router admin UI (Worker)
 apps/mail-bridge             — Go 1.25, SMTPS + IMAP4rev2 in one binary
 apps/polaris-cli             — Go 1.22, operator CLI (`polaris-email`, alias `pml`)
@@ -24,8 +24,7 @@ apps/cli-installer           — installer Worker at cli.mail.plrs.im
 packages/{hmac,schema,pipeline,ids,mime,cf-api,revocation,test-vectors,sdk-node}
                              — TS workspace packages
 packages/sdk-go              — the only Go package under packages/ (pure stdlib, no go.sum)
-infra/terraform              — zone + access-app modules; per-env roots
-bin/                         — orchestration scripts (legacy; being replaced by `polaris-email setup`)
+bin/                         — narrow ops scripts (killswitches, dev convenience)
 ```
 
 The Workers are TypeScript + Hono. The on-prem bridge and the CLI are

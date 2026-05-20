@@ -5,40 +5,40 @@
       "name": "api/POST/messages/happy",
       "direction": "polaris-api",
       "method": "POST",
-      "path": "/v1/send/raw",
+      "path": "/v1/messages",
       "query": "mode=test",
       "ts": "1700000000000",
       "nonce": "AAAABBBBCCCCDDDD",
       "secret": "XBNRJYZ8WS5KQDVPM7T4F2H6CG3A1E9N",
       "body": "{\"from\":\"a@b.com\",\"to\":[\"c@d.com\"],\"subject\":\"hi\",\"category\":\"svc.test\"}",
       "must_verify": true,
-      "expected_sig": "3dc5920cc9bd7db06e6001fd75bb3225802c01381e3b079fec05a6e70dae0c27"
+      "expected_sig": "432717b8f54fcc5e96dd05ba1697e5e7941b02971084a5228ea516a43ae52e6c"
     },
     {
       "name": "api/POST/messages/empty-query",
       "direction": "polaris-api",
       "method": "POST",
-      "path": "/v1/send/raw",
+      "path": "/v1/messages",
       "query": "",
       "ts": "1700000000000",
       "nonce": "AAAABBBBCCCCDDDD",
       "secret": "XBNRJYZ8WS5KQDVPM7T4F2H6CG3A1E9N",
       "body": "{\"x\":1}",
       "must_verify": true,
-      "expected_sig": "8dc2337c063499347f04166e098bf6e262eafa40ca3299383fb1599ea3bac8f0"
+      "expected_sig": "5d0ed1bbe89521b2c737442125f2ab86f2b0c6a7f53867c8fa03c03676eef49b"
     },
     {
       "name": "api/POST/messages/multi-value-query",
       "direction": "polaris-api",
       "method": "POST",
-      "path": "/v1/send/raw",
+      "path": "/v1/messages",
       "query": "b=2&a=1&a=2",
       "ts": "1700000000000",
       "nonce": "AAAABBBBCCCCDDDD",
       "secret": "XBNRJYZ8WS5KQDVPM7T4F2H6CG3A1E9N",
       "body": "",
       "must_verify": true,
-      "expected_sig": "8a44af920d835cbd75e6b138dfe9bc9b75728431dfb6f1b5d407831b5eb52080"
+      "expected_sig": "1760de3b48e690fc8df99c317cbbf560f54fdd3745759ef54b833c0a9c06c2f2"
     },
     {
       "name": "api/GET/admin/list/happy",

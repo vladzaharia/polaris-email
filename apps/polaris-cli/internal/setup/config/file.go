@@ -15,22 +15,19 @@ import (
 // repo root.
 const DefaultPath = ".env.deploy"
 
-// Load parses a shell-sourceable .env.deploy file. The format mirrors
-// what bin/configure.sh writes:
+// Load parses a shell-sourceable .env.deploy file:
 //
 //   - blank lines and `#`-prefixed comments are skipped
 //   - `KEY=VALUE` lines are accepted; VALUE may be optionally quoted
 //     with double or single quotes
 //   - VALUEs are NOT shell-expanded (no $var, no command substitution).
-//     The shell script doesn't write expandable forms, but if an
-//     operator hand-edits one in, we surface the literal text.
 //
 // Missing file → ([nil-Config-pointer], os.ErrNotExist). Callers that
 // want a defaulted config on missing-file should check errors.Is and
 // fall back to &Config{}.
 //
 // Unknown keys are silently dropped — preflight only cares about the
-// keys we know about. (A future PR could promote this to a warn.)
+// keys we know about.
 func Load(path string) (*Config, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -73,8 +70,7 @@ func parse(r io.Reader) (*Config, error) {
 			continue
 		}
 		// Drop a leading `export ` prefix in case the operator
-		// hand-rewrote a line — bin/configure.sh doesn't emit one but
-		// being lenient on read is cheap.
+		// hand-rewrote a line — being lenient on read is cheap.
 		line = strings.TrimPrefix(line, "export ")
 		eq := strings.IndexByte(line, '=')
 		if eq <= 0 {
@@ -92,9 +88,9 @@ func parse(r io.Reader) (*Config, error) {
 }
 
 // unquote strips a single pair of surrounding double or single quotes
-// from a value, mirroring bash's behavior on `KEY="value"` (the quotes
-// are syntactic, not part of the value). Mismatched quotes are left
-// alone — they're almost certainly a hand-edit mistake.
+// from a value: the quotes are syntactic, not part of the value.
+// Mismatched quotes are left alone — they're almost certainly a
+// hand-edit mistake.
 func unquote(v string) string {
 	if len(v) < 2 {
 		return v
@@ -111,10 +107,9 @@ func unquote(v string) string {
 // with 0700 if it doesn't exist (rare but possible on a fresh checkout
 // where the operator passed a non-default path).
 //
-// The "save after every prompt" property of bin/configure.sh — Ctrl-C
-// halfway through is durable — is preserved by calling Save() from
-// each prompt-loop iteration, not by Save() doing anything clever
-// internally. The function is safe to call repeatedly.
+// Save is called from each prompt-loop iteration so Ctrl-C halfway
+// through configure is durable. The function is safe to call
+// repeatedly.
 func Save(path string, c *Config) error {
 	if c == nil {
 		return errors.New("config: Save requires a non-nil *Config")

@@ -54,7 +54,7 @@ func gitRepo(t *testing.T) string {
 	mustWrite("apps/panel/package.json", `{"name": "@polaris-email/panel", "dependencies": {"@polaris-email/sdk-node": "*"}}`)
 	mustWrite("apps/docs/package.json", `{"name": "@polaris-email/docs"}`)
 	mustWrite("apps/cli-installer/package.json", `{"name": "@polaris-email/cli-installer"}`)
-	mustWrite("bin/_lib.sh", "# orchestration\n")
+	mustWrite("bin/dev.sh", "# orchestration\n")
 	mustWrite("Makefile", "preflight:\n\techo ok\n")
 	run("add", ".")
 	run("commit", "-q", "-m", "initial")
@@ -159,7 +159,7 @@ func TestSelectChanged_BinAndMakefileIgnored(t *testing.T) {
 	root := gitRepo(t)
 	base := gitHead(t, root)
 	gitCommit(t, root, map[string]string{
-		"bin/_lib.sh": "# orchestration tweak\n",
+		"bin/dev.sh": "# orchestration tweak\n",
 		"Makefile":    "preflight:\n\techo new\n",
 	})
 	head := gitHead(t, root)

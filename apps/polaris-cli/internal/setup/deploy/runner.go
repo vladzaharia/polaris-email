@@ -32,8 +32,8 @@ type Options struct {
 	// from the shell instead.
 	SkipMerge bool
 	// Force re-deploys even when state already records the current SHA.
-	// Currently a no-op (we always re-deploy when invoked) but kept as
-	// a knob for PR 13's rollback flow.
+	// Currently a no-op (we always re-deploy when invoked) but reserved
+	// for future skip-on-no-change logic.
 	Force bool
 	// Reporter receives per-service progress events. nil → no
 	// reporting.

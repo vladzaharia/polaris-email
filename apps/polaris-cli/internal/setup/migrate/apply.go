@@ -1,6 +1,6 @@
-// Package migrate is the Go port of phase 4 of bin/bootstrap.sh: shell
-// out to `wrangler d1 migrations apply <db> --remote` and capture the
-// highest-applied migration filename into the state ledger.
+// Package migrate shells out to `wrangler d1 migrations apply <db>
+// --remote` and captures the highest-applied migration filename into
+// the state ledger.
 //
 // The wrapper is intentionally thin — wrangler owns the migration
 // engine, the SQL diff, and the D1 contract. We add value by:
@@ -17,13 +17,20 @@ package migrate
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
 
 	"github.com/vladzaharia/polaris-email/apps/polaris-cli/internal/setup/state"
 	"github.com/vladzaharia/polaris-email/apps/polaris-cli/internal/setup/wrangler"
+	"github.com/vladzaharia/polaris-email/apps/polaris-cli/internal/setup/wranglercfg"
 )
+
+// DefaultServiceDir is where wrangler finds the api Worker's
+// wrangler.jsonc + migrations/. The d1 binding lives there.
+const DefaultServiceDir = "services/api"
 
 // PhaseName is the key written into state.Doc.Phases when Apply succeeds.
 // Mirrors provision.PhaseName so the convention is consistent across
@@ -49,31 +56,43 @@ type Result struct {
 }
 
 // Runner abstracts the wrangler invocation so tests can swap in a fake.
+// dir is the working directory wrangler runs in (where it reads
+// wrangler.jsonc + migrations_dir from).
 type Runner interface {
-	Run(ctx context.Context, args ...string) (*wrangler.Result, error)
+	Run(ctx context.Context, dir string, args ...string) (*wrangler.Result, error)
 }
 
 // wranglerRunner is the production Runner.
 type wranglerRunner struct{}
 
 // Run implements Runner.
-func (wranglerRunner) Run(ctx context.Context, args ...string) (*wrangler.Result, error) {
-	return wrangler.Run(ctx, args...)
+func (wranglerRunner) Run(ctx context.Context, dir string, args ...string) (*wrangler.Result, error) {
+	return wrangler.RunWithDir(ctx, dir, wrangler.Binary, nil, args...)
 }
 
 // Apply runs `wrangler d1 migrations apply <dbName>` against the configured
 // account. `remote` toggles --remote vs --local (cold-start always passes
 // true). `store` is the state ledger; on success we stamp Phases["migrate"]
 // to the run's completion time.
+//
+// Apply resolves the api Worker's wrangler config (committed +
+// gitignored overlay) into a transient merged file, runs wrangler from
+// services/api/, and removes the merged file afterwards. The D1 binding
+// ID comes from the overlay, which the render phase populated from
+// .deploy-state.json.
 func Apply(ctx context.Context, dbName string, remote bool, store *state.Store) (*Result, error) {
-	return ApplyWith(ctx, dbName, remote, store, wranglerRunner{})
+	return ApplyWith(ctx, dbName, remote, DefaultServiceDir, store, wranglerRunner{})
 }
 
 // ApplyWith is the lower-level entry point that lets the caller inject a
-// fake wrangler Runner. The cmd leaf uses Apply; tests use ApplyWith.
-func ApplyWith(ctx context.Context, dbName string, remote bool, store *state.Store, runner Runner) (*Result, error) {
+// fake wrangler Runner + override the service directory. The cmd leaf
+// uses Apply; tests use ApplyWith.
+func ApplyWith(ctx context.Context, dbName string, remote bool, serviceDir string, store *state.Store, runner Runner) (*Result, error) {
 	if dbName == "" {
 		return nil, fmt.Errorf("migrate: db name required")
+	}
+	if serviceDir == "" {
+		serviceDir = DefaultServiceDir
 	}
 	if runner == nil {
 		runner = wranglerRunner{}
@@ -86,7 +105,18 @@ func ApplyWith(ctx context.Context, dbName string, remote bool, store *state.Sto
 		args = append(args, "--local")
 	}
 
-	r, err := runner.Run(ctx, args...)
+	// Merge the committed wrangler.jsonc with the rendered
+	// wrangler.local.jsonc overlay so wrangler sees real binding IDs.
+	// The deploy phase uses the same pattern (.wrangler.merged.json
+	// is gitignored).
+	cleanup, err := writeMergedConfig(serviceDir)
+	if err != nil {
+		return nil, fmt.Errorf("migrate: merge wrangler config: %w", err)
+	}
+	defer cleanup()
+	args = append(args, "--config", ".wrangler.merged.json")
+
+	r, err := runner.Run(ctx, serviceDir, args...)
 	if err != nil {
 		// wrangler.Run already wraps the stderr in the error; surface
 		// our own prefix so it's clear which phase failed.
@@ -125,6 +155,38 @@ func stampPhase(store *state.Store, _ *Result) error {
 	}
 	doc.Phases[PhaseName] = state.Phase{CompletedAt: time.Now().UTC()}
 	return store.Write(doc)
+}
+
+// writeMergedConfig merges <serviceDir>/wrangler.jsonc with
+// <serviceDir>/wrangler.local.jsonc into <serviceDir>/.wrangler.merged.json
+// and returns a cleanup function that removes the merged file.
+// When the overlay is missing, the merge is a no-op (the cleanup is
+// still safe to call) — wrangler will fall back to the committed file.
+func writeMergedConfig(serviceDir string) (func(), error) {
+	base := filepath.Join(serviceDir, "wrangler.jsonc")
+	overlay := filepath.Join(serviceDir, "wrangler.local.jsonc")
+	merged := filepath.Join(serviceDir, ".wrangler.merged.json")
+
+	if _, err := os.Stat(overlay); err != nil {
+		// No overlay; wrangler will read the committed file on its own.
+		return func() {}, nil
+	}
+	baseBytes, err := os.ReadFile(base)
+	if err != nil {
+		return func() {}, fmt.Errorf("read base: %w", err)
+	}
+	overlayBytes, err := os.ReadFile(overlay)
+	if err != nil {
+		return func() {}, fmt.Errorf("read overlay: %w", err)
+	}
+	out, err := wranglercfg.Merge(baseBytes, overlayBytes)
+	if err != nil {
+		return func() {}, fmt.Errorf("merge: %w", err)
+	}
+	if err := os.WriteFile(merged, out, 0o644); err != nil {
+		return func() {}, fmt.Errorf("write merged: %w", err)
+	}
+	return func() { _ = os.Remove(merged) }, nil
 }
 
 // wrangler 4.x prints lines like:

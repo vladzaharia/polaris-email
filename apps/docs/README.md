@@ -25,5 +25,5 @@ pnpm --filter @polaris-email/docs run dev:server    # wrangler dev (serves ./bui
 ## Deploy
 
 ```sh
-make deploy SERVICE=apps/docs
+polaris-email setup infra deploy service docs
 ```

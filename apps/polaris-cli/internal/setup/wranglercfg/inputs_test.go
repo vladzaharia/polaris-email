@@ -31,7 +31,6 @@ func TestValidate_ReportsEveryMissingField(t *testing.T) {
 		"KV.RateLimit.ID",
 		"KV.KeyCache.ID",
 		"KV.Revocations.ID",
-		"AlertWebhook",
 		"OIDC.Issuer",
 		"OIDC.ClientID",
 	} {
@@ -96,7 +95,6 @@ func fullyPopulatedInputs() *RenderInputs {
 		Hostnames: HostnameInputs{
 			PolarisAPI: "api.example.com",
 			R2Public:   "r2.example.com",
-			Bridge:     "bridge.example.com",
 		},
 		Synthetic: SyntheticInputs{
 			From:          "synthetic@example.com",

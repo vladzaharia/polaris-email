@@ -1,5 +1,6 @@
-// polaris-email-api Worker — committed config. Real IDs live in wrangler.local.jsonc (gitignored)
-// and are merged by bin/deploy.sh before `wrangler deploy`.
+// polaris-email-api Worker — committed config. Real IDs live in
+// wrangler.local.jsonc (gitignored) and are merged in before `wrangler
+// deploy` by `polaris-email setup infra deploy`.
 //
 // This Worker fronts three Cloudflare runtimes since (worker
 // consolidation): HTTP (`fetch`), cron triggers (`scheduled`), and the
@@ -43,7 +44,7 @@
   //   `0 5 * * *`    daily 05:00  → feedback-window-refresh
   //   `20 5 * * *`   daily 05:20  → audit-verify
   //   `50 5 * * *`   daily 05:50  → policy-backfill
-  //   `0 6 * * 0`    weekly Sun   → d1-backup
+  //   `0 6 * * 7`    weekly Sun   → d1-backup  (CF rejects `0` for day-of-week; `7` is also Sunday)
   "triggers": {
     "crons": [
       "*/5 * * * *",
@@ -56,7 +57,7 @@
       "0 5 * * *",
       "20 5 * * *",
       "50 5 * * *",
-      "0 6 * * 0",
+      "0 6 * * 7",
     ],
   },
   // FANOUT_QUEUE is bound both as a consumer (webhook fan-out worker) and a

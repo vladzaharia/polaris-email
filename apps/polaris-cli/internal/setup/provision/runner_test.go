@@ -23,11 +23,13 @@ import (
 // endpoints the provisioner hits and returns canned IDs. Tracks call
 // counts so tests can assert idempotent re-runs touch zero resources.
 type cfFake struct {
-	d1Posts     atomic.Int32
-	r2Posts     atomic.Int32
-	r2Lifecycle atomic.Int32
-	kvPosts     atomic.Int32
-	queuePosts  atomic.Int32
+	d1Posts        atomic.Int32
+	r2Posts        atomic.Int32
+	r2Lifecycle    atomic.Int32
+	r2Lock         atomic.Int32
+	r2CustomDomain atomic.Int32
+	kvPosts        atomic.Int32
+	queuePosts     atomic.Int32
 
 	// failPath, when non-empty, causes the named path to return 500
 	// instead of success. Used to verify failure aborts cleanly.
@@ -68,6 +70,19 @@ func (f *cfFake) handle(w http.ResponseWriter, r *http.Request) {
 	case strings.Contains(r.URL.Path, "/r2/buckets/") && strings.HasSuffix(r.URL.Path, "/lifecycle"):
 		f.r2Lifecycle.Add(1)
 		writeOK(w, nil)
+	case strings.Contains(r.URL.Path, "/r2/buckets/") && strings.HasSuffix(r.URL.Path, "/lock"):
+		f.r2Lock.Add(1)
+		writeOK(w, nil)
+	case strings.Contains(r.URL.Path, "/r2/buckets/") && strings.HasSuffix(r.URL.Path, "/domains/custom") && r.Method == http.MethodPost:
+		f.r2CustomDomain.Add(1)
+		writeOK(w, nil)
+	case strings.HasPrefix(r.URL.Path, "/client/v4/zones") || r.URL.Path == "/zones":
+		// AttachR2CustomDomain auto-resolves zone_id from /zones when
+		// the caller doesn't supply one. Return a single fake zone
+		// matching the example.com tail used by the R2-public test.
+		writeOK(w, []map[string]any{
+			{"id": "zone-example-com", "name": "example.com"},
+		})
 	case strings.HasSuffix(r.URL.Path, "/storage/kv/namespaces") && r.Method == http.MethodPost:
 		f.kvPosts.Add(1)
 		var body map[string]string
@@ -168,14 +183,62 @@ func TestApply_HappyPath_AllCreatesRecorded(t *testing.T) {
 	if got, want := int(f.r2Posts.Load()), len(desired.R2); got != want {
 		t.Errorf("R2 POSTs: want %d, got %d", want, got)
 	}
-	if got, want := int(f.r2Lifecycle.Load()), len(desired.R2); got != want {
-		t.Errorf("R2 lifecycle PUTs: want %d, got %d", want, got)
+	// Each R2 bucket gets either an Object Lock PUT (object_lock_hours > 0)
+	// or a lifecycle PUT (lifecycle_expiry_days > 0). Count each kind.
+	var wantLock, wantLifecycle int
+	for _, b := range desired.R2 {
+		switch {
+		case b.ObjectLockHours > 0:
+			wantLock++
+		case b.LifecycleExpiryDays > 0:
+			wantLifecycle++
+		}
+	}
+	if got := int(f.r2Lock.Load()); got != wantLock {
+		t.Errorf("R2 lock PUTs: want %d, got %d", wantLock, got)
+	}
+	if got := int(f.r2Lifecycle.Load()); got != wantLifecycle {
+		t.Errorf("R2 lifecycle PUTs: want %d, got %d", wantLifecycle, got)
 	}
 	if got, want := int(f.kvPosts.Load()), len(desired.KV); got != want {
 		t.Errorf("KV POSTs: want %d, got %d", want, got)
 	}
 	if got, want := int(f.queuePosts.Load()), len(desired.Queues); got != want {
 		t.Errorf("Queue POSTs: want %d, got %d", want, got)
+	}
+}
+
+// TestApply_R2PublicDomain_AttachesWhenSet confirms that when the
+// operator supplies R2_PUBLIC_HOST (via plan.WithR2PublicDomain), the
+// provision phase POSTs to /r2/buckets/polaris-email/domains/custom and
+// records the binding to state. The default Desired() path (empty host)
+// is exercised by TestApply_HappyPath above.
+func TestApply_R2PublicDomain_AttachesWhenSet(t *testing.T) {
+	t.Parallel()
+	f := newCFFake(t)
+	client := newTestRunnerClient(t, f)
+	store := newTestStore(t)
+
+	desired := plan.WithR2PublicDomain(plan.Desired(), "r2.example.com")
+	p := plan.Diff(desired, &state.Doc{}, plan.Snapshot{})
+
+	if err := Apply(context.Background(), client, store, p, nil); err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+
+	if got := int(f.r2CustomDomain.Load()); got != 1 {
+		t.Errorf("r2 custom-domain POSTs: want 1 (only the polaris-email bucket has PublicDomain), got %d", got)
+	}
+
+	doc, err := store.Read()
+	if err != nil {
+		t.Fatalf("Read state: %v", err)
+	}
+	if got := doc.R2["polaris-email"].PublicDomain; got != "r2.example.com" {
+		t.Errorf("state.R2[polaris-email].PublicDomain = %q, want r2.example.com", got)
+	}
+	if got := doc.R2["polaris-email-logs"].PublicDomain; got != "" {
+		t.Errorf("logs bucket should not have a public domain, got %q", got)
 	}
 }
 

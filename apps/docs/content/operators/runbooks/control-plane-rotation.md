@@ -17,10 +17,10 @@ sidebar_position: 5
 4. Update every panel deployment env to use B.
 5. After 24 h of green telemetry, `wrangler secret put POLARIS_SECRET_A <new>` (promote B to A).
 6. Clear B: `wrangler secret put POLARIS_SECRET_B ''`.
-7. Write an audit row:
-   ```sh
-   bin/audit-write.sh schema.migration control_plane_secret
-   ```
-   The staleness Cron looks at `audit_log.action='schema.migration' AND target='control_plane_secret'` to compute age.
+7. The next genesis-seal-style admin operation that records to `audit_log`
+   will reset the staleness window. There is no operator-driven
+   audit-write surface today; the weekly `staleness` cron will eventually
+   alert if 365 days pass without any `bootstrap.*` / `auth.*` activity,
+   which is the expected backstop.
 
 <!-- Verified against: docs/runbooks/control-plane-rotation.md @ c3c1b5048dd5bfe92facdce24982141a07446042 -->

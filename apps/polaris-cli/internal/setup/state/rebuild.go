@@ -40,9 +40,8 @@ type CFR2Bucket struct {
 // persisting the doc with Store.Write — Rebuild itself never touches
 // disk.
 //
-// This is intentionally minimal — PR 5 fleshes out drift detection +
-// cross-checking against the previous state. For PR 1 this stub gives the
-// `state rebuild` command something to call.
+// This is intentionally minimal — drift detection vs. an existing
+// state file is handled by the plan/diff path, not here.
 func Rebuild(ctx context.Context, lister CFLister, accountID string) (*Doc, error) {
 	if lister == nil {
 		return nil, fmt.Errorf("state: Rebuild requires a CFLister")

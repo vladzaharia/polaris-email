@@ -2,7 +2,7 @@
 
 On-prem unified mail bridge for Polaris. One Go binary, two protocols:
 
-- **SMTPS** on `:465` — outbound submission (formerly `apps/submission-bridge`)
+- **SMTPS** on `:465` — outbound submission
 - **IMAP4rev2** on `:993` — INBOX retrieval, IDLE, CONDSTORE (RFC 9051 subset)
 
 Both listeners share a single auth lookup against `mailbox_credentials`

@@ -2,7 +2,7 @@
 // Go text/template syntax and are substituted by the Go renderer in
 // apps/polaris-cli/internal/setup/wranglercfg from .deploy-state.json +
 // .env.deploy. Do NOT hand-edit the materialized wrangler.local.jsonc —
-// re-run `polaris-email setup infra render` (or `make configure`).
+// re-run `polaris-email setup infra render`.
 {
   "account_id": "cf-account-id",
   // Panel binds to the same `polaris-email` D1 as services/api so better-auth

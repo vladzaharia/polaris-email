@@ -15,7 +15,7 @@ D1 instance for incident drills, forensic snapshots, and worst-case recovery.
 
 A scheduled handler in `services/api` runs every Sunday at **06:00 UTC**:
 
-- Cron: `0 6 * * 0` (registered in `services/api/wrangler.jsonc`)
+- Cron: `0 6 * * 7` (registered in `services/api/wrangler.jsonc`)
 - Handler: `services/api/src/scheduled/d1-backup.ts`
 - Output: `r2://polaris-email/backups/d1/YYYY-MM-DD-<filename>.sql`
 - Telemetry: row in `cron_runs` with `job_name = 'd1-backup'`
@@ -83,15 +83,12 @@ first and validate.
 
 ## R2 lifecycle
 
-A 12-week expiry rule is provisioned via Terraform module
-`infra/terraform/modules/r2-lifecycle/`. Inspect:
-
-```sh
-terraform -chdir=infra/terraform/envs/prod state list | grep r2_lifecycle
-```
-
-Older backups age out automatically. To change retention, edit the
-`expire_after_days` input in `infra/terraform/envs/prod/main.tf`.
+A 12-week expiry rule is applied to the `polaris-email-logs` R2 bucket
+(under the `backups/d1/` prefix) by `polaris-email setup infra apply` —
+see `apps/polaris-cli/internal/setup/plan/desired.go` for the
+authoritative retention setting and `cfapi/r2.go:AddLifecycleExpiryRule`
+for the API surface. Older backups age out automatically; to change
+retention, edit `desired.go` and re-run `apply`.
 
 ## Cross-reference
 

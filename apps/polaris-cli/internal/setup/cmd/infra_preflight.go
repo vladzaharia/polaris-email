@@ -11,9 +11,7 @@ import (
 	"github.com/vladzaharia/polaris-email/apps/polaris-cli/internal/setup/preflight"
 )
 
-// newInfraPreflightCmd wires `polaris-email setup infra preflight` — the
-// Go port of bin/preflight.sh. Both implementations must agree on
-// pass/fail counts; `make parity` diffs them in CI.
+// newInfraPreflightCmd wires `polaris-email setup infra preflight`.
 //
 // Flags:
 //
@@ -34,10 +32,7 @@ func newInfraPreflightCmd() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "preflight",
 		Short: "Verify tooling, .env.deploy, and CF token scopes before bootstrap",
-		Long: "Verify the local environment is ready for `setup infra bootstrap`.\n" +
-			"\n" +
-			"This command is the Go port of bin/preflight.sh. Both flows are\n" +
-			"diffed by `make parity` in CI — any divergence breaks the build.\n" +
+		Long: "Verify the local environment is ready for the cold-start flow.\n" +
 			"\n" +
 			"Exit code is non-zero on any FAIL (warns alone exit 0).",
 		RunE: func(cmd *cobra.Command, _ []string) error {

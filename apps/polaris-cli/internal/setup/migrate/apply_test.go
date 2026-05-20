@@ -17,7 +17,7 @@ type fakeRunner struct {
 	err    error
 }
 
-func (f *fakeRunner) Run(_ context.Context, args ...string) (*wrangler.Result, error) {
+func (f *fakeRunner) Run(_ context.Context, _ string, args ...string) (*wrangler.Result, error) {
 	f.args = args
 	return &wrangler.Result{Stdout: []byte(f.stdout)}, f.err
 }
@@ -34,7 +34,7 @@ func TestApplyWith_ParsesAppliedAndLatest(t *testing.T) {
 ✅ done
 `,
 	}
-	res, err := ApplyWith(context.Background(), "polaris-email", true, store, fr)
+	res, err := ApplyWith(context.Background(), "polaris-email", true, "", store, fr)
 	if err != nil {
 		t.Fatalf("ApplyWith: %v", err)
 	}
@@ -53,7 +53,7 @@ func TestApplyWith_NoMigrationsToApply(t *testing.T) {
 		t.Fatal(err)
 	}
 	fr := &fakeRunner{stdout: "No migrations to apply!\n"}
-	res, err := ApplyWith(context.Background(), "polaris-email", true, store, fr)
+	res, err := ApplyWith(context.Background(), "polaris-email", true, "", store, fr)
 	if err != nil {
 		t.Fatalf("ApplyWith: %v", err)
 	}
@@ -78,7 +78,7 @@ func TestApplyWith_PassesRemoteFlag(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			fr := &fakeRunner{stdout: ""}
-			_, err := ApplyWith(context.Background(), "polaris-email", tc.remote, store, fr)
+			_, err := ApplyWith(context.Background(), "polaris-email", tc.remote, "", store, fr)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -102,7 +102,7 @@ func TestApplyWith_StampsPhaseOnSuccess(t *testing.T) {
 		t.Fatal(err)
 	}
 	fr := &fakeRunner{stdout: "🚣 Applied 1 migration: 0019_foo.sql\n"}
-	if _, err := ApplyWith(context.Background(), "polaris-email", true, store, fr); err != nil {
+	if _, err := ApplyWith(context.Background(), "polaris-email", true, "", store, fr); err != nil {
 		t.Fatal(err)
 	}
 	doc, err := store.Read()
@@ -116,7 +116,7 @@ func TestApplyWith_StampsPhaseOnSuccess(t *testing.T) {
 
 func TestApplyWith_RejectsEmptyDBName(t *testing.T) {
 	t.Parallel()
-	_, err := ApplyWith(context.Background(), "", true, nil, &fakeRunner{})
+	_, err := ApplyWith(context.Background(), "", true, "", nil, &fakeRunner{})
 	if err == nil {
 		t.Fatal("want error on empty db name")
 	}
@@ -125,7 +125,7 @@ func TestApplyWith_RejectsEmptyDBName(t *testing.T) {
 func TestApplyWith_PropagatesRunnerError(t *testing.T) {
 	t.Parallel()
 	fr := &fakeRunner{err: errors.New("boom")}
-	_, err := ApplyWith(context.Background(), "polaris-email", true, nil, fr)
+	_, err := ApplyWith(context.Background(), "polaris-email", true, "", nil, fr)
 	if err == nil {
 		t.Fatal("want error when runner errors")
 	}

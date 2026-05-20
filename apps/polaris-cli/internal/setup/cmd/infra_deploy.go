@@ -20,7 +20,7 @@ import (
 )
 
 // lastSHAFile is the default location for the "what SHA did we last
-// deploy?" record. Mirrors bin/_lib.sh::LAST_SHA_FILE.
+// deploy?" record consumed by `deploy changed`.
 const lastSHAFile = ".deploy-state.last-sha"
 
 // newInfraDeployCmd wires `polaris-email setup infra deploy`. Three
@@ -34,7 +34,7 @@ func newInfraDeployCmd() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "deploy",
 		Short: "Deploy Workers (single service, all, or only changed)",
-		Long: "Replace bin/deploy.sh with a Go-native deploy runner.\n" +
+		Long: "Go-native deploy runner.\n" +
 			"\n" +
 			"Subcommands:\n" +
 			"  deploy <service>   deploy one Worker (api|out|in|panel|docs|cli-installer)\n" +

@@ -4,7 +4,7 @@ This document binds your service to polaris-email. Read it before integrating.
 
 ## Stability
 
-- **Wire format**: `polaris-api.v1` (API direction) and `polaris-webhook.v1` (webhook direction, signed with `X-Polaris-Sig: v2=…` because the envelope inlines the full `Message`). The HMAC scheme itself is unchanged.
+- **Wire format**: `polaris-api.v1` (API direction) and `polaris-webhook.v1` (webhook direction). Signatures use the un-versioned `X-Polaris-Sig: <hex>` header in both directions — domain-separated by the canonical-string tag, not a header prefix.
 - **Error envelope**: shape and code names are stable. New codes may be added; existing codes never change meaning.
 
 ## What you must do

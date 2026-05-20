@@ -167,7 +167,7 @@ Taken **verbatim** from the first happy-path vector in `packages/test-vectors/ve
 | --------- | -------------------------------------------------------------------------- |
 | direction | `polaris-api`                                                              |
 | method    | `POST`                                                                     |
-| path      | `/v1/send/raw`                                                             |
+| path      | `/v1/messages`                                                             |
 | query     | `mode=test`                                                                |
 | ts        | `1700000000000`                                                            |
 | nonce     | `AAAABBBBCCCCDDDD`                                                         |
@@ -179,7 +179,7 @@ Canonical string (literal bytes, `\n` is `0x0a`):
 ```text
 polaris-api
 POST
-/v1/send/raw
+/v1/messages
 mode=test
 1700000000000
 AAAABBBBCCCCDDDD
@@ -191,7 +191,7 @@ The last line is `lowercase-hex(SHA-256(body-bytes))`.
 Expected signature header:
 
 ```text
-X-Polaris-Sig: 3dc5920cc9bd7db06e6001fd75bb3225802c01381e3b079fec05a6e70dae0c27
+X-Polaris-Sig: 79f7c3e0d7b2bcc835fc9f6f70116fd7160af3ef2235491da4266776c860d7b1
 ```
 
 ## Test vectors
@@ -204,14 +204,14 @@ Each entry has the shape:
   "name": "api/POST/messages/happy",
   "direction": "polaris-api",
   "method": "POST",
-  "path": "/v1/send/raw",
+  "path": "/v1/messages",
   "query": "mode=test",
   "ts": "1700000000000",
   "nonce": "AAAABBBBCCCCDDDD",
   "secret": "...",
   "body": "...",
   "must_verify": true,
-  "expected_sig": "3dc5920cc9bd7db06e6001fd75bb3225802c01381e3b079fec05a6e70dae0c27",
+  "expected_sig": "79f7c3e0d7b2bcc835fc9f6f70116fd7160af3ef2235491da4266776c860d7b1",
   "expected_error": null
 }
 ```

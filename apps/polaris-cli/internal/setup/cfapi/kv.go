@@ -66,6 +66,19 @@ func (c *Client) CreateNamespace(ctx context.Context, title string) (*KVNamespac
 	return nil, err
 }
 
+// DeleteNamespace removes a KV namespace by ID. 404 is treated as
+// success (the namespace was already gone).
+func (c *Client) DeleteNamespace(ctx context.Context, id string) error {
+	if id == "" {
+		return fmt.Errorf("cfapi: KV namespace id required")
+	}
+	err := c.do(ctx, http.MethodDelete, c.accountPath("/storage/kv/namespaces/"+url.PathEscape(id)), nil, nil)
+	if err == nil || IsNotFound(err) {
+		return nil
+	}
+	return err
+}
+
 func (c *Client) findNamespaceByTitle(ctx context.Context, title string) (*KVNamespace, error) {
 	all, err := c.ListNamespaces(ctx)
 	if err != nil {

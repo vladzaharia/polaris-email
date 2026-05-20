@@ -19,8 +19,8 @@ type Client struct {
 	HTTPClient *http.Client
 	UserAgent  string
 
-	// Auth: pick one — KeyID + KeySecret for tenant HMAC, or BridgeID + BridgeSecret
-	// for the submission-bridge path. SDK callers can also provide
+	// Auth: pick one — KeyID + KeySecret for the API HMAC, or BridgeID + BridgeSecret
+	// for the mail-bridge path. SDK callers can also provide
 	// `ExtraHeaders` (e.g. `CF-Access-Client-Id`) baked into every request.
 	KeyID        string
 	KeySecret    []byte

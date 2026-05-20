@@ -97,8 +97,7 @@ func SelectChanged(ctx context.Context, opts ChangedOptions) ([]Service, string,
 	return out, head, nil
 }
 
-// classify routes one changed file path into the matched-services set.
-// The rules mirror bin/deploy.sh's --changed branch:
+// classify routes one changed file path into the matched-services set:
 //
 //   - services/<svc>/...    → matches <svc>
 //   - apps/<app>/...        → matches <app> when <app> is in Services

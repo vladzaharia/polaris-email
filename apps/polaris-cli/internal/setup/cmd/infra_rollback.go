@@ -18,7 +18,7 @@ import (
 
 // newInfraRollbackCmd wires `setup infra rollback {deploy|secret|phase}`.
 //
-// Tiered intent (per the PR 13 plan):
+// Tiered intent:
 //
 //   - deploy: cheap, `wrangler rollback`. Safe to chain.
 //   - secret: medium, 1-deep archive replay. Refuses if no archive.

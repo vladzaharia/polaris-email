@@ -75,8 +75,14 @@ type R2Bucket struct {
 	Jurisdiction        string    `json:"jurisdiction,omitempty"`
 	ObjectLockHours     int       `json:"object_lock_hours,omitempty"`
 	LifecycleExpiryDays int       `json:"lifecycle_expiry_days,omitempty"`
-	CreatedAt           time.Time `json:"created_at"`
-	Discovered          bool      `json:"discovered,omitempty"`
+	// PublicDomain, when non-empty, records the hostname bound to this
+	// bucket as a public R2 custom domain (e.g. r2.mail.plrs.im). The
+	// provision phase reads R2_PUBLIC_HOST from .env.deploy to decide
+	// whether to attach the binding; this field memoizes the result so
+	// re-runs are no-ops.
+	PublicDomain string    `json:"public_domain,omitempty"`
+	CreatedAt    time.Time `json:"created_at"`
+	Discovered   bool      `json:"discovered,omitempty"`
 }
 
 // R2Token persists an R2 API token the CLI minted (typically for

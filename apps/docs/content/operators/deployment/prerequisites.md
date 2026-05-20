@@ -89,32 +89,23 @@ polaris-email setup infra preflight
 When `preflight` is green you are ready to start the
 [cold-start bootstrap](/operators/deployment/cold-start-bootstrap).
 
-## Terraform sequencing (optional but recommended)
+## Manual setup before cold-start
 
-The cold-start CLI (`polaris-email setup infra`) makes the minimum
-Cloudflare API calls needed to spin up Workers, D1, KV, R2, and Queues.
-It is **not** the same surface as `infra/terraform/`, which manages the
-slow-moving, state-shaped resources inside the same account:
+`polaris-email setup infra` provisions everything account-scoped (D1,
+R2 buckets + lifecycle + Object Lock, KV, queues, Logpush, R2 tokens,
+and the R2 public custom-domain binding). A few resources sit outside
+that scope and require manual setup once per environment:
 
-- DNS records
-- Email Routing rules
-- Email Service onboarding
-- Cloudflare Access apps
-- The R2 public custom domain (`r2.mail.plrs.im`)
+- **The Cloudflare zone(s)** that you'll send/receive mail through must
+  already exist under your CF account, with their nameservers delegated
+  from the registrar. The cold-start does not create or delegate zones.
+- **Cloudflare Access** for the admin panel is configured manually in
+  the Zero Trust dashboard. See
+  [Cloudflare Access setup](./cloudflare-access.md).
 
-For a first-time cold start on a new account, run Terraform **before**
-the cold-start so the zone-level resources exist:
-
-```sh
-cd infra/terraform/envs/prod
-terraform init
-terraform apply
-cd -
-```
-
-Existing operators who manage zone resources by hand can skip Terraform;
-the rest of the cold-start does not depend on it. See
-[`infra/terraform/README.md`](https://github.com/polaris/polaris-email/blob/main/infra/terraform/README.md)
-for the full Terraform-managed vs. Wrangler-managed split.
+Per-domain DNS records (MX, SPF, DKIM, DMARC) + Email Routing rules +
+Email Service onboarding all happen later, automatically, when you
+onboard each domain via `polaris-email domain onboard <name>` (which
+calls `POST /v1/admin/domains` → `packages/cf-api/`).
 
 <!-- Verified against: docs/deploy.md @ c3c1b5048dd5bfe92facdce24982141a07446042 -->

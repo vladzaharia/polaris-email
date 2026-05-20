@@ -113,21 +113,55 @@ func (c *Client) CreateBucket(ctx context.Context, in CreateBucketInput) (*R2Buc
 	return nil, err
 }
 
-// ObjectLockRule applies an Object Lock retention policy to a bucket via
-// the lifecycle endpoint. Hours is the COMPLIANCE-mode retention window
-// (polaris-email uses ~2160h = 90 days on the message-body archive).
-//
-// PR 1 only needs the surface to exist; the heavy testing lands in PR 3
-// (provision phase) which actually wires this onto polaris-mail-archive.
-type ObjectLockRule struct {
-	ID             string `json:"id"`
-	Enabled        bool   `json:"enabled"`
-	RetentionHours int    `json:"retentionHours"`
-	RetentionMode  string `json:"retentionMode"`
+// DeleteBucket removes an R2 bucket. The bucket must be empty (CF
+// returns an error otherwise — caller is responsible for emptying it
+// first; this matches CF's own dashboard UX). 404 is treated as
+// success.
+func (c *Client) DeleteBucket(ctx context.Context, name, jurisdiction string) error {
+	if name == "" {
+		return fmt.Errorf("cfapi: R2 bucket name required")
+	}
+	hdrs := map[string]string{}
+	if jurisdiction != "" {
+		hdrs["cf-r2-jurisdiction"] = jurisdiction
+	}
+	err := c.doWithHeaders(ctx, http.MethodDelete, c.accountPath("/r2/buckets/"+url.PathEscape(name)), hdrs, nil, nil)
+	if err == nil || IsNotFound(err) {
+		return nil
+	}
+	return err
 }
 
-// AddObjectLockRule adds (or replaces) an Object Lock retention rule on
-// the named bucket.
+// ObjectLockCondition picks the retention shape for an ObjectLockRule.
+// CF R2 supports three condition types:
+//
+//   - "Age"        — MaxAgeSeconds is required; objects are locked for
+//     that many seconds after creation.
+//   - "Date"       — Date (RFC 3339) is required; objects are locked
+//     until that absolute timestamp.
+//   - "Indefinite" — no extra fields; objects are locked until the rule
+//     is removed.
+type ObjectLockCondition struct {
+	Type          string `json:"type"`
+	MaxAgeSeconds int    `json:"maxAgeSeconds,omitempty"`
+	Date          string `json:"date,omitempty"`
+}
+
+// ObjectLockRule is one entry in an R2 bucket-lock configuration.
+// polaris-email uses an Age rule with 90 days (7,776,000 s) on the
+// message-body archive bucket. Prefix scopes the rule to a key prefix;
+// empty means the whole bucket.
+type ObjectLockRule struct {
+	ID        string              `json:"id"`
+	Enabled   bool                `json:"enabled"`
+	Prefix    string              `json:"prefix,omitempty"`
+	Condition ObjectLockCondition `json:"condition"`
+}
+
+// AddObjectLockRule sets the bucket-lock configuration on the named
+// bucket to a single rule. CF's PUT semantics on /lock are
+// full-replacement, so re-runs are idempotent — the same rule overwrites
+// itself.
 func (c *Client) AddObjectLockRule(ctx context.Context, bucket, jurisdiction string, rule ObjectLockRule) error {
 	if bucket == "" {
 		return fmt.Errorf("cfapi: bucket name required")
@@ -139,7 +173,65 @@ func (c *Client) AddObjectLockRule(ctx context.Context, bucket, jurisdiction str
 	body := map[string]any{
 		"rules": []ObjectLockRule{rule},
 	}
-	return c.doWithHeaders(ctx, http.MethodPut, c.accountPath("/r2/buckets/"+url.PathEscape(bucket)+"/lifecycle"), hdrs, body, nil)
+	return c.doWithHeaders(ctx, http.MethodPut, c.accountPath("/r2/buckets/"+url.PathEscape(bucket)+"/lock"), hdrs, body, nil)
+}
+
+// R2CustomDomain is the body shape for `POST /accounts/{id}/r2/buckets/{name}/domains/custom`.
+// Domain is the fully-qualified hostname (e.g. r2.mail.plrs.im). The
+// zone the hostname lives under must already exist in the same CF
+// account; CF auto-creates the proxied CNAME and provisions the TLS cert.
+//
+// ZoneID is REQUIRED by CF — leave empty and AttachR2CustomDomain will
+// auto-discover by walking the host's labels against the account's
+// zones (needs Zone:Read token scope).
+//
+// MinTLS defaults to "1.2" when empty.
+type R2CustomDomain struct {
+	Domain  string `json:"domain"`
+	Enabled bool   `json:"enabled"`
+	ZoneID  string `json:"zoneId"`
+	MinTLS  string `json:"minTLS,omitempty"`
+}
+
+// AttachR2CustomDomain binds a custom domain to the named R2 bucket via
+// `POST /r2/buckets/{name}/domains/custom`. Idempotent: if the binding
+// already exists, the call is a no-op (the existing binding is adopted).
+//
+// When opts.ZoneID is empty, the zone is auto-discovered via
+// FindZoneIDForHost. CF rejects the request as "JSON not well formed"
+// (cf code 10040) if zoneId is missing — that's not a parse error, just
+// a required-field validation surfaced through the JSON validator.
+func (c *Client) AttachR2CustomDomain(ctx context.Context, bucket, jurisdiction string, opts R2CustomDomain) error {
+	if bucket == "" {
+		return fmt.Errorf("cfapi: bucket name required")
+	}
+	if opts.Domain == "" {
+		return fmt.Errorf("cfapi: custom domain required")
+	}
+	if opts.MinTLS == "" {
+		opts.MinTLS = "1.2"
+	}
+	if opts.ZoneID == "" {
+		id, err := c.FindZoneIDForHost(ctx, opts.Domain)
+		if err != nil {
+			return fmt.Errorf("resolve zone for %q: %w", opts.Domain, err)
+		}
+		opts.ZoneID = id
+	}
+	hdrs := map[string]string{}
+	if jurisdiction != "" {
+		hdrs["cf-r2-jurisdiction"] = jurisdiction
+	}
+	err := c.doWithHeaders(ctx, http.MethodPost,
+		c.accountPath("/r2/buckets/"+url.PathEscape(bucket)+"/domains/custom"),
+		hdrs, opts, nil)
+	if err == nil {
+		return nil
+	}
+	if IsAlreadyExists(err) {
+		return nil
+	}
+	return err
 }
 
 // AddLifecycleExpiryRule applies an "expire after N days" lifecycle

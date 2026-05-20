@@ -75,9 +75,8 @@ func safeRun(ctx context.Context, c Check) (res Result) {
 	return c.Run(ctx)
 }
 
-// RenderText writes the shell-script-style "  ok / FAIL / warn  <name>"
-// lines for the given results. Used as the default `-o table` form so a
-// side-by-side diff against bin/preflight.sh is mechanical.
+// RenderText writes "  ok / FAIL / warn  <name>" lines for the given
+// results. Used as the default `-o table` form.
 func RenderText(w io.Writer, results []CheckResult, sum Summary) {
 	for _, r := range results {
 		switch r.Status {

@@ -131,33 +131,30 @@ func CheckTool(name, fix string) Check {
 	}
 }
 
-// CheckJq is jq, used everywhere by bin/_lib.sh.
+// CheckJq is jq.
 func CheckJq() Check {
 	return CheckTool("jq", "brew install jq || apt-get install jq")
 }
 
-// CheckOpenSSL is openssl, used by HMAC signing and DKIM key generation
-// in the shell flow. The Go CLI uses stdlib crypto, but bin/* scripts
-// still rely on the binary.
+// CheckOpenSSL is openssl. The Go CLI uses stdlib crypto, but some
+// operator scripts and ad-hoc HMAC verification still need the binary.
 func CheckOpenSSL() Check {
 	return CheckTool("openssl", "brew install openssl || apt-get install openssl")
 }
 
 // CheckGit is git — preflight refuses to continue without it because
-// `bin/deploy.sh --changed` walks git history.
+// `setup infra deploy changed` walks git history.
 func CheckGit() Check {
 	return CheckTool("git", "install git")
 }
 
-// CheckCurl is curl. Used by bin/_lib.sh helpers and the CF email
-// routing scope check.
+// CheckCurl is curl. Used by operator scripts and ad-hoc API probing.
 func CheckCurl() Check {
 	return CheckTool("curl", "install curl")
 }
 
-// CheckEnvsubst is envsubst (from GNU gettext). Used by
-// bin/render-wrangler-local.sh to expand state-file IDs into the
-// per-service wrangler.local.jsonc templates.
+// CheckEnvsubst is envsubst (from GNU gettext). Kept as a soft
+// dependency for operator-side env-substitution scripts.
 func CheckEnvsubst() Check {
 	return CheckTool("envsubst", "brew install gettext || apt-get install gettext-base")
 }

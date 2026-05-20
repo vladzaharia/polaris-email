@@ -11,8 +11,7 @@ import (
 )
 
 // trackedServices is the canonical list of polaris-email service
-// directories that must be git-tracked. Mirrors POLARIS_SERVICES from
-// bin/_lib.sh — keep them in sync.
+// directories that must be git-tracked.
 //
 // Order matters for human-readable output (api first, panel last).
 var trackedServices = []serviceDir{

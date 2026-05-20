@@ -1,4 +1,4 @@
-// Package genesis implements PR 7's bootstrap genesis-seal flow.
+// Package genesis implements the bootstrap genesis-seal flow.
 //
 // The seal is the last phase of the cold-start runner. Once the
 // Worker fleet is deployed and POLARIS_SECRET_A is live in every
@@ -9,10 +9,9 @@
 // completes the WebAuthn ceremony in their browser.
 //
 // Master secret (POLARIS_SECRET_A) flows through this package by value
-// only; it is never written to disk. The admin key — which IS written,
+// only; it is never written to disk. The admin key — which IS written
 // to .bootstrap-output.json mode 0600 — is the operator's day-to-day
-// admin credential and follows the same convention bin/bootstrap.sh
-// used before this PR.
+// admin credential.
 package genesis
 
 import (
@@ -32,9 +31,9 @@ import (
 	polarissdk "github.com/polaris-email/polaris-sdk-go"
 )
 
-// DefaultBootstrapOutputPath mirrors bin/_lib.sh::BOOTSTRAP_OUTPUT — the
-// JSON blob containing the admin key id + secret. Smoke uses the same
-// constant when it loads the admin client.
+// DefaultBootstrapOutputPath is the JSON blob containing the admin key
+// id + secret. Smoke uses the same constant when it loads the admin
+// client.
 const DefaultBootstrapOutputPath = ".bootstrap-output.json"
 
 // DefaultPollInterval is how often the CLI hits the webauthn poll
@@ -327,8 +326,8 @@ func completeWithToken(
 }
 
 // writeBootstrapOutput writes the admin key blob to disk mode 0600.
-// Format matches what bin/bootstrap.sh emitted: a flat JSON object
-// with admin_key_id + admin_key_secret + created_at.
+// Format: a flat JSON object with admin_key_id + admin_key_secret +
+// created_at.
 func writeBootstrapOutput(path string, resp bootstrapResponse) error {
 	doc := struct {
 		AdminKeyID     string `json:"admin_key_id"`

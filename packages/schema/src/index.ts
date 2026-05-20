@@ -948,10 +948,7 @@ export const AuditAction = z.enum([
   'triage.operator_override',
   // Hybrid Policy Engine (migration 0019).
   'policy.decide',
-  'policy.verdict_block',
-  'policy.verdict_hold',
   'policy.override',
-  'policy.config_update',
   'message.held',
   'message.held_release',
   'message.held_drop',
@@ -968,17 +965,14 @@ export const AuditAction = z.enum([
   'tenant.rotate_pepper',
   // Operator lifecycle (migration 0025). `operator.*` covers admin actions
   // managing the operator roster; `auth.*` covers per-session events
-  // (CLI login/logout); `operator.ssh.*` covers Wish-fronted SSH sessions.
+  // (CLI login/logout).
   'operator.create',
   'operator.update',
   'operator.disable',
-  'operator.delete',
   'operator.rotate_key',
   'operator.rotate_pubkey',
   'auth.login',
   'auth.logout',
-  'operator.ssh.connect',
-  'operator.ssh.disconnect',
 ]);
 export type AuditAction = z.infer<typeof AuditAction>;
 

@@ -181,8 +181,7 @@ func TestRender_Merge_ReplacesShellPipeline(t *testing.T) {
 }
 
 // TestRender_Merge_StdoutDefault — without -o, --merge writes to
-// stdout. Important for the shell fallback in bin/deploy.sh which
-// captures the merged JSONC into .wrangler.merged.json via shell
+// stdout so callers can capture the merged JSONC via shell
 // redirection.
 func TestRender_Merge_StdoutDefault(t *testing.T) {
 	dir := t.TempDir()
@@ -237,7 +236,6 @@ func setupRenderFixture(t *testing.T) string {
 	if err := os.WriteFile(filepath.Join(dir, ".env.deploy"), []byte(`CF_ACCOUNT_ID="cf-account-id"
 POLARIS_API_HOSTNAME="api.example.com"
 R2_PUBLIC_HOST="r2.example.com"
-BRIDGE_HOST="bridge.example.com"
 ALERT_WEBHOOK="https://alerts.example.com/hook"
 SYNTHETIC_FROM="synthetic@example.com"
 SYNTHETIC_TO="synthetic@in.example.com"

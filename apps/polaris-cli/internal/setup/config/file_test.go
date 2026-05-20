@@ -115,7 +115,7 @@ func TestSave_FieldOrderMatchesShell(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadFile: %v", err)
 	}
-	// First key emitted must be CF_ACCOUNT_ID (matching bin/configure.sh ENV_VARS).
+	// First key emitted must be CF_ACCOUNT_ID (per [FieldOrder]).
 	idx := strings.Index(string(body), "\nCF_ACCOUNT_ID=")
 	if idx < 0 {
 		t.Errorf("CF_ACCOUNT_ID not present:\n%s", string(body))

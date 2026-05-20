@@ -28,8 +28,8 @@ import (
 )
 
 // happyPathPhases is the ordered list of phases the bare `setup infra`
-// runner drives. PR 7 wires every phase; --resume short-circuits past
-// each phase whose CompletedAt is non-zero in .deploy-state.json.
+// runner drives. --resume short-circuits past each phase whose
+// CompletedAt is non-zero in .deploy-state.json.
 //
 // Phase names match the state-file keys deliberately so operators can
 // inspect (and edit, if they really must) the resume bookmarks via
@@ -110,26 +110,21 @@ func newInfraCmd() *cobra.Command {
 	c.Flags().BoolVar(&skipSmoke, "skip-smoke", false, "skip the final smoke check")
 	c.Flags().StringVar(&webauthnToken, "webauthn-token", "", "headless WebAuthn-stamped JWT (skips the browser ceremony)")
 
-	// PR 2 leaves: preflight + configure.
 	c.AddCommand(newInfraPreflightCmd())
 	c.AddCommand(newInfraConfigureCmd())
-	// PR 1 leaf: state subtree.
 	c.AddCommand(newInfraStateCmd())
 	c.AddCommand(newInfraRenderCmd())
-	// PR 3 leaves: plan + apply.
 	c.AddCommand(newInfraPlanCmd())
 	c.AddCommand(newInfraApplyCmd())
-	// PR 5 leaves: secrets + migrate + deploy + smoke.
 	c.AddCommand(newInfraSecretsCmd())
 	c.AddCommand(newInfraMigrateCmd())
 	c.AddCommand(newInfraDeployCmd())
 	c.AddCommand(newInfraSmokeCmd())
-	// PR 7 leaf: genesis-seal.
 	c.AddCommand(newInfraGenesisSealCmd())
-	// PR 13 leaves: rollback + rotate-admin-key.
 	c.AddCommand(newInfraRollbackCmd())
+	c.AddCommand(newInfraResetCmd())
 	c.AddCommand(newInfraRotateAdminKeyCmd())
-	// TUI/SSH slice leaf: SSH bootstrap (mint admin:impersonate api_key + host key).
+	// SSH bootstrap: mint admin:impersonate api_key + host key.
 	c.AddCommand(newInfraSSHBootstrapCmd())
 	return c
 }
@@ -150,14 +145,13 @@ type happyPathOpts struct {
 	errw           io.Writer
 }
 
-// runHappyPathInfra drives every phase in order. Each phase is wrapped
-// in a small helper that:
+// runHappyPathInfra drives every phase in order. For each phase:
 //
-//   - checks --resume (skip if already complete)
-//   - checks --phase (skip if not yet at the start phase)
-//   - prints a "→ phase X" header
-//   - calls the phase function
-//   - on success, records the phase as complete in .deploy-state.json
+//   - if --phase was set and we haven't reached it yet, skip
+//   - if --resume is set and the phase's CompletedAt is non-zero, skip
+//   - print a "→ phase X" header
+//   - call the phase function
+//   - on success, record CompletedAt in .deploy-state.json
 //
 // Errors abort the run — partial progress is recorded so a re-run with
 // --resume picks up where the failure was.
@@ -300,23 +294,12 @@ func phasePlan(ctx context.Context, o happyPathOpts, store *state.Store) error {
 	if err != nil {
 		return err
 	}
-	p := plan.Diff(plan.Desired(), doc, snap)
+	p := plan.Diff(plan.WithR2PublicDomain(plan.Desired(), cfg.R2PublicHost), doc, snap)
 	plan.Render(o.out, p)
 	return nil
 }
 
 func phaseApply(ctx context.Context, o happyPathOpts, store *state.Store) error {
-	// During the soak window the apply phase enforces
-	// POLARIS_SETUP_PROVISION=1. The happy path inherits this gate —
-	// operators who haven't opted in run `make bootstrap` (legacy
-	// shell path) instead.
-	if v := os.Getenv(provisionOptInEnv); v != "1" && v != "true" {
-		return fmt.Errorf(
-			"%s is not set — refusing to provision during the soak window.\n"+
-				"Set %s=1 to promote the Go provision path over bin/bootstrap.sh.",
-			provisionOptInEnv, provisionOptInEnv,
-		)
-	}
 	cfg, _ := config.LoadOrDefault(o.envFile)
 	tok, acct := resolveCFCreds("", "", cfg)
 	if tok == "" || acct == "" {
@@ -331,7 +314,7 @@ func phaseApply(ctx context.Context, o happyPathOpts, store *state.Store) error 
 	if err != nil {
 		return err
 	}
-	p := plan.Diff(plan.Desired(), doc, snap)
+	p := plan.Diff(plan.WithR2PublicDomain(plan.Desired(), cfg.R2PublicHost), doc, snap)
 	if !p.HasCreates() && len(p.Adopt) == 0 {
 		fmt.Fprintln(o.out, "apply: nothing to do")
 		return nil

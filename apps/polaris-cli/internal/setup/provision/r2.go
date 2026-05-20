@@ -26,6 +26,7 @@ func createR2Step(client *cfapi.Client, doc *state.Doc) func(context.Context, pl
 		hint := e.Extra["location_hint"]
 		hours := atoi(e.Extra["object_lock_hours"])
 		expiryDays := atoi(e.Extra["lifecycle_expiry_days"])
+		publicDomain := e.Extra["public_domain"]
 
 		bucket, err := client.CreateBucket(ctx, cfapi.CreateBucketInput{
 			Name:         e.Name,
@@ -44,10 +45,12 @@ func createR2Step(client *cfapi.Client, doc *state.Doc) func(context.Context, pl
 		switch {
 		case hours > 0:
 			rule := cfapi.ObjectLockRule{
-				ID:             "polaris-email-retention",
-				Enabled:        true,
-				RetentionHours: hours,
-				RetentionMode:  "COMPLIANCE",
+				ID:      "polaris-email-retention",
+				Enabled: true,
+				Condition: cfapi.ObjectLockCondition{
+					Type:          "Age",
+					MaxAgeSeconds: hours * 3600,
+				},
 			}
 			if err := client.AddObjectLockRule(ctx, e.Name, jur, rule); err != nil {
 				return fmt.Errorf("apply object lock: %w", err)
@@ -58,11 +61,24 @@ func createR2Step(client *cfapi.Client, doc *state.Doc) func(context.Context, pl
 			}
 		}
 
+		// Bind the public custom domain when the operator supplied one.
+		// AttachR2CustomDomain is idempotent — if the binding already
+		// exists from a prior run, this is a no-op.
+		if publicDomain != "" {
+			if err := client.AttachR2CustomDomain(ctx, e.Name, jur, cfapi.R2CustomDomain{
+				Domain:  publicDomain,
+				Enabled: true,
+			}); err != nil {
+				return fmt.Errorf("attach r2 custom domain: %w", err)
+			}
+		}
+
 		doc.R2[e.Name] = state.R2Bucket{
 			Name:                bucket.Name,
 			Jurisdiction:        bucket.Jurisdiction,
 			ObjectLockHours:     hours,
 			LifecycleExpiryDays: expiryDays,
+			PublicDomain:        publicDomain,
 			CreatedAt:           time.Now().UTC(),
 			Discovered:          false,
 		}
@@ -87,6 +103,7 @@ func adoptR2Step(doc *state.Doc) func(context.Context, plan.Entry) error {
 			Jurisdiction:        jur,
 			ObjectLockHours:     hours,
 			LifecycleExpiryDays: expiryDays,
+			PublicDomain:        e.Extra["public_domain"],
 			CreatedAt:           time.Now().UTC(),
 			Discovered:          true,
 		}

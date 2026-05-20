@@ -17,11 +17,10 @@ later batch.
 ## What polaris-email publishes
 
 For a domain with `capabilities.outbound = true`, polaris-email
-publishes (or expects to find) four DNS records. Two are managed by
-the Cloudflare Email Service onboarding path
-(`packages/cf-api/src/email-service.ts`); the equivalent Terraform
-module (`infra/terraform/modules/zone/`) emits the same records when
-you onboard via IaC.
+publishes (or expects to find) four DNS records. All four are managed
+by the Cloudflare Email Service onboarding path
+(`packages/cf-api/src/email-service.ts`), which the admin API invokes
+during `POST /v1/admin/domains` and `polaris-email domain onboard`.
 
 ### DKIM CNAME — `polaris1._domainkey.<domain>` → CF Email Service
 
@@ -29,11 +28,12 @@ you onboard via IaC.
 polaris1._domainkey.<domain>.   CNAME   polaris1.<domain>.dkim.cfemail.net.
 ```
 
-- Selector defaults to **`polaris1`** in the Terraform module
-  (`infra/terraform/modules/zone/variables.tf`). The control-plane
-  domain-create handler defaults to **`cf`** when no selector is
-  supplied (`services/api/src/routes/admin/domains.ts`); both selectors
-  point at the same CF Email Service-managed key.
+- The control-plane domain-create handler defaults to selector **`cf`**
+  when no selector is supplied
+  (`services/api/src/routes/admin/domains.ts`). Rotation can mint
+  successor selectors (`polaris1` → `polaris2` → …) via
+  `polaris-email domain rotate-dkim`; both selectors point at
+  CF Email Service-managed keys.
 - The private key never lives on polaris infrastructure — Cloudflare
   Email Service holds it and signs at send time. Rotation is performed
   by minting a new selector (`polaris1` → `polaris2`) via
@@ -49,13 +49,10 @@ polaris1._domainkey.<domain>.   CNAME   polaris1.<domain>.dkim.cfemail.net.
 <domain>.   TXT   "v=spf1 include:_spf.mx.cloudflare.net -all"
 ```
 
-- The Email Service onboarding path emits `-all` (hard fail).
-- The Terraform module's `spf_record` variable defaults to `~all`
-  (soft fail) for historical compatibility, but **prefer `-all`** when
-  you control all outbound sources for the domain. `-all` is what
-  Cloudflare's own onboarding flow publishes; the `~all` Terraform
-  default exists so an operator with hand-rolled outbound paths
-  alongside polaris-email is not surprise-broken on first apply.
+- The Email Service onboarding path emits `-all` (hard fail). Prefer
+  `-all` when polaris-email is the only outbound source for the
+  domain; if you also send through hand-rolled paths, replace the
+  record manually after onboarding with `~all` (soft fail).
 
 ### DMARC TXT — `_dmarc.<domain>`
 
@@ -110,11 +107,10 @@ window and a zero-fail-rate check from aggregate reports.
 ## Why SPF `-all`
 
 `-all` is what Cloudflare's onboarding publishes and what
-polaris-email's REST onboarding emits. `~all` (softfail) is preserved
-in the Terraform module for the legacy mixed-outbound case. Once you
-have decommissioned every non-polaris outbound source for the domain,
-flip the Terraform variable to `"v=spf1 include:_spf.mx.cloudflare.net -all"`
-and apply.
+polaris-email's REST onboarding emits. If you operate non-polaris
+outbound paths for the same domain during a migration window, replace
+the record manually with `~all` (softfail) and revert to `-all` once
+those paths are decommissioned.
 
 The cost of `-all` over `~all` is zero for receivers that respect SPF
 strictly; the benefit is that `-all` failures are unambiguously bad
@@ -211,4 +207,4 @@ is idempotent and re-publishes the canonical state.
   key material — polaris-email does not select the algorithm or
   length, just CNAMEs the selector at the CF-managed target.
 
-<!-- Verified against: services/api/src/routes/admin/domains.ts, services/api/src/routes/admin/domains-mta-sts.ts, packages/cf-api/src/email-service.ts (expectedRecordsFor), infra/terraform/modules/zone/main.tf, infra/terraform/modules/zone/variables.tf, services/api/migrations/0015_dmarc_reports.sql, services/api/migrations/0016_dmarc_promotion.sql @ eeee222cdf8359f8f2bf1013a103abdb3c705f06 -->
+<!-- Verified against: services/api/src/routes/admin/domains.ts, services/api/src/routes/admin/domains-mta-sts.ts, packages/cf-api/src/email-service.ts (expectedRecordsFor), services/api/migrations/0015_dmarc_reports.sql, services/api/migrations/0016_dmarc_promotion.sql @ eeee222cdf8359f8f2bf1013a103abdb3c705f06 -->
