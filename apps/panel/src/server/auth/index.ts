@@ -73,6 +73,19 @@ export function makeAuth(env: Env): Auth {
         ssoProvider: schema.ssoProvider,
       },
     }),
+    // Declare the panel-specific `admin` column so better-auth knows
+    // to SELECT it and round-trip it on `getSession()`. Without this,
+    // the column is written by the role-sync hook but stripped from
+    // the session response — making `requireAdmin()` 403 every
+    // request because `session.user.admin` is always undefined.
+    // `input: false` prevents OAuth user-creation paths from carrying
+    // a client-supplied admin value into the INSERT; the role-sync
+    // hook is the only writer.
+    user: {
+      additionalFields: {
+        admin: { type: 'boolean', defaultValue: false, input: false },
+      },
+    },
     secret: env.BETTER_AUTH_SECRET,
     baseURL: env.BETTER_AUTH_URL,
     plugins: [
