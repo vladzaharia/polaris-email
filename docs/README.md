@@ -1,4 +1,4 @@
-# polaris-email docs
+# polaris-mail docs
 
 The canonical documentation lives at <https://docs.mail.plrs.im>.
 

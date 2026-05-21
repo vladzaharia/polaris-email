@@ -1,4 +1,4 @@
-// polaris-email operator [...] — manage human + service-account identities
+// polaris-mail operator [...] — manage human + service-account identities
 // that gate CLI/TUI/Wish access.
 package cmds
 
@@ -20,10 +20,10 @@ func newOperatorCmd() *cobra.Command {
 		Use:   "operator",
 		Short: "Manage operators (humans + service accounts with CLI/TUI/SSH access)",
 		Long: `Operators are the named identities that drive every authenticated
-session in polaris-email — CLI, TUI (local), and TUI over Wish/SSH.
+session in polaris-mail — CLI, TUI (local), and TUI over Wish/SSH.
 
 Each operator owns one api_key. The api_key plaintext is shown ONCE by
-` + "`operator add`" + ` and is meant to be pasted into ` + "`polaris-email login`" + `
+` + "`operator add`" + ` and is meant to be pasted into ` + "`polaris-mail login`" + `
 (stored encrypted in the OS keychain) or passed via --token for one-shot use.`,
 	}
 	c.AddCommand(
@@ -266,7 +266,7 @@ func operatorRotateKeyCmd() *cobra.Command {
 				return err
 			}
 			fmt.Fprintf(Out, "✓ Rotated. New api_key_id: %s\n\n", out.APIKeyID)
-			fmt.Fprintln(Out, "New login token (paste into `polaris-email login`):")
+			fmt.Fprintln(Out, "New login token (paste into `polaris-mail login`):")
 			fmt.Fprintln(Out)
 			fmt.Fprintf(Out, "  %s\n", out.LoginToken)
 			fmt.Fprintln(Out)

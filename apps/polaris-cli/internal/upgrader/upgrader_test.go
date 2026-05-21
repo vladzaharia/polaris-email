@@ -93,7 +93,7 @@ func TestLoadStateMissing(t *testing.T) {
 
 func TestAssetName(t *testing.T) {
 	got := assetName("v0.1.1")
-	want := "polaris-email_0.1.1_" + runtime.GOOS + "_" + runtime.GOARCH
+	want := "polaris-mail_0.1.1_" + runtime.GOOS + "_" + runtime.GOARCH
 	if runtime.GOOS == "windows" {
 		want += ".zip"
 	} else {
@@ -103,7 +103,7 @@ func TestAssetName(t *testing.T) {
 		t.Errorf("assetName(v0.1.1) = %q, want %q", got, want)
 	}
 	// dev tag flows through verbatim — used by the dev-snapshot
-	// workflow which names archives polaris-email_dev_<os>_<arch>.<ext>.
+	// workflow which names archives polaris-mail_dev_<os>_<arch>.<ext>.
 	if dev := assetName("dev"); !strings.Contains(dev, "_dev_") {
 		t.Errorf("assetName(dev) = %q, expected to contain _dev_", dev)
 	}
@@ -129,7 +129,7 @@ func TestDetectInstallMethodSentinel(t *testing.T) {
 	// Pass a non-"dev" version so the build-info heuristic doesn't
 	// short-circuit to local before we get to the sentinel check.
 	// (When the test binary itself runs under `go test` inside the
-	// polaris-email checkout, isDevBuild would otherwise return true
+	// polaris-mail checkout, isDevBuild would otherwise return true
 	// since the test binary inherits the polaris-cli main module.)
 	got, err := DetectInstallMethod(dir, "v9.9.9")
 	if err != nil {

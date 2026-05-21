@@ -18,7 +18,7 @@ describe('secure headers (api worker)', () => {
   it('sets X-Content-Type-Options: nosniff on a public response', async () => {
     const env = {} as unknown as Env; // /healthz reads nothing off env
     const res = await app.fetch(
-      new Request('https://polaris-email-api.workers.dev/healthz'),
+      new Request('https://polaris-mail-api.workers.dev/healthz'),
       env,
       ctx,
     );

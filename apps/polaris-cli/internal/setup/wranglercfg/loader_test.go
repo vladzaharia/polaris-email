@@ -19,6 +19,7 @@ func TestLoadInputs_FromStateAndEnv(t *testing.T) {
 	if err := os.WriteFile(envFile, []byte(`# generated .env.deploy fixture
 CF_ACCOUNT_ID="cf-account-id"
 POLARIS_API_HOSTNAME="api.example.com"
+POLARIS_PANEL_HOSTNAME="panel.example.com"
 R2_PUBLIC_HOST="r2.example.com"
 SYNTHETIC_FROM="synthetic@example.com"
 SYNTHETIC_TO="synthetic@in.example.com"
@@ -34,17 +35,17 @@ OIDC_CLIENT_ID="client-abc"
 		SchemaVersion: state.CurrentSchema,
 		AccountID:     "cf-account-id",
 		D1: map[string]state.Resource{
-			"polaris-email": {ID: "d1-id", Name: "polaris-email"},
+			"polaris-mail": {ID: "d1-id", Name: "polaris-mail"},
 		},
 		R2: map[string]state.R2Bucket{
-			"polaris-email": {Name: "polaris-email", Jurisdiction: "eu"},
+			"polaris-mail": {Name: "polaris-mail", Jurisdiction: "eu"},
 		},
 		KV: map[string]state.Resource{
-			"polaris-email-nonce":       {ID: "kv-nonce", Name: "polaris-email-nonce"},
-			"polaris-email-idempotency": {ID: "kv-idem", Name: "polaris-email-idempotency"},
-			"polaris-email-rate-limit":  {ID: "kv-rl", Name: "polaris-email-rate-limit"},
-			"polaris-email-key-cache":   {ID: "kv-kc", Name: "polaris-email-key-cache"},
-			"polaris-email-revocations": {ID: "kv-rev", Name: "polaris-email-revocations"},
+			"polaris-mail-nonce":       {ID: "kv-nonce", Name: "polaris-mail-nonce"},
+			"polaris-mail-idempotency": {ID: "kv-idem", Name: "polaris-mail-idempotency"},
+			"polaris-mail-rate-limit":  {ID: "kv-rl", Name: "polaris-mail-rate-limit"},
+			"polaris-mail-key-cache":   {ID: "kv-kc", Name: "polaris-mail-key-cache"},
+			"polaris-mail-revocations": {ID: "kv-rev", Name: "polaris-mail-revocations"},
 		},
 	}
 
@@ -60,7 +61,7 @@ OIDC_CLIENT_ID="client-abc"
 	if in.Account.ID != "cf-account-id" {
 		t.Errorf("Account.ID: %q", in.Account.ID)
 	}
-	if in.D1.PolarisEmail.ID != "d1-id" {
+	if in.D1.PolarisMail.ID != "d1-id" {
 		t.Errorf("D1: %+v", in.D1)
 	}
 	if in.KV.Revocations.ID != "kv-rev" {
@@ -75,8 +76,8 @@ OIDC_CLIENT_ID="client-abc"
 	if in.AlertWebhook != "https://alerts.example.com/hook" {
 		t.Errorf("AlertWebhook: %q", in.AlertWebhook)
 	}
-	if in.R2.PolarisEmail.Jurisdiction != "eu" {
-		t.Errorf("R2 jurisdiction: %+v", in.R2.PolarisEmail)
+	if in.R2.PolarisMail.Jurisdiction != "eu" {
+		t.Errorf("R2 jurisdiction: %+v", in.R2.PolarisMail)
 	}
 }
 
@@ -180,7 +181,7 @@ func TestLoadInputs_PartialState(t *testing.T) {
 	doc := &state.Doc{
 		SchemaVersion: state.CurrentSchema,
 		D1: map[string]state.Resource{
-			"polaris-email": {ID: "d1-id"},
+			"polaris-mail": {ID: "d1-id"},
 		},
 		// KV deliberately absent.
 	}
@@ -188,7 +189,7 @@ func TestLoadInputs_PartialState(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadInputs: %v", err)
 	}
-	if in.D1.PolarisEmail.ID != "d1-id" {
+	if in.D1.PolarisMail.ID != "d1-id" {
 		t.Errorf("D1: %+v", in.D1)
 	}
 	if in.KV.Nonce.ID != "" {

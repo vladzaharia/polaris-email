@@ -298,6 +298,21 @@ func DefaultSpecs(allWorkers []string) []Spec {
 			Services:  []string{"panel"},
 			Generator: GenerateMasterSecret,
 		},
+		{
+			// Cloudflare API token for the CF Zones / discover-and-configure
+			// feature in services/api. Operator-supplied (must have
+			// Zone:Read + Email Routing:Edit + Account:Email Service:Edit
+			// scopes); no generator. Without this the /v1/admin/cf-zones
+			// endpoint returns 503 cf_credentials_missing and the panel
+			// renders a config-needed empty state.
+			Name:     "CF_API_TOKEN",
+			Services: []string{"api"},
+		},
+		{
+			// CF account ID scoping the API token above. Operator-supplied.
+			Name:     "CF_ACCOUNT_ID",
+			Services: []string{"api"},
+		},
 	}
 }
 

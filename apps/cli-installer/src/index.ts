@@ -1,7 +1,7 @@
-// polaris-email cli-installer Worker.
+// polaris-mail cli-installer Worker.
 //
 // Hosted at cli.mail.plrs.im. Serves a POSIX-sh installer for the
-// `polaris-email` operator CLI. The script itself lives at
+// `polaris-mail` operator CLI. The script itself lives at
 // `src/install.sh` (source of truth); a pre-bundle step base64-encodes it
 // into `src/install.sh.gen.ts`, which we import here and decode at module
 // load. The indirection exists because Cloudflare's WAF on

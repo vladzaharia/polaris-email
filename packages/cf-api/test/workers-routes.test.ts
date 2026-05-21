@@ -46,7 +46,7 @@ describe('findCustomDomain', () => {
             id: 'dom-1',
             hostname: 'mta-sts.acme.com',
             zone_id: 'zone-1',
-            service: 'polaris-email-api',
+            service: 'polaris-mail-api',
             environment: 'production',
           },
         ]);
@@ -59,7 +59,7 @@ describe('findCustomDomain', () => {
       id: 'dom-1',
       hostname: 'mta-sts.acme.com',
       zoneId: 'zone-1',
-      service: 'polaris-email-api',
+      service: 'polaris-mail-api',
       environment: 'production',
     });
     expect(calls[0].url).toContain('/accounts/acc-1/workers/domains');
@@ -82,7 +82,7 @@ describe('attachCustomDomain', () => {
           id: 'dom-99',
           hostname: 'mta-sts.acme.com',
           zone_id: 'zone-1',
-          service: 'polaris-email-api',
+          service: 'polaris-mail-api',
           environment: 'production',
         });
       }
@@ -92,20 +92,20 @@ describe('attachCustomDomain', () => {
     const dom = await attachCustomDomain(client, {
       zoneId: 'zone-1',
       hostname: 'mta-sts.acme.com',
-      workerName: 'polaris-email-api',
+      workerName: 'polaris-mail-api',
     });
 
     expect(dom.id).toBe('dom-99');
     expect(dom.hostname).toBe('mta-sts.acme.com');
     expect(dom.zoneId).toBe('zone-1');
-    expect(dom.service).toBe('polaris-email-api');
+    expect(dom.service).toBe('polaris-mail-api');
 
     const put = calls.find((c) => c.method === 'PUT');
     expect(put).toBeDefined();
     expect(put!.url).toContain('/accounts/acc-1/workers/domains');
     expect(put!.body).toEqual({
       hostname: 'mta-sts.acme.com',
-      service: 'polaris-email-api',
+      service: 'polaris-mail-api',
       zone_id: 'zone-1',
     });
   });
@@ -118,7 +118,7 @@ describe('attachCustomDomain', () => {
             id: 'dom-existing',
             hostname: 'mta-sts.acme.com',
             zone_id: 'zone-1',
-            service: 'polaris-email-api',
+            service: 'polaris-mail-api',
           },
         ]);
       }
@@ -128,7 +128,7 @@ describe('attachCustomDomain', () => {
     const dom = await attachCustomDomain(client, {
       zoneId: 'zone-1',
       hostname: 'mta-sts.acme.com',
-      workerName: 'polaris-email-api',
+      workerName: 'polaris-mail-api',
     });
 
     expect(dom.id).toBe('dom-existing');
@@ -143,7 +143,7 @@ describe('attachCustomDomain', () => {
         id: 'dom-2',
         hostname: 'mta-sts.acme.com',
         zone_id: 'zone-1',
-        service: 'polaris-email-api',
+        service: 'polaris-mail-api',
         environment: 'staging',
       });
     });
@@ -151,14 +151,14 @@ describe('attachCustomDomain', () => {
     await attachCustomDomain(client, {
       zoneId: 'zone-1',
       hostname: 'mta-sts.acme.com',
-      workerName: 'polaris-email-api',
+      workerName: 'polaris-mail-api',
       environment: 'staging',
     });
 
     const put = calls.find((c) => c.method === 'PUT')!;
     expect(put.body).toEqual({
       hostname: 'mta-sts.acme.com',
-      service: 'polaris-email-api',
+      service: 'polaris-mail-api',
       zone_id: 'zone-1',
       environment: 'staging',
     });
@@ -174,7 +174,7 @@ describe('detachCustomDomain', () => {
             id: 'dom-7',
             hostname: 'mta-sts.acme.com',
             zone_id: 'zone-1',
-            service: 'polaris-email-api',
+            service: 'polaris-mail-api',
           },
         ]);
       }

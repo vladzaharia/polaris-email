@@ -1,11 +1,11 @@
 ---
 title: Contributing
-description: Toolchain, common commands, integration-test tiers, and the pull-request gates for polaris-email contributors.
+description: Toolchain, common commands, integration-test tiers, and the pull-request gates for polaris-mail contributors.
 sidebar_label: Overview
 sidebar_position: 1
 ---
 
-# Contributing to polaris-email
+# Contributing to polaris-mail
 
 ## Toolchain
 

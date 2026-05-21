@@ -8,13 +8,9 @@
 // has no fanout — the platform mailbox doesn't have webhook subscribers in
 // the normal sense.
 
-import {
-  parseComplaint,
-  suppressionTargets,
-  type ParsedComplaint,
-} from '@polaris-email/arf-parser';
-import { normalizeAddress } from '@polaris-email/suppressions';
-import { ulid } from '@polaris-email/ids';
+import { parseComplaint, suppressionTargets, type ParsedComplaint } from '@polaris-mail/arf-parser';
+import { normalizeAddress } from '@polaris-mail/suppressions';
+import { ulid } from '@polaris-mail/ids';
 import { triageUnstructuredComplaint, type TriageEnv } from './triage.js';
 
 export const PLATFORM_COMPLAINTS_MAILBOX_ID = '01HXPLATFORMCOMPLAINTS0000';

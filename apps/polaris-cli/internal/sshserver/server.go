@@ -56,7 +56,7 @@ func Run(ctx context.Context, cfg Config) error {
 		if err != nil {
 			return fmt.Errorf("home dir: %w", err)
 		}
-		cfg.HostKeyPath = filepath.Join(home, ".config", "polaris-email", "ssh_host_ed25519")
+		cfg.HostKeyPath = filepath.Join(home, ".config", "polaris-mail", "ssh_host_ed25519")
 	}
 	if err := os.MkdirAll(filepath.Dir(cfg.HostKeyPath), 0o700); err != nil {
 		return fmt.Errorf("make host key dir: %w", err)
@@ -91,14 +91,14 @@ func Run(ctx context.Context, cfg Config) error {
 		case <-ctx.Done():
 		case <-sigs:
 		}
-		log.Info("polaris-email serve --ssh shutting down")
+		log.Info("polaris-mail serve --ssh shutting down")
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		_ = s.Shutdown(shutdownCtx)
 		done <- struct{}{}
 	}()
 
-	log.Info("polaris-email SSH server listening", "addr", cfg.addr())
+	log.Info("polaris-mail SSH server listening", "addr", cfg.addr())
 	if err := s.ListenAndServe(); err != nil && !errors.Is(err, ssh.ErrServerClosed) && !errors.Is(err, net.ErrClosed) {
 		return fmt.Errorf("listen: %w", err)
 	}

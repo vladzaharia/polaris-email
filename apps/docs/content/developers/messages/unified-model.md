@@ -1,6 +1,6 @@
 ---
 title: Unified Message model
-description: The single Message shape that backs both inbound (Email Routing, mail bridge IMAP) and outbound (REST submission) mail in polaris-email.
+description: The single Message shape that backs both inbound (Email Routing, mail bridge IMAP) and outbound (REST submission) mail in polaris-mail.
 sidebar_label: Unified model
 sidebar_position: 1
 ---
@@ -10,9 +10,9 @@ sidebar_position: 1
 Inbound mail (from Email Routing or the mail bridge) and outbound mail
 (REST submission) live in the same `messages` table, share the same JSON
 shape, and are retrieved through the same endpoints. The normative wire
-format is `openapi/polaris-email.yaml`; the canonical Zod definition is
+format is `openapi/polaris-mail.yaml`; the canonical Zod definition is
 `packages/schema/src/index.ts` (`Message`). When this page and the
-generated [`/reference/api/polaris-email-api`](/reference/api/polaris-email-api) disagree, the spec wins.
+generated [`/reference/api/polaris-mail-api`](/reference/api/polaris-mail-api) disagree, the spec wins.
 
 ## Shape
 
@@ -71,7 +71,7 @@ listener) or `out` (REST submission via `POST /v1/messages`, JSON or
 
 ## R2 access — public custom domain, content-addressed keys
 
-The polaris-email R2 bucket is fronted by the public custom domain
+The polaris-mail R2 bucket is fronted by the public custom domain
 `r2.mail.plrs.im`. Object keys are content-addressed:
 
 - **Body** — `mime/<aa>/<bb>/<sha256>` where `sha256` is the SHA-256 of
@@ -125,7 +125,7 @@ The previous `GET /v1/messages/:id/attachments/:n` signed-URL endpoint
 was removed. Consumers fetch attachments straight from the public R2
 custom domain using the `url` returned on each attachment.
 
-Full request and response shapes live under [`/reference/api/polaris-email-api`](/reference/api/polaris-email-api).
+Full request and response shapes live under [`/reference/api/polaris-mail-api`](/reference/api/polaris-mail-api).
 
 ## State mutation
 
@@ -193,4 +193,4 @@ webhook.
 Webhook delivery patterns (external / tailnet / bridge-proxied) are
 covered in the [webhook decision tree](/developers/webhooks/decision-tree).
 
-<!-- Verified against: packages/schema/src/index.ts, services/api/src/routes/messages.ts, services/api/src/routes/messages-state.ts, services/api/src/env.ts, openapi/polaris-email.yaml, docs/messages.md @ 60cc6d59541b3279a65c755222fd9290ce76fc5e -->
+<!-- Verified against: packages/schema/src/index.ts, services/api/src/routes/messages.ts, services/api/src/routes/messages-state.ts, services/api/src/env.ts, openapi/polaris-mail.yaml, docs/messages.md @ 60cc6d59541b3279a65c755222fd9290ce76fc5e -->

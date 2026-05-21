@@ -1,13 +1,13 @@
 ---
 title: Custom domains
-description: The public hostnames polaris-email serves on — R2 attachment domain, panel, API, docs, and the per-tenant MTA-STS Workers custom domains. Where each one is configured and which scopes it needs.
+description: The public hostnames polaris-mail serves on — R2 attachment domain, panel, API, docs, and the per-tenant MTA-STS Workers custom domains. Where each one is configured and which scopes it needs.
 sidebar_label: Custom domains
 sidebar_position: 3
 ---
 
 # Custom domains
 
-polaris-email exposes its surfaces on Cloudflare custom hostnames rather
+polaris-mail exposes its surfaces on Cloudflare custom hostnames rather
 than the default `*.workers.dev` URLs. This page lists the hostnames the
 control plane uses, which Worker each one fronts, and how the configuration
 is split between Terraform and wrangler.
@@ -18,18 +18,18 @@ production hostnames at the deployed Workers is a follow-up step.
 
 ## Hostname inventory
 
-| Hostname (default)                                        | Worker / target           | Owner                     | Required?            |
-| --------------------------------------------------------- | ------------------------- | ------------------------- | -------------------- |
-| `r2.mail.plrs.im`                                         | R2 bucket `polaris-email` | Terraform                 | Yes                  |
-| `polaris-email-api.workers.dev` (or your custom API host) | `polaris-email-api`       | Wrangler                  | Yes                  |
-| `panel.mail.plrs.im` (or your panel host)                 | `polaris-email-panel`     | Wrangler                  | Optional             |
-| `docs.mail.plrs.im`                                       | `polaris-email-docs`      | Wrangler                  | Optional             |
-| `mta-sts.<tenant>`                                        | `polaris-email-api`       | Per-domain admin endpoint | Per onboarded domain |
+| Hostname (default)                                       | Worker / target          | Owner                     | Required?            |
+| -------------------------------------------------------- | ------------------------ | ------------------------- | -------------------- |
+| `r2.mail.plrs.im`                                        | R2 bucket `polaris-mail` | Terraform                 | Yes                  |
+| `polaris-mail-api.workers.dev` (or your custom API host) | `polaris-mail-api`       | Wrangler                  | Yes                  |
+| `panel.mail.plrs.im` (or your panel host)                | `polaris-mail-panel`     | Wrangler                  | Optional             |
+| `docs.mail.plrs.im`                                      | `polaris-mail-docs`      | Wrangler                  | Optional             |
+| `mta-sts.<tenant>`                                       | `polaris-mail-api`       | Per-domain admin endpoint | Per onboarded domain |
 
 ## R2 public domain (`r2.mail.plrs.im`)
 
 Message bodies and per-attachment R2 objects are served from a **public**
-Cloudflare custom hostname pointed at the `polaris-email` R2 bucket.
+Cloudflare custom hostname pointed at the `polaris-mail` R2 bucket.
 Object keys are content-addressed (`mime/<aa>/<bb>/<sha256>` for bodies,
 `att/<sha256>/<filename>` for attachments), so the SHA-256 in the URL
 provides the unguessability boundary — there is no signature, no expiry,
@@ -41,12 +41,12 @@ var (default `r2.mail.plrs.im`). Override it in
 different domain.
 
 This domain is **intentionally unauthenticated**. The privacy implication
-is that a polaris-email URL **is** a capability token — anyone with the
+is that a polaris-mail URL **is** a capability token — anyone with the
 URL can read the bytes forever. Read the
 [threat model](/security/threat-model) before placing a CDN, signing
 layer, or authenticated proxy in front of it.
 
-The R2 custom-domain binding is provisioned during `polaris-email setup
+The R2 custom-domain binding is provisioned during `polaris-mail setup
 infra apply` from the `R2_PUBLIC_HOST` value in `.env.deploy` (see
 `apps/polaris-cli/internal/setup/cfapi/r2.go` and `provision/r2.go`).
 Cloudflare auto-issues and renews the TLS cert for the bound hostname.
@@ -68,8 +68,8 @@ front them on a custom hostname:
    ]
    ```
 
-3. Redeploy the Worker (`polaris-email setup infra deploy service api`
-   or `polaris-email setup infra deploy service panel`).
+3. Redeploy the Worker (`polaris-mail setup infra deploy service api`
+   or `polaris-mail setup infra deploy service panel`).
 
 In CI, the production hostname lands via the
 `POLARIS_API_HOSTNAME` repo variable consumed by `.env.deploy`.
@@ -92,25 +92,25 @@ When you enable MTA-STS for an onboarded domain via
 **three** records — two DNS rows and one Workers custom hostname:
 
 1. DNS `TXT` at `_mta-sts.{tenant}` → `v=STSv1; id={policyId}`
-2. Workers custom domain `mta-sts.{tenant}` → `polaris-email-api` —
+2. Workers custom domain `mta-sts.{tenant}` → `polaris-mail-api` —
    serves the policy body at
    `https://mta-sts.{tenant}/.well-known/mta-sts.txt`.
 3. DNS `TXT` at `_smtp._tls.{tenant}` → `v=TLSRPTv1; rua=mailto:tlsrpt@plrs.im`
 
-The `polaris-email` CLI / admin endpoints handle this automatically per
-domain. The Workers custom domain in (2) reuses the `polaris-email-api`
+The `polaris-mail` CLI / admin endpoints handle this automatically per
+domain. The Workers custom domain in (2) reuses the `polaris-mail-api`
 Worker; you do not register a separate Worker per tenant. Cloudflare
 issues and renews the TLS cert for each `mta-sts.{tenant}` hostname on
 its own.
 
 To enable MTA-STS + TLS-RPT across the existing fleet of verified
 inbound-enabled domains, loop the per-domain admin endpoints
-(`/mta-sts/enable`, `/tls-rpt/enable`) via curl or the `polaris-email`
+(`/mta-sts/enable`, `/tls-rpt/enable`) via curl or the `polaris-mail`
 admin TUI — they are idempotent.
 
 ## Infrastructure-as-code split
 
-- **`polaris-email setup infra apply`** (Go CLI) owns the account-level
+- **`polaris-mail setup infra apply`** (Go CLI) owns the account-level
   Cloudflare resources: D1, R2 buckets (with lifecycle + Object Lock),
   KV namespaces, queues, Logpush jobs, R2 API tokens, and the R2
   public custom-domain binding.
@@ -130,7 +130,7 @@ need to touch DNS or the route config. The preferred path after the
 initial bootstrap is the changed-only deploy:
 
 ```sh
-polaris-email setup infra deploy changed
+polaris-mail setup infra deploy changed
 ```
 
 `deploy changed` computes
@@ -145,24 +145,24 @@ polaris-email setup infra deploy changed
 On success, the new HEAD SHA is written to `.deploy-state.last-sha` and
 (in CI) the `deployed/main` tag is moved.
 
-To force-deploy everything: `polaris-email setup infra deploy all`. To
-redeploy a single service: `polaris-email setup infra deploy service api`.
+To force-deploy everything: `polaris-mail setup infra deploy all`. To
+redeploy a single service: `polaris-mail setup infra deploy service api`.
 
 ## Rollback
 
 ```sh
-polaris-email setup infra rollback api
+polaris-mail setup infra rollback api
 ```
 
 Runs `wrangler rollback` inside `services/<svc>`. Cloudflare tracks the
 previous version ID; `.deploy-state.json` also records the last
 deployed version per service for human reference. After rollback,
-re-run `polaris-email setup infra smoke` to confirm.
+re-run `polaris-mail setup infra smoke` to confirm.
 
 ## CI
 
-`.github/workflows/deploy.yml` runs `polaris-email setup infra deploy
-changed` + `polaris-email setup infra smoke` after the `ci` workflow
+`.github/workflows/deploy.yml` runs `polaris-mail setup infra deploy
+changed` + `polaris-mail setup infra smoke` after the `ci` workflow
 succeeds on `main`, then moves the `deployed/main` tag. Required
 GitHub secrets:
 
@@ -175,6 +175,6 @@ GitHub secrets:
 Repo variables (non-secret): `POLARIS_API_HOSTNAME`, `ALERT_WEBHOOK`.
 
 Workflow-dispatch with `all=true` forces
-`polaris-email setup infra deploy all` instead of `deploy changed`.
+`polaris-mail setup infra deploy all` instead of `deploy changed`.
 
 <!-- Verified against: docs/deploy.md @ c3c1b5048dd5bfe92facdce24982141a07446042 -->

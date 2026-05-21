@@ -1,5 +1,5 @@
 {
-  "name": "@polaris-email/cli-installer",
+  "name": "@polaris-mail/cli-installer",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -8,7 +8,7 @@
     "lint": "oxlint .",
     "test": "vitest run",
     "dev": "wrangler dev",
-    "deploy": "polaris-email setup infra deploy service cli-installer"
+    "deploy": "polaris-mail setup infra deploy service cli-installer"
   },
   "dependencies": {},
   "devDependencies": {

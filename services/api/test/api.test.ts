@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import app from '../src/index.js';
 import { mkEnv } from './mocks.js';
-import { sign, generateNonce } from '@polaris-email/hmac';
-import { ulid } from '@polaris-email/ids';
+import { sign, generateNonce } from '@polaris-mail/hmac';
+import { ulid } from '@polaris-mail/ids';
 
 // Use an execution context that captures waitUntil promises so KV writes complete
 const ctx = {
@@ -52,7 +52,7 @@ async function bootstrapEnv() {
   // POST /v1/admin/bootstrap signed with POLARIS_SECRET_A
   const body = '{}';
   const req = await signedRequest(
-    'https://polaris-email-api.workers.dev/v1/admin/bootstrap',
+    'https://polaris-mail-api.workers.dev/v1/admin/bootstrap',
     body,
     'POST',
     env.POLARIS_SECRET_A!,
@@ -100,7 +100,7 @@ describe('bootstrap', () => {
 
     // Second call should 409
     const req = await signedRequest(
-      'https://polaris-email-api.workers.dev/v1/admin/bootstrap',
+      'https://polaris-mail-api.workers.dev/v1/admin/bootstrap',
       '{}',
       'POST',
       env.POLARIS_SECRET_A!,
@@ -119,7 +119,7 @@ describe('bootstrap', () => {
 
   it('rejects bad signature', async () => {
     const env = mkEnv();
-    const req = new Request('https://polaris-email-api.workers.dev/v1/admin/bootstrap', {
+    const req = new Request('https://polaris-mail-api.workers.dev/v1/admin/bootstrap', {
       method: 'POST',
       headers: {
         'content-type': 'application/json',

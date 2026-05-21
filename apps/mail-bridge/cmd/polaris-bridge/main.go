@@ -25,7 +25,7 @@ import (
 
 	"github.com/emersion/go-imap/v2"
 	"github.com/emersion/go-imap/v2/imapserver"
-	polarissdk "github.com/polaris-email/polaris-sdk-go"
+	polarissdk "github.com/polaris-mail/polaris-sdk-go"
 
 	"github.com/vladzaharia/polaris-email/apps/mail-bridge/internal/audit"
 	"github.com/vladzaharia/polaris-email/apps/mail-bridge/internal/config"

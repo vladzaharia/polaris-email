@@ -5,7 +5,7 @@ sidebar_label: Cost model
 sidebar_position: 2
 ---
 
-# polaris-email cost model
+# polaris-mail cost model
 
 Forward projections at three traffic tiers. Re-run quarterly; every
 quarter the operator pulls the previous month's actuals from the
@@ -45,37 +45,37 @@ subscription floor). Excludes Email Service per-message pricing
 
 ### Medium (100k msgs/day)
 
-| Service           | Cost/mo        | Notes                                                                          |
-| ----------------- | -------------- | ------------------------------------------------------------------------------ |
-| Workers Paid      | $5–10          | Subscription + modest overage                                                  |
-| D1 storage        | $5–10          | Single `polaris-email` DB; old message rows archived to R2 Parquet when needed |
-| D1 reads/writes   | $5–10          | ~3M writes × 4 ops/msg avg                                                     |
-| R2 storage        | $10            | ~150 GB MIME (2-week retention; older dumped to Parquet)                       |
-| R2 ops            | $5             | ~3M PUT + retries                                                              |
-| KV                | $1–2           | Hot path cache                                                                 |
-| Queues            | $10            | 3M msgs × 4 ops/msg × $0.40/M                                                  |
-| Logpush           | $5–15          | Per-batch volume                                                               |
-| Analytics Engine  | $5             | Per-domain counters                                                            |
-| **Subtotal CF**   | **~$50–75**    | + Email Service per-msg                                                        |
-| Cloudflare Access | $0             | Still ≤50 users                                                                |
-| **Total**         | **~$50–75/mo** | + Email Service                                                                |
+| Service           | Cost/mo        | Notes                                                                         |
+| ----------------- | -------------- | ----------------------------------------------------------------------------- |
+| Workers Paid      | $5–10          | Subscription + modest overage                                                 |
+| D1 storage        | $5–10          | Single `polaris-mail` DB; old message rows archived to R2 Parquet when needed |
+| D1 reads/writes   | $5–10          | ~3M writes × 4 ops/msg avg                                                    |
+| R2 storage        | $10            | ~150 GB MIME (2-week retention; older dumped to Parquet)                      |
+| R2 ops            | $5             | ~3M PUT + retries                                                             |
+| KV                | $1–2           | Hot path cache                                                                |
+| Queues            | $10            | 3M msgs × 4 ops/msg × $0.40/M                                                 |
+| Logpush           | $5–15          | Per-batch volume                                                              |
+| Analytics Engine  | $5             | Per-domain counters                                                           |
+| **Subtotal CF**   | **~$50–75**    | + Email Service per-msg                                                       |
+| Cloudflare Access | $0             | Still ≤50 users                                                               |
+| **Total**         | **~$50–75/mo** | + Email Service                                                               |
 
 ### Large (10M msgs/day)
 
-| Service                     | Cost/mo           | Notes                                                                        |
-| --------------------------- | ----------------- | ---------------------------------------------------------------------------- |
-| Workers Paid (CPU-ms heavy) | $50–500           | Driven by per-request work; see cliff #1 below                               |
-| D1 storage                  | $50               | Single `polaris-email` DB; older message rows archived monthly to R2 Parquet |
-| D1 reads/writes             | $100–200          | 300M writes/mo × 4–5 ops avg                                                 |
-| R2 storage                  | $200              | ~15 TB rolling MIME                                                          |
-| R2 ops                      | $50               | 300M PUT + Class B reads in fanout                                           |
-| KV                          | $5                | Cache-only                                                                   |
-| Queues                      | **$1500**         | 300M msgs × 4 ops × $0.40/M = the dominant CF line                           |
-| Logpush                     | $50               | Volume-driven                                                                |
-| Analytics Engine            | $20               | Per-domain rollups                                                           |
-| **Subtotal CF**             | **~$2,000–2,500** | + Email Service (almost certainly the line-item dominator at this scale)     |
-| Cloudflare Access           | ~$50              | If team grows past 50 users                                                  |
-| **Total**                   | **~$2k–10k/mo**   | + Email Service                                                              |
+| Service                     | Cost/mo           | Notes                                                                       |
+| --------------------------- | ----------------- | --------------------------------------------------------------------------- |
+| Workers Paid (CPU-ms heavy) | $50–500           | Driven by per-request work; see cliff #1 below                              |
+| D1 storage                  | $50               | Single `polaris-mail` DB; older message rows archived monthly to R2 Parquet |
+| D1 reads/writes             | $100–200          | 300M writes/mo × 4–5 ops avg                                                |
+| R2 storage                  | $200              | ~15 TB rolling MIME                                                         |
+| R2 ops                      | $50               | 300M PUT + Class B reads in fanout                                          |
+| KV                          | $5                | Cache-only                                                                  |
+| Queues                      | **$1500**         | 300M msgs × 4 ops × $0.40/M = the dominant CF line                          |
+| Logpush                     | $50               | Volume-driven                                                               |
+| Analytics Engine            | $20               | Per-domain rollups                                                          |
+| **Subtotal CF**             | **~$2,000–2,500** | + Email Service (almost certainly the line-item dominator at this scale)    |
+| Cloudflare Access           | ~$50              | If team grows past 50 users                                                 |
+| **Total**                   | **~$2k–10k/mo**   | + Email Service                                                             |
 
 ## Cost cliffs
 
@@ -93,7 +93,7 @@ Things that disproportionately blow the bill if not watched:
      linearly. **Mitigation**: confirm the pipeline is not double-enqueuing
      on retry (the `send_attempt_id` CAS guards against it).
 
-3. **R2 Object Lock retention**: the `polaris-email` R2 bucket uses
+3. **R2 Object Lock retention**: the `polaris-mail` R2 bucket uses
    COMPLIANCE-mode Object Lock on the message-body prefixes
    (`mime/`, `att/`) for 90 days. Locked objects bill for storage even
    if soft-deleted at the application layer. **Mitigation**: the janitor
@@ -109,12 +109,12 @@ Things that disproportionately blow the bill if not watched:
 5. **D1 storage cliff at 10 GB/database**: not a billing cost so much
    as a correctness cliff — writes fail when the cap is reached.
    **Mitigation**: monthly archival of older-than-N-day rows from the
-   single `polaris-email` D1 to R2 Parquet.
+   single `polaris-mail` D1 to R2 Parquet.
 
 6. **Per-tenant Workers Secrets**: ~64 secret cap per Worker. Adding a
    tenant pepper per tenant blows this at 50+ tenants. **Mitigation**:
    single master pepper + HKDF-derived per-tenant peppers (already
-   shipped in `@polaris-email/crypto-utils`).
+   shipped in `@polaris-mail/crypto-utils`).
 
 ## How to read actuals
 

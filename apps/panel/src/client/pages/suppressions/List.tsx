@@ -10,6 +10,7 @@
 // `created_at` of the last row); "Load more" appends.
 import { Link } from '@tanstack/react-router';
 import { useMemo, useState } from 'react';
+import { AlertTriangle, AtSign, Plus, Tag, Workflow } from 'lucide-react';
 import { PageCard } from '../../layouts/PageCard.js';
 import {
   Table,
@@ -22,7 +23,6 @@ import {
 import { Skeleton } from '../../components/ui/skeleton.js';
 import { Button } from '../../components/ui/button.js';
 import { Input } from '../../components/ui/input.js';
-import { Label } from '../../components/ui/label.js';
 import {
   Select,
   SelectContent,
@@ -31,6 +31,8 @@ import {
   SelectValue,
 } from '../../components/ui/select.js';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../components/ui/tabs.js';
+import { FilterBar, type FilterSpec } from '../../components/FilterBar.js';
+import { FilterAddressPicker, FilterEnumPicker } from '../../components/filters/index.js';
 import {
   Dialog,
   DialogContent,
@@ -40,12 +42,15 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '../../components/ui/dialog.js';
-import { Badge } from '../../components/ui/badge.js';
 import { useAdminMutation, useAdminQuery } from '../../hooks/useAdminApi.js';
+import { useAllSenderAddresses } from '../../hooks/useAllSenderAddresses.js';
 import { suppressionKeys } from '../../queryKeys.js';
 import { formatRelative } from '../../lib/format.js';
 import { ErrorText } from '../../components/ErrorText.js';
 import { EmptyState } from '../../components/EmptyState.js';
+import { StatusBadge } from '../../components/StatusBadge.js';
+import { FormField } from '../../components/FormField.js';
+import { AddressCombobox } from '../../components/AddressCombobox.js';
 import { DestructiveActionDialog } from '../../components/DestructiveActionDialog.js';
 
 const REASONS = [
@@ -89,17 +94,36 @@ interface SuppressionRow {
   notes: string | null;
 }
 
-function severityBadgeVariant(s: SuppressionRow['severity']) {
-  return s === 'critical' ? 'destructive' : s === 'warn' ? 'warning' : 'secondary';
-}
+// Reason → Severity default mapping. Operators can still override either
+// dropdown after the auto-fill — we just want the common case to be a
+// single click. Anything missing falls back to "warn".
+const REASON_DEFAULT_SEVERITY: Record<string, (typeof SEVERITIES)[number]> = {
+  phishing_report: 'critical',
+  arf_complaint: 'critical',
+  spam_complaint: 'warn',
+  sender_abuse_threshold: 'critical',
+  hard_bounce: 'info',
+  manual: 'warn',
+  unsubscribe: 'info',
+  role_account: 'info',
+  invalid: 'info',
+};
 
-function CreateSuppressionDialog({ entityType }: { entityType: 'recipient' | 'sender' }) {
+export function CreateSuppressionDialog({ entityType }: { entityType: 'recipient' | 'sender' }) {
   const [open, setOpen] = useState(false);
   const [address, setAddress] = useState('');
+  const senderAddrs = useAllSenderAddresses();
+  // For the 'sender' tab the mailbox-sender list is the canonical option set.
+  // For the 'recipient' tab the same list is still a useful starting point
+  // (e.g. internal-to-internal suppressions); ordering keeps it secondary.
+  const addrSuggestions = [{ label: 'Mailbox senders', addresses: senderAddrs.data }] as const;
   const [reason, setReason] = useState<(typeof REASONS)[number]>('manual');
   const [scope, setScope] = useState<(typeof SCOPES)[number]>('global');
   const [scopeTarget, setScopeTarget] = useState('');
   const [severity, setSeverity] = useState<(typeof SEVERITIES)[number]>('warn');
+  // Track whether the operator hand-set severity so we don't keep clobbering
+  // their choice each time they tweak the reason dropdown.
+  const [severityTouched, setSeverityTouched] = useState(false);
   const [notes, setNotes] = useState('');
 
   const create = useAdminMutation<
@@ -125,11 +149,28 @@ function CreateSuppressionDialog({ entityType }: { entityType: 'recipient' | 'se
     setScope('global');
     setScopeTarget('');
     setSeverity('warn');
+    setSeverityTouched(false);
     setNotes('');
     create.reset();
   };
 
+  // Clear the scope_target when scope flips back to 'global' so the
+  // disabled field doesn't carry stale text into the POST body.
+  const handleScopeChange = (next: (typeof SCOPES)[number]) => {
+    setScope(next);
+    if (next === 'global') setScopeTarget('');
+  };
+
+  const handleReasonChange = (next: (typeof REASONS)[number]) => {
+    setReason(next);
+    if (!severityTouched) {
+      const suggested = REASON_DEFAULT_SEVERITY[next];
+      if (suggested) setSeverity(suggested);
+    }
+  };
+
   const canSubmit = address.trim().length >= 3 && !create.isPending;
+  const trimmedAddr = address.trim();
 
   return (
     <Dialog
@@ -140,7 +181,9 @@ function CreateSuppressionDialog({ entityType }: { entityType: 'recipient' | 'se
       }}
     >
       <DialogTrigger asChild>
-        <Button>Add suppression</Button>
+        <Button size="icon" title="Add suppression" aria-label="Add suppression">
+          <Plus className="h-4 w-4" />
+        </Button>
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
@@ -153,24 +196,23 @@ function CreateSuppressionDialog({ entityType }: { entityType: 'recipient' | 'se
               : 'Block sending FROM this principal. Use this to manually pause a sender that ops believes is misbehaving; W2c will auto-fire suppression at scale.'}
           </DialogDescription>
         </DialogHeader>
-        <div className="space-y-3">
-          <div>
-            <Label htmlFor="supp-addr">Address</Label>
-            <Input
+        <div className="space-y-4">
+          <FormField id="supp-addr" label="Address" required>
+            <AddressCombobox
               id="supp-addr"
               value={address}
-              onChange={(e) => setAddress(e.target.value)}
+              onChange={setAddress}
+              suggestions={addrSuggestions}
               placeholder="user@example.com"
             />
-          </div>
+          </FormField>
           <div className="grid grid-cols-2 gap-3">
-            <div>
-              <Label>Reason</Label>
+            <FormField id="supp-reason" label="Reason">
               <Select
                 value={reason}
-                onValueChange={(v) => setReason(v as (typeof REASONS)[number])}
+                onValueChange={(v) => handleReasonChange(v as (typeof REASONS)[number])}
               >
-                <SelectTrigger className="mt-1">
+                <SelectTrigger id="supp-reason">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -181,14 +223,16 @@ function CreateSuppressionDialog({ entityType }: { entityType: 'recipient' | 'se
                   ))}
                 </SelectContent>
               </Select>
-            </div>
-            <div>
-              <Label>Severity</Label>
+            </FormField>
+            <FormField id="supp-severity" label="Severity">
               <Select
                 value={severity}
-                onValueChange={(v) => setSeverity(v as (typeof SEVERITIES)[number])}
+                onValueChange={(v) => {
+                  setSeverity(v as (typeof SEVERITIES)[number]);
+                  setSeverityTouched(true);
+                }}
               >
-                <SelectTrigger className="mt-1">
+                <SelectTrigger id="supp-severity">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -199,13 +243,15 @@ function CreateSuppressionDialog({ entityType }: { entityType: 'recipient' | 'se
                   ))}
                 </SelectContent>
               </Select>
-            </div>
+            </FormField>
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <div>
-              <Label>Scope</Label>
-              <Select value={scope} onValueChange={(v) => setScope(v as (typeof SCOPES)[number])}>
-                <SelectTrigger className="mt-1">
+            <FormField id="supp-scope" label="Scope">
+              <Select
+                value={scope}
+                onValueChange={(v) => handleScopeChange(v as (typeof SCOPES)[number])}
+              >
+                <SelectTrigger id="supp-scope">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -216,27 +262,34 @@ function CreateSuppressionDialog({ entityType }: { entityType: 'recipient' | 'se
                   ))}
                 </SelectContent>
               </Select>
-            </div>
-            <div>
-              <Label htmlFor="supp-target">Scope target</Label>
+            </FormField>
+            <FormField id="supp-target" label="Scope target">
               <Input
                 id="supp-target"
                 value={scopeTarget}
                 onChange={(e) => setScopeTarget(e.target.value)}
-                placeholder={scope === 'global' ? 'leave blank' : 'mailbox / domain / sender id'}
+                placeholder={
+                  scope === 'global' ? 'n/a — global scope' : 'mailbox / domain / sender id'
+                }
                 disabled={scope === 'global'}
               />
-            </div>
+            </FormField>
           </div>
-          <div>
-            <Label htmlFor="supp-notes">Notes</Label>
+          <FormField id="supp-notes" label="Internal note (optional)">
             <Input
               id="supp-notes"
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              placeholder="reason this row was added"
+              placeholder="why this row was added"
             />
-          </div>
+          </FormField>
+          {trimmedAddr ? (
+            <p className="text-xs text-[var(--color-muted-foreground)]">
+              Will block <span className="font-mono">{trimmedAddr}</span> at{' '}
+              <span className="font-mono">{scope}</span> scope (
+              <span className="font-mono">{severity}</span>).
+            </p>
+          ) : null}
           <ErrorText error={create.error} />
         </div>
         <DialogFooter>
@@ -244,7 +297,7 @@ function CreateSuppressionDialog({ entityType }: { entityType: 'recipient' | 'se
             onClick={async () => {
               await create.mutateAsync({
                 entity_type: entityType,
-                address: address.trim(),
+                address: trimmedAddr,
                 reason,
                 scope,
                 scope_target: scope === 'global' ? null : scopeTarget.trim() || null,
@@ -302,7 +355,7 @@ function RowActions({ row }: { row: SuppressionRow }) {
   );
 }
 
-function SuppressionsTable({ entityType }: { entityType: 'recipient' | 'sender' }) {
+export function SuppressionsTable({ entityType }: { entityType: 'recipient' | 'sender' }) {
   const [reason, setReason] = useState<string>('');
   const [severity, setSeverity] = useState<string>('');
   const [source, setSource] = useState<string>('');
@@ -331,78 +384,84 @@ function SuppressionsTable({ entityType }: { entityType: 'recipient' | 'sender' 
 
   const rows = q.data?.data ?? [];
 
+  const filterSpecs: FilterSpec[] = [
+    {
+      id: 'reason',
+      label: 'Reason',
+      icon: Tag,
+      value: reason || null,
+      onChange: (next) => setReason(typeof next === 'string' ? next : ''),
+      render: ({ close }) => (
+        <FilterEnumPicker
+          options={REASONS.map((r) => ({ value: r }))}
+          value={reason || null}
+          onChange={(v) => setReason(v ?? '')}
+          close={close}
+          anyLabel="All reasons"
+        />
+      ),
+    },
+    {
+      id: 'severity',
+      label: 'Severity',
+      icon: AlertTriangle,
+      value: severity || null,
+      onChange: (next) => setSeverity(typeof next === 'string' ? next : ''),
+      render: ({ close }) => (
+        <FilterEnumPicker
+          options={SEVERITIES.map((s) => ({ value: s }))}
+          value={severity || null}
+          onChange={(v) => setSeverity(v ?? '')}
+          close={close}
+        />
+      ),
+    },
+    {
+      id: 'source',
+      label: 'Source',
+      icon: Workflow,
+      value: source || null,
+      onChange: (next) => setSource(typeof next === 'string' ? next : ''),
+      render: ({ close }) => (
+        <FilterEnumPicker
+          options={SOURCES.map((s) => ({ value: s }))}
+          value={source || null}
+          onChange={(v) => setSource(v ?? '')}
+          close={close}
+        />
+      ),
+    },
+    {
+      id: 'address',
+      label: 'Address',
+      icon: AtSign,
+      value: search || null,
+      onChange: (next) => setSearch(typeof next === 'string' ? next : ''),
+      render: ({ close }) => (
+        <FilterAddressPicker
+          value={search || null}
+          onChange={(v) => setSearch(v ?? '')}
+          close={close}
+          placeholder="exact address"
+        />
+      ),
+    },
+  ];
+
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-5">
-        <div>
-          <Label>Reason</Label>
-          <Select value={reason || 'all'} onValueChange={(v) => setReason(v === 'all' ? '' : v)}>
-            <SelectTrigger className="mt-1">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All reasons</SelectItem>
-              {REASONS.map((r) => (
-                <SelectItem key={r} value={r}>
-                  {r}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div>
-          <Label>Severity</Label>
-          <Select
-            value={severity || 'all'}
-            onValueChange={(v) => setSeverity(v === 'all' ? '' : v)}
-          >
-            <SelectTrigger className="mt-1">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All</SelectItem>
-              {SEVERITIES.map((s) => (
-                <SelectItem key={s} value={s}>
-                  {s}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div>
-          <Label>Source</Label>
-          <Select value={source || 'all'} onValueChange={(v) => setSource(v === 'all' ? '' : v)}>
-            <SelectTrigger className="mt-1">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All</SelectItem>
-              {SOURCES.map((s) => (
-                <SelectItem key={s} value={s}>
-                  {s}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="md:col-span-1">
-          <Label>Search address</Label>
-          <Input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="exact address"
-          />
-        </div>
-        <div className="flex items-end gap-2">
+      <FilterBar
+        filters={filterSpecs}
+        actions={
           <Button
             variant={includeDisabled ? 'default' : 'outline'}
+            size="sm"
             onClick={() => setIncludeDisabled((v) => !v)}
           >
             {includeDisabled ? 'Hide disabled' : 'Show disabled'}
           </Button>
-          <CreateSuppressionDialog entityType={entityType} />
-        </div>
-      </div>
+        }
+      />
 
       {q.isLoading ? (
         <Skeleton className="h-32 w-full" />
@@ -447,7 +506,7 @@ function SuppressionsTable({ entityType }: { entityType: 'recipient' | 'sender' 
                   {r.scope_target ? `:${r.scope_target.slice(0, 8)}…` : ''}
                 </TableCell>
                 <TableCell>
-                  <Badge variant={severityBadgeVariant(r.severity)}>{r.severity}</Badge>
+                  <StatusBadge kind="severity" value={r.severity} />
                 </TableCell>
                 <TableCell className="font-mono text-xs">{r.source}</TableCell>
                 <TableCell title={r.created_at}>{formatRelative(r.created_at)}</TableCell>
@@ -455,11 +514,7 @@ function SuppressionsTable({ entityType }: { entityType: 'recipient' | 'sender' 
                   <ExpiresCell expiresAt={r.expires_at} />
                 </TableCell>
                 <TableCell>
-                  {r.disabled_at ? (
-                    <Badge variant="secondary">disabled</Badge>
-                  ) : (
-                    <Badge variant="success">active</Badge>
-                  )}
+                  <StatusBadge kind="enabled" value={r.disabled_at ? 'disabled' : 'active'} />
                 </TableCell>
                 <TableCell>{!r.disabled_at && <RowActions row={r} />}</TableCell>
               </TableRow>
@@ -476,8 +531,9 @@ export function SuppressionsList() {
   return (
     <PageCard
       title="Suppressions"
-      description="Bi-directional do-not-send list. Recipients tab blocks mail TO; Senders tab blocks mail FROM."
+      description="Do-not-send list, scoped per recipient or sender."
       decorative
+      actions={<CreateSuppressionDialog entityType={tab} />}
     >
       <Tabs value={tab} onValueChange={(v) => setTab(v as 'recipient' | 'sender')}>
         <TabsList>

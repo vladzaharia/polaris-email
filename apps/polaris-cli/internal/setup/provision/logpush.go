@@ -13,7 +13,7 @@ import (
 // resource) because it composes three CF objects that have to be
 // created in lock-step:
 //
-//  1. The R2 bucket `polaris-email-logs` — provisioned earlier by
+//  1. The R2 bucket `polaris-mail-logs` — provisioned earlier by
 //     createR2Step (we just reference it here).
 //  2. An R2 API token scoped to that bucket. CF returns the secret
 //     exactly once; we persist into state.Doc.R2Tokens immediately.
@@ -30,9 +30,9 @@ import (
 // passing httpSinkURL — non-empty means "skip auto-provision".
 
 const (
-	logsBucketName     = "polaris-email-logs"
-	logsTokenName      = "polaris-email-logs"
-	logsJobName        = "polaris-email-workers"
+	logsBucketName     = "polaris-mail-logs"
+	logsTokenName      = "polaris-mail-logs"
+	logsJobName        = "polaris-mail-workers"
 	logsDataset        = "workers_trace_events"
 	logsKeyPrefix      = "logs"
 	defaultLogpushFilter = `{"where":{"and":[{"or":[{"key":"Outcome","operator":"eq","value":"exception"},{"key":"Outcome","operator":"eq","value":"exceededCpu"},{"key":"Outcome","operator":"eq","value":"unknown"}]}]}}`

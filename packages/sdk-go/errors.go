@@ -1,4 +1,4 @@
-// Typed error model for the polaris-email API. Callers can use `errors.As`
+// Typed error model for the polaris-mail API. Callers can use `errors.As`
 // to recover the parsed envelope and `IsRetryable` to honor the
 // CONSUMER-CONTRACT.md retry rules programmatically.
 //

@@ -66,11 +66,11 @@ func Run(ctx context.Context, checks []Check, requiredOnly bool) ([]CheckResult,
 func safeRun(ctx context.Context, c Check) (res Result) {
 	defer func() {
 		if r := recover(); r != nil {
-			res = fail(fmt.Sprintf("check panicked: %v", r), "report this as a polaris-email bug")
+			res = fail(fmt.Sprintf("check panicked: %v", r), "report this as a polaris-mail bug")
 		}
 	}()
 	if c.Run == nil {
-		return fail("check has no Run function (programming error)", "report this as a polaris-email bug")
+		return fail("check has no Run function (programming error)", "report this as a polaris-mail bug")
 	}
 	return c.Run(ctx)
 }

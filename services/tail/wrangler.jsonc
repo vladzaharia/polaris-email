@@ -1,11 +1,11 @@
-// polaris-email-tail: tail consumer for all four production Workers
+// polaris-mail-tail: tail consumer for all four production Workers
 // (api, in, out, panel). Filters logs for error/warn level and POSTs a
 // structured payload to ALERT_WEBHOOK. Real ALERT_WEBHOOK lives in
-// wrangler.local.jsonc (gitignored, rendered by `polaris-email setup
+// wrangler.local.jsonc (gitignored, rendered by `polaris-mail setup
 // infra render` from .env.deploy).
 {
   "$schema": "https://json-schema.org/draft-07/schema",
-  "name": "polaris-email-tail",
+  "name": "polaris-mail-tail",
   "main": "src/index.ts",
   "compatibility_date": "2026-04-15",
   "compatibility_flags": ["nodejs_compat_v2"],
@@ -13,7 +13,7 @@
   "logpush": true,
   "placement": { "mode": "smart" },
   "vars": {
-    "ALERT_WEBHOOK": "https://alerts.example.com/polaris-email",
+    "ALERT_WEBHOOK": "https://alerts.example.com/polaris-mail",
     // Comma-separated list of severities to forward. `error` is always on.
     // Adjust here (and in wrangler.local.jsonc) to widen or narrow.
     "TAIL_FORWARD_LEVELS": "error,warn,fatal",

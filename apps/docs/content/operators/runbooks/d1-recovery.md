@@ -1,13 +1,13 @@
 ---
 title: D1 recovery
-description: PITR drill for the polaris-email D1 — list bookmarks, restore to a fresh DB, cut over via wrangler binding flip, verify the audit chain, and reconcile R2 + KV orphans. Run the drill quarterly.
+description: PITR drill for the polaris-mail D1 — list bookmarks, restore to a fresh DB, cut over via wrangler binding flip, verify the audit chain, and reconcile R2 + KV orphans. Run the drill quarterly.
 sidebar_label: D1 recovery
 sidebar_position: 6
 ---
 
 # D1 recovery
 
-The `polaris-email` D1 database holds everything except message bytes:
+The `polaris-mail` D1 database holds everything except message bytes:
 mailboxes, principals, credentials, messages metadata, audit log,
 policy decisions. D1 supports point-in-time-recovery (PITR) with a
 30-day window — this runbook covers the restore drill and post-recovery
@@ -26,15 +26,15 @@ overwrite the live one until you flip the wrangler binding.
 
 ```sh
 # 1. List recovery timestamps
-wrangler d1 time-travel info polaris-email
+wrangler d1 time-travel info polaris-mail
 
 # 2. Restore to T-1 hour into a new database
-wrangler d1 time-travel restore polaris-email \
+wrangler d1 time-travel restore polaris-mail \
   --bookmark <bookmark-from-step-1> \
-  --target-name polaris-email-restore-$(date +%Y%m%d-%H%M)
+  --target-name polaris-mail-restore-$(date +%Y%m%d-%H%M)
 
 # 3. Inspect the restored DB
-wrangler d1 execute polaris-email-restore-$(date +%Y%m%d-%H%M) --command "
+wrangler d1 execute polaris-mail-restore-$(date +%Y%m%d-%H%M) --command "
   SELECT COUNT(*) FROM messages;
   SELECT MAX(id) FROM audit_log;
 "
@@ -56,10 +56,10 @@ bin/killswitch-freeze.sh
 #    binding's `database_name` to the new id.
 
 # 4. Deploy:
-polaris-email setup infra deploy service api
+polaris-mail setup infra deploy service api
 
 # 5. Verify with the smoke test:
-polaris-email setup infra smoke
+polaris-mail setup infra smoke
 
 # 6. Lift maintenance:
 bin/killswitch-freeze.sh --restore
@@ -72,7 +72,7 @@ should hold if the bookmark predates any tampering. Verify before
 trusting the restored DB:
 
 ```sh
-polaris-email audit verify
+polaris-mail audit verify
 ```
 
 If the chain breaks: the bookmark you chose is too recent — it captured

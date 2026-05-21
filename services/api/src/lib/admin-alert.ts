@@ -12,7 +12,7 @@
 // ones, with delivery.deduped=true) so the panel can show "this alert
 // fired N times in the last hour".
 
-import { ulid } from '@polaris-email/ids';
+import { ulid } from '@polaris-mail/ids';
 import { buildAuditInsert } from '../audit.js';
 import type { Env } from '../env.js';
 

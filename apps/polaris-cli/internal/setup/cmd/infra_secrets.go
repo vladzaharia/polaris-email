@@ -20,14 +20,14 @@ import (
 	"github.com/vladzaharia/polaris-email/apps/polaris-cli/internal/setup/secrets/sources"
 )
 
-// newInfraSecretsCmd wires `polaris-email setup infra secrets`. The
+// newInfraSecretsCmd wires `polaris-mail setup infra secrets`. The
 // `seed` leaf is the primary entry; `list`, `rotate`, and `from-vault`
 // are knob-turning subcommands operators reach for during maintenance.
 func newInfraSecretsCmd() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "secrets",
 		Short: "Generate + push master secrets to every Worker via wrangler",
-		Long: "Seed and audit the master secrets polaris-email needs:\n" +
+		Long: "Seed and audit the master secrets polaris-mail needs:\n" +
 			"POLARIS_SECRET_A, ARGON2_PEPPER, and the optional OIDC\n" +
 			"client secret.\n" +
 			"\n" +
@@ -250,7 +250,7 @@ func newInfraSecretsRotateCmd() *cobra.Command {
 			var reporter secrets.Reporter
 			var tuiR *rollbackTUIReporter
 			if isTTY {
-				tuiR = newRollbackTUIReporter(cmd.OutOrStdout(), "polaris-email — rotating secret")
+				tuiR = newRollbackTUIReporter(cmd.OutOrStdout(), "polaris-mail — rotating secret")
 				reporter = tuiR
 			} else {
 				reporter = newSecretsPlainReporter(cmd.OutOrStdout())
@@ -502,7 +502,7 @@ func (m secretsTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m secretsTUIModel) View() string {
 	var b strings.Builder
-	b.WriteString(m.headerStyle.Render("polaris-email — seeding secrets"))
+	b.WriteString(m.headerStyle.Render("polaris-mail — seeding secrets"))
 	b.WriteString("\n\n")
 	if m.current != "" && !m.finished {
 		b.WriteString("  ")

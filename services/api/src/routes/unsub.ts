@@ -8,14 +8,14 @@
 // On success: insert a `recipient` suppression row with
 // scope='sender_address' (or 'domain' if the token didn't pin a specific
 // sender_address) so the unsubscribe doesn't accidentally block all mail
-// from polaris-email — just mail from this sender to this recipient.
+// from polaris-mail — just mail from this sender to this recipient.
 //
 // Replay tolerance: a duplicate POST returns 200 (RFC 8058 §4 requires it).
 // We use ON CONFLICT DO NOTHING on the suppressions index to keep this
 // idempotent without a separate seen-tokens KV.
 import { Hono } from 'hono';
-import { normalizeAddress } from '@polaris-email/suppressions';
-import { ulid } from '@polaris-email/ids';
+import { normalizeAddress } from '@polaris-mail/suppressions';
+import { ulid } from '@polaris-mail/ids';
 import { audit } from '../audit.js';
 import { buildError } from '../errors.js';
 import type { Env } from '../env.js';

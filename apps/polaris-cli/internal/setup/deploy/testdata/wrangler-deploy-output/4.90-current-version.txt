@@ -6,8 +6,8 @@ Your worker has access to the following bindings:
 - KV Namespaces:
   - POLARIS_NONCE_DEDUP: abc123...
 - D1 Databases:
-  - polaris-email: xyz789...
-Uploaded polaris-email-api (3.21 sec)
-Deployed polaris-email-api triggers (0.50 sec)
-  https://polaris-email-api.acme.workers.dev
+  - polaris-mail: xyz789...
+Uploaded polaris-mail-api (3.21 sec)
+Deployed polaris-mail-api triggers (0.50 sec)
+  https://polaris-mail-api.acme.workers.dev
 Current Version ID: deadbeef-cafe-babe-feed-deadbeefcafe

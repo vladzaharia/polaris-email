@@ -5,7 +5,7 @@ import (
 	"log"
 	"time"
 
-	polarissdk "github.com/polaris-email/polaris-sdk-go"
+	polarissdk "github.com/polaris-mail/polaris-sdk-go"
 )
 
 // Refresher pulls mailbox state from polaris on a baseline timer. Reactive

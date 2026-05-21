@@ -3,6 +3,7 @@
 // in via the JSON cell to see the full heuristic reasons vector + LLM
 // response details.
 import { useMemo, useState } from 'react';
+import { ArrowLeftRight, CalendarRange, CircleDot, Workflow } from 'lucide-react';
 import { PageCard } from '../../layouts/PageCard.js';
 import {
   Table,
@@ -14,14 +15,13 @@ import {
 } from '../../components/ui/table.js';
 import { Skeleton } from '../../components/ui/skeleton.js';
 import { Badge } from '../../components/ui/badge.js';
+import { StatusBadge } from '../../components/StatusBadge.js';
+import { FilterBar, type FilterSpec } from '../../components/FilterBar.js';
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '../../components/ui/select.js';
-import { Label } from '../../components/ui/label.js';
+  FilterDateRangePicker,
+  FilterEnumPicker,
+  type DateRangeValue,
+} from '../../components/filters/index.js';
 import { useAdminQuery } from '../../hooks/useAdminApi.js';
 import { policyKeys } from '../../queryKeys.js';
 import { formatRelative } from '../../lib/format.js';
@@ -43,13 +43,6 @@ interface DecisionRow {
   decided_at: string;
 }
 
-function verdictVariant(v: DecisionRow['verdict']) {
-  if (v === 'block') return 'destructive';
-  if (v === 'hold') return 'warning';
-  if (v === 'pass_warn') return 'secondary';
-  return 'success';
-}
-
 function topReasons(json: string): string {
   try {
     const arr = JSON.parse(json) as { reason_code: string; score: number }[];
@@ -69,14 +62,18 @@ export function PolicyDecisions() {
   const [verdict, setVerdict] = useState('');
   const [direction, setDirection] = useState<'' | 'inbound' | 'outbound'>('');
   const [streamType, setStreamType] = useState('');
+  // The API only accepts `since` (lower bound). We use FilterDateRangePicker
+  // for UX consistency with /messages but only emit the `since` half.
+  const [since, setSince] = useState('');
 
   const filters = useMemo(() => {
     const f: Record<string, string> = {};
     if (verdict) f.verdict = verdict;
     if (direction) f.direction = direction;
     if (streamType) f.stream_type = streamType;
+    if (since) f.since = since;
     return f;
-  }, [verdict, direction, streamType]);
+  }, [verdict, direction, streamType, since]);
 
   const path = useMemo(() => {
     const q = new URLSearchParams(filters);
@@ -88,65 +85,99 @@ export function PolicyDecisions() {
   const q = useAdminQuery<{ data: DecisionRow[] }>(policyKeys.decisions(filters), path);
   const rows = q.data?.data ?? [];
 
+  const dateRangeValue: DateRangeValue | null = since ? { since } : null;
+
+  const filterSpecs: FilterSpec[] = [
+    {
+      id: 'verdict',
+      label: 'Verdict',
+      icon: CircleDot,
+      value: verdict || null,
+      onChange: (next) => setVerdict(typeof next === 'string' ? next : ''),
+      render: ({ close }) => (
+        <FilterEnumPicker
+          options={VERDICTS.map((v) => ({ value: v }))}
+          value={verdict || null}
+          onChange={(v) => setVerdict(v ?? '')}
+          close={close}
+        />
+      ),
+    },
+    {
+      id: 'direction',
+      label: 'Direction',
+      icon: ArrowLeftRight,
+      value: direction || null,
+      onChange: (next) =>
+        setDirection(typeof next === 'string' && next ? (next as 'inbound' | 'outbound') : ''),
+      render: ({ close }) => (
+        <FilterEnumPicker
+          options={[
+            { value: 'inbound', label: 'Inbound' },
+            { value: 'outbound', label: 'Outbound' },
+          ]}
+          value={direction || null}
+          onChange={(v) => setDirection(v === null ? '' : (v as 'inbound' | 'outbound'))}
+          close={close}
+        />
+      ),
+    },
+    {
+      id: 'stream_type',
+      label: 'Stream',
+      icon: Workflow,
+      value: streamType || null,
+      onChange: (next) => setStreamType(typeof next === 'string' ? next : ''),
+      render: ({ close }) => (
+        <FilterEnumPicker
+          options={STREAMS.map((s) => ({ value: s }))}
+          value={streamType || null}
+          onChange={(v) => setStreamType(v ?? '')}
+          close={close}
+        />
+      ),
+    },
+    {
+      id: 'since',
+      label: 'Since',
+      icon: CalendarRange,
+      value: dateRangeValue,
+      onChange: (next) => {
+        if (next === null) {
+          setSince('');
+          return;
+        }
+        if (typeof next === 'object' && !Array.isArray(next)) {
+          setSince(next.since ?? '');
+        }
+      },
+      render: ({ close }) => (
+        <FilterDateRangePicker
+          value={dateRangeValue}
+          onChange={(v) => {
+            if (v === null) {
+              setSince('');
+            } else {
+              setSince(v.since ?? '');
+            }
+          }}
+          close={close}
+        />
+      ),
+      formatValue: (value) => {
+        if (!value || typeof value !== 'object' || Array.isArray(value)) return '';
+        return value.since ? `since ${new Date(value.since).toLocaleDateString()}` : '';
+      },
+    },
+  ];
+
   return (
     <PageCard
       title="Policy decisions"
-      description="Every evaluatePolicy() invocation persists here, including the per-heuristic reason vector and (when invoked) the LLM tiebreaker result. Filter to find blocks/holds and triage."
+      description="Per-evaluation policy decisions log."
       decorative
     >
-      <div className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-4">
-        <div>
-          <Label>Verdict</Label>
-          <Select value={verdict || 'all'} onValueChange={(v) => setVerdict(v === 'all' ? '' : v)}>
-            <SelectTrigger className="mt-1">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All</SelectItem>
-              {VERDICTS.map((v) => (
-                <SelectItem key={v} value={v}>
-                  {v}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div>
-          <Label>Direction</Label>
-          <Select
-            value={direction || 'all'}
-            onValueChange={(v) => setDirection(v === 'all' ? '' : (v as 'inbound' | 'outbound'))}
-          >
-            <SelectTrigger className="mt-1">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All</SelectItem>
-              <SelectItem value="inbound">Inbound</SelectItem>
-              <SelectItem value="outbound">Outbound</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        <div>
-          <Label>Stream</Label>
-          <Select
-            value={streamType || 'all'}
-            onValueChange={(v) => setStreamType(v === 'all' ? '' : v)}
-          >
-            <SelectTrigger className="mt-1">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All</SelectItem>
-              {STREAMS.map((s) => (
-                <SelectItem key={s} value={s}>
-                  {s}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
+      <FilterBar filters={filterSpecs} />
 
       {q.isLoading ? (
         <Skeleton className="h-32 w-full" />
@@ -175,9 +206,11 @@ export function PolicyDecisions() {
               <TableRow key={r.id}>
                 <TableCell title={r.decided_at}>{formatRelative(r.decided_at)}</TableCell>
                 <TableCell>
-                  <Badge variant={verdictVariant(r.verdict)}>{r.verdict}</Badge>
+                  <StatusBadge kind="verdict" value={r.verdict} />
                 </TableCell>
-                <TableCell>{r.direction}</TableCell>
+                <TableCell>
+                  <StatusBadge kind="direction" value={r.direction} />
+                </TableCell>
                 <TableCell className="font-mono text-xs">{r.stream_type}</TableCell>
                 <TableCell className="font-mono">{r.total_score}</TableCell>
                 <TableCell className="text-xs">
@@ -187,7 +220,7 @@ export function PolicyDecisions() {
                       {r.llm_confidence != null ? `(${(r.llm_confidence * 100).toFixed(0)}%)` : ''}
                     </span>
                   ) : (
-                    <span className="text-muted-foreground">skipped</span>
+                    <span className="text-[var(--color-muted-foreground)]">skipped</span>
                   )}
                 </TableCell>
                 <TableCell className="max-w-md truncate text-xs" title={r.heuristic_reasons_json}>

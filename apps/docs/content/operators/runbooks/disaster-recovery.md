@@ -16,19 +16,19 @@ this runbook is the escape hatch. Five failure modes are covered:
 4. A master secret leaked — needs immediate rotation + rollback path.
 5. A phase marker is wrong — `--resume` is doing the wrong thing.
 
-Every flow lands through the `polaris-email setup infra` CLI and never
+Every flow lands through the `polaris-mail setup infra` CLI and never
 through hand-edited JSON; the CLI's atomic temp+rename writes and
 flock-guarded state mutations are the integrity floor.
 
 ## Detection signals
 
-- `polaris-email setup infra state validate` errors `schema mismatch` or
+- `polaris-mail setup infra state validate` errors `schema mismatch` or
   `no state file at .deploy-state.json`.
-- `polaris-email setup infra smoke` reports `admin-status: FAILED` with
+- `polaris-mail setup infra smoke` reports `admin-status: FAILED` with
   HTTP 401 / 403.
 - A new deploy regresses production behaviour; `setup infra state show`
   reveals the current `version_id` is the bad one.
-- `polaris-email cred list` (or the panel's `audit_log` view) shows an
+- `polaris-mail cred list` (or the panel's `audit_log` view) shows an
   unexpected `api_key.use` from outside operator IP space.
 
 ## Recover from a lost `.deploy-state.json`
@@ -40,7 +40,7 @@ phase will look at an empty ledger and try to re-create them. Rebuild
 the ledger from live CF state instead:
 
 ```sh
-polaris-email setup infra state rebuild \
+polaris-mail setup infra state rebuild \
   --token $CLOUDFLARE_API_TOKEN \
   --account-id $CLOUDFLARE_ACCOUNT_ID
 ```
@@ -49,14 +49,14 @@ The rebuild lists every D1, R2, KV, and Queue under the account and
 stamps each as `discovered: true`. Verify with:
 
 ```sh
-polaris-email setup infra state show
+polaris-mail setup infra state show
 ```
 
 Then re-render wrangler configs so the new state hydrates the
 `wrangler.local.jsonc` files:
 
 ```sh
-polaris-email setup infra render
+polaris-mail setup infra render
 ```
 
 ## Recover from a lost `.bootstrap-output.json`
@@ -66,7 +66,7 @@ operator). Run from that second admin's session:
 
 ```sh
 # This refuses to run if the current key is the only admin key.
-polaris-email setup infra rotate-admin-key
+polaris-mail setup infra rotate-admin-key
 ```
 
 This:
@@ -84,7 +84,7 @@ end-to-end (`setup infra smoke`), then revoke the old key from the
 panel or via:
 
 ```sh
-polaris-email cred revoke <old-admin-key-id>
+polaris-mail cred revoke <old-admin-key-id>
 ```
 
 **If the current admin key IS the only one**, the only recovery path
@@ -92,8 +92,8 @@ is to wipe the `bootstrap` row in D1 manually so the one-time
 `/v1/admin/bootstrap` endpoint can be re-consumed:
 
 ```sh
-wrangler d1 execute polaris-email --command "DELETE FROM bootstrap;"
-polaris-email setup infra   # re-runs /v1/admin/bootstrap, mints fresh key
+wrangler d1 execute polaris-mail --command "DELETE FROM bootstrap;"
+polaris-mail setup infra   # re-runs /v1/admin/bootstrap, mints fresh key
 ```
 
 This is destructive — it leaves the previous (now-orphaned) admin
@@ -110,10 +110,10 @@ forward deploy carries the right ancestry:
 
 ```sh
 # Use the previous version id from .deploy-state.json (the common case)
-polaris-email setup infra rollback deploy api
+polaris-mail setup infra rollback deploy api
 
 # Or pin an explicit version id
-polaris-email setup infra rollback deploy api --to-version <version-id>
+polaris-mail setup infra rollback deploy api --to-version <version-id>
 ```
 
 After the rollback:
@@ -133,7 +133,7 @@ If a master secret (POLARIS_SECRET_A, ARGON2_PEPPER, OIDC_CLIENT_SECRET,
 …) has leaked, rotate it across every Worker via:
 
 ```sh
-polaris-email setup infra secrets rotate POLARIS_SECRET_A
+polaris-mail setup infra secrets rotate POLARIS_SECRET_A
 ```
 
 This:
@@ -151,7 +151,7 @@ a downstream validator, or one service didn't get the push), roll
 back to the archived value:
 
 ```sh
-polaris-email setup infra rollback secret POLARIS_SECRET_A
+polaris-mail setup infra rollback secret POLARIS_SECRET_A
 ```
 
 The archive is 1-deep — only the most recent rotation can be rolled
@@ -165,7 +165,7 @@ a wrong result (e.g. a bad migration applied to D1), the marker has
 to be reset so `--resume` re-runs it:
 
 ```sh
-polaris-email setup infra rollback phase migrate
+polaris-mail setup infra rollback phase migrate
 ```
 
 This:
@@ -196,7 +196,7 @@ reasons:
 1. **D1 deletes are unrecoverable.** A `wrangler d1 delete` removes
    the database irreversibly; PITR is per-database and doesn't help
    if the database itself is gone.
-2. **R2 buckets have Object Lock.** The `polaris-email` bucket holds
+2. **R2 buckets have Object Lock.** The `polaris-mail` bucket holds
    message bodies + attachments under COMPLIANCE-mode retention; objects
    refuse `DELETE` before their retain-until date, and the bucket cannot
    be deleted while it holds locked objects.

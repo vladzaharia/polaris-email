@@ -120,6 +120,11 @@ beforeAll(async () => {
       `INSERT INTO mail_domains (id, zone_id, name, status, created_at, updated_at, verified_at)
        VALUES ('plrs', 'z1', 'plrs.im', 'verified', ?, ?, ?)`,
     ).bind(now, now, now),
+    // The production schema seeds the platform mailbox via migration; inline
+    // it here so the receiver's mailbox_id FK below resolves.
+    testEnv.DB.prepare(
+      `INSERT INTO mailboxes (id, name, created_at, updated_at) VALUES (?, ?, ?, ?)`,
+    ).bind(PLATFORM_MAILBOX_ID, '_polaris_tlsrpt', now, now),
     // Receiver pointing tlsrpt@plrs.im at the platform mailbox.
     testEnv.DB.prepare(
       `INSERT INTO mailbox_receivers (id, mailbox_id, domain_id, priority,

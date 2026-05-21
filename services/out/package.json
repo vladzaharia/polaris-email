@@ -1,5 +1,5 @@
 {
-  "name": "@polaris-email/out",
+  "name": "@polaris-mail/out",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -10,11 +10,11 @@
     "lint": "oxlint ."
   },
   "dependencies": {
-    "@polaris-email/ids": "workspace:*",
-    "@polaris-email/mime": "workspace:*",
-    "@polaris-email/policy-engine": "workspace:*",
-    "@polaris-email/schema": "workspace:*",
-    "@polaris-email/suppressions": "workspace:*"
+    "@polaris-mail/ids": "workspace:*",
+    "@polaris-mail/mime": "workspace:*",
+    "@polaris-mail/policy-engine": "workspace:*",
+    "@polaris-mail/schema": "workspace:*",
+    "@polaris-mail/suppressions": "workspace:*"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260517.1",

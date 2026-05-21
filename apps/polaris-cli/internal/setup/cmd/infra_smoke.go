@@ -37,7 +37,7 @@ type bootstrapOutput struct {
 	CreatedAt      string `json:"created_at,omitempty"`
 }
 
-// newInfraSmokeCmd wires `polaris-email setup infra smoke`.
+// newInfraSmokeCmd wires `polaris-mail setup infra smoke`.
 func newInfraSmokeCmd() *cobra.Command {
 	var (
 		envFile         string
@@ -292,7 +292,7 @@ func (m smokeTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m smokeTUIModel) View() string {
 	var b strings.Builder
-	b.WriteString(m.headerStyle.Render("polaris-email — smoke checks"))
+	b.WriteString(m.headerStyle.Render("polaris-mail — smoke checks"))
 	b.WriteString("\n\n")
 	b.WriteString(m.tbl.View())
 	b.WriteString("\n")

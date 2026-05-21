@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { verify } from '@polaris-email/hmac';
+import { verify } from '@polaris-mail/hmac';
 import vectors from '../vectors.json' with { type: 'json' };
 
 function headers(map: Record<string, string>) {

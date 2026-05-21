@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-// State persisted across runs in ~/.config/polaris-email/upgrader-state.json.
+// State persisted across runs in ~/.config/polaris-mail/upgrader-state.json.
 // Snake-case keys, RFC3339 timestamps — friendlier for any operator who
 // pokes at the file with `jq`.
 type State struct {

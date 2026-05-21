@@ -13,7 +13,7 @@ import (
 	"sync"
 	"time"
 
-	polarissdk "github.com/polaris-email/polaris-sdk-go"
+	polarissdk "github.com/polaris-mail/polaris-sdk-go"
 
 	"github.com/vladzaharia/polaris-email/apps/mail-bridge/internal/push"
 )

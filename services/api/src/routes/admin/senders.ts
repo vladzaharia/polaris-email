@@ -7,14 +7,14 @@
 // `submission_credentials.sender_id` per the canonical schema; the bridge's
 // SMTP MAIL FROM allow-list is therefore exactly one address.
 import { Hono } from 'hono';
-import { CreateMailboxSenderRequest, CreateSmtpCredentialRequest } from '@polaris-email/schema';
-import { generateSecret } from '@polaris-email/hmac';
+import { CreateMailboxSenderRequest, CreateSmtpCredentialRequest } from '@polaris-mail/schema';
+import { generateSecret } from '@polaris-mail/hmac';
 import { actorOf, audit } from '../../audit.js';
 import { bodyText, requireScope } from '../../auth.js';
 import type { Env } from '../../env.js';
 import { buildError } from '../../errors.js';
 import { hashSecret } from '../../hashing.js';
-import { ulid } from '@polaris-email/ids';
+import { ulid } from '@polaris-mail/ids';
 
 export const senders = new Hono<{ Bindings: Env }>();
 

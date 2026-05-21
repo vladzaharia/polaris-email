@@ -160,7 +160,7 @@ async function runOne(
   };
   if (policyFull !== undefined) overrideEnv.POLICY_ENGINE_OUTBOUND_FULL = policyFull;
   const ctx = createExecutionContext();
-  const batch = createMessageBatch('polaris-email-outbound', [
+  const batch = createMessageBatch('polaris-mail-outbound', [
     { id: msgBody.messageId, timestamp: new Date(), attempts: 1, body: msgBody },
   ]);
   const merged = { ...(testEnv as unknown as Record<string, unknown>), ...overrideEnv };

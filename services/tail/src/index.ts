@@ -1,4 +1,4 @@
-// polaris-email-tail: centralised error sink for all production Workers.
+// polaris-mail-tail: centralised error sink for all production Workers.
 //
 // Wired as a `tail_consumers` entry from services/api, services/in,
 // services/out, apps/panel. CF Workers Tail delivers a TraceItem batch per

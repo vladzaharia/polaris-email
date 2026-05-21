@@ -1,12 +1,12 @@
 .PHONY: build test vet lint release-dryrun clean
 
-BIN := bin/polaris-email
+BIN := bin/polaris-mail
 PKG := ./...
 
 build:
 	mkdir -p bin
 	go build -o $(BIN) ./cmd/polaris-email
-	ln -sf polaris-email bin/pml
+	ln -sf polaris-mail bin/pml
 
 test:
 	go test -count=1 $(PKG)

@@ -18,15 +18,15 @@
 // needing a messages row to point at. On release, the moderation endpoint
 // re-injects via processMessage() and the message row materialises then.
 
-import { evaluatePolicy } from '@polaris-email/policy-engine';
+import { evaluatePolicy } from '@polaris-mail/policy-engine';
 import type {
   Direction,
   PolicyDecision,
   PolicyInput,
   StreamType,
-} from '@polaris-email/policy-engine';
-import { parseStrict, type ParsedMime } from '@polaris-email/mime';
-import { ulid } from '@polaris-email/ids';
+} from '@polaris-mail/policy-engine';
+import { parseStrict, type ParsedMime } from '@polaris-mail/mime';
+import { ulid } from '@polaris-mail/ids';
 
 // We only depend on a narrow slice of the services/in Env — pass it in via
 // the function signature so this module stays Worker-agnostic.
@@ -78,7 +78,7 @@ import {
   asSpf,
   asDkimResult,
   asDmarc,
-} from '@polaris-email/policy-engine/mime-helpers';
+} from '@polaris-mail/policy-engine/mime-helpers';
 
 async function persistDecision(
   env: InboundPolicyEnv,

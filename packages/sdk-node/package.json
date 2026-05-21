@@ -20,7 +20,7 @@
     "lint": "oxlint ."
   },
   "dependencies": {
-    "@polaris-email/hmac": "workspace:*"
+    "@polaris-mail/hmac": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^25.8.0",

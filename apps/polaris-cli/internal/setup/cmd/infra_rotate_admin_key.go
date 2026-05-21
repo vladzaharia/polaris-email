@@ -141,7 +141,7 @@ func newInfraRotateAdminKeyCmd() *cobra.Command {
 			fmt.Fprintln(cmd.OutOrStdout(),
 				"note: the OLD admin key is NOT revoked automatically. "+
 					"Verify the new key works end-to-end, then revoke the old key from the panel "+
-					"(or `polaris-email cred revoke <id>`).")
+					"(or `polaris-mail cred revoke <id>`).")
 			return nil
 		},
 	}

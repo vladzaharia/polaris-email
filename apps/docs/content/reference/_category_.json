@@ -5,6 +5,6 @@
     "type": "generated-index",
     "slug": "/reference",
     "title": "Reference",
-    "description": "Generated OpenAPI reference, CLI command surface, error catalogue, and schema definitions. The pages under /reference/api are produced from openapi/polaris-email.yaml on every build."
+    "description": "Generated OpenAPI reference, CLI command surface, error catalogue, and schema definitions. The pages under /reference/api are produced from openapi/polaris-mail.yaml on every build."
   }
 }

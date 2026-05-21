@@ -1,8 +1,8 @@
-// Package credstore stores polaris-email operator bearer tokens in the OS
+// Package credstore stores polaris-mail operator bearer tokens in the OS
 // keychain. Falls back to a passphrase-encrypted file when no native
 // keychain is available (e.g. headless CI hosts).
 //
-// One entry per profile. The "service" is `polaris-email` and the "key"
+// One entry per profile. The "service" is `polaris-mail` and the "key"
 // is the profile name. The stored value is a JSON-encoded Credential.
 package credstore
 
@@ -38,7 +38,7 @@ type Store interface {
 	List() ([]string, error)
 }
 
-const serviceName = "polaris-email"
+const serviceName = "polaris-mail"
 
 type kr struct {
 	ring keyring.Keyring
@@ -56,8 +56,8 @@ func (s *kr) Save(profile string, cred Credential) error {
 	return s.ring.Set(keyring.Item{
 		Key:         profile,
 		Data:        raw,
-		Label:       "polaris-email credential (" + profile + ")",
-		Description: "polaris-email operator bearer for profile " + profile,
+		Label:       "polaris-mail credential (" + profile + ")",
+		Description: "polaris-mail operator bearer for profile " + profile,
 	})
 }
 

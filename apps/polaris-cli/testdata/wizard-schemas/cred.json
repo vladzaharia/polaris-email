@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://polaris-email.example.com/schemas/wizard/cred.json",
+  "$id": "https://polaris-mail.example.com/schemas/wizard/cred.json",
   "title": "CredIssueInput",
   "type": "object",
   "additionalProperties": false,

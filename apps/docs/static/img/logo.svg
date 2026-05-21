@@ -1,9 +1,9 @@
 <!--
-  polaris-email wordmark glyph.
+  polaris-mail wordmark glyph.
 
   Same visual idiom as the rest of the polaris-* family: a 5-point star
   set inside a rounded indigo well. The accent colour (aurora-violet,
-  hue ~315) is the polaris-email-specific dial; support-portal's star
+  hue ~315) is the polaris-mail-specific dial; support-portal's star
   is cyan-teal at hue 195. Switching the fill is the one-line re-skin
   for any future sibling.
 
@@ -11,7 +11,7 @@
   (1200px) sizes alike. No text — the navbar title carries the wordmark.
 -->
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32"
-     role="img" aria-label="polaris-email">
+     role="img" aria-label="polaris-mail">
   <!-- Cosmos-indigo background well — matches --color-surface-1 in the
        sibling theme. The slight darker rim reads as inset. -->
   <rect x="0.5" y="0.5" width="31" height="31" rx="7"

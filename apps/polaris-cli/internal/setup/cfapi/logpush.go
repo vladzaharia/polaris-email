@@ -28,7 +28,7 @@ type logpushJobListResp struct {
 // CreateLogpushJobInput configures a new Logpush job.
 //
 // Dataset is one of CF's documented dataset names — `workers_trace_events`
-// for Worker execution logs (polaris-email's primary use case),
+// for Worker execution logs (polaris-mail's primary use case),
 // `http_requests` for HTTP edge logs, etc.
 //
 // DestinationConf is the URL the dataset is shipped to. R2 form:

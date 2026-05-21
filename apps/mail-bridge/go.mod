@@ -7,13 +7,13 @@ require (
 	github.com/emersion/go-sasl v0.0.0-20241020182733-b788ff22d5a6
 	github.com/emersion/go-smtp v0.24.0
 	github.com/oklog/ulid/v2 v2.1.1
-	github.com/polaris-email/polaris-sdk-go v0.0.0
+	github.com/polaris-mail/polaris-sdk-go v0.0.0
 	golang.org/x/crypto v0.51.0
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1
 	modernc.org/sqlite v1.50.1
 )
 
-replace github.com/polaris-email/polaris-sdk-go => ../../packages/sdk-go
+replace github.com/polaris-mail/polaris-sdk-go => ../../packages/sdk-go
 
 require (
 	github.com/dustin/go-humanize v1.0.1 // indirect

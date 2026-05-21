@@ -1,5 +1,5 @@
 // Package bridge implements the mail-bridge daemon descriptor for
-// `polaris-email setup bridge`. It owns the wizard prompts, the
+// `polaris-mail setup bridge`. It owns the wizard prompts, the
 // compose/env/bridge.toml templates, prechecks, post-up health probes,
 // and the on-disk layout in `<dir>/`.
 package bridge
@@ -95,7 +95,7 @@ type BridgeSetupInput struct {
 
 // Defaults stamps the zero-value defaults that depend on the runtime
 // CLI version. ImageTag is taken from the supplied cliVersion when
-// empty so a `polaris-email v1.2.3` run reliably renders v1.2.3
+// empty so a `polaris-mail v1.2.3` run reliably renders v1.2.3
 // compose files (and not stale :latest).
 func (in *BridgeSetupInput) Defaults(cliVersion string) {
 	if in.Environment == "" {

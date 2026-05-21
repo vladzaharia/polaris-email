@@ -1,7 +1,7 @@
 // Shared MIME helpers used by both the inbound and outbound policy
 // dispatch glue. Previously duplicated in
 // services/{in,out}/src/lib/policy-dispatch.ts.
-import type { ParsedMime } from '@polaris-email/mime';
+import type { ParsedMime } from '@polaris-mail/mime';
 
 export function headersMap(parsed: ParsedMime): Record<string, string> {
   const map: Record<string, string> = {};

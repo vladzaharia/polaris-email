@@ -19,7 +19,7 @@ var (
 	Date    = "unknown"
 )
 
-// newVersionCmd is the parent command. Bare `polaris-email version`
+// newVersionCmd is the parent command. Bare `polaris-mail version`
 // prints a multi-line status block: build banner + channel + install
 // method + last-check status. Subcommands `upgrade` and `channel`
 // ride underneath for the explicit-action verbs.
@@ -33,7 +33,7 @@ func newVersionCmd() *cobra.Command {
 			if info != nil {
 				gv = info.GoVersion
 			}
-			fmt.Fprintf(Out, "polaris-email %s (commit %s, built %s, %s)\n", Version, Commit, Date, gv)
+			fmt.Fprintf(Out, "polaris-mail %s (commit %s, built %s, %s)\n", Version, Commit, Date, gv)
 
 			// Best-effort: surface channel + install method + update
 			// status. Network/state errors are non-fatal — `version`
@@ -93,7 +93,7 @@ func renderUpdateStatus(channel upgrader.Channel, state upgrader.State, justChec
 		// tag to compare against. The "is there an update?" question
 		// answers "run `version upgrade` to rebuild from main"; we
 		// don't bother running a check here.
-		fmt.Fprintln(Out, "update:         local channel — run `polaris-email version upgrade` to rebuild from your checkout")
+		fmt.Fprintln(Out, "update:         local channel — run `polaris-mail version upgrade` to rebuild from your checkout")
 		return
 	}
 	if state.LastCheck.IsZero() {
@@ -112,11 +112,11 @@ func renderUpdateStatus(channel upgrader.Channel, state upgrader.State, justChec
 	case justChecked != nil:
 		fmt.Fprintf(Out, "update:         %s -> %s available\n",
 			justChecked.CurrentVersion, justChecked.LatestVersion)
-		fmt.Fprintln(Out, "                (run `polaris-email version upgrade` to install)")
+		fmt.Fprintln(Out, "                (run `polaris-mail version upgrade` to install)")
 	case state.LastCheckResult != nil:
 		fmt.Fprintf(Out, "update:         %s -> %s available (cached)\n",
 			state.LastCheckResult.CurrentVersion, state.LastCheckResult.LatestVersion)
-		fmt.Fprintln(Out, "                (run `polaris-email version upgrade` to install)")
+		fmt.Fprintln(Out, "                (run `polaris-mail version upgrade` to install)")
 	default:
 		fmt.Fprintln(Out, "update:         up-to-date")
 	}
@@ -128,7 +128,7 @@ func newVersionUpgradeCmd() *cobra.Command {
 	var dryRun bool
 	c := &cobra.Command{
 		Use:   "upgrade",
-		Short: "Check for + install a newer polaris-email binary",
+		Short: "Check for + install a newer polaris-mail binary",
 		Long: `Resolves the operator's chosen channel (stable / dev / local),
 detects the install method (brew / curl / local-repo), and runs the
 appropriate upgrade. Stable + dev download a tarball from GitHub
@@ -163,10 +163,10 @@ This command skips the 1h launch-time throttle.`,
 				return err
 			}
 			if upd == nil {
-				fmt.Fprintf(Out, "polaris-email %s is up-to-date (channel: %s).\n", Version, channel)
+				fmt.Fprintf(Out, "polaris-mail %s is up-to-date (channel: %s).\n", Version, channel)
 				return nil
 			}
-			fmt.Fprintf(Out, "polaris-email %s → %s on channel %s\n", upd.CurrentVersion, upd.LatestVersion, channel)
+			fmt.Fprintf(Out, "polaris-mail %s → %s on channel %s\n", upd.CurrentVersion, upd.LatestVersion, channel)
 			if dryRun {
 				fmt.Fprintln(Out, "(dry-run: not installing)")
 				return nil
@@ -182,7 +182,7 @@ This command skips the 1h launch-time throttle.`,
 			if err := upgrader.Install(ctx, upd, method, progress); err != nil {
 				return err
 			}
-			fmt.Fprintf(Out, "Installed polaris-email %s.\n", upd.LatestVersion)
+			fmt.Fprintf(Out, "Installed polaris-mail %s.\n", upd.LatestVersion)
 			// Re-exec into the new binary so the operator's next
 			// command runs against the latest code. On Windows this is
 			// a no-op + stderr notice (see reexec_windows.go).
@@ -226,7 +226,7 @@ func newVersionChannelCmd() *cobra.Command {
 func newVersionChannelSetCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "set <stable|dev|local>",
-		Short: "Pick an update channel; persisted in ~/.config/polaris-email/upgrader-state.json",
+		Short: "Pick an update channel; persisted in ~/.config/polaris-mail/upgrader-state.json",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			ch, err := upgrader.ParseChannel(args[0])
@@ -260,7 +260,7 @@ func newVersionChannelListCmd() *cobra.Command {
 			fmt.Fprintln(Out, "-------  ------")
 			fmt.Fprintln(Out, "stable   GitHub Releases /latest")
 			fmt.Fprintln(Out, "dev      GitHub Releases /tags/dev (force-replaced on every main push)")
-			fmt.Fprintln(Out, "local    sibling polaris-email checkout (rebuilt via make build)")
+			fmt.Fprintln(Out, "local    sibling polaris-mail checkout (rebuilt via make build)")
 			return nil
 		},
 	}

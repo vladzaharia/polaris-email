@@ -25,7 +25,7 @@ func TestValidate_ReportsEveryMissingField(t *testing.T) {
 		"Account.ID",
 		"Hostnames.PolarisAPI",
 		"Hostnames.R2Public",
-		"D1.PolarisEmail.ID",
+		"D1.PolarisMail.ID",
 		"KV.Nonce.ID",
 		"KV.Idempotency.ID",
 		"KV.RateLimit.ID",
@@ -55,8 +55,8 @@ func TestValidate_MentionsEnvAndStateNames(t *testing.T) {
 		"POLARIS_API_HOSTNAME",
 		"R2_PUBLIC_HOST",
 		"OIDC_ISSUER",
-		`state .d1["polaris-email"].id`,
-		`state .kv["polaris-email-nonce"].id`,
+		`state .d1["polaris-mail"].id`,
+		`state .kv["polaris-mail-nonce"].id`,
 	} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error missing actionable breadcrumb %q:\n%v", want, err)
@@ -80,20 +80,21 @@ func fullyPopulatedInputs() *RenderInputs {
 	return &RenderInputs{
 		Account: AccountInputs{ID: "cf-account-id"},
 		D1: D1Inputs{
-			PolarisEmail: D1Database{ID: "d1-id", Name: "polaris-email"},
+			PolarisMail: D1Database{ID: "d1-id", Name: "polaris-mail"},
 		},
 		R2: R2Inputs{
-			PolarisEmail: R2Bucket{Name: "polaris-email", Jurisdiction: "eu"},
+			PolarisMail: R2Bucket{Name: "polaris-mail", Jurisdiction: "eu"},
 		},
 		KV: KVInputs{
-			Nonce:       KVNamespace{ID: "kv-nonce-id", Name: "polaris-email-nonce"},
-			Idempotency: KVNamespace{ID: "kv-idem-id", Name: "polaris-email-idempotency"},
-			RateLimit:   KVNamespace{ID: "kv-rl-id", Name: "polaris-email-rate-limit"},
-			KeyCache:    KVNamespace{ID: "kv-kc-id", Name: "polaris-email-key-cache"},
-			Revocations: KVNamespace{ID: "kv-rev-id", Name: "polaris-email-revocations"},
+			Nonce:       KVNamespace{ID: "kv-nonce-id", Name: "polaris-mail-nonce"},
+			Idempotency: KVNamespace{ID: "kv-idem-id", Name: "polaris-mail-idempotency"},
+			RateLimit:   KVNamespace{ID: "kv-rl-id", Name: "polaris-mail-rate-limit"},
+			KeyCache:    KVNamespace{ID: "kv-kc-id", Name: "polaris-mail-key-cache"},
+			Revocations: KVNamespace{ID: "kv-rev-id", Name: "polaris-mail-revocations"},
 		},
 		Hostnames: HostnameInputs{
 			PolarisAPI: "api.example.com",
+			Panel:      "panel.example.com",
 			R2Public:   "r2.example.com",
 		},
 		Synthetic: SyntheticInputs{

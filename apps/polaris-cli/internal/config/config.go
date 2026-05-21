@@ -1,4 +1,4 @@
-// Package config loads ~/.config/polaris-email/config.toml.
+// Package config loads ~/.config/polaris-mail/config.toml.
 //
 // The file format is intentionally simple — a custom TOML-subset parser is
 // used so this module has zero third-party dependencies.
@@ -35,7 +35,7 @@ func DefaultPath() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(home, ".config", "polaris-email", "config.toml"), nil
+	return filepath.Join(home, ".config", "polaris-mail", "config.toml"), nil
 }
 
 // Load reads the config file at path. A missing file returns an empty
@@ -54,7 +54,7 @@ func Load(path string) (*File, error) {
 	// same meaning). On POSIX, refuse anything broader than 0600.
 	if mode := info.Mode().Perm(); mode != 0 && (mode&0o077) != 0 {
 		return nil, fmt.Errorf(
-			"polaris-email config %s has permissions %o; require 0600 "+
+			"polaris-mail config %s has permissions %o; require 0600 "+
 				"(run: chmod 600 %s)",
 			path, mode, path,
 		)

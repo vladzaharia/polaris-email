@@ -8,7 +8,7 @@
 import { describe, expect, it } from 'vitest';
 import app from '../src/index.js';
 import { mkEnv } from './mocks.js';
-import { sign, generateNonce } from '@polaris-email/hmac';
+import { sign, generateNonce } from '@polaris-mail/hmac';
 
 const ctx = {
   passThroughOnException: () => undefined,
@@ -20,7 +20,7 @@ async function signedBootstrap(
   body: string,
   extraHeaders: Record<string, string> = {},
 ): Promise<Response> {
-  const url = 'https://polaris-email-api.workers.dev/v1/admin/bootstrap';
+  const url = 'https://polaris-mail-api.workers.dev/v1/admin/bootstrap';
   const u = new URL(url);
   const ts = String(Date.now());
   const nonce = generateNonce();
@@ -121,7 +121,7 @@ describe('webauthn setup poll', () => {
     const body = (await res.json()) as BootstrapResponse;
     const pollRes = await app.fetch(
       new Request(
-        `https://polaris-email-api.workers.dev/v1/admin/setup/webauthn/${body.setup_code}`,
+        `https://polaris-mail-api.workers.dev/v1/admin/setup/webauthn/${body.setup_code}`,
       ),
       env,
       ctx,
@@ -134,7 +134,7 @@ describe('webauthn setup poll', () => {
   it('returns status=expired for an unknown code', async () => {
     const env = mkEnv();
     const res = await app.fetch(
-      new Request('https://polaris-email-api.workers.dev/v1/admin/setup/webauthn/unknowncode1234'),
+      new Request('https://polaris-mail-api.workers.dev/v1/admin/setup/webauthn/unknowncode1234'),
       env,
       ctx,
     );
@@ -151,7 +151,7 @@ describe('webauthn setup poll', () => {
     // POST /v1/admin/setup/webauthn/<code>/complete, signed with the
     // freshly minted admin key.
     const completePath = `/v1/admin/setup/webauthn/${body.setup_code}/complete`;
-    const completeURL = `https://polaris-email-api.workers.dev${completePath}`;
+    const completeURL = `https://polaris-mail-api.workers.dev${completePath}`;
     const completeBody = JSON.stringify({ credential_id: 'webauthn-cred-1' });
     const ts = String(Date.now());
     const nonce = generateNonce();
@@ -186,7 +186,7 @@ describe('webauthn setup poll', () => {
     // Poll now returns complete.
     const pollRes = await app.fetch(
       new Request(
-        `https://polaris-email-api.workers.dev/v1/admin/setup/webauthn/${body.setup_code}`,
+        `https://polaris-mail-api.workers.dev/v1/admin/setup/webauthn/${body.setup_code}`,
       ),
       env,
       ctx,
@@ -200,7 +200,7 @@ describe('webauthn setup poll', () => {
     const res = await signedBootstrap(env, '{}');
     const body = (await res.json()) as BootstrapResponse;
     const completePath = `/v1/admin/setup/webauthn/${body.setup_code}/complete`;
-    const completeURL = `https://polaris-email-api.workers.dev${completePath}`;
+    const completeURL = `https://polaris-mail-api.workers.dev${completePath}`;
     const completeRes = await app.fetch(
       new Request(completeURL, {
         method: 'POST',

@@ -3,6 +3,7 @@
 // reclassify actions write moderation_feedback rows that feed the inbound
 // LLM's few-shot context on the next daily KV refresh.
 import { useMemo, useState } from 'react';
+import { ArrowLeftRight, CircleDot } from 'lucide-react';
 import { PageCard } from '../../layouts/PageCard.js';
 import {
   Table,
@@ -14,16 +15,10 @@ import {
 } from '../../components/ui/table.js';
 import { Skeleton } from '../../components/ui/skeleton.js';
 import { Button } from '../../components/ui/button.js';
-import { Badge } from '../../components/ui/badge.js';
+import { StatusBadge } from '../../components/StatusBadge.js';
 import { DestructiveActionDialog } from '../../components/DestructiveActionDialog.js';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '../../components/ui/select.js';
-import { Label } from '../../components/ui/label.js';
+import { FilterBar, type FilterSpec } from '../../components/FilterBar.js';
+import { FilterEnumPicker } from '../../components/filters/index.js';
 import { useAdminMutation, useAdminQuery } from '../../hooks/useAdminApi.js';
 import { policyKeys } from '../../queryKeys.js';
 import { formatRelative } from '../../lib/format.js';
@@ -79,44 +74,66 @@ export function PolicyModeration() {
     { invalidateKeys: [policyKeys.all], successMessage: 'Dropped' },
   );
 
+  const statusOptions = [
+    { value: 'open', label: 'Open' },
+    { value: 'released', label: 'Released' },
+    { value: 'dropped', label: 'Dropped' },
+    { value: 'all', label: 'All' },
+  ];
+
+  const filterSpecs: FilterSpec[] = [
+    {
+      id: 'direction',
+      label: 'Direction',
+      icon: ArrowLeftRight,
+      value: direction || null,
+      onChange: (next) =>
+        setDirection(typeof next === 'string' && next ? (next as 'inbound' | 'outbound') : ''),
+      render: ({ close }) => (
+        <FilterEnumPicker
+          options={[
+            { value: 'inbound', label: 'Inbound' },
+            { value: 'outbound', label: 'Outbound' },
+          ]}
+          value={direction || null}
+          onChange={(v) => setDirection(v === null ? '' : (v as 'inbound' | 'outbound'))}
+          close={close}
+        />
+      ),
+    },
+    {
+      id: 'status',
+      label: 'Status',
+      icon: CircleDot,
+      // The status filter is always set (default 'open'); treat the `'all'`
+      // value as the "unset" chip state so the picker stays consistent with
+      // the rest of the bar. Picking "Any" maps back to `'all'`.
+      value: status === 'open' ? 'open' : status === 'all' ? null : status,
+      onChange: (next) =>
+        setStatus(typeof next === 'string' && next ? (next as typeof status) : 'all'),
+      render: ({ close }) => (
+        <FilterEnumPicker
+          options={statusOptions}
+          value={status}
+          onChange={(v) => setStatus((v ?? 'all') as typeof status)}
+          close={close}
+          anyLabel="Any (all)"
+        />
+      ),
+      formatValue: (value) => {
+        if (typeof value !== 'string' || !value) return '';
+        return statusOptions.find((o) => o.value === value)?.label ?? value;
+      },
+    },
+  ];
+
   return (
     <PageCard
       title="Moderation queue"
-      description="Held messages await admin review. Release re-sends (outbound) or re-injects (inbound); drop discards the message. Both actions feed the LLM few-shot window via moderation_feedback."
+      description="Held messages awaiting review. Release re-injects, drop discards — both feed the LLM."
       decorative
     >
-      <div className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-3">
-        <div>
-          <Label>Direction</Label>
-          <Select
-            value={direction || 'all'}
-            onValueChange={(v) => setDirection(v === 'all' ? '' : (v as 'inbound' | 'outbound'))}
-          >
-            <SelectTrigger className="mt-1">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All</SelectItem>
-              <SelectItem value="inbound">Inbound</SelectItem>
-              <SelectItem value="outbound">Outbound</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        <div>
-          <Label>Status</Label>
-          <Select value={status} onValueChange={(v) => setStatus(v as typeof status)}>
-            <SelectTrigger className="mt-1">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="open">Open</SelectItem>
-              <SelectItem value="released">Released</SelectItem>
-              <SelectItem value="dropped">Dropped</SelectItem>
-              <SelectItem value="all">All</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
+      <FilterBar filters={filterSpecs} />
 
       {q.isLoading ? (
         <Skeleton className="h-32 w-full" />
@@ -144,22 +161,14 @@ export function PolicyModeration() {
               <TableRow key={r.id}>
                 <TableCell title={r.created_at}>{formatRelative(r.created_at)}</TableCell>
                 <TableCell>
-                  <Badge variant={r.direction === 'inbound' ? 'secondary' : 'outline'}>
-                    {r.direction}
-                  </Badge>
+                  <StatusBadge kind="direction" value={r.direction} />
                 </TableCell>
                 <TableCell className="font-mono text-xs">{r.stream_type}</TableCell>
                 <TableCell className="max-w-md truncate" title={r.hold_reason}>
                   {r.hold_reason}
                 </TableCell>
                 <TableCell>
-                  {r.released_action ? (
-                    <Badge variant={r.released_action === 'released' ? 'success' : 'destructive'}>
-                      {r.released_action}
-                    </Badge>
-                  ) : (
-                    <Badge variant="warning">open</Badge>
-                  )}
+                  <StatusBadge kind="verdict" value={r.released_action ?? 'open'} />
                 </TableCell>
                 <TableCell>
                   {r.released_action ? null : (

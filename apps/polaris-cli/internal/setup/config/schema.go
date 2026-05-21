@@ -32,11 +32,11 @@ type Config struct {
 
 	// --- optional non-secret fields ---
 
-	// CFZoneID is the default zone ID used by `polaris-email domain
+	// CFZoneID is the default zone ID used by `polaris-mail domain
 	// onboard --apply` to write DNS records.
 	CFZoneID string `json:"CF_ZONE_ID" yaml:"CF_ZONE_ID"`
 	// R2PublicHost is the operator-owned custom domain attached to the
-	// `polaris-email` R2 bucket (e.g. r2.mail.example.com).
+	// `polaris-mail` R2 bucket (e.g. r2.mail.example.com).
 	R2PublicHost string `json:"R2_PUBLIC_HOST" yaml:"R2_PUBLIC_HOST"`
 	// AlertWebhook is the webhook URL that synthetic + staleness alerts
 	// POST to on failure.

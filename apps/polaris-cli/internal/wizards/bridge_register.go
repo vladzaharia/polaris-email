@@ -16,7 +16,7 @@ import (
 	"github.com/vladzaharia/polaris-email/apps/polaris-cli/internal/client"
 )
 
-// BridgeRegisterInput is the validated input for `polaris-email bridge register`.
+// BridgeRegisterInput is the validated input for `polaris-mail bridge register`.
 type BridgeRegisterInput struct {
 	Name        string `json:"name" yaml:"name"`
 	Environment string `json:"environment" yaml:"environment"`                     // prod|staging|dev
@@ -159,7 +159,7 @@ services:
 
 var systemdTpl = template.Must(template.New("systemd").Parse(`# /etc/systemd/system/polaris-mail-bridge.service. Secrets shown ONCE — store them now.
 [Unit]
-Description=polaris-email mail bridge (SMTPS + IMAP)
+Description=polaris-mail mail bridge (SMTPS + IMAP)
 After=network-online.target
 
 [Service]

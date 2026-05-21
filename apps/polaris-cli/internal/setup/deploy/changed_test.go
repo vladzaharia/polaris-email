@@ -14,9 +14,9 @@ import (
 // root.
 //
 // We construct three real commits so the diff machinery has something
-// to chew on. The fixture deliberately mirrors the polaris-email
-// workspace shape: api consumes @polaris-email/hmac; panel consumes
-// @polaris-email/sdk-node.
+// to chew on. The fixture deliberately mirrors the polaris-mail
+// workspace shape: api consumes @polaris-mail/hmac; panel consumes
+// @polaris-mail/sdk-node.
 func gitRepo(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()
@@ -45,15 +45,15 @@ func gitRepo(t *testing.T) string {
 			t.Fatalf("write %s: %v", rel, err)
 		}
 	}
-	mustWrite("packages/hmac/package.json", `{"name": "@polaris-email/hmac", "version": "0.1.0"}`)
-	mustWrite("packages/sdk-node/package.json", `{"name": "@polaris-email/sdk-node", "version": "0.1.0"}`)
-	mustWrite("packages/unused/package.json", `{"name": "@polaris-email/unused", "version": "0.1.0"}`)
-	mustWrite("services/api/package.json", `{"name": "@polaris-email/api", "dependencies": {"@polaris-email/hmac": "*"}}`)
-	mustWrite("services/out/package.json", `{"name": "@polaris-email/out"}`)
-	mustWrite("services/in/package.json", `{"name": "@polaris-email/in"}`)
-	mustWrite("apps/panel/package.json", `{"name": "@polaris-email/panel", "dependencies": {"@polaris-email/sdk-node": "*"}}`)
-	mustWrite("apps/docs/package.json", `{"name": "@polaris-email/docs"}`)
-	mustWrite("apps/cli-installer/package.json", `{"name": "@polaris-email/cli-installer"}`)
+	mustWrite("packages/hmac/package.json", `{"name": "@polaris-mail/hmac", "version": "0.1.0"}`)
+	mustWrite("packages/sdk-node/package.json", `{"name": "@polaris-mail/sdk-node", "version": "0.1.0"}`)
+	mustWrite("packages/unused/package.json", `{"name": "@polaris-mail/unused", "version": "0.1.0"}`)
+	mustWrite("services/api/package.json", `{"name": "@polaris-mail/api", "dependencies": {"@polaris-mail/hmac": "*"}}`)
+	mustWrite("services/out/package.json", `{"name": "@polaris-mail/out"}`)
+	mustWrite("services/in/package.json", `{"name": "@polaris-mail/in"}`)
+	mustWrite("apps/panel/package.json", `{"name": "@polaris-mail/panel", "dependencies": {"@polaris-mail/sdk-node": "*"}}`)
+	mustWrite("apps/docs/package.json", `{"name": "@polaris-mail/docs"}`)
+	mustWrite("apps/cli-installer/package.json", `{"name": "@polaris-mail/cli-installer"}`)
 	mustWrite("bin/dev.sh", "# orchestration\n")
 	mustWrite("Makefile", "preflight:\n\techo ok\n")
 	run("add", ".")

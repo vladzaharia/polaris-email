@@ -123,6 +123,11 @@ beforeAll(async () => {
        VALUES ('d1', 'z1', 'verified.test', 'verified', 1, 'none',
          'mailto:postmaster@verified.test', 1, 1, 'cloudflare', 'cf', ?, ?, ?)`,
     ).bind(now, now, now),
+    // The production schema seeds the platform mailbox via migration; in this
+    // test we materialise it inline so the receiver FK below is satisfied.
+    testEnv.DB.prepare(
+      `INSERT INTO mailboxes (id, name, created_at, updated_at) VALUES (?, ?, ?, ?)`,
+    ).bind(PLATFORM_MAILBOX_ID, '_polaris_complaints', now, now),
     // Three receivers pointing at the platform mailbox (seeded by migration 0011).
     testEnv.DB.prepare(
       `INSERT INTO mailbox_receivers (id, mailbox_id, domain_id, priority,

@@ -30,8 +30,8 @@
 import { applyD1Migrations, createExecutionContext } from 'cloudflare:test';
 import { env } from 'cloudflare:workers';
 import { beforeAll, describe, expect, inject, it } from 'vitest';
-import { sign, generateNonce } from '@polaris-email/hmac';
-import { ulid } from '@polaris-email/ids';
+import { sign, generateNonce } from '@polaris-mail/hmac';
+import { ulid } from '@polaris-mail/ids';
 import worker from '../../src/index.js';
 import type { Env, OutboundQueueMessage } from '../../src/env.js';
 
@@ -60,7 +60,7 @@ function buildExecutionContext(): ExecutionContext {
 
 /** Sign-and-build a polaris-api HMAC request to the api Worker. Mirrors
  *  `services/api/test/integration/setup.ts`'s signedRequest but is dependency-
- *  free (only imports `@polaris-email/hmac`) so it works inside workerd. */
+ *  free (only imports `@polaris-mail/hmac`) so it works inside workerd. */
 async function signedRequest(
   url: string,
   body: string,

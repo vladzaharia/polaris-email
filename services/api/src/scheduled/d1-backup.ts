@@ -35,7 +35,7 @@ interface ExportResponse {
 }
 
 const POLL_INTERVAL_MS = 2_000;
-const MAX_POLLS = 30; // ~60s total — D1 exports for a polaris-email-sized DB are seconds.
+const MAX_POLLS = 30; // ~60s total — D1 exports for a polaris-mail-sized DB are seconds.
 
 async function callExport(
   env: Env,
@@ -67,7 +67,7 @@ async function resolveDatabaseId(env: Env): Promise<string> {
   // need it for the export REST endpoint. Look it up via the REST API
   // listing using the CF token. Cached lookups would be nice; at one
   // call per week this is a non-issue.
-  const url = `https://api.cloudflare.com/client/v4/accounts/${env.CF_ACCOUNT_ID}/d1/database?name=polaris-email`;
+  const url = `https://api.cloudflare.com/client/v4/accounts/${env.CF_ACCOUNT_ID}/d1/database?name=polaris-mail`;
   const r = await fetch(url, {
     headers: { authorization: `Bearer ${env.CF_API_TOKEN}` },
     signal: AbortSignal.timeout(10_000),
@@ -79,8 +79,8 @@ async function resolveDatabaseId(env: Env): Promise<string> {
   const j = (await r.json()) as {
     result?: { uuid?: string; name?: string }[];
   };
-  const match = (j.result ?? []).find((d) => d.name === 'polaris-email');
-  if (!match?.uuid) throw new Error('d1 list: polaris-email not found');
+  const match = (j.result ?? []).find((d) => d.name === 'polaris-mail');
+  if (!match?.uuid) throw new Error('d1 list: polaris-mail not found');
   return match.uuid;
 }
 
@@ -137,7 +137,7 @@ export async function d1Backup(env: Env): Promise<void> {
       },
       customMetadata: {
         source: 'd1-export',
-        database: 'polaris-email',
+        database: 'polaris-mail',
         exported_at: new Date().toISOString(),
       },
     });

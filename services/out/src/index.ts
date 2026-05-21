@@ -1,4 +1,4 @@
-// polaris-email-out: queue consumer that drives Cloudflare's send_email bindings.
+// polaris-mail-out: queue consumer that drives Cloudflare's send_email bindings.
 //
 // The queue handler reads canonical MIME bytes from R2 (via messages.r2_key,
 // content-addressed), hands them to the per-domain `send_email` binding,
@@ -21,9 +21,9 @@
 // we observe any non-`queued` status and ack without resending, so a Worker
 // crash mid-send can't double-send. The `sending`-stuck case is detected
 // and surfaced as `failed` so an operator can investigate.
-import { ulid } from '@polaris-email/ids';
-import { MAX_MESSAGE_SIZE_VERIFIED } from '@polaris-email/mime';
-import { checkRecipientSuppression, checkSenderSuppression } from '@polaris-email/suppressions/d1';
+import { ulid } from '@polaris-mail/ids';
+import { MAX_MESSAGE_SIZE_VERIFIED } from '@polaris-mail/mime';
+import { checkRecipientSuppression, checkSenderSuppression } from '@polaris-mail/suppressions/d1';
 import { evaluateOutboundPolicy } from './lib/policy-dispatch.js';
 import type { Env, FanoutEvent, OutboundQueueMessage, SendEmailBinding } from './env.js';
 

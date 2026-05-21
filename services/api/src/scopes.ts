@@ -1,6 +1,6 @@
 // Sender-scope matcher: exact / glob / regex with ReDoS guard.
 import type { z } from 'zod';
-import { SenderScope } from '@polaris-email/schema';
+import { SenderScope } from '@polaris-mail/schema';
 
 export type SenderScopeT = z.infer<typeof SenderScope>;
 

@@ -17,12 +17,12 @@
 //     route through it.
 //   * Plaintext is sourced from KV_KEY_CACHE; on cache miss we DO NOT
 //     reload from D1 (the stored value is an argon2 hash and is one-way).
-//     The operator must `polaris-email bridge rotate` to repopulate KV.
+//     The operator must `polaris-mail bridge rotate` to repopulate KV.
 //     Pre-launch tradeoff: a global KV-cache flush implies a planned
 //     rotation rather than a transparent re-derive. Documented here.
 
 import type { MiddlewareHandler } from 'hono';
-import { verify } from '@polaris-email/hmac';
+import { verify } from '@polaris-mail/hmac';
 import type { Env } from './env.js';
 import { buildError } from './errors.js';
 

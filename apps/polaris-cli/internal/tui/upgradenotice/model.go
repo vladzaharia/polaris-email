@@ -1,9 +1,9 @@
 // Package upgradenotice renders the bottom-of-screen infobox the TUI
-// shows during a polaris-email self-upgrade.
+// shows during a polaris-mail self-upgrade.
 //
 // Two-phase progress:
 //   - Download: bar fills 0% -> 100% as bytes arrive. Status text reads
-//     "Downloading polaris-email v0.1.1…".
+//     "Downloading polaris-mail v0.1.1…".
 //   - Restart countdown: bar reverses 100% -> 0% over 10 seconds. Status
 //     text reads "Restarting in Ns… (Enter to restart now, Esc to
 //     cancel)".
@@ -209,7 +209,7 @@ func (m Model) View() string {
 	var line1 string
 	switch m.phase {
 	case PhaseDownloading:
-		line1 = fmt.Sprintf("Downloading polaris-email %s…", m.targetVersion)
+		line1 = fmt.Sprintf("Downloading polaris-mail %s…", m.targetVersion)
 	case PhaseRestarting:
 		line1 = fmt.Sprintf("Upgrade complete — restarting in %ds (Enter to restart now, Esc to cancel)", m.secondsLeft)
 	case PhaseFailed:

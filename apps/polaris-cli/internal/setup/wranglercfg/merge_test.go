@@ -209,15 +209,15 @@ func TestMerge_TypeConflictOverlayWins(t *testing.T) {
 // base should be intact and the IDs should be those from overlay.
 func TestMerge_WranglerStyle(t *testing.T) {
 	t.Parallel()
-	base := []byte(`// polaris-email-api Worker — committed config.
+	base := []byte(`// polaris-mail-api Worker — committed config.
 {
-  "name": "polaris-email-api",
+  "name": "polaris-mail-api",
   "main": "src/index.ts",
   // D1 binding — the real id lives in wrangler.local.jsonc.
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "polaris-email",
+      "database_name": "polaris-mail",
       "database_id": "REPLACE_WITH_LOCAL"
     }
   ],
@@ -229,7 +229,7 @@ func TestMerge_WranglerStyle(t *testing.T) {
 	overlay := []byte(`{
   "account_id": "acc-123",
   "d1_databases": [
-    { "binding": "DB", "database_name": "polaris-email", "database_id": "real-d1-id" }
+    { "binding": "DB", "database_name": "polaris-mail", "database_id": "real-d1-id" }
   ],
   "vars": {
     "API_BASE_URL": "https://api.example.com"
@@ -243,7 +243,7 @@ func TestMerge_WranglerStyle(t *testing.T) {
 
 	// Comments preserved.
 	for _, want := range []string{
-		"// polaris-email-api Worker",
+		"// polaris-mail-api Worker",
 		"// D1 binding — the real id lives in wrangler.local.jsonc.",
 	} {
 		if !strings.Contains(s, want) {
@@ -263,7 +263,7 @@ func TestMerge_WranglerStyle(t *testing.T) {
 	if asMap["account_id"] != "acc-123" {
 		t.Errorf("account_id from overlay missing: %v", asMap["account_id"])
 	}
-	if asMap["name"] != "polaris-email-api" {
+	if asMap["name"] != "polaris-mail-api" {
 		t.Errorf("name from base missing: %v", asMap["name"])
 	}
 	if asMap["main"] != "src/index.ts" {

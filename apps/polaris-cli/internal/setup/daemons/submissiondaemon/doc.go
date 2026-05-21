@@ -42,15 +42,15 @@
 // At that point the cobra generator surfaces the new subtree
 // automatically:
 //
-//	polaris-email setup submission-daemon precheck
-//	polaris-email setup submission-daemon init
-//	polaris-email setup submission-daemon register
-//	polaris-email setup submission-daemon up
-//	polaris-email setup submission-daemon verify
-//	polaris-email setup submission-daemon status
-//	polaris-email setup submission-daemon down
-//	polaris-email setup submission-daemon destroy
-//	polaris-email setup submission-daemon upgrade
+//	polaris-mail setup submission-daemon precheck
+//	polaris-mail setup submission-daemon init
+//	polaris-mail setup submission-daemon register
+//	polaris-mail setup submission-daemon up
+//	polaris-mail setup submission-daemon verify
+//	polaris-mail setup submission-daemon status
+//	polaris-mail setup submission-daemon down
+//	polaris-mail setup submission-daemon destroy
+//	polaris-mail setup submission-daemon upgrade
 //
 // No edits to cmd/setup.go beyond the blank-import. No edits to the
 // generator. No new flag plumbing — the shared --dir / --from-file /

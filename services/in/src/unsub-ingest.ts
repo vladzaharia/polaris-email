@@ -4,8 +4,8 @@
 // `unsub+<token>@<UNSUB_MAILTO_HOST>`. Parses the token and inserts a
 // recipient suppression row scoped to the sender_domain.
 
-import { normalizeAddress } from '@polaris-email/suppressions';
-import { ulid } from '@polaris-email/ids';
+import { normalizeAddress } from '@polaris-mail/suppressions';
+import { ulid } from '@polaris-mail/ids';
 
 // Minimal D1 surface, kept Worker-runtime-agnostic.
 interface D1Stmt {

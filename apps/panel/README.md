@@ -1,10 +1,10 @@
-# polaris-email-panel
+# polaris-mail-panel
 
 Hono + React admin UI deployed as a single Cloudflare Worker. The server
 runtime is Hono on Workers, the client is React 19 + TanStack Router
 served from the Workers Assets binding, and sessions are managed by
 [better-auth](https://www.better-auth.com/) with its drizzle adapter
-talking to the same `polaris-email` D1 database used by `services/api`.
+talking to the same `polaris-mail` D1 database used by `services/api`.
 Authentication is delegated to an OIDC IdP (Cloudflare Access by
 default); the panel sits behind a Cloudflare Access app for an
 additional zero-trust gate. Destructive actions are gated client-side
@@ -20,35 +20,35 @@ presence for admin sessions.
 pnpm install
 
 # typecheck both client and server projects
-pnpm --filter @polaris-email/panel typecheck
+pnpm --filter @polaris-mail/panel typecheck
 
 # build the production bundle (Vite client → dist/client/, then tsc server check)
-pnpm --filter @polaris-email/panel build
+pnpm --filter @polaris-mail/panel build
 
 # run the Worker locally against the merged wrangler.local.jsonc config
-pnpm --filter @polaris-email/panel dev:server
+pnpm --filter @polaris-mail/panel dev:server
 
 # run the Vite dev server (client only, with HMR — useful while iterating on UI)
-pnpm --filter @polaris-email/panel dev:client
+pnpm --filter @polaris-mail/panel dev:client
 
 # unit tests
-pnpm --filter @polaris-email/panel test
+pnpm --filter @polaris-mail/panel test
 ```
 
 `dev:server` is the recommended end-to-end loop because better-auth +
 the D1 session store only run inside the Worker. Deploy with
-`pnpm --filter @polaris-email/panel deploy`, which is a thin wrapper
-around `polaris-email setup infra deploy service panel` (merges the
+`pnpm --filter @polaris-mail/panel deploy`, which is a thin wrapper
+around `polaris-mail setup infra deploy service panel` (merges the
 gitignored `wrangler.local.jsonc` overlay before `wrangler deploy`).
 
 ## Environment
 
 Bindings (declared in `wrangler.jsonc`):
 
-- `DB` — the shared `polaris-email` D1 database. better-auth's
+- `DB` — the shared `polaris-mail` D1 database. better-auth's
   `user`, `session`, `account`, `verification`, and `ssoProvider` tables
   live alongside the canonical schema.
-- `API` — one-way service binding to `polaris-email-api`. All admin API
+- `API` — one-way service binding to `polaris-mail-api`. All admin API
   calls go over this binding (no public HMAC key required in the happy
   path).
 - `ASSETS` — Workers Assets binding serving `dist/client/`.

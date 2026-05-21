@@ -1,5 +1,5 @@
 // Package state holds the typed schema for `.deploy-state.json` and the
-// atomic on-disk store + flock used by every `polaris-email setup infra`
+// atomic on-disk store + flock used by every `polaris-mail setup infra`
 // phase.
 //
 // The state file is the persistent ledger of every Cloudflare resource the
@@ -25,7 +25,7 @@ const CurrentSchema SchemaVersion = 2
 // Doc is the root state document persisted to .deploy-state.json.
 //
 // Every map is keyed by the *logical* name the CLI uses internally (e.g.
-// "polaris-email" for the D1 DB, "POLARIS_API" for the api service KV).
+// "polaris-mail" for the D1 DB, "POLARIS_API" for the api service KV).
 // The mapping from logical → Cloudflare-side names is owned by the
 // provision phase; the state file stores the resolved CF IDs.
 type Doc struct {
@@ -88,7 +88,7 @@ type R2Bucket struct {
 // R2Token persists an R2 API token the CLI minted (typically for
 // Logpush → R2 ingestion). CF returns the secret EXACTLY ONCE at
 // creation; losing this record means the token is unrecoverable and
-// the operator must re-mint via `polaris-email setup infra apply`.
+// the operator must re-mint via `polaris-mail setup infra apply`.
 //
 // We store the secret in plain text in .deploy-state.json — same
 // posture as the existing config.toml token store; the state file is
@@ -193,7 +193,7 @@ func migrateSchema(raw map[string]any) (*Doc, error) {
 	if id, ok := raw["d1_id"].(string); ok && id != "" {
 		name, _ := raw["d1_name"].(string)
 		if name == "" {
-			name = "polaris-email"
+			name = "polaris-mail"
 		}
 		doc.D1 = map[string]Resource{
 			name: {ID: id, Name: name, CreatedAt: doc.CreatedAt},

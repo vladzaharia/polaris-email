@@ -210,7 +210,7 @@ func TestApply_HappyPath_AllCreatesRecorded(t *testing.T) {
 
 // TestApply_R2PublicDomain_AttachesWhenSet confirms that when the
 // operator supplies R2_PUBLIC_HOST (via plan.WithR2PublicDomain), the
-// provision phase POSTs to /r2/buckets/polaris-email/domains/custom and
+// provision phase POSTs to /r2/buckets/polaris-mail/domains/custom and
 // records the binding to state. The default Desired() path (empty host)
 // is exercised by TestApply_HappyPath above.
 func TestApply_R2PublicDomain_AttachesWhenSet(t *testing.T) {
@@ -227,17 +227,17 @@ func TestApply_R2PublicDomain_AttachesWhenSet(t *testing.T) {
 	}
 
 	if got := int(f.r2CustomDomain.Load()); got != 1 {
-		t.Errorf("r2 custom-domain POSTs: want 1 (only the polaris-email bucket has PublicDomain), got %d", got)
+		t.Errorf("r2 custom-domain POSTs: want 1 (only the polaris-mail bucket has PublicDomain), got %d", got)
 	}
 
 	doc, err := store.Read()
 	if err != nil {
 		t.Fatalf("Read state: %v", err)
 	}
-	if got := doc.R2["polaris-email"].PublicDomain; got != "r2.example.com" {
-		t.Errorf("state.R2[polaris-email].PublicDomain = %q, want r2.example.com", got)
+	if got := doc.R2["polaris-mail"].PublicDomain; got != "r2.example.com" {
+		t.Errorf("state.R2[polaris-mail].PublicDomain = %q, want r2.example.com", got)
 	}
-	if got := doc.R2["polaris-email-logs"].PublicDomain; got != "" {
+	if got := doc.R2["polaris-mail-logs"].PublicDomain; got != "" {
 		t.Errorf("logs bucket should not have a public domain, got %q", got)
 	}
 }
@@ -338,7 +338,7 @@ func TestApply_FailureMidRun_StatePersistsProgress(t *testing.T) {
 	if err == nil {
 		t.Fatal("Apply should have failed at KV step")
 	}
-	if !strings.Contains(err.Error(), "kv") && !strings.Contains(err.Error(), "polaris-email-nonce") {
+	if !strings.Contains(err.Error(), "kv") && !strings.Contains(err.Error(), "polaris-mail-nonce") {
 		t.Errorf("error should cite kv step, got: %v", err)
 	}
 

@@ -1,4 +1,4 @@
-# polaris-email — threat model
+# polaris-mail — threat model
 
 ## Trust boundaries
 
@@ -74,11 +74,11 @@ custom domain `r2.mail.plrs.im`. Object keys are content-addressed
 attachments), so the SHA-256 in the URL provides the unguessability
 boundary — there is no signature, no expiry, no HMAC header.
 
-**Privacy implication**: a polaris-email URL **is** a capability token.
+**Privacy implication**: a polaris-mail URL **is** a capability token.
 Anyone with the URL can read the bytes forever. Because the audit log
 records the content SHA-256 of every message, an audit-log reader gains
 implicit read access to every message body and attachment. This is
-acceptable at the internal-deployment scale polaris-email targets
+acceptable at the internal-deployment scale polaris-mail targets
 (<10k msg/day, ~tens of mailboxes, a handful of admins who already have
 admin-level mailbox access). External or compliance-bound deployments
 would need a different model — either re-introduce signed URLs in front
@@ -94,7 +94,7 @@ Worker secrets. It is used by:
   (`services/api/src/routes/admin/cf-zones.ts`), which lists every zone in
   the operator's account and inspects each one's Email Routing + sender
   state. Apply path enables Email Routing, sets the catch-all to
-  `polaris-email-in`, onboards the sender domain, and creates the D1
+  `polaris-mail-in`, onboards the sender domain, and creates the D1
   `mail_domains` row.
 
 Required scopes (broader than the original "Email Routing on a specific
@@ -106,16 +106,16 @@ zone" model — the discover view needs to enumerate all zones):
 - Zone → Zone → Edit
 - Zone → DNS → Edit
 
-The token is **per-account**. Use a dedicated CF account for polaris-email
+The token is **per-account**. Use a dedicated CF account for polaris-mail
 so the token's blast radius is confined to that account's zones. Rotation:
 mint a new token, push via `wrangler secret put CF_API_TOKEN` on
-`polaris-email-api`, then revoke the old token in the Cloudflare dashboard.
+`polaris-mail-api`, then revoke the old token in the Cloudflare dashboard.
 The CF zone configure path is idempotent so a brief inflight window with
 both tokens valid is safe.
 
-Note that polaris-email **never modifies operator-defined named-address
+Note that polaris-mail **never modifies operator-defined named-address
 routing rules**. The discover view surfaces them as warnings (e.g. "3 named
-rules will intercept mail before reaching polaris-email-in") but the
+rules will intercept mail before reaching polaris-mail-in") but the
 configure flow never deletes them — those rules belong to the operator.
 
 ## Bridge cross-mailbox read (v1 scope)
@@ -153,7 +153,7 @@ enabled: `DEV_MODE=1` and leave `ENVIRONMENT` unset (or set it to
 
 ## Read-once secrets (A11/B6)
 
-Every secret polaris-email issues — API key secrets, SMTPS / IMAP
+Every secret polaris-mail issues — API key secrets, SMTPS / IMAP
 passwords, bridge HMAC keys — is shown to the operator **exactly once**:
 at creation or rotation. The control-plane database stores hashes only
 (bcrypt for mailbox passwords; HMAC-key hashes for bridges; secret-cache
@@ -205,12 +205,12 @@ restore covers ~30 days) plus the weekly D1 export to R2 (operator-owned
 
 - [ ] HMAC test vectors (`packages/test-vectors/vectors.json`) green in both SDK
       webhook verifiers (`@polaris/sdk/webhook`, `polaris-sdk-go`).
-- [ ] Audit hash-chain verified end-to-end with `polaris-email audit verify`;
+- [ ] Audit hash-chain verified end-to-end with `polaris-mail audit verify`;
       `audit-verify` cron writes `status='ok'` to `cron_runs` on its nightly
       run.
 - [ ] `revocationCheck` drill: revoke a test key, confirm next authenticated request
       returns `key_revoked` within ≤60 s (KV propagation + cache TTL).
-- [ ] R2 Object Lock active in compliance mode on the `polaris-email`
+- [ ] R2 Object Lock active in compliance mode on the `polaris-mail`
       bucket (bodies + attachments); verified via `wrangler r2 bucket info`.
 - [ ] D1 Time-Travel drill: pick a recent bookmark, restore into a copy DB,
       verify a known operator action lands at the expected row.

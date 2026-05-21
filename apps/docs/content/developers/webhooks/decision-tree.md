@@ -7,7 +7,7 @@ sidebar_position: 1
 
 # Webhook decision tree
 
-You need polaris-email to deliver inbound mail events to your service.
+You need polaris-mail to deliver inbound mail events to your service.
 Pick one of three:
 
 ```
@@ -21,7 +21,7 @@ Is your service reachable on the public internet via HTTPS?
       │
       └── no → Is your service a docker container co-located on the bridge host?
             ├── yes → kind: bridge
-            │      URL: https://polaris-email.<tailnet>.ts.net/hooks/<service>/<rule>
+            │      URL: https://polaris-mail.<tailnet>.ts.net/hooks/<service>/<rule>
             │      (also register a `local_webhook_targets` row mapping service/rule → upstream)
             └── no → join the Tailnet first, or expose a public HTTPS endpoint
 ```

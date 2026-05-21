@@ -34,7 +34,7 @@ func TestApplyWith_ParsesAppliedAndLatest(t *testing.T) {
 ✅ done
 `,
 	}
-	res, err := ApplyWith(context.Background(), "polaris-email", true, "", store, fr)
+	res, err := ApplyWith(context.Background(), "polaris-mail", true, "", store, fr)
 	if err != nil {
 		t.Fatalf("ApplyWith: %v", err)
 	}
@@ -53,7 +53,7 @@ func TestApplyWith_NoMigrationsToApply(t *testing.T) {
 		t.Fatal(err)
 	}
 	fr := &fakeRunner{stdout: "No migrations to apply!\n"}
-	res, err := ApplyWith(context.Background(), "polaris-email", true, "", store, fr)
+	res, err := ApplyWith(context.Background(), "polaris-mail", true, "", store, fr)
 	if err != nil {
 		t.Fatalf("ApplyWith: %v", err)
 	}
@@ -78,7 +78,7 @@ func TestApplyWith_PassesRemoteFlag(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			fr := &fakeRunner{stdout: ""}
-			_, err := ApplyWith(context.Background(), "polaris-email", tc.remote, "", store, fr)
+			_, err := ApplyWith(context.Background(), "polaris-mail", tc.remote, "", store, fr)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -102,7 +102,7 @@ func TestApplyWith_StampsPhaseOnSuccess(t *testing.T) {
 		t.Fatal(err)
 	}
 	fr := &fakeRunner{stdout: "🚣 Applied 1 migration: 0019_foo.sql\n"}
-	if _, err := ApplyWith(context.Background(), "polaris-email", true, "", store, fr); err != nil {
+	if _, err := ApplyWith(context.Background(), "polaris-mail", true, "", store, fr); err != nil {
 		t.Fatal(err)
 	}
 	doc, err := store.Read()
@@ -125,11 +125,11 @@ func TestApplyWith_RejectsEmptyDBName(t *testing.T) {
 func TestApplyWith_PropagatesRunnerError(t *testing.T) {
 	t.Parallel()
 	fr := &fakeRunner{err: errors.New("boom")}
-	_, err := ApplyWith(context.Background(), "polaris-email", true, "", nil, fr)
+	_, err := ApplyWith(context.Background(), "polaris-mail", true, "", nil, fr)
 	if err == nil {
 		t.Fatal("want error when runner errors")
 	}
-	if !strings.Contains(err.Error(), "polaris-email") {
+	if !strings.Contains(err.Error(), "polaris-mail") {
 		t.Errorf("error should cite db name: %v", err)
 	}
 }

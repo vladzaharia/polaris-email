@@ -7,7 +7,7 @@ sidebar_position: 0
 
 # Developer documentation
 
-You are integrating with polaris-email — sending mail, receiving webhooks,
+You are integrating with polaris-mail — sending mail, receiving webhooks,
 or both. Pick the entry point that matches what you have today.
 
 ## Send your first message
@@ -62,4 +62,4 @@ on `:993` against the on-prem [mail bridge](/operators/concepts/mail-bridge).
 status, retryability, and a recovery hint.
 
 → **[Consumer contract](/reference/consumer-contract)** — the stability
-promises polaris-email makes you.
+promises polaris-mail makes you.

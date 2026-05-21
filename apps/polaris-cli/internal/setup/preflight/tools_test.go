@@ -66,12 +66,12 @@ func TestCheckPnpm_StubbedNotInPath(t *testing.T) {
 	}
 }
 
-func TestCheckPolarisEmail_StubbedNotInPath(t *testing.T) {
+func TestCheckPolarisMail_StubbedNotInPath(t *testing.T) {
 	// Cannot run in parallel because t.Setenv mutates process env.
 	t.Setenv("PATH", fakeBinDir(t))
-	c := CheckPolarisEmail()
+	c := CheckPolarisMail()
 	res := c.Run(context.Background())
 	if res.Status != StatusFail {
-		t.Errorf("polaris-email-not-found should be fail, got %+v", res)
+		t.Errorf("polaris-mail-not-found should be fail, got %+v", res)
 	}
 }

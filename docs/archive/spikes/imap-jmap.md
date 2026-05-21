@@ -1,4 +1,4 @@
-# Spike: IMAP and JMAP support for polaris-email
+# Spike: IMAP and JMAP support for polaris-mail
 
 > **Status**: archived — features shipped in commits L.3a/L.3b/L.4 (2026).
 

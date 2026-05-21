@@ -5,7 +5,7 @@ sidebar_label: Architecture
 sidebar_position: 1
 ---
 
-# polaris-email architecture
+# polaris-mail architecture
 
 The operator's system view. This page answers "what runs where, what
 stores what, and what fails if I unplug it" — not "where is the code".
@@ -28,7 +28,7 @@ of the API.
 Three mail-path Workers, not five. The previous separate `fanout` and
 `cron` Workers were folded into `api`, and the `forensic` Worker was
 removed when the schema went zero-payload-by-default. There is no reason
-to bring them back at the deployment scale polaris-email targets
+to bring them back at the deployment scale polaris-mail targets
 (< 10k msg/day).
 
 Tamper-evidence comes from the in-row chained-hash invariant on
@@ -83,7 +83,7 @@ For each message, the pipeline:
 
 | Store      | Holds                                                                                                                                                                                                                                                                                                                      |
 | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **D1**     | Source of truth: mailboxes, senders, receivers, principals, messages, webhook subs, audit log, bookkeeping. Single database (`polaris-email`).                                                                                                                                                                             |
+| **D1**     | Source of truth: mailboxes, senders, receivers, principals, messages, webhook subs, audit log, bookkeeping. Single database (`polaris-mail`).                                                                                                                                                                              |
 | **R2**     | Content-addressed bodies and attachments + weekly D1 export under `backups/d1/`, reference-counted by `r2_refs`. Served over the public custom domain `r2.mail.plrs.im`. SHA-256 keys are the unguessability boundary — there is no signed URL layer. See the [threat model](/security/threat-model) before changing this. |
 | **KV**     | Hot path: HMAC replay nonces, idempotency keys (24h TTL), rate limits, `key_id → secret` cache, **credential revocations**. Revocations propagate to all Workers within ≤60 s (KV write + 60 s per-Worker cache).                                                                                                          |
 | **Queues** | Outbound, inbound, fan-out — each with its own DLQ.                                                                                                                                                                                                                                                                        |

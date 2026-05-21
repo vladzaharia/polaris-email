@@ -1,5 +1,5 @@
 {
-  "name": "@polaris-email/policy-engine",
+  "name": "@polaris-mail/policy-engine",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -19,8 +19,8 @@
     "lint": "oxlint ."
   },
   "dependencies": {
-    "@polaris-email/mime": "workspace:*",
-    "@polaris-email/suppressions": "workspace:*"
+    "@polaris-mail/mime": "workspace:*",
+    "@polaris-mail/suppressions": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^6.0.3",

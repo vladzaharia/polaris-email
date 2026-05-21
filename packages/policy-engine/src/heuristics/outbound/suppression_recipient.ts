@@ -1,4 +1,4 @@
-import { normalizeAddress } from '@polaris-email/suppressions';
+import { normalizeAddress } from '@polaris-mail/suppressions';
 import type { Heuristic } from '../../types.js';
 
 interface Row {

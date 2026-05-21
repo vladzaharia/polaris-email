@@ -1,12 +1,15 @@
 // Diagnostics page — operator-facing system health overview.
 //
 // Cards:
-//  - Panel-side health checks (api healthz, audit chain, tenants listable
-//    backed by the existing GET /api/diagnostics route on the panel server).
+//  - Panel-side health checks (api healthz, audit chain, cf zones reachability)
+//    backed by the existing GET /api/diagnostics route on the panel server.
+//    Checks emit `state: 'ok' | 'fail' | 'config_needed' | 'skipped'` so the
+//    page distinguishes broken from intentionally-unconfigured (e.g. CF creds
+//    not yet seeded).
 //  - DLQ depth / recent failures (24h) from the dashboard's stats overview,
 //    linking into the DLQ browser.
-//  - Audit log head + hash from GET /api/audit/chain-status, with
-//    a link into the audit log on the account page.
+//  - Audit log head + hash from GET /api/audit/chain-status, with a link
+//    into the audit log on the account page.
 //  - Panel /healthz liveness ping.
 //
 // Cards render an "unavailable" placeholder when the backing query errors
@@ -27,15 +30,27 @@ import { useAdminQuery } from '../../hooks/useAdminApi.js';
 import { bridgeKeys, diagnosticsKeys, dlqKeys, statsKeys, syntheticKeys } from '../../queryKeys.js';
 import { formatDate, formatRelative } from '../../lib/format.js';
 
+type CheckState = 'ok' | 'fail' | 'config_needed' | 'skipped';
 interface DiagCheck {
   name: string;
-  ok: boolean;
+  state: CheckState;
   detail?: string;
+  remedy?: string;
 }
 interface DiagnosticsPayload {
   ok: boolean;
   checks: DiagCheck[];
 }
+
+const STATE_BADGE: Record<
+  CheckState,
+  { variant: 'success' | 'destructive' | 'warning' | 'outline'; label: string }
+> = {
+  ok: { variant: 'success', label: 'ok' },
+  fail: { variant: 'destructive', label: 'fail' },
+  config_needed: { variant: 'warning', label: 'config' },
+  skipped: { variant: 'outline', label: 'skipped' },
+};
 
 interface ChainStatus {
   head?: { id?: number; created_at?: string; hash?: string };
@@ -107,16 +122,22 @@ function HealthCard() {
           <Unavailable />
         ) : (
           <ul className="space-y-1 text-sm">
-            {q.data.checks.map((c) => (
-              <li key={c.name} className="flex items-center gap-2">
-                {c.ok ? (
-                  <Badge variant="success">ok</Badge>
-                ) : (
-                  <Badge variant="destructive">fail</Badge>
-                )}
-                <span className="font-mono text-xs">{c.name}</span>
-              </li>
-            ))}
+            {q.data.checks.map((c) => {
+              const badge = STATE_BADGE[c.state] ?? STATE_BADGE.fail;
+              return (
+                <li key={c.name} className="flex flex-col gap-0.5">
+                  <div className="flex items-center gap-2">
+                    <Badge variant={badge.variant}>{badge.label}</Badge>
+                    <span className="font-mono text-xs">{c.name}</span>
+                  </div>
+                  {c.remedy ? (
+                    <div className="pl-12 font-mono text-[10px] text-[var(--color-muted-foreground)]">
+                      → {c.remedy}
+                    </div>
+                  ) : null}
+                </li>
+              );
+            })}
           </ul>
         )}
       </CardContent>
@@ -359,7 +380,7 @@ function AuditChainCard() {
         <CardTitle>Audit chain</CardTitle>
         <CardDescription>
           Latest audit log head.{' '}
-          <Link to="/settings/account" className="underline">
+          <Link to="/me" className="underline">
             View audit log
           </Link>
         </CardDescription>
@@ -458,7 +479,7 @@ export function Diagnostics() {
   return (
     <PageCard
       title="Diagnostics"
-      description="System health at a glance. Each card polls its own backing endpoint and degrades gracefully when a source is unavailable."
+      description="System health — each card polls independently and degrades when its source is offline."
       decorative
     >
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">

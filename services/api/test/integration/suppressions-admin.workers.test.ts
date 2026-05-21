@@ -7,7 +7,7 @@
 import { applyD1Migrations, createExecutionContext } from 'cloudflare:test';
 import { env } from 'cloudflare:workers';
 import { beforeAll, beforeEach, describe, expect, inject, it } from 'vitest';
-import { sign, generateNonce } from '@polaris-email/hmac';
+import { sign, generateNonce } from '@polaris-mail/hmac';
 import worker from '../../src/index.js';
 import type { Env } from '../../src/env.js';
 

@@ -175,7 +175,7 @@ describe('W1 — outbound suppression enforcement', () => {
       domainId: 'd1',
       mode: 'live',
     };
-    const batch = createMessageBatch('polaris-email-outbound', [
+    const batch = createMessageBatch('polaris-mail-outbound', [
       { id: msgId, timestamp: new Date(), attempts: 1, body },
     ]);
     const ctx = createExecutionContext();
@@ -230,7 +230,7 @@ describe('W1 — outbound suppression enforcement', () => {
       domainId: 'd1',
       mode: 'live',
     };
-    const batch = createMessageBatch('polaris-email-outbound', [
+    const batch = createMessageBatch('polaris-mail-outbound', [
       { id: msgId, timestamp: new Date(), attempts: 1, body },
     ]);
     const ctx = createExecutionContext();
@@ -283,7 +283,7 @@ describe('W1 — outbound suppression enforcement', () => {
       domainId: 'd1',
       mode: 'live',
     };
-    const batch = createMessageBatch('polaris-email-outbound', [
+    const batch = createMessageBatch('polaris-mail-outbound', [
       { id: msgId, timestamp: new Date(), attempts: 1, body },
     ]);
     const ctx = createExecutionContext();

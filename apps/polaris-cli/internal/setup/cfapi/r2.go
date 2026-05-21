@@ -73,7 +73,7 @@ func (c *Client) GetBucket(ctx context.Context, name, jurisdiction string) (*R2B
 // without a signature change.
 type CreateBucketInput struct {
 	Name         string
-	Jurisdiction string // "eu" for polaris-email
+	Jurisdiction string // "eu" for polaris-mail
 	LocationHint string // optional region code, lowercase per CF docs: "wnam", "enam", "weur", "eeur", "apac", "oc"
 }
 
@@ -148,7 +148,7 @@ type ObjectLockCondition struct {
 }
 
 // ObjectLockRule is one entry in an R2 bucket-lock configuration.
-// polaris-email uses an Age rule with 90 days (7,776,000 s) on the
+// polaris-mail uses an Age rule with 90 days (7,776,000 s) on the
 // message-body archive bucket. Prefix scopes the rule to a key prefix;
 // empty means the whole bucket.
 type ObjectLockRule struct {
@@ -258,7 +258,7 @@ func (c *Client) AddLifecycleExpiryRule(ctx context.Context, bucket, jurisdictio
 	// `deleteObjectsTransition.condition` chooses age vs. date — we use
 	// age in seconds (R2's documented unit for the `Age` type).
 	rule := map[string]any{
-		"id":      "polaris-email-expiry",
+		"id":      "polaris-mail-expiry",
 		"enabled": true,
 		"conditions": map[string]any{
 			"prefix": prefix,

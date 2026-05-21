@@ -1,6 +1,6 @@
 ---
 title: Subscription lifecycle
-description: Create, scope, verify, retry, dedupe, rotate, and disable webhook subscriptions — the full lifecycle of a polaris-email webhook from `POST /v1/admin/webhook-subs` to DLQ.
+description: Create, scope, verify, retry, dedupe, rotate, and disable webhook subscriptions — the full lifecycle of a polaris-mail webhook from `POST /v1/admin/webhook-subs` to DLQ.
 sidebar_label: Subscription lifecycle
 sidebar_position: 2
 ---

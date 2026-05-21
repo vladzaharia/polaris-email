@@ -36,7 +36,7 @@ export function SidebarLayout({ children }: { children: ReactNode }) {
               <AppSidebar />
             </SheetContent>
           </Sheet>
-          <div className="text-sm font-semibold">polaris-email</div>
+          <div className="text-sm font-semibold">Polaris Mail</div>
         </header>
         <main id="main" className="flex-1 p-6">
           {children}

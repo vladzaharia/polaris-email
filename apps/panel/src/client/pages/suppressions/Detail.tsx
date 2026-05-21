@@ -6,13 +6,14 @@ import { useParams } from '@tanstack/react-router';
 import { useState } from 'react';
 import { PageCard } from '../../layouts/PageCard.js';
 import { Skeleton } from '../../components/ui/skeleton.js';
-import { Badge } from '../../components/ui/badge.js';
 import { Button } from '../../components/ui/button.js';
 import { useAdminMutation, useAdminQuery } from '../../hooks/useAdminApi.js';
 import { suppressionKeys } from '../../queryKeys.js';
 import { formatRelative } from '../../lib/format.js';
 import { ErrorText } from '../../components/ErrorText.js';
 import { DestructiveActionDialog } from '../../components/DestructiveActionDialog.js';
+import { StatusBadge } from '../../components/StatusBadge.js';
+import { MetaList, MetaRow } from '../../components/MetaList.js';
 
 interface SuppressionRow {
   id: string;
@@ -33,10 +34,6 @@ interface SuppressionRow {
   notes: string | null;
 }
 
-function severityBadgeVariant(s: SuppressionRow['severity']) {
-  return s === 'critical' ? 'destructive' : s === 'warn' ? 'warning' : 'secondary';
-}
-
 export function SuppressionDetail() {
   const { id } = useParams({ from: '/suppressions/$id' });
   const [removeOpen, setRemoveOpen] = useState(false);
@@ -53,16 +50,24 @@ export function SuppressionDetail() {
     { invalidateKeys: [suppressionKeys.all], silent: true },
   );
 
+  // Suppressions list folded into the AbuseHub as the `suppressions` tab,
+  // so the breadcrumb up-link points back there instead of the retired
+  // standalone /suppressions list route.
+  const breadcrumbs = [
+    { label: 'Abuse & alerts', to: '/abuse', search: { tab: 'suppressions' } },
+    { label: q.data?.address_normalized ?? id },
+  ];
+
   if (q.isLoading) {
     return (
-      <PageCard title="Suppression" decorative>
+      <PageCard title="Suppression" breadcrumbs={breadcrumbs} decorative>
         <Skeleton className="h-32 w-full" />
       </PageCard>
     );
   }
   if (q.error || !q.data) {
     return (
-      <PageCard title="Suppression" decorative>
+      <PageCard title="Suppression" breadcrumbs={breadcrumbs} decorative>
         <ErrorText error={q.error ?? 'not found'} />
       </PageCard>
     );
@@ -72,64 +77,68 @@ export function SuppressionDetail() {
   return (
     <PageCard
       title={`Suppression: ${r.address_normalized}`}
+      breadcrumbs={breadcrumbs}
       description={`${r.entity_type === 'recipient' ? 'Recipient' : 'Sender'} — ${r.reason} (${r.source})`}
       decorative
     >
       <div className="space-y-6">
-        <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm md:grid-cols-3">
-          <span className="font-medium">Entity</span>
-          <span className="md:col-span-2 font-mono">{r.entity_type}</span>
-          <span className="font-medium">Address (normalized)</span>
-          <span className="md:col-span-2 font-mono">{r.address_normalized}</span>
-          <span className="font-medium">Local part / domain</span>
-          <span className="md:col-span-2 font-mono">
-            {r.address_local ?? '—'} / {r.address_domain ?? '—'}
-          </span>
-          <span className="font-medium">Scope</span>
-          <span className="md:col-span-2 font-mono">
-            {r.scope}
-            {r.scope_target ? ` (target: ${r.scope_target})` : ''}
-          </span>
-          <span className="font-medium">Reason</span>
-          <span className="md:col-span-2 font-mono">{r.reason}</span>
-          <span className="font-medium">Source</span>
-          <span className="md:col-span-2 font-mono">
-            {r.source}
-            {r.source_ref ? ` (ref: ${r.source_ref})` : ''}
-          </span>
-          <span className="font-medium">Severity</span>
-          <span className="md:col-span-2">
-            <Badge variant={severityBadgeVariant(r.severity)}>{r.severity}</Badge>
-          </span>
-          <span className="font-medium">Created</span>
-          <span className="md:col-span-2" title={r.created_at}>
-            {formatRelative(r.created_at)}
-          </span>
-          <span className="font-medium">Expires</span>
-          <span className="md:col-span-2" title={r.expires_at ?? ''}>
-            {r.expires_at ? formatRelative(r.expires_at) : 'never (permanent)'}
-          </span>
-          <span className="font-medium">State</span>
-          <span className="md:col-span-2">
+        <MetaList>
+          <MetaRow label="Entity">
+            <span className="font-mono">{r.entity_type}</span>
+          </MetaRow>
+          <MetaRow label="Address (normalized)">
+            <span className="font-mono">{r.address_normalized}</span>
+          </MetaRow>
+          <MetaRow label="Local part / domain">
+            <span className="font-mono">
+              {r.address_local ?? '—'} / {r.address_domain ?? '—'}
+            </span>
+          </MetaRow>
+          <MetaRow label="Scope">
+            <span className="font-mono">
+              {r.scope}
+              {r.scope_target ? ` (target: ${r.scope_target})` : ''}
+            </span>
+          </MetaRow>
+          <MetaRow label="Reason">
+            <span className="font-mono">{r.reason}</span>
+          </MetaRow>
+          <MetaRow label="Source">
+            <span className="font-mono">
+              {r.source}
+              {r.source_ref ? ` (ref: ${r.source_ref})` : ''}
+            </span>
+          </MetaRow>
+          <MetaRow label="Severity">
+            <StatusBadge kind="severity" value={r.severity} />
+          </MetaRow>
+          <MetaRow label="Created">
+            <span title={r.created_at}>{formatRelative(r.created_at)}</span>
+          </MetaRow>
+          <MetaRow label="Expires">
+            <span title={r.expires_at ?? ''}>
+              {r.expires_at ? formatRelative(r.expires_at) : 'never (permanent)'}
+            </span>
+          </MetaRow>
+          <MetaRow label="State">
             {r.disabled_at ? (
               <>
-                <Badge variant="secondary">disabled</Badge>{' '}
-                <span className="text-xs text-muted-foreground">
+                <StatusBadge kind="enabled" value="disabled" />{' '}
+                <span className="text-xs text-[var(--color-muted-foreground)]">
                   {r.disabled_reason ? `(${r.disabled_reason})` : ''} at{' '}
                   <span title={r.disabled_at}>{formatRelative(r.disabled_at)}</span>
                 </span>
               </>
             ) : (
-              <Badge variant="success">active</Badge>
+              <StatusBadge kind="enabled" value="active" />
             )}
-          </span>
-          {r.notes && (
-            <>
-              <span className="font-medium">Notes</span>
-              <span className="md:col-span-2 italic">{r.notes}</span>
-            </>
-          )}
-        </div>
+          </MetaRow>
+          {r.notes ? (
+            <MetaRow label="Notes">
+              <span className="italic">{r.notes}</span>
+            </MetaRow>
+          ) : null}
+        </MetaList>
 
         {!r.disabled_at && (
           <>

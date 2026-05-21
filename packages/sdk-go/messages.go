@@ -101,7 +101,7 @@ type MessageListResponse struct {
 type CreateWebhookSubRequest struct {
 	MailboxID string   `json:"mailbox_id"`
 	URL       string   `json:"url"`
-	Kind      string   `json:"kind"` // "external" | "tailnet" (per openapi/polaris-email.yaml)
+	Kind      string   `json:"kind"` // "external" | "tailnet" (per openapi/polaris-mail.yaml)
 	Events    []string `json:"events"`
 }
 

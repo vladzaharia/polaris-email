@@ -35,14 +35,14 @@ func CheckEnvDeploy(envPath string) Check {
 			_ = ctx
 			if _, err := os.Stat(envPath); os.IsNotExist(err) {
 				return warn(".env.deploy missing",
-					"run `polaris-email setup infra configure` before `setup infra apply`")
+					"run `polaris-mail setup infra configure` before `setup infra apply`")
 			} else if err != nil {
 				return fail(fmt.Sprintf("stat .env.deploy: %v", err), "check filesystem permissions")
 			}
 			cfg, err := config.Load(envPath)
 			if err != nil {
 				return fail(fmt.Sprintf("parse .env.deploy: %v", err),
-					"re-run `polaris-email setup infra configure` to rebuild the file")
+					"re-run `polaris-mail setup infra configure` to rebuild the file")
 			}
 			env := cfg.AsMap()
 			var missing []string
@@ -54,7 +54,7 @@ func CheckEnvDeploy(envPath string) Check {
 			if len(missing) > 0 {
 				return fail(
 					fmt.Sprintf(".env.deploy missing required keys: %s", strings.Join(missing, ", ")),
-					"run `polaris-email setup infra configure` to fill in the missing fields")
+					"run `polaris-mail setup infra configure` to fill in the missing fields")
 			}
 			return pass(fmt.Sprintf("%s has required keys", envPath))
 		},

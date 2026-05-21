@@ -11,7 +11,10 @@ export const mailboxKeys = {
   all: ['mailboxes'] as const,
   list: () => [...mailboxKeys.all, 'list'] as const,
   detail: (id: string) => [...mailboxKeys.all, 'detail', id] as const,
-  recentMessages: (id: string) => [...mailboxKeys.all, 'recent-messages', id] as const,
+  recentMessages: (id: string, direction?: 'in' | 'out') =>
+    direction
+      ? ([...mailboxKeys.all, 'recent-messages', id, direction] as const)
+      : ([...mailboxKeys.all, 'recent-messages', id] as const),
 };
 
 export const domainKeys = {
@@ -49,6 +52,7 @@ export const bridgeKeys = {
 export const dlqKeys = {
   all: ['webhook-dlq'] as const,
   list: () => [...dlqKeys.all, 'list'] as const,
+  bySub: (subId: string) => [...dlqKeys.all, 'by-sub', subId] as const,
 };
 
 export const auditKeys = {

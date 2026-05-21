@@ -13,10 +13,9 @@ import {
   TableRow,
 } from '../../components/ui/table.js';
 import { Button } from '../../components/ui/button.js';
-import { Input } from '../../components/ui/input.js';
-import { Label } from '../../components/ui/label.js';
 import { Skeleton } from '../../components/ui/skeleton.js';
 import { Badge } from '../../components/ui/badge.js';
+import { FilterBar } from '../../components/FilterBar.js';
 import { DestructiveActionDialog } from '../../components/DestructiveActionDialog.js';
 import { useAdminMutation, useAdminQuery } from '../../hooks/useAdminApi.js';
 import { dlqKeys } from '../../queryKeys.js';
@@ -53,10 +52,14 @@ export function DlqBrowser() {
 
   return (
     <PageCard title="Dead-letter queue" description="Failed webhook deliveries." decorative>
-      <div className="mb-4 max-w-sm">
-        <Label htmlFor="filter">Webhook sub id contains</Label>
-        <Input id="filter" value={subFilter} onChange={(e) => setSubFilter(e.target.value)} />
-      </div>
+      <FilterBar
+        filters={[]}
+        search={{
+          value: subFilter,
+          onChange: setSubFilter,
+          placeholder: 'Webhook sub id contains…',
+        }}
+      />
       {q.isLoading ? (
         <Skeleton className="h-32 w-full" />
       ) : q.error ? (

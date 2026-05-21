@@ -2,7 +2,8 @@
 // rotate live on the detail page, but the initial create + the inbound/outbound
 // defaults are wired here.
 import { Link } from '@tanstack/react-router';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { Plus } from 'lucide-react';
 import { PageCard } from '../../layouts/PageCard.js';
 import {
   Table,
@@ -28,10 +29,21 @@ import {
 import { Skeleton } from '../../components/ui/skeleton.js';
 import { StatusBadge } from '../../components/StatusBadge.js';
 import { useAdminMutation, useAdminQuery } from '../../hooks/useAdminApi.js';
-import { domainKeys } from '../../queryKeys.js';
-import { apiFetch } from '../../lib/api.js';
+import { cfZoneKeys, domainKeys } from '../../queryKeys.js';
+import { apiFetch, ApiError } from '../../lib/api.js';
 import { ErrorText } from '../../components/ErrorText.js';
 import { EmptyState } from '../../components/EmptyState.js';
+import { CompositeInput } from '../../components/CompositeInput.js';
+import { FormField } from '../../components/FormField.js';
+
+interface CfZoneRowLite {
+  zone: { id: string; name: string };
+}
+
+// CF zone listings are slow (CF inspects every zone). 5min staleTime keeps
+// the dropdown instantaneous across panel navigations while still picking
+// up newly-added zones within a single session.
+const CF_ZONE_STALE_MS = 5 * 60_000;
 
 interface DomainRow {
   id: string;
@@ -44,18 +56,59 @@ interface DomainRow {
 
 function AddDomainDialog() {
   const [open, setOpen] = useState(false);
-  const [name, setName] = useState('');
+  // Domain is `<subdomain>.<zone>` (or just `<zone>` when subdomain is empty).
+  // Splitting the input means the operator never types the apex twice and
+  // never typos the TLD.
+  const [subdomain, setSubdomain] = useState('');
+  const [zoneName, setZoneName] = useState('');
   // Defaults match the backend: outbound on (the common case for issuing
   // senders), inbound off until the operator opts in.
   const [inbound, setInbound] = useState(false);
   const [outbound, setOutbound] = useState(true);
+
+  // Pull live CF zones for the operator's account. Cached 5min so the
+  // dropdown is instant on revisit. If the endpoint returns
+  // cf_credentials_missing (503) the picker degrades to a single free-text
+  // hostname input.
+  const zones = useAdminQuery<{ data: CfZoneRowLite[] }>(cfZoneKeys.list(), '/api/admin/cf-zones', {
+    staleTime: CF_ZONE_STALE_MS,
+  });
+  const cfCredsMissing =
+    zones.error instanceof ApiError && zones.error.code === 'cf_credentials_missing';
+  const zoneRows = zones.data?.data ?? [];
+
+  // Default to the first zone — operators with one CF account/zone never have
+  // to interact with the selector. Multi-zone operators still see the picker.
+  // Depend on the first zone's name (stable across renders when the query
+  // result is the same) rather than the `zoneRows` array (which is a fresh
+  // `??[]` allocation every render).
+  const firstZoneName = zones.data?.data[0]?.zone.name;
+  useEffect(() => {
+    if (!zoneName && firstZoneName) {
+      setZoneName(firstZoneName);
+    }
+  }, [zoneName, firstZoneName]);
+
+  // Hostname for the manual-entry fallback (when CF zones unavailable).
+  const [manualHostname, setManualHostname] = useState('');
+
+  const composedDomain = cfCredsMissing
+    ? manualHostname.trim()
+    : subdomain.trim()
+      ? `${subdomain.trim()}.${zoneName}`
+      : zoneName;
+
   const create = useAdminMutation<{ id: string }, { name: string }>(
+    // dkim_selector intentionally omitted — backend defaults to `polaris1`
+    // which is what we want. Operators can rotate via Domain Detail later.
     (vars) => ({ path: '/api/admin/domains', method: 'POST', body: vars }),
     { invalidateKeys: [domainKeys.all], silent: true },
   );
 
   const reset = () => {
-    setName('');
+    setSubdomain('');
+    setZoneName(zoneRows[0]?.zone.name ?? '');
+    setManualHostname('');
     setInbound(false);
     setOutbound(true);
     create.reset();
@@ -70,28 +123,54 @@ function AddDomainDialog() {
       }}
     >
       <DialogTrigger asChild>
-        <Button>Add domain</Button>
+        <Button size="icon" title="Add domain" aria-label="Add domain">
+          <Plus className="h-4 w-4" />
+        </Button>
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Add domain</DialogTitle>
           <DialogDescription>
-            Registers a mail-domain with default DKIM selector. Inbound + outbound flags can be
-            flipped on the detail page later.
+            The mail domain is composed as <code className="font-mono">subdomain.zone</code>. Leave
+            the subdomain empty to register the apex.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
-          <div>
-            <Label htmlFor="dom-name">Domain name</Label>
-            <Input
-              id="dom-name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="acme.example"
-              autoComplete="off"
-              spellCheck={false}
-            />
-          </div>
+          {cfCredsMissing ? (
+            <>
+              <p className="rounded-md border border-[var(--color-border)] bg-[var(--color-muted)] p-2 text-xs text-[var(--color-muted-foreground)]">
+                CF zone autopopulate unavailable (CF_API_TOKEN missing). Enter the full hostname.
+              </p>
+              <FormField id="dom-host" label="Mail domain">
+                <Input
+                  id="dom-host"
+                  value={manualHostname}
+                  onChange={(e) => setManualHostname(e.target.value)}
+                  placeholder="mail.acme.example"
+                  autoComplete="off"
+                  spellCheck={false}
+                />
+              </FormField>
+            </>
+          ) : (
+            <div>
+              <Label>Mail domain</Label>
+              <CompositeInput
+                leftValue={subdomain}
+                onLeftChange={setSubdomain}
+                leftPlaceholder="(optional)"
+                separator="."
+                rightValue={zoneName}
+                onRightChange={setZoneName}
+                rightOptions={zoneRows.map((z) => ({ value: z.zone.name, label: z.zone.name }))}
+                rightLoading={zones.isLoading}
+                rightLoadingPlaceholder="Loading zones…"
+                rightPlaceholder="Pick a zone"
+                previewLabel="Will register"
+                preview={composedDomain || '—'}
+              />
+            </div>
+          )}
           <div className="flex items-center gap-2">
             <Switch id="dom-in" checked={inbound} onCheckedChange={setInbound} />
             <Label htmlFor="dom-in">Enable inbound (accept mail for this domain)</Label>
@@ -104,9 +183,9 @@ function AddDomainDialog() {
         </div>
         <DialogFooter>
           <Button
-            disabled={!name.trim() || create.isPending}
+            disabled={!composedDomain || create.isPending}
             onClick={async () => {
-              const r = await create.mutateAsync({ name: name.trim() });
+              const r = await create.mutateAsync({ name: composedDomain });
               // The create endpoint defaults to inbound=0, outbound=1. Fire the
               // toggle endpoints only if the operator picked something else.
               const toggles: Array<Promise<unknown>> = [];
@@ -121,9 +200,6 @@ function AddDomainDialog() {
                 );
               }
               if (toggles.length > 0) {
-                // Best-effort. Toast surfaces any toggle failure but the
-                // domain itself is already created — operator can flip from
-                // detail page.
                 try {
                   await Promise.all(toggles);
                 } catch {
@@ -146,10 +222,12 @@ export function DomainsList() {
   const q = useAdminQuery<{ data: DomainRow[] }>(domainKeys.list(), '/api/admin/domains');
   const rows = q.data?.data ?? [];
   return (
-    <PageCard title="Domains" description="Sender/recipient domain registry." decorative>
-      <div className="mb-4 flex justify-end">
-        <AddDomainDialog />
-      </div>
+    <PageCard
+      title="Domains"
+      description="Sender/recipient domain registry."
+      decorative
+      actions={<AddDomainDialog />}
+    >
       {q.isLoading ? (
         <Skeleton className="h-32 w-full" />
       ) : q.error ? (

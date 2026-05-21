@@ -1,6 +1,6 @@
 ---
 title: Mail bridge
-description: The on-prem Go binary that fronts SMTPS (:465) and IMAP4rev2 (:993) for polaris-email mailboxes — architecture, deployment modes, IMAP IDLE push flow, and troubleshooting.
+description: The on-prem Go binary that fronts SMTPS (:465) and IMAP4rev2 (:993) for polaris-mail mailboxes — architecture, deployment modes, IMAP IDLE push flow, and troubleshooting.
 sidebar_label: Mail bridge
 sidebar_position: 3
 ---
@@ -41,7 +41,7 @@ paths in this listener.
               └─────────────┬────────────────────────────────┘
                             │
                             ▼   (HMAC over service binding or HTTPS)
-                  polaris-email REST API
+                  polaris-mail REST API
                   (services/api on Cloudflare Workers)
 ```
 

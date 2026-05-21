@@ -1,4 +1,4 @@
-// `@polaris/sdk` — TypeScript SDK for polaris-email.
+// `@polaris/sdk` — TypeScript SDK for polaris-mail.
 //
 // Re-exports the generated type surface plus a hand-written `Polaris` client
 // with HMAC + service-binding auth pluggable via `authBuilder`. Sub-paths:

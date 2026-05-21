@@ -7,15 +7,15 @@ sidebar_position: 4
 
 # Runbook: Cloudflare account compromise
 
-Assume the polaris-email Cloudflare account has been (or is suspected of being) compromised. Time-to-contain target: 15 minutes.
+Assume the polaris-mail Cloudflare account has been (or is suspected of being) compromised. Time-to-contain target: 15 minutes.
 
 ## Threat model — single-account topology
 
-Polaris-email runs on **one Cloudflare account** (`polaris-prod`). That
+Polaris Mail runs on **one Cloudflare account** (`polaris-prod`). That
 account hosts every runtime: Workers, D1, KV, R2, Queues, DNS, Email
 Routing, Email Service, Access. A full compromise of the CF account
 therefore has a wide blast radius — the attacker can mint Worker deploys,
-read/write D1, read/write the `polaris-email` R2 bucket, redirect MX
+read/write D1, read/write the `polaris-mail` R2 bucket, redirect MX
 records, and pull every Workers Secret (`POLARIS_SECRET_A`, the bcrypt
 pepper, the bridge HMAC key, etc.).
 
@@ -49,7 +49,7 @@ surface) is documented in `SECURITY.md`. The defences:
    ```sh
    bin/killswitch-freeze.sh
    ```
-   This redeploys `polaris-email-api` with a maintenance handler that returns
+   This redeploys `polaris-mail-api` with a maintenance handler that returns
    `503 degraded` for every route except `/healthz` and `/admin/killswitch`.
 3. **MX flip** to a holding domain that 4xx-tempfails inbound so no mail is
    lost:
@@ -61,12 +61,12 @@ surface) is documented in `SECURITY.md`. The defences:
    ```sh
    bin/killswitch-r2-pause.sh
    ```
-   The `polaris-email` R2 bucket holds bodies, attachments, and the
+   The `polaris-mail` R2 bucket holds bodies, attachments, and the
    weekly D1 backups under `backups/d1/`. R2 Object Lock COMPLIANCE on
    `mime/` and `att/` prefixes prevents body-deletion even by the
    account owner; the kill switch additionally pauses lifecycle
    transitions.
-5. **Panel offline**: scale `polaris-email-panel` to 0 / pause its
+5. **Panel offline**: scale `polaris-mail-panel` to 0 / pause its
    container.
 6. **Comms**: open internal + customer comms templates from the runbooks
    index.
@@ -79,16 +79,16 @@ surface) is documented in `SECURITY.md`. The defences:
   `wrangler deploy` events, secret reads, or D1 statement bursts.
 - **Walk the audit chain** from outside CF:
   ```sh
-  polaris-email audit verify
+  polaris-mail audit verify
   ```
   A break is the in-band tamper signal. If the chain verifies but you
   suspect rewrite, **do not trust** the verification — a full-account
   adversary can recompute it. Trust the Logpush mirror instead.
 - Cross-check the **weekly D1 backup** in R2 against the live DB:
   ```sh
-  wrangler r2 object get polaris-email/backups/d1/<YYYY-MM-DD>-... \
+  wrangler r2 object get polaris-mail/backups/d1/<YYYY-MM-DD>-... \
     --file pre-incident.sql
-  diff <(wrangler d1 execute polaris-email --remote --command "SELECT ... FROM audit_log") \
+  diff <(wrangler d1 execute polaris-mail --remote --command "SELECT ... FROM audit_log") \
        <(sqlite3 pre-incident.sql "SELECT ... FROM audit_log")
   ```
 - Inspect Cloudflare's audit log (dashboard → My Profile → Audit Log) for
@@ -104,7 +104,7 @@ secrets seed` re-mints generators and re-pushes via `wrangler secret
 put`; for sources-only secrets (like the CF API token itself), mint
    manually and seed via .env.deploy.
 2. **Redeploy from a clean source checkout** pinned to a git SHA known
-   to predate the compromise. `polaris-email setup infra deploy all`
+   to predate the compromise. `polaris-mail setup infra deploy all`
    ships every Worker.
 3. **D1 Time-Travel restore** to a point before the compromise. See the
    [D1 recovery runbook](./d1-recovery.md) for the two-step copy-then-

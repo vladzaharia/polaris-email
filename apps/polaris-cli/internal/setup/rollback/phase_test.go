@@ -74,7 +74,7 @@ func TestRollbackPhase_NeverDeletesResources(t *testing.T) {
 		"provision": {CompletedAt: time.Now().UTC()},
 	}
 	doc.D1 = map[string]state.Resource{
-		"polaris-email": {ID: "abc", Name: "polaris-email"},
+		"polaris-mail": {ID: "abc", Name: "polaris-mail"},
 	}
 	doc.R2 = map[string]state.R2Bucket{
 		"polaris-mail-archive": {Name: "polaris-mail-archive"},

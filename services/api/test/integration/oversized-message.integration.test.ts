@@ -20,9 +20,9 @@
 //   4. NOT enqueue anything on OUTBOUND_QUEUE.
 
 import { describe, expect, it } from 'vitest';
-import { sign, generateNonce } from '@polaris-email/hmac';
-import { ulid } from '@polaris-email/ids';
-import { MAX_MESSAGE_SIZE_VERIFIED } from '@polaris-email/mime';
+import { sign, generateNonce } from '@polaris-mail/hmac';
+import { ulid } from '@polaris-mail/ids';
+import { MAX_MESSAGE_SIZE_VERIFIED } from '@polaris-mail/mime';
 import {
   app,
   bootstrapEnv,

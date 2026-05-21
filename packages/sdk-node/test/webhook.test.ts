@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { sign } from '@polaris-email/hmac';
+import { sign } from '@polaris-mail/hmac';
 import { verifyWebhook } from '../src/webhook.js';
 import vectors from '../../test-vectors/vectors.json' with { type: 'json' };
 

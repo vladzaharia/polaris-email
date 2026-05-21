@@ -16,9 +16,9 @@ import {
   TriageClassification,
   TRIAGE_RESPONSE_JSON_SCHEMA,
   type TriageCategory,
-} from '@polaris-email/triage-schema';
-import { normalizeAddress } from '@polaris-email/suppressions';
-import { ulid } from '@polaris-email/ids';
+} from '@polaris-mail/triage-schema';
+import { normalizeAddress } from '@polaris-mail/suppressions';
+import { ulid } from '@polaris-mail/ids';
 
 const DEFAULT_DAILY_BUDGET = 5000;
 const DEFAULT_MODEL = '@cf/meta/llama-3.1-8b-instruct';

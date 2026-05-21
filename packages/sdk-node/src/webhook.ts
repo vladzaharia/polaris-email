@@ -1,19 +1,19 @@
 /// <reference types="node" />
-// `@polaris/sdk/webhook` — Verify polaris-email webhook deliveries.
+// `@polaris/sdk/webhook` — Verify polaris-mail webhook deliveries.
 //
 // The triple-slash above ensures consumers that resolve this TS source
 // directly (Phase B.1b switched package main to `src/index.ts` for vitest
 // 4.x compat) pull in Node's `Buffer` global type. Without it, apps that
 // don't explicitly include `@types/node` in their tsconfig fail typecheck.
 //
-// Thin wrapper around `@polaris-email/hmac`'s strict canonical-string verifier.
+// Thin wrapper around `@polaris-mail/hmac`'s strict canonical-string verifier.
 // Historical context: this file once carried its own hand-written HMAC
 // implementation alongside the canonical TS package; the duplication was
 // collapsed in cleanup. The HMAC scheme itself was un-versioned in
 // — direction tags are `polaris-api` / `polaris-webhook` (no `.v1`),
 // and the `X-Polaris-Sig` header is bare lowercase hex (no `v1=`/`v2=` prefix).
 
-import { verify, type Direction, type VerifyResult } from '@polaris-email/hmac';
+import { verify, type Direction, type VerifyResult } from '@polaris-mail/hmac';
 
 export type { Direction, VerifyResult };
 

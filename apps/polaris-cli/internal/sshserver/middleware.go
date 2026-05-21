@@ -43,7 +43,7 @@ func requireOperatorMiddleware(cache *Cache) wish.Middleware {
 			pk := sess.PublicKey()
 			if pk == nil {
 				wish.Fatalln(sess,
-					"polaris-email serve --ssh requires public-key auth.",
+					"polaris-mail serve --ssh requires public-key auth.",
 					"No SSH key was presented; cannot authenticate.",
 				)
 				return
@@ -59,10 +59,10 @@ func requireOperatorMiddleware(cache *Cache) wish.Middleware {
 			}
 			if op == nil {
 				wish.Fatalln(sess,
-					"Your SSH key isn't registered with polaris-email.",
+					"Your SSH key isn't registered with polaris-mail.",
 					"",
 					"Ask an admin to run:",
-					"  polaris-email operator add",
+					"  polaris-mail operator add",
 					"",
 					"Your fingerprint:",
 					"  "+fp,
@@ -73,7 +73,7 @@ func requireOperatorMiddleware(cache *Cache) wish.Middleware {
 				wish.Fatalln(sess,
 					"Your operator account ("+op.Email+") has been disabled.",
 					"",
-					"Ask an admin to re-enable via `polaris-email operator update`.",
+					"Ask an admin to re-enable via `polaris-mail operator update`.",
 				)
 				return
 			}

@@ -6,7 +6,7 @@
 // without bumping the SDK major version. The panel currently calls the
 // SDK directly via TanStack Query, so this file is empty by design.
 //
-// SDKs are hand-written and kept in sync with `openapi/polaris-email.yaml`
+// SDKs are hand-written and kept in sync with `openapi/polaris-mail.yaml`
 // manually; see `docs/sdk.md` for the contract.
 
 export {};

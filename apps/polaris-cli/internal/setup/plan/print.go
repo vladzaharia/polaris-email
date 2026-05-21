@@ -9,12 +9,12 @@ import (
 // Render writes a terraform-style summary of p to w. Output shape:
 //
 //	Plan: N to create, M to adopt, K already present, D drifting.
-//	+ create  d1     polaris-email
-//	+ create  r2     polaris-email                  (jurisdiction=eu, object_lock_hours=2160)
-//	+ create  kv     polaris-email-nonce
-//	~ adopt   queue  polaris-email-fanout           (live=qid-deadbeef)
-//	  skip    d1     polaris-email                  (id=db-uuid)
-//	! drift   kv     polaris-email-stale            (state-only)
+//	+ create  d1     polaris-mail
+//	+ create  r2     polaris-mail                  (jurisdiction=eu, object_lock_hours=2160)
+//	+ create  kv     polaris-mail-nonce
+//	~ adopt   queue  polaris-mail-fanout           (live=qid-deadbeef)
+//	  skip    d1     polaris-mail                  (id=db-uuid)
+//	! drift   kv     polaris-mail-stale            (state-only)
 //
 // Empty plans emit "No changes — all resources present."
 func Render(w io.Writer, p *Plan) {
@@ -47,7 +47,7 @@ func Render(w io.Writer, p *Plan) {
 	if len(p.Drift) > 0 {
 		fmt.Fprintln(w)
 		fmt.Fprintln(w, "Drift detected: resources recorded in .deploy-state.json are no longer present on Cloudflare.")
-		fmt.Fprintln(w, "Run `polaris-email setup infra state rebuild` to reconcile after manual remediation.")
+		fmt.Fprintln(w, "Run `polaris-mail setup infra state rebuild` to reconcile after manual remediation.")
 	}
 }
 

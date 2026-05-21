@@ -10,7 +10,7 @@ import (
 
 func TestKeyringSource_NoOpStubReturnsDisabled(t *testing.T) {
 	t.Parallel()
-	src := &KeyringSource{Service: "polaris-email"}
+	src := &KeyringSource{Service: "polaris-mail"}
 	_, err := src.Load(context.Background(), "POLARIS_SECRET_A")
 	if err == nil {
 		t.Fatal("stub should return ErrKeychainDisabled")

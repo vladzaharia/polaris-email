@@ -1,6 +1,6 @@
-// polaris-email-docs Worker — committed config. Real IDs / routes live in
+// polaris-mail-docs Worker — committed config. Real IDs / routes live in
 // wrangler.local.jsonc (gitignored) and are merged in before `wrangler
-// deploy` by `polaris-email setup infra deploy`.
+// deploy` by `polaris-mail setup infra deploy`.
 //
 // The docs site is a Docusaurus v3 static build (output: ./build) served
 // via the Workers Assets binding, with a thin Hono server that adds CSP
@@ -11,7 +11,7 @@
 //   "routes": [{ "pattern": "docs.mail.plrs.im/*", "zone_name": "mail.plrs.im" }]
 {
   "$schema": "https://json-schema.org/draft-07/schema",
-  "name": "polaris-email-docs",
+  "name": "polaris-mail-docs",
   "main": "src/server/index.ts",
   "compatibility_date": "2026-04-15",
   "compatibility_flags": ["nodejs_compat_v2"],

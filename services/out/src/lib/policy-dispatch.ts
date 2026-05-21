@@ -18,15 +18,15 @@
 // recorded so an operator can review what *would have* been blocked).
 // Flip the flag to 'true' after the 7-day P2 soak.
 
-import { evaluatePolicy, lookupOutcome } from '@polaris-email/policy-engine';
+import { evaluatePolicy, lookupOutcome } from '@polaris-mail/policy-engine';
 import type {
   Direction,
   PolicyDecision,
   PolicyInput,
   StreamType,
-} from '@polaris-email/policy-engine';
-import { parseStrict, type ParsedMime } from '@polaris-email/mime';
-import { ulid } from '@polaris-email/ids';
+} from '@polaris-mail/policy-engine';
+import { parseStrict, type ParsedMime } from '@polaris-mail/mime';
+import { ulid } from '@polaris-mail/ids';
 import type { Env, OutboundQueueMessage } from '../env.js';
 
 interface MessageRow {
@@ -70,7 +70,7 @@ import {
   headersMap,
   rawHeadersString,
   bodyPreviewOf,
-} from '@polaris-email/policy-engine/mime-helpers';
+} from '@polaris-mail/policy-engine/mime-helpers';
 
 function isSoakActive(env: Env): boolean {
   return (

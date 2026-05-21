@@ -1,26 +1,26 @@
 ---
 title: DKIM, DMARC, SPF
-description: What polaris-email publishes for each verified outbound domain, why those defaults, alignment rules, and what to do when authentication fails — plus inbound TLS hardening via MTA-STS and TLS-RPT.
+description: What polaris-mail publishes for each verified outbound domain, why those defaults, alignment rules, and what to do when authentication fails — plus inbound TLS hardening via MTA-STS and TLS-RPT.
 sidebar_label: DKIM / DMARC / SPF
 sidebar_position: 4
 ---
 
 # Email authentication (DKIM / DMARC / SPF) and inbound TLS
 
-This page is the canonical reference for what DNS polaris-email
+This page is the canonical reference for what DNS polaris-mail
 publishes on a verified outbound domain, why those defaults are what
 they are, and how to triage auth failures. The corresponding day-2
 workflow — verify, rotate, troubleshoot from the operator side —
 lands under [Operators](/operators) → Day 2 → Domain management in a
 later batch.
 
-## What polaris-email publishes
+## What polaris-mail publishes
 
-For a domain with `capabilities.outbound = true`, polaris-email
+For a domain with `capabilities.outbound = true`, polaris-mail
 publishes (or expects to find) four DNS records. All four are managed
 by the Cloudflare Email Service onboarding path
 (`packages/cf-api/src/email-service.ts`), which the admin API invokes
-during `POST /v1/admin/domains` and `polaris-email domain onboard`.
+during `POST /v1/admin/domains` and `polaris-mail domain onboard`.
 
 ### DKIM CNAME — `polaris1._domainkey.<domain>` → CF Email Service
 
@@ -32,12 +32,12 @@ polaris1._domainkey.<domain>.   CNAME   polaris1.<domain>.dkim.cfemail.net.
   when no selector is supplied
   (`services/api/src/routes/admin/domains.ts`). Rotation can mint
   successor selectors (`polaris1` → `polaris2` → …) via
-  `polaris-email domain rotate-dkim`; both selectors point at
+  `polaris-mail domain rotate-dkim`; both selectors point at
   CF Email Service-managed keys.
 - The private key never lives on polaris infrastructure — Cloudflare
   Email Service holds it and signs at send time. Rotation is performed
   by minting a new selector (`polaris1` → `polaris2`) via
-  `polaris-email domain rotate-dkim`; the old selector keeps verifying
+  `polaris-mail domain rotate-dkim`; the old selector keeps verifying
   in-flight mail until you take it down.
 - If `include_dkim_wildcard = true`, a `*._domainkey.<domain>` CNAME is
   also published so subdomain mail validates without per-subdomain
@@ -50,7 +50,7 @@ polaris1._domainkey.<domain>.   CNAME   polaris1.<domain>.dkim.cfemail.net.
 ```
 
 - The Email Service onboarding path emits `-all` (hard fail). Prefer
-  `-all` when polaris-email is the only outbound source for the
+  `-all` when polaris-mail is the only outbound source for the
   domain; if you also send through hand-rolled paths, replace the
   record manually after onboarding with `~all` (soft fail).
 
@@ -91,7 +91,7 @@ Default `p=quarantine` is intentional. The promotion path is:
    ignore policy. Use this for at least 7 days on a new domain to
    surface any forgotten legacy outbound sources.
 2. **`p=quarantine`** — failing mail lands in spam. This is the
-   default polaris-email ships **after** the operator confirms the
+   default polaris-mail ships **after** the operator confirms the
    monitoring window is clean. Most legitimate clients still see the
    mail (just in spam); a misconfiguration costs deliverability, not
    the message itself.
@@ -107,7 +107,7 @@ window and a zero-fail-rate check from aggregate reports.
 ## Why SPF `-all`
 
 `-all` is what Cloudflare's onboarding publishes and what
-polaris-email's REST onboarding emits. If you operate non-polaris
+polaris-mail's REST onboarding emits. If you operate non-polaris
 outbound paths for the same domain during a migration window, replace
 the record manually with `~all` (softfail) and revert to `-all` once
 those paths are decommissioned.
@@ -124,7 +124,7 @@ two:
 
 - **DKIM alignment** — the `d=` tag on the DKIM signature must match
   (or be a registered-domain match for) the `From:` domain. Strict by
-  default; the polaris-email DKIM signer uses `d=<from-domain>` so
+  default; the polaris-mail DKIM signer uses `d=<from-domain>` so
   strict alignment passes for any `From:` on a verified domain.
 - **SPF alignment** — the `MAIL FROM:` (envelope sender) domain must
   match the `From:` domain. The CF bounce MX path uses
@@ -133,14 +133,14 @@ two:
   would not.
 
 DMARC's `aspf=` and `adkim=` tags default to `r` (relaxed) and that is
-what polaris-email relies on. If you publish `aspf=s` you will break
+what polaris-mail relies on. If you publish `aspf=s` you will break
 SPF alignment for polaris-sent mail; do not.
 
 ## Triage: what to do on auth failure
 
 | Failure                                                | First check                                                                                                                                                                                                                                                                                                  |
 | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **SPF fail** at the receiver                           | Confirm the SPF TXT is published and resolves to the polaris-email value. Verify with `dig +short TXT <domain>`. If it's missing or has a hand-rolled record without the CF include, re-run the domain verify path.                                                                                          |
+| **SPF fail** at the receiver                           | Confirm the SPF TXT is published and resolves to the polaris-mail value. Verify with `dig +short TXT <domain>`. If it's missing or has a hand-rolled record without the CF include, re-run the domain verify path.                                                                                           |
 | **DKIM fail** at the receiver                          | Check which selector signed the message (`Authentication-Results` header → `header.s=<selector>`). Confirm `<selector>._domainkey.<domain>` CNAME resolves. If you rotated recently, check that the **old** selector is still in DNS — receivers may have cached the old key.                                |
 | **DMARC fail** with SPF+DKIM pass on different domains | This is an alignment failure, not an auth failure. Confirm the `From:` domain matches the DKIM `d=` tag. If a downstream forwarder rewrote `From:`, the originally-aligned DKIM no longer aligns post-forward — that's the forwarder's problem, not yours, but ARC sealing on the forwarder is the only fix. |
 | **DMARC fail** with SPF+DKIM fail                      | Real auth failure. Walk the SPF and DKIM rows above.                                                                                                                                                                                                                                                         |
@@ -148,13 +148,13 @@ SPF alignment for polaris-sent mail; do not.
 For the operator-side rotation flow:
 
 ```sh
-polaris-email domain rotate-dkim <domain>     # mints new selector, publishes CNAME
+polaris-mail domain rotate-dkim <domain>     # mints new selector, publishes CNAME
 ```
 
 Inspect the current state via the panel or:
 
 ```sh
-polaris-email domain show <domain>
+polaris-mail domain show <domain>
 ```
 
 The `last_verify_check_at` column reflects the last successful DNS
@@ -170,8 +170,8 @@ deliver to your inbound MX (TLS-only, with hostname validation).
 Publishing flow:
 
 ```sh
-polaris-email domain enable-mta-sts <domain>      # publishes _mta-sts TXT + mta-sts.<domain> Worker custom domain
-polaris-email domain enable-tls-rpt <domain>      # publishes _smtp._tls TXT pointing at the platform aggregator
+polaris-mail domain enable-mta-sts <domain>      # publishes _mta-sts TXT + mta-sts.<domain> Worker custom domain
+polaris-mail domain enable-tls-rpt <domain>      # publishes _smtp._tls TXT pointing at the platform aggregator
 ```
 
 Under the hood:
@@ -191,7 +191,7 @@ The two records are managed separately from DKIM/SPF/DMARC because
 the DKIM/SPF/DMARC records are emitted by the Cloudflare Email
 Service onboarding path (idempotent, no operator action beyond domain
 create) while MTA-STS requires a Worker custom-domain provisioning
-step that polaris-email does not perform implicitly. The
+step that polaris-mail does not perform implicitly. The
 domain-handler returns `mta_sts_provisioning_hint` and
 `tlsrpt_provisioning_hint` on create to make the explicit
 post-create call visible.
@@ -204,7 +204,7 @@ is idempotent and re-publishes the canonical state.
 
 - **BIMI**. Not published, not validated, not on the v1 roadmap.
 - **DKIM key length / algorithm**. Cloudflare Email Service owns the
-  key material — polaris-email does not select the algorithm or
+  key material — polaris-mail does not select the algorithm or
   length, just CNAMEs the selector at the CF-managed target.
 
 <!-- Verified against: services/api/src/routes/admin/domains.ts, services/api/src/routes/admin/domains-mta-sts.ts, packages/cf-api/src/email-service.ts (expectedRecordsFor), services/api/migrations/0015_dmarc_reports.sql, services/api/migrations/0016_dmarc_promotion.sql @ eeee222cdf8359f8f2bf1013a103abdb3c705f06 -->

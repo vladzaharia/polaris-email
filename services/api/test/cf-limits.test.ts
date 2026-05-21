@@ -1,4 +1,4 @@
-// verifies that every ErrorCode in @polaris-email/schema has a
+// verifies that every ErrorCode in @polaris-mail/schema has a
 // corresponding HTTP status and retryable flag mapping in errors.ts. This
 // catches the typical drift where the schema enum is extended but the
 // `Record<ErrorCode, …>` maps in errors.ts are not, which TypeScript would
@@ -9,7 +9,7 @@
 // used at POST /v1/messages.
 import { describe, expect, it } from 'vitest';
 import type { z } from 'zod';
-import { ErrorCode, SendRequest } from '@polaris-email/schema';
+import { ErrorCode, SendRequest } from '@polaris-mail/schema';
 import { ERROR_HTTP, ERROR_RETRYABLE } from '../src/errors.js';
 import { CF_TYPED_CODES, classifyZodIssue } from '../src/routes/messages.js';
 

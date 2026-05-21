@@ -1,20 +1,20 @@
 #!/usr/bin/env sh
-# polaris-email installer.
+# polaris-mail installer.
 #
 # Served from cli.mail.plrs.im. Source of truth lives at
-# apps/cli-installer/src/install.sh in the polaris-email repo. Re-deploying
+# apps/cli-installer/src/install.sh in the polaris-mail repo. Re-deploying
 # the cli-installer Worker rolls the script forward.
 #
 # Usage:
 #   curl -fsSL cli.mail.plrs.im | sh                # install latest
 #   curl -fsSL cli.mail.plrs.im | sh -s -- install  # install latest (explicit)
 #   curl -fsSL cli.mail.plrs.im | sh -s -- upgrade  # install / upgrade
-#   curl -fsSL cli.mail.plrs.im | sh -s -- <args>   # install if missing, then `polaris-email <args>`
+#   curl -fsSL cli.mail.plrs.im | sh -s -- <args>   # install if missing, then `polaris-mail <args>`
 #   curl -fsSL "cli.mail.plrs.im/?v=v1.2.3" | sh    # install pinned version v1.2.3
 #
 # Env vars:
 #   POLARIS_INSTALL_DIR   target install directory (default: /usr/local/bin
-#                         when root, else $XDG_DATA_HOME/polaris-email/bin or
+#                         when root, else $XDG_DATA_HOME/polaris-mail/bin or
 #                         ~/.local/bin)
 #   POLARIS_NO_PATH_HINT  set to 1 to suppress the post-install PATH hint
 #   GH_TOKEN              optional GitHub token for higher rate limits
@@ -23,7 +23,7 @@
 set -eu
 
 POLARIS_REPO='vladzaharia/polaris-email'
-POLARIS_BIN_NAME='polaris-email'
+POLARIS_BIN_NAME='polaris-mail'
 POLARIS_SYMLINK='pml'
 # Populated by the cli-installer Worker when ?v=<version> is supplied.
 # The Worker rewrites this exact line via regex; do not reformat it.
@@ -32,10 +32,10 @@ POLARIS_PIN_VERSION=''
 # ---------------------------------------------------------------------------
 # logging
 # ---------------------------------------------------------------------------
-log() { printf '%s\n' "polaris-email: $*" >&2; }
-warn() { printf '%s\n' "polaris-email: warning: $*" >&2; }
+log() { printf '%s\n' "polaris-mail: $*" >&2; }
+warn() { printf '%s\n' "polaris-mail: warning: $*" >&2; }
 die() {
-    printf '%s\n' "polaris-email: error: $*" >&2
+    printf '%s\n' "polaris-mail: error: $*" >&2
     exit 1
 }
 
@@ -90,7 +90,7 @@ resolve_install_dir() {
         return
     fi
     if [ -n "${XDG_DATA_HOME:-}" ]; then
-        printf '%s' "$XDG_DATA_HOME/polaris-email/bin"
+        printf '%s' "$XDG_DATA_HOME/polaris-mail/bin"
         return
     fi
     printf '%s' "${HOME:-/tmp}/.local/bin"
@@ -157,7 +157,7 @@ resolve_installed_version() {
         printf '%s' ''
         return
     fi
-    # Expect first line of `polaris-email version` like: "polaris-email v1.2.3 (abc1234, 2026-01-01)"
+    # Expect first line of `polaris-mail version` like: "polaris-mail v1.2.3 (abc1234, 2026-01-01)"
     raw=$("$POLARIS_BIN_NAME" version 2>/dev/null | head -1 || true)
     ver=$(printf '%s' "$raw" | sed -E 's/.*[[:space:]](v?[0-9]+\.[0-9]+\.[0-9]+([-A-Za-z0-9.+]+)?).*/\1/')
     case "$ver" in
@@ -192,7 +192,7 @@ sha256_of() {
 expected_sha_for() {
     _name=$1
     _checksums=$2
-    # checksums.txt lines look like: "<sha>  polaris-email_1.2.3_linux_amd64.tar.gz"
+    # checksums.txt lines look like: "<sha>  polaris-mail_1.2.3_linux_amd64.tar.gz"
     grep -E "  ${_name}\$" "$_checksums" | awk '{print $1}' | head -1
 }
 
@@ -204,19 +204,19 @@ do_install() {
     installed_version=$(resolve_installed_version)
 
     if [ -n "$installed_version" ] && [ "$installed_version" = "$target_version" ]; then
-        log "polaris-email $installed_version is already installed; skipping download"
+        log "polaris-mail $installed_version is already installed; skipping download"
         return 0
     fi
 
     os=$(detect_os)
     arch=$(detect_arch)
     version_no_v=$(normalize_version "$target_version")
-    archive_name="polaris-email_${version_no_v}_${os}_${arch}.tar.gz"
+    archive_name="polaris-mail_${version_no_v}_${os}_${arch}.tar.gz"
     base="https://github.com/$POLARIS_REPO/releases/download/$target_version"
     archive_url="$base/$archive_name"
     checksums_url="$base/checksums.txt"
 
-    tmp=$(mktemp -d 2>/dev/null || mktemp -d -t polaris-email)
+    tmp=$(mktemp -d 2>/dev/null || mktemp -d -t polaris-mail)
     [ -n "$tmp" ] || die "could not create temporary directory"
     # POSIX trap; runs on EXIT / INT / TERM.
     trap 'rm -rf "$tmp"' EXIT INT TERM
@@ -271,14 +271,14 @@ do_install() {
     # Write a sentinel file so the built-in upgrader (internal/upgrader)
     # can distinguish a curl-installed binary from a hand-copied one at
     # an arbitrary path. The CLI's install-method detection reads this
-    # at `~/.config/polaris-email/install-method` (or whichever
+    # at `~/.config/polaris-mail/install-method` (or whichever
     # $POLARIS_CONFIG_DIR the operator overrode to).
-    cfg_dir="${XDG_CONFIG_HOME:-${HOME:-/tmp}/.config}/polaris-email"
+    cfg_dir="${XDG_CONFIG_HOME:-${HOME:-/tmp}/.config}/polaris-mail"
     if mkdir -p "$cfg_dir" 2>/dev/null; then
         printf '%s\n' 'curl' > "$cfg_dir/install-method" 2>/dev/null || true
     fi
 
-    log "installed polaris-email $target_version to $install_dir/$POLARIS_BIN_NAME"
+    log "installed polaris-mail $target_version to $install_dir/$POLARIS_BIN_NAME"
 
     # PATH hint.
     if [ "${POLARIS_NO_PATH_HINT:-0}" != "1" ] && ! printf '%s' ":$PATH:" | grep -q ":$install_dir:"; then
@@ -310,7 +310,7 @@ main() {
                 fi
                 ;;
             *)
-                # Any other first arg is treated as a polaris-email subcommand.
+                # Any other first arg is treated as a polaris-mail subcommand.
                 action='install-then-exec'
                 passthrough="$*"
                 ;;

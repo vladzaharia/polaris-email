@@ -25,7 +25,7 @@ func newCFZoneCmd() *cobra.Command {
 		Use:   "cf-zone",
 		Short: "Discover + configure Cloudflare zones (Email Routing, sender domains, catch-all, D1 row)",
 		Long: "Operate against the live Cloudflare account: list every zone with its " +
-			"polaris-email readiness, drill into a single zone, and (dry-run by default) " +
+			"polaris-mail readiness, drill into a single zone, and (dry-run by default) " +
 			"reconcile drift via the auto-publish endpoints.",
 	}
 	c.AddCommand(cfZoneListCmd(), cfZoneStatusCmd(), cfZoneConfigureCmd())
@@ -38,7 +38,7 @@ func cfZoneListCmd() *cobra.Command {
 	var refresh bool
 	c := &cobra.Command{
 		Use:   "list",
-		Short: "List every CF zone in this account with polaris-email readiness",
+		Short: "List every CF zone in this account with polaris-mail readiness",
 		RunE: func(_ *cobra.Command, _ []string) error {
 			cl, err := MakeClient()
 			if err != nil {

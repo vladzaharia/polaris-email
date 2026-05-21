@@ -1,4 +1,4 @@
-# Cross-platform CLI release pipeline for `polaris-email`.
+# Cross-platform CLI release pipeline for `polaris-mail`.
 #
 # Triggers on tag push (`v*` or `polaris-cli-v*`). Runs goreleaser to build
 # darwin/{amd64,arm64} + linux/{amd64,arm64} + windows/amd64 archives, then
@@ -7,7 +7,7 @@
 #
 # The published artifacts are exactly what apps/cli-installer/src/install.sh
 # expects:
-#   - polaris-email_{version}_{os}_{arch}.tar.gz  (or .zip on windows)
+#   - polaris-mail_{version}_{os}_{arch}.tar.gz  (or .zip on windows)
 #   - checksums.txt
 # So `curl -fsSL cli.mail.plrs.im | sh` will resolve the new tag from the
 # GitHub releases API and pull these archives — no separate registry needed.
@@ -101,4 +101,4 @@ jobs:
         if: github.event_name == 'push'
         uses: actions/attest-build-provenance@v4
         with:
-          subject-path: 'apps/polaris-cli/dist/polaris-email_*.tar.gz'
+          subject-path: 'apps/polaris-cli/dist/polaris-mail_*.tar.gz'

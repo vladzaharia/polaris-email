@@ -1,11 +1,11 @@
 ---
 title: Threat model
-description: Trust boundaries, in-scope adversaries, and the mitigations that back each one — the canonical security posture for polaris-email.
+description: Trust boundaries, in-scope adversaries, and the mitigations that back each one — the canonical security posture for polaris-mail.
 sidebar_label: Threat model
 sidebar_position: 2
 ---
 
-# polaris-email — threat model
+# polaris-mail — threat model
 
 :::info Source
 This page mirrors `SECURITY.md` at the repo root. The file under
@@ -94,11 +94,11 @@ custom domain `r2.mail.plrs.im`. Object keys are content-addressed
 attachments), so the SHA-256 in the URL provides the unguessability
 boundary — there is no signature, no expiry, no HMAC header.
 
-**Privacy implication**: a polaris-email URL **is** a capability token.
+**Privacy implication**: a polaris-mail URL **is** a capability token.
 Anyone with the URL can read the bytes forever. Because the audit log
 records the content SHA-256 of every message, an audit-log reader gains
 implicit read access to every message body and attachment. This is
-acceptable at the internal-deployment scale polaris-email targets
+acceptable at the internal-deployment scale polaris-mail targets
 (&lt;10k msg/day, ~tens of mailboxes, a handful of admins who already
 have admin-level mailbox access). External or compliance-bound
 deployments would need a different model — either re-introduce signed
@@ -115,7 +115,7 @@ The control plane stores a single `CF_API_TOKEN` secret in
   (`services/api/src/routes/admin/cf-zones.ts`), which lists every zone
   in the operator's account and inspects each one's Email Routing +
   sender state. Apply path enables Email Routing, sets the catch-all to
-  `polaris-email-in`, onboards the sender domain, and creates the D1
+  `polaris-mail-in`, onboards the sender domain, and creates the D1
   `mail_domains` row.
 
 Required scopes (broader than the original "Email Routing on a specific
@@ -128,16 +128,16 @@ zone" model — the discover view needs to enumerate all zones):
 - Zone → DNS → Edit
 
 The token is **per-account**. Use a dedicated CF account for
-polaris-email so the token's blast radius is confined to that account's
+polaris-mail so the token's blast radius is confined to that account's
 zones. Rotation: mint a new token, push via
-`wrangler secret put CF_API_TOKEN` on `polaris-email-api`, then revoke
+`wrangler secret put CF_API_TOKEN` on `polaris-mail-api`, then revoke
 the old token in the Cloudflare dashboard. The CF zone configure path
 is idempotent so a brief inflight window with both tokens valid is
 safe.
 
-Note that polaris-email **never modifies operator-defined named-address
+Note that polaris-mail **never modifies operator-defined named-address
 routing rules**. The discover view surfaces them as warnings (e.g. "3
-named rules will intercept mail before reaching polaris-email-in") but
+named rules will intercept mail before reaching polaris-mail-in") but
 the configure flow never deletes them — those rules belong to the
 operator.
 
@@ -179,7 +179,7 @@ it to `development`).
 
 ## Read-once secrets (A11/B6)
 
-Every secret polaris-email issues — API key secrets, SMTPS / IMAP
+Every secret polaris-mail issues — API key secrets, SMTPS / IMAP
 passwords, bridge HMAC keys — is shown to the operator **exactly
 once**: at creation or rotation. The control-plane database stores
 hashes only (bcrypt for mailbox passwords; HMAC-key hashes for bridges;
@@ -234,12 +234,12 @@ R2 (operator-owned `backups/d1/` prefix, 12-week retention).
 - HMAC test vectors (`packages/test-vectors/vectors.json`) green in
   both SDK webhook verifiers (`@polaris/sdk/webhook`, `polaris-sdk-go`).
 - Audit hash-chain verified end-to-end with
-  `polaris-email audit verify`; `audit-verify` cron writes
+  `polaris-mail audit verify`; `audit-verify` cron writes
   `status='ok'` to `cron_runs` on its nightly run.
 - `revocationCheck` drill: revoke a test key, confirm next
   authenticated request returns `key_revoked` within ≤60 s (KV
   propagation + cache TTL).
-- R2 Object Lock active in compliance mode on the `polaris-email`
+- R2 Object Lock active in compliance mode on the `polaris-mail`
   bucket (bodies + attachments); verified via `wrangler r2 bucket info`.
 - D1 Time-Travel drill: pick a recent bookmark, restore into a copy
   DB, verify a known operator action lands at the expected row.

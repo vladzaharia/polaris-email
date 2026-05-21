@@ -1,11 +1,11 @@
 ---
 title: On-call runbook
-description: First commands and decision trees for common polaris-email incidents — triage, outbound failures, webhook delivery failures, bridge offline, audit chain breakage, schema migration rollback, D1 quota, cost alerts, mirror staleness, and DLQ filling.
+description: First commands and decision trees for common polaris-mail incidents — triage, outbound failures, webhook delivery failures, bridge offline, audit chain breakage, schema migration rollback, D1 quota, cost alerts, mirror staleness, and DLQ filling.
 sidebar_label: On-call runbook
 sidebar_position: 1
 ---
 
-# polaris-email on-call runbook
+# polaris-mail on-call runbook
 
 First commands and decision trees for common incidents. Pairs with the
 [Operators](/operators) workflows and the
@@ -20,7 +20,7 @@ decision trees below, jump to the
 Whatever the alert, first command is:
 
 ```bash
-polaris-email status
+polaris-mail status
 ```
 
 This returns red/yellow/green per domain plus aggregate health:
@@ -39,15 +39,15 @@ the prod account.
 ### "Outbound to acme.com is failing"
 
 Drill into the failures with the platform's native log tooling — there is
-no `polaris-email logs` subcommand. From a workstation with `wrangler`
+no `polaris-mail logs` subcommand. From a workstation with `wrangler`
 configured:
 
 ```bash
-wrangler tail polaris-email-api --status error --search "acme.com"
-wrangler tail polaris-email-out --status error --search "acme.com"
+wrangler tail polaris-mail-api --status error --search "acme.com"
+wrangler tail polaris-mail-out --status error --search "acme.com"
 ```
 
-Cross-reference the failed messages with `polaris-email status --domain acme.com`
+Cross-reference the failed messages with `polaris-mail status --domain acme.com`
 for aggregate rates.
 
 Look at error class:
@@ -55,14 +55,14 @@ Look at error class:
 - **provider_5xx**: Cloudflare Email Service issue. Check
   https://www.cloudflarestatus.com/. There is no built-in provider
   fail-over; if the outage is sustained, soft-disable the domain
-  (`polaris-email domain disable acme.com`) so callers stop queueing
+  (`polaris-mail domain disable acme.com`) so callers stop queueing
   doomed messages, then re-enable once the upstream recovers.
 - **dkim_invalid**: receiver bouncing on DKIM. Check current DKIM key state:
   ```bash
-  polaris-email domain show acme.com   # look for dkim_keys with state
+  polaris-mail domain show acme.com   # look for dkim_keys with state
   ```
   If a retiring key was removed from DNS prematurely, rotate again with
-  `polaris-email domain rotate-dkim acme.com` and republish the new
+  `polaris-mail domain rotate-dkim acme.com` and republish the new
   selector before retiring the old one.
 - **rate_limited**: tenant exceeding per-tenant rate limit. Coordinate with
   the tenant; rate-limit adjustments are an operator-side D1 update today
@@ -71,35 +71,35 @@ Look at error class:
 ### "Webhook deliveries are failing for service X"
 
 ```bash
-wrangler tail polaris-email-api --status error --search webhook
-polaris-email webhook dlq list
+wrangler tail polaris-mail-api --status error --search webhook
+polaris-mail webhook dlq list
 ```
 
 Note: webhook fan-out runs **inside** `services/api` (folded in from the
 old `services/fanout` Worker). There is no separate
-`polaris-email-fanout` Worker to tail.
+`polaris-mail-fanout` Worker to tail.
 
 Per-subscription circuit breaker marks a sub `paused` after 5
 consecutive failures. To bring a paused sub back online, update its row
 directly (no dedicated `resume` verb today):
 
 ```bash
-wrangler d1 execute polaris-email --command \
+wrangler d1 execute polaris-mail --command \
   "UPDATE webhook_subs SET paused = 0, failure_count = 0 WHERE id = '<sub_id>'"
 ```
 
 If receiver is permanently broken and DLQ is filling:
 
 ```bash
-polaris-email webhook dlq inspect <id>             # confirm contents
-polaris-email webhook dlq replay <id>              # try once
-polaris-email webhook dlq drop <id> --confirm <id> # two-person rule
+polaris-mail webhook dlq inspect <id>             # confirm contents
+polaris-mail webhook dlq replay <id>              # try once
+polaris-mail webhook dlq drop <id> --confirm <id> # two-person rule
 ```
 
 ### "Bridge is offline / can't authenticate"
 
 ```bash
-polaris-email bridge list
+polaris-mail bridge list
 # look for last_seen_at gap
 
 # On the bridge host:
@@ -113,7 +113,7 @@ Common causes:
 - HMAC key drift: rotation was started but registration.json on the host
   wasn't updated. Re-deploy the bridge registration:
   ```bash
-  polaris-email bridge rotate <name>
+  polaris-mail bridge rotate <name>
   # SCP the new registration.json onto the host; restart the bridge.
   ```
 - CF Access service token expired (rare; tokens are long-lived but
@@ -122,7 +122,7 @@ Common causes:
 ### "Audit chain verification failed"
 
 ```bash
-polaris-email audit verify
+polaris-mail audit verify
 # Walks audit_log end-to-end via the chained-hash invariant
 # (row_hash = SHA-256(prev_hash || canonical(row))). Any rewrite of an
 # older row invalidates every later row_hash and shows up here.
@@ -146,7 +146,7 @@ D1 has no transactional DDL (I10). If a deploy fails mid-migration:
 
 ```bash
 # 1. Check applied migrations (custom schema_migrations table per package).
-wrangler d1 execute polaris-email --command \
+wrangler d1 execute polaris-mail --command \
   "SELECT version, applied_at FROM schema_migrations ORDER BY version DESC LIMIT 10"
 
 # 2. The expand-then-contract pattern means the previous Worker code should
@@ -155,13 +155,13 @@ wrangler d1 execute polaris-email --command \
 
 # 3. If a column was added with NOT NULL and no default, the migration left
 #    rows in a bad state. Manually backfill:
-wrangler d1 execute polaris-email --command \
+wrangler d1 execute polaris-mail --command \
   "UPDATE <table> SET <col> = <default> WHERE <col> IS NULL"
 ```
 
 ### "D1 quota approaching"
 
-Single `polaris-email` D1; older message rows are archived to R2 by the
+Single `polaris-mail` D1; older message rows are archived to R2 by the
 nightly retention janitor cron, which runs **inside `services/api`** (the
 standalone `services/cron` Worker was folded into `services/api`). There is no CLI verb for ad-hoc archival yet — drive it from D1
 directly. The retention job picks up soft-deleted (`expunged_at IS NOT
@@ -170,9 +170,9 @@ their R2 references:
 
 ```bash
 # Inspect current usage:
-wrangler d1 info polaris-email
+wrangler d1 info polaris-mail
 # Watch the cron tick land:
-wrangler tail polaris-email-api --status ok --search janitor
+wrangler tail polaris-mail-api --status ok --search janitor
 ```
 
 Long-term, the plan is monthly Logpush dumps to R2 Parquet; that pipeline
@@ -181,7 +181,7 @@ is not yet wired up.
 ### "Cost alert: bill is 2x baseline"
 
 Cloudflare dashboard → Billing → Usage is the authoritative breakdown.
-There is no `polaris-email cost` command; we rely on Cloudflare's billing
+There is no `polaris-mail cost` command; we rely on Cloudflare's billing
 UI plus Logpush exports for service-level attribution.
 
 Cost cliffs to look for (I19):
@@ -204,7 +204,7 @@ mutations should also arrive via the bridge's webhook subscription
 
 ```bash
 # Inspect registered bridges + last-sync timestamps directly in D1:
-wrangler d1 execute polaris-email --command \
+wrangler d1 execute polaris-mail --command \
   "SELECT id, name, last_sync_at, status FROM mail_bridges ORDER BY last_sync_at DESC"
 # on the host:
 docker compose -f docker-compose.tailscale.yml logs polaris-mail-bridge --tail 200
@@ -227,25 +227,25 @@ the bridge is offline (host down, tailnet partition, expired cert), polaris
 parks events in the fanout DLQ.
 
 ```bash
-polaris-email webhook dlq list --sub-id <bridge-sub-id>
-polaris-email webhook dlq inspect <id>
+polaris-mail webhook dlq list --sub-id <bridge-sub-id>
+polaris-mail webhook dlq inspect <id>
 # After confirming the bridge is healthy again:
-polaris-email webhook dlq replay <id>
+polaris-mail webhook dlq replay <id>
 # Replay-all for a single sub:
-polaris-email webhook dlq replay-all --sub-id <bridge-sub-id>
+polaris-mail webhook dlq replay-all --sub-id <bridge-sub-id>
 ```
 
 Drops require the two-person rule:
 
 ```bash
-polaris-email webhook dlq drop <id> --confirm <id>
+polaris-mail webhook dlq drop <id> --confirm <id>
 ```
 
 ## Safety rules
 
 - **Never** run `wrangler d1 execute --remote` with destructive SQL without
   a second operator's confirmation.
-- **Never** run `polaris-email domain delete` without checking for live
+- **Never** run `polaris-mail domain delete` without checking for live
   webhook subscriptions first; orphan subs lose inbound mail silently.
 - Destructive actions are gated **client-side** in the panel via
   `DestructiveActionDialog` (type-the-resource-name confirmation), and

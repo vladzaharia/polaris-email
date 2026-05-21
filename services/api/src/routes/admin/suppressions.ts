@@ -14,9 +14,9 @@ import {
   CreateSuppressionRequest,
   UpdateSuppressionRequest,
   type SuppressionRow,
-} from '@polaris-email/schema';
-import { normalizeAddress } from '@polaris-email/suppressions';
-import { ulid } from '@polaris-email/ids';
+} from '@polaris-mail/schema';
+import { normalizeAddress } from '@polaris-mail/suppressions';
+import { ulid } from '@polaris-mail/ids';
 import { actorOf, audit } from '../../audit.js';
 import { bodyText, requireScope } from '../../auth.js';
 import type { Env } from '../../env.js';
@@ -110,7 +110,7 @@ suppressions.get('/v1/admin/suppressions', requireScope('admin:read'), async (c)
   return c.json({ data, next_cursor });
 });
 
-// Lookup-by-address — used by the CLI `polaris-email suppression check` and
+// Lookup-by-address — used by the CLI `polaris-mail suppression check` and
 // by the panel's "is this address suppressed?" inline check. Returns *all*
 // active rows that match (could be both recipient and sender entries).
 // Registered BEFORE the `/:id` route so Hono doesn't match `check` as an id.

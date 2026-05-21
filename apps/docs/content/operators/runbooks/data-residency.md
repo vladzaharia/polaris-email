@@ -1,16 +1,16 @@
 ---
 title: Data residency
-description: Where every class of polaris-email data lives — D1, R2, Email Routing, Workers, the mail-bridge SQLite mirror, panel sessions — plus verification commands and the right-to-erasure path.
+description: Where every class of polaris-mail data lives — D1, R2, Email Routing, Workers, the mail-bridge SQLite mirror, panel sessions — plus verification commands and the right-to-erasure path.
 sidebar_label: Data residency
 sidebar_position: 7
 ---
 
 # Runbook: data residency
 
-polaris-email's stored data:
+polaris-mail's stored data:
 
 - **D1** — declared in `services/api/wrangler.local.jsonc` as `database_name` + `location: 'weur'` (configurable).
-- **R2** (`polaris-email` bucket) — declared in `services/api/wrangler.local.jsonc` as `bucket_name` + `jurisdiction: 'eu'` (configurable). Holds message bodies + attachments + weekly D1 backups under `backups/d1/`, fronted publicly at `r2.mail.plrs.im` via content-addressed keys.
+- **R2** (`polaris-mail` bucket) — declared in `services/api/wrangler.local.jsonc` as `bucket_name` + `jurisdiction: 'eu'` (configurable). Holds message bodies + attachments + weekly D1 backups under `backups/d1/`, fronted publicly at `r2.mail.plrs.im` via content-addressed keys.
 - **Email Routing inbound** — CF's regional routing follows the domain's MX, which lands in CF's nearest colo. Use a regional CF account to constrain.
 - **Workers** — `placement: { mode: 'smart' }` keeps execution close to D1/R2.
 - **Mail-bridge SQLite mirror** — on each bridge host's local volume (operator-managed). Holds credential bcrypt hashes and the local message-state mirror; never plaintext passwords.
@@ -18,12 +18,12 @@ polaris-email's stored data:
 
 ## Verifying
 
-Use the polaris-email CLI to inventory the stack:
+Use the polaris-mail CLI to inventory the stack:
 
 ```sh
-polaris-email domain list            # mail_domains, including jurisdiction hints
-polaris-email cred list --mailbox M  # api keys + smtp credentials for mailbox M
-polaris-email status                 # high-level counts
+polaris-mail domain list            # mail_domains, including jurisdiction hints
+polaris-mail cred list --mailbox M  # api keys + smtp credentials for mailbox M
+polaris-mail status                 # high-level counts
 ```
 
 For deeper jurisdiction inspection, query the bindings directly via `wrangler d1
@@ -31,7 +31,7 @@ info` and `wrangler r2 bucket info`.
 
 ## Recipients are unrecoverable
 
-By design, polaris-email does **not** retain plaintext recipient addresses
+By design, polaris-mail does **not** retain plaintext recipient addresses
 once a message has been submitted and dispatched. The audit chain records
 hashes and metadata, not plaintext to/cc/bcc lists. Consumers expecting to
 respond to subpoenas or comparable disclosure requests must keep their own
@@ -52,6 +52,6 @@ Current procedure:
    `POST /v1/mailboxes/:id/expunge` to hard-delete (decrements `r2_refs`).
 3. R2 Object Lock blocks immediate object deletion; underlying bytes expire
    on the configured retention window once `r2_refs` reaches zero.
-4. Audit-log the ticket id manually via `polaris-email audit chain`.
+4. Audit-log the ticket id manually via `polaris-mail audit chain`.
 
 <!-- Verified against: docs/runbooks/data-residency.md @ c3c1b5048dd5bfe92facdce24982141a07446042 -->

@@ -19,7 +19,7 @@ one once.
 ## Issue an API key
 
 ```sh
-polaris-email cred issue --mailbox <mailbox-id> --type api \
+polaris-mail cred issue --mailbox <mailbox-id> --type api \
     --senders "noreply@acme.com,alerts@mail.acme.com" \
     --output secret-file --output-path ./newsletter-api.key
 ```
@@ -31,7 +31,7 @@ the issuing key's `sender_scopes` (the runtime form of `--senders`).
 ## Issue an SMTP credential
 
 ```sh
-polaris-email cred issue --mailbox <mailbox-id> --type smtp \
+polaris-mail cred issue --mailbox <mailbox-id> --type smtp \
     --senders "noreply@acme.com" \
     --output json   # for piping to op/pass
 ```
@@ -45,16 +45,16 @@ authenticates clients with bcrypt.
 Pipe the plaintext into your secret store immediately:
 
 ```sh
-polaris-email cred issue ... -o json | jq -r .secret | op item create ...
+polaris-mail cred issue ... -o json | jq -r .secret | op item create ...
 ```
 
 ## List, revoke, rotate
 
 ```sh
-polaris-email cred list --mailbox <mailbox-id>
-polaris-email cred revoke <id>
-polaris-email cred rotate <id> --planned       # demote to secondary
-polaris-email cred rotate <id> --emergency     # immediate revoke + new key
+polaris-mail cred list --mailbox <mailbox-id>
+polaris-mail cred revoke <id>
+polaris-mail cred rotate <id> --planned       # demote to secondary
+polaris-mail cred rotate <id> --emergency     # immediate revoke + new key
 ```
 
 - **Planned rotation** keeps the prior key valid (`state='retiring'`)
@@ -70,8 +70,8 @@ retired.
 ## `--mailbox` is canonical; `--tenant` is deprecated
 
 ```sh
-polaris-email cred issue --mailbox <mailbox-id> ...   # canonical
-polaris-email cred issue --tenant <mailbox-id> ...    # deprecated alias
+polaris-mail cred issue --mailbox <mailbox-id> ...   # canonical
+polaris-mail cred issue --tenant <mailbox-id> ...    # deprecated alias
 ```
 
 :::warning Deprecated
@@ -96,7 +96,7 @@ If you lose a freshly-minted plaintext, **rotate**. There is no
 For automation:
 
 ```sh
-polaris-email cred issue --mailbox <mailbox-id> --type api \
+polaris-mail cred issue --mailbox <mailbox-id> --type api \
     --senders 'a@b.com' \
     --output json | jq -r .secret | \
     op item create --category="API Credential" \
@@ -116,9 +116,9 @@ redacted) and JSON body, and returns immediately without sending the
 request. Useful for CI preview mode.
 
 ```sh
-polaris-email cred issue --mailbox <mailbox-id> --type smtp \
+polaris-mail cred issue --mailbox <mailbox-id> --type smtp \
     --senders 'a@b.com' --dry-run
-polaris-email cred rotate <id> --planned --dry-run
+polaris-mail cred rotate <id> --planned --dry-run
 ```
 
 ## Related runbooks

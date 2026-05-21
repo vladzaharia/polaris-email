@@ -6,7 +6,7 @@ package state
 // the POSIX implementation does but performs no actual file locking.
 //
 // Operators on Windows must serialize phases externally — don't run two
-// concurrent `polaris-email setup infra` invocations against the same
+// concurrent `polaris-mail setup infra` invocations against the same
 // .deploy-state.json. The POSIX flock guarantee is best-effort even on
 // real Unix (it's advisory, not mandatory), so the Windows behaviour is
 // "the same expectation, just without the kernel-level safety net."

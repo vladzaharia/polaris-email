@@ -1,7 +1,7 @@
 // Template merged on top of apps/docs/wrangler.jsonc during deploy.
 // Placeholders are substituted from .deploy-state.json + .env.deploy.
 // Do NOT hand-edit the materialized wrangler.local.jsonc — re-run
-// `polaris-email setup infra render` instead.
+// `polaris-mail setup infra render` instead.
 {
   "account_id": "{{ .Env.CF_ACCOUNT_ID }}",
   // docs.mail.plrs.im is the canonical hostname for the docs site. The

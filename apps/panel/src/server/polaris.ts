@@ -12,7 +12,7 @@
 // resolution) on every request. WeakMap means a stale Env reference is
 // garbage-collected whenever the isolate recycles it.
 import { Polaris, type PolarisRequest } from '@polaris/sdk';
-import { sign, generateNonce } from '@polaris-email/hmac';
+import { sign, generateNonce } from '@polaris-mail/hmac';
 import type { Env } from './env.js';
 
 export interface PolarisClient {
@@ -36,7 +36,7 @@ export function makePolaris(env: Env): PolarisClient {
     // baseUrl is ignored when fetch is the service binding (the binding
     // routes by name, not by URL), but the SDK still requires a value for
     // building the request URL passed to `fetch`.
-    baseUrl: 'https://polaris-email-api.invalid',
+    baseUrl: 'https://polaris-mail-api.invalid',
     fetch: env.API.fetch.bind(env.API),
     ...(hasHmac
       ? {

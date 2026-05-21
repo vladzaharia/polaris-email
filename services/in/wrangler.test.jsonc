@@ -4,19 +4,19 @@
 // DO NOT use for deploys — only `wrangler.jsonc` is rendered for production.
 {
   "$schema": "https://json-schema.org/draft-07/schema",
-  "name": "polaris-email-in-test",
+  "name": "polaris-mail-in-test",
   "main": "src/index.ts",
   "compatibility_date": "2026-04-15",
   "compatibility_flags": ["nodejs_compat_v2"],
   "d1_databases": [
-    { "binding": "DB", "database_name": "polaris-email", "database_id": "test-local" },
+    { "binding": "DB", "database_name": "polaris-mail", "database_id": "test-local" },
   ],
-  "r2_buckets": [{ "binding": "R2", "bucket_name": "polaris-email" }],
+  "r2_buckets": [{ "binding": "R2", "bucket_name": "polaris-mail" }],
   "kv_namespaces": [
     { "binding": "KV_RATE_LIMIT", "id": "test-local-kv-rate-limit" },
     { "binding": "KV_IDEMPOTENCY", "id": "test-local-kv-idempotency" },
   ],
   "queues": {
-    "producers": [{ "binding": "FANOUT_QUEUE", "queue": "polaris-email-fanout" }],
+    "producers": [{ "binding": "FANOUT_QUEUE", "queue": "polaris-mail-fanout" }],
   },
 }

@@ -1,4 +1,4 @@
-# polaris-email
+# polaris-mail
 
 > A managed email service for the `polaris-*` family of internal apps. Cloudflare Workers control plane (REST, webhook fan-out, cron) plus an on-prem Go mail-bridge serving SMTPS (:465) and IMAP4rev2 (:993). One HMAC-signed REST contract covers outbound submission and inbound retrieval; v2-envelope signed webhooks deliver inbound events. Mailbox-centric schema, zero-payload-by-default, chained-hash audit log walked nightly by an in-D1 verify cron.
 
@@ -8,7 +8,7 @@ The site is organised by audience. Start at the section that matches your role; 
 
 The first-deploy and first-send entry points.
 
-- [What is polaris-email?](https://docs.mail.plrs.im/) — one-page overview, moving parts, audience picker.
+- [What is polaris-mail?](https://docs.mail.plrs.im/) — one-page overview, moving parts, audience picker.
 - [Get started overview](https://docs.mail.plrs.im/get-started/overview) — two entry doors (operator vs developer) plus where to read next.
 - [30-minute first deploy](https://docs.mail.plrs.im/get-started/30-min-first-deploy) — the operator-side hero tutorial. Cold Cloudflare account to first authenticated send.
 
@@ -66,17 +66,17 @@ Threat model, HMAC spec, email authentication.
 - [Security documentation overview](https://docs.mail.plrs.im/security/overview) — entry index for the security audience.
 - [Threat model](https://docs.mail.plrs.im/security/threat-model) — trust boundaries, in-scope adversaries, mitigations, R2 capability semantics, audit-chain integrity.
 - [HMAC reference](https://docs.mail.plrs.im/security/hmac-reference) — byte-exact canonical-string, bare-hex header, domain tags, test vectors, verifier error codes.
-- [DKIM / DMARC / SPF](https://docs.mail.plrs.im/security/dkim-dmarc-spf) — what polaris-email publishes per outbound domain, alignment rules, triage table, MTA-STS / TLS-RPT for inbound TLS.
+- [DKIM / DMARC / SPF](https://docs.mail.plrs.im/security/dkim-dmarc-spf) — what polaris-mail publishes per outbound domain, alignment rules, triage table, MTA-STS / TLS-RPT for inbound TLS.
 
 ## Reference
 
 Generated and machine-readable surfaces.
 
 - [Reference overview](https://docs.mail.plrs.im/reference/overview) — entry index for the reference section.
-- [REST API](https://docs.mail.plrs.im/reference/api/polaris-email-api) — generated from `openapi/polaris-email.yaml` on every build.
+- [REST API](https://docs.mail.plrs.im/reference/api/polaris-mail-api) — generated from `openapi/polaris-mail.yaml` on every build.
 - [CLI vocabulary](https://docs.mail.plrs.im/reference/cli) — the four state-change verbs (`revoke`, `deregister`, `disable`, `delete`).
 - [Error catalog](https://docs.mail.plrs.im/reference/errors) — every wire error code with HTTP status and retryability.
-- [Consumer contract](https://docs.mail.plrs.im/reference/consumer-contract) — the stability promises polaris-email makes to integrators.
+- [Consumer contract](https://docs.mail.plrs.im/reference/consumer-contract) — the stability promises polaris-mail makes to integrators.
 
 ## Contributing
 

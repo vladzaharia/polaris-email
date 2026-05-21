@@ -7,7 +7,7 @@ sidebar_position: 1
 
 # `@polaris/sdk` (Node)
 
-The TypeScript SDK for the polaris-email control plane. Hand-written, not
+The TypeScript SDK for the polaris-mail control plane. Hand-written, not
 generated. Works in Node, Cloudflare Workers, and browsers (the core HTTP
 client uses `fetch`).
 
@@ -36,9 +36,9 @@ pnpm add @polaris/sdk@workspace:*
 import { Polaris } from '@polaris/sdk';
 
 const client = new Polaris({
-  baseUrl: process.env.POLARIS_EMAIL_URL!,
-  keyId: process.env.POLARIS_EMAIL_KEY_ID!,
-  keySecret: process.env.POLARIS_EMAIL_KEY_SECRET!,
+  baseUrl: process.env.POLARIS_MAIL_URL!,
+  keyId: process.env.POLARIS_MAIL_KEY_ID!,
+  keySecret: process.env.POLARIS_MAIL_KEY_SECRET!,
 });
 
 const { body } = await client.listMessages('limit=20');
@@ -180,7 +180,7 @@ function Inbox({ mailboxId }: { mailboxId: string }) {
 - `src/index.ts` — `Polaris` client + typed helpers + re-exports.
 - `src/webhook.ts` — strict HMAC webhook verifier.
 - `src/errors.ts` — `PolarisError`, `parsePolarisError`, `isRetryable`.
-- `src/generated/` — generated types from `openapi/polaris-email.yaml`.
+- `src/generated/` — generated types from `openapi/polaris-mail.yaml`.
 - `src/node.ts` — Node-only helpers.
 - `src/react.ts` — TanStack Query hooks for the panel.
 

@@ -22,12 +22,12 @@ import (
 //
 // The model renders:
 //
-//   - polaris-email — provisioning Cloudflare resources
-//     ⠋ kv polaris-email-nonce
+//   - polaris-mail — provisioning Cloudflare resources
+//     ⠋ kv polaris-mail-nonce
 //     [████████████░░░░░░░] 4/9
-//     done: d1 polaris-email
-//     done: r2 polaris-email
-//     done: kv polaris-email-idempotency
+//     done: d1 polaris-mail
+//     done: r2 polaris-mail
+//     done: kv polaris-mail-idempotency
 //
 // Style matches the existing tui package (lipgloss bold headers,
 // normal-border separators).
@@ -188,7 +188,7 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m tuiModel) View() string {
 	var b strings.Builder
-	b.WriteString(m.headerStyle.Render("polaris-email — provisioning Cloudflare resources"))
+	b.WriteString(m.headerStyle.Render("polaris-mail — provisioning Cloudflare resources"))
 	b.WriteString("\n\n")
 	for _, l := range m.history {
 		b.WriteString(l)

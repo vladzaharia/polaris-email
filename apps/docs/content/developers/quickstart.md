@@ -17,9 +17,9 @@ From "I have a service that wants to send mail" to "the email arrived".
 - You have these three strings in your environment:
 
 ```sh
-POLARIS_EMAIL_URL=https://polaris-email-api.workers.dev
-POLARIS_EMAIL_KEY_ID=pk_live_01HXR...
-POLARIS_EMAIL_KEY_SECRET=...
+POLARIS_MAIL_URL=https://polaris-mail-api.workers.dev
+POLARIS_MAIL_KEY_ID=pk_live_01HXR...
+POLARIS_MAIL_KEY_SECRET=...
 ```
 
 ## 1. Sign and send
@@ -58,14 +58,14 @@ async function send(body: object) {
   const query = '';
   const bodyHash = createHash('sha256').update(text).digest('hex');
   const canonical = ['polaris-api', 'POST', path, query, ts, n, bodyHash].join('\n');
-  const sig = createHmac('sha256', process.env.POLARIS_EMAIL_KEY_SECRET!)
+  const sig = createHmac('sha256', process.env.POLARIS_MAIL_KEY_SECRET!)
     .update(canonical)
     .digest('hex');
-  const res = await fetch(process.env.POLARIS_EMAIL_URL! + path, {
+  const res = await fetch(process.env.POLARIS_MAIL_URL! + path, {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
-      'x-polaris-key-id': process.env.POLARIS_EMAIL_KEY_ID!,
+      'x-polaris-key-id': process.env.POLARIS_MAIL_KEY_ID!,
       'x-polaris-ts': ts,
       'x-polaris-nonce': n,
       'x-polaris-sig': sig,
@@ -80,7 +80,7 @@ await send({
   from: 'noreply@example.com',
   to: ['user@external.com'],
   subject: 'Hello',
-  text: 'Hi from polaris-email',
+  text: 'Hi from polaris-mail',
   category: 'svc.test',
 });
 ```
@@ -112,18 +112,18 @@ func nonce() string {
 }
 
 func main() {
-	url := os.Getenv("POLARIS_EMAIL_URL") + "/v1/messages"
+	url := os.Getenv("POLARIS_MAIL_URL") + "/v1/messages"
 	body := []byte(`{"from":"noreply@example.com","to":["user@external.com"],"subject":"Hello","text":"Hi","category":"svc.test"}`)
 	ts := strconv.FormatInt(time.Now().UnixMilli(), 10)
 	n := nonce()
 	bh := sha256.Sum256(body)
 	canonical := strings.Join([]string{"polaris-api", "POST", "/v1/messages", "", ts, n, hex.EncodeToString(bh[:])}, "\n")
-	m := hmac.New(sha256.New, []byte(os.Getenv("POLARIS_EMAIL_KEY_SECRET")))
+	m := hmac.New(sha256.New, []byte(os.Getenv("POLARIS_MAIL_KEY_SECRET")))
 	m.Write([]byte(canonical))
 	sig := hex.EncodeToString(m.Sum(nil))
 	req, _ := http.NewRequest("POST", url, bytes.NewReader(body))
 	req.Header.Set("content-type", "application/json")
-	req.Header.Set("x-polaris-key-id", os.Getenv("POLARIS_EMAIL_KEY_ID"))
+	req.Header.Set("x-polaris-key-id", os.Getenv("POLARIS_MAIL_KEY_ID"))
 	req.Header.Set("x-polaris-ts", ts)
 	req.Header.Set("x-polaris-nonce", n)
 	req.Header.Set("x-polaris-sig", sig)
@@ -144,10 +144,10 @@ NONCE=$(openssl rand -hex 12)
 BODY='{"from":"noreply@example.com","to":["user@external.com"],"subject":"Hello","text":"Hi","category":"svc.test"}'
 BH=$(printf "%s" "$BODY" | openssl dgst -sha256 -hex | awk '{print $2}')
 CANON="polaris-api\nPOST\n/v1/messages\n\n$TS\n$NONCE\n$BH"
-SIG=$(printf "%b" "$CANON" | openssl dgst -sha256 -hmac "$POLARIS_EMAIL_KEY_SECRET" -hex | awk '{print $2}')
-curl -sS -X POST "$POLARIS_EMAIL_URL/v1/messages" \
+SIG=$(printf "%b" "$CANON" | openssl dgst -sha256 -hmac "$POLARIS_MAIL_KEY_SECRET" -hex | awk '{print $2}')
+curl -sS -X POST "$POLARIS_MAIL_URL/v1/messages" \
   -H "content-type: application/json" \
-  -H "x-polaris-key-id: $POLARIS_EMAIL_KEY_ID" \
+  -H "x-polaris-key-id: $POLARIS_MAIL_KEY_ID" \
   -H "x-polaris-ts: $TS" \
   -H "x-polaris-nonce: $NONCE" \
   -H "x-polaris-sig: $SIG" \
@@ -168,15 +168,15 @@ To: user@external.com
 Subject: Hello
 Content-Type: text/plain; charset=utf-8
 
-Hi from polaris-email
+Hi from polaris-mail
 EOF
 )
 BH=$(printf "%s" "$BODY" | openssl dgst -sha256 -hex | awk '{print $2}')
 CANON="polaris-api\nPOST\n/v1/messages\n\n$TS\n$NONCE\n$BH"
-SIG=$(printf "%b" "$CANON" | openssl dgst -sha256 -hmac "$POLARIS_EMAIL_KEY_SECRET" -hex | awk '{print $2}')
-curl -sS -X POST "$POLARIS_EMAIL_URL/v1/messages" \
+SIG=$(printf "%b" "$CANON" | openssl dgst -sha256 -hmac "$POLARIS_MAIL_KEY_SECRET" -hex | awk '{print $2}')
+curl -sS -X POST "$POLARIS_MAIL_URL/v1/messages" \
   -H "content-type: message/rfc822" \
-  -H "x-polaris-key-id: $POLARIS_EMAIL_KEY_ID" \
+  -H "x-polaris-key-id: $POLARIS_MAIL_KEY_ID" \
   -H "x-polaris-ts: $TS" \
   -H "x-polaris-nonce: $NONCE" \
   -H "x-polaris-sig: $SIG" \

@@ -1,4 +1,4 @@
-// vitest config for @polaris-email/cli-installer.
+// vitest config for @polaris-mail/cli-installer.
 //
 // We run two projects:
 //   * `cli-installer-workers` — pool-workers project that exercises the

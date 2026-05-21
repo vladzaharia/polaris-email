@@ -1,4 +1,4 @@
-// polaris-email-panel Worker entrypoint.
+// polaris-mail-panel Worker entrypoint.
 //
 // The panel runs as a Workers module: it serves
 //   /api/auth/*       — mounted better-auth handler (sign-in/out, OIDC callbacks, sessions)

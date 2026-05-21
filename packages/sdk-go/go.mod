@@ -1,3 +1,3 @@
-module github.com/polaris-email/polaris-sdk-go
+module github.com/polaris-mail/polaris-sdk-go
 
 go 1.22

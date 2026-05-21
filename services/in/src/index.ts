@@ -1,13 +1,13 @@
-// polaris-email-in: Cloudflare Email Routing handler.
+// polaris-mail-in: Cloudflare Email Routing handler.
 //
 // Validates inbound MIME + domain + rate-shedding + receiver mailbox lookup,
 // then hands off the entire pipeline (R2 PUT, messages row, audit, fanout
 // list) to `processMessage()` in services/api. This worker only owns the
 // edge-specific concerns (raw-stream reading, rate shed, recipient -> mailbox
 // resolution, forward primitive, fanout queue dispatch).
-import { ulid } from '@polaris-email/ids';
-import { MAX_MESSAGE_SIZE_VERIFIED, parseAuthResults } from '@polaris-email/mime';
-import { processMessage, type PipelineEnv } from '@polaris-email/pipeline';
+import { ulid } from '@polaris-mail/ids';
+import { MAX_MESSAGE_SIZE_VERIFIED, parseAuthResults } from '@polaris-mail/mime';
+import { processMessage, type PipelineEnv } from '@polaris-mail/pipeline';
 import { handleComplaint, PLATFORM_COMPLAINTS_MAILBOX_ID } from './complaint-ingest.js';
 import { handleDmarcReport, PLATFORM_DMARC_REPORTS_MAILBOX_ID } from './dmarc-ingest.js';
 import { handleTlsRptReport, PLATFORM_TLS_REPORTS_MAILBOX_ID } from './tlsrpt-ingest.js';
@@ -17,7 +17,7 @@ import { attachDecisionToMessage, evaluateInboundPolicy } from './lib/policy-dis
 // Inbound-edge sentinel for the message-size cap. We use the CF verified-
 // domain ceiling (25 MiB) — inbound is only accepted on already-verified
 // mail_domains rows, so the unverified 5 MiB cap doesn't apply. Strict MIME
-// validation happens later inside `processMessage` (via `@polaris-email/mime`'s
+// validation happens later inside `processMessage` (via `@polaris-mail/mime`'s
 // `parseStrict`/`summarizeMime`); this class only signals an edge-level
 // size rejection that translates to SMTP 552.
 class IngestError extends Error {

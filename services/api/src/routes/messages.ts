@@ -18,8 +18,8 @@
 
 import { Hono, type Context } from 'hono';
 import type { z } from 'zod';
-import { SendRequest, type ErrorCode } from '@polaris-email/schema';
-import { verify, sha256Hex } from '@polaris-email/hmac';
+import { SendRequest, type ErrorCode } from '@polaris-mail/schema';
+import { verify, sha256Hex } from '@polaris-mail/hmac';
 import {
   composeFromJson,
   enforceSenderPolicy,
@@ -30,8 +30,8 @@ import {
   MimeError,
   SenderPolicyError,
   type UnifiedMessage,
-} from '@polaris-email/mime';
-import { revocationCheck } from '@polaris-email/revocation';
+} from '@polaris-mail/mime';
+import { revocationCheck } from '@polaris-mail/revocation';
 import type { Env } from '../env.js';
 import { buildError } from '../errors.js';
 import { audit } from '../audit.js';

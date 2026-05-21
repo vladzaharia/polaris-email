@@ -178,26 +178,26 @@ export function expectedRecordsFor(opts: OnboardSenderDomainOpts): DnsRecordInpu
       type: 'CNAME',
       name: `${selector}._domainkey.${opts.domain}`,
       content: `${selector}.${dkimTargetBase}`,
-      comment: 'polaris-email: DKIM (CF-managed)',
+      comment: 'polaris-mail: DKIM (CF-managed)',
     },
     {
       type: 'TXT',
       name: opts.domain,
       content: 'v=spf1 include:_spf.mx.cloudflare.net -all',
-      comment: 'polaris-email: SPF (CF-managed)',
+      comment: 'polaris-mail: SPF (CF-managed)',
     },
     {
       type: 'TXT',
       name: `_dmarc.${opts.domain}`,
       content: `v=DMARC1; p=quarantine; rua=mailto:dmarc@${opts.domain}`,
-      comment: 'polaris-email: DMARC',
+      comment: 'polaris-mail: DMARC',
     },
     {
       type: 'MX',
       name: `cf-bounce.${opts.domain}`,
       content: bounceMx,
       priority: 10,
-      comment: 'polaris-email: bounce (CF-managed)',
+      comment: 'polaris-mail: bounce (CF-managed)',
     },
   ];
   if (wildcard) {
@@ -205,7 +205,7 @@ export function expectedRecordsFor(opts: OnboardSenderDomainOpts): DnsRecordInpu
       type: 'CNAME',
       name: `*._domainkey.${opts.domain}`,
       content: `${selector}._domainkey.${opts.domain}`,
-      comment: 'polaris-email: DKIM wildcard',
+      comment: 'polaris-mail: DKIM wildcard',
     });
   }
   return recs;

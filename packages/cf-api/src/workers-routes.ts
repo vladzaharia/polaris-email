@@ -4,7 +4,7 @@
 // zone. CF auto-creates the necessary A/AAAA records and Universal SSL cert.
 //
 // Polaris uses this to publish `mta-sts.{tenant}` for each onboarded sender
-// domain, routing requests to the central `polaris-email-api` Worker which
+// domain, routing requests to the central `polaris-mail-api` Worker which
 // serves the MTA-STS policy text file (see services/api MTA-STS route).
 //
 // API surface (per https://developers.cloudflare.com/api/resources/workers/subresources/domains/):

@@ -35,7 +35,7 @@ import {
   provisionTlsRpt,
   unprovisionMtaSts,
   unprovisionTlsRpt,
-} from '@polaris-email/cf-api';
+} from '@polaris-mail/cf-api';
 import { actorOf, audit } from '../../audit.js';
 import { bodyText, requireScope } from '../../auth.js';
 import type { Env } from '../../env.js';
@@ -44,7 +44,7 @@ import { buildError } from '../../errors.js';
 export const domainsMtaSts = new Hono<{ Bindings: Env }>();
 
 /** Worker script name — must match services/api/wrangler.jsonc `name`. */
-const WORKER_NAME = 'polaris-email-api';
+const WORKER_NAME = 'polaris-mail-api';
 
 interface DomainRow {
   id: string;

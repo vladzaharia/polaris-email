@@ -3,15 +3,15 @@
 // (replaces the legacy routing_rules endpoints).
 // All HMAC-auth + `admin:*` scope.
 import { Hono } from 'hono';
-import { CreateWebhookSubRequest, IssueApiKeyRequest, RotateRequest } from '@polaris-email/schema';
+import { CreateWebhookSubRequest, IssueApiKeyRequest, RotateRequest } from '@polaris-mail/schema';
 import { actorOf, audit, buildAuditInsert } from '../audit.js';
 import { bodyText, hmacAuth, requireScope } from '../auth.js';
 import type { Env } from '../env.js';
 import { buildError } from '../errors.js';
 import { hashSecret } from '../hashing.js';
-import { ulid } from '@polaris-email/ids';
-import { generateSecret } from '@polaris-email/hmac';
-import { revoke } from '@polaris-email/revocation';
+import { ulid } from '@polaris-mail/ids';
+import { generateSecret } from '@polaris-mail/hmac';
+import { revoke } from '@polaris-mail/revocation';
 import { validateWebhookUrl } from '../lib/webhook-url.js';
 import { auditRoutes } from './admin/audit.js';
 import { credentials } from './admin/credentials.js';
@@ -34,7 +34,9 @@ import { moderation } from './admin/moderation.js';
 import { operators } from './admin/operators.js';
 import { senderAbuse } from './admin/sender-abuse.js';
 import { suppressions } from './admin/suppressions.js';
+import { syntheticRuns } from './admin/synthetic-runs.js';
 import { tlsRptReports } from './admin/tls-rpt-reports.js';
+import { triageEvents } from './admin/triage-events.js';
 import { webhookDlq } from './admin/webhook-dlq.js';
 import { webhookSubs } from './admin/webhook-subs.js';
 import { zones } from './admin/zones.js';
@@ -82,6 +84,8 @@ admin.route('/', dmarcReports);
 admin.route('/', dmarcPromotion);
 admin.route('/', moderation);
 admin.route('/', operators);
+admin.route('/', syntheticRuns);
+admin.route('/', triageEvents);
 
 // ---------- api keys ----------
 

@@ -11,7 +11,7 @@ import (
 	"github.com/vladzaharia/polaris-email/apps/polaris-cli/internal/setup/preflight"
 )
 
-// newInfraPreflightCmd wires `polaris-email setup infra preflight`.
+// newInfraPreflightCmd wires `polaris-mail setup infra preflight`.
 //
 // Flags:
 //
@@ -72,7 +72,7 @@ func newInfraPreflightCmd() *cobra.Command {
 					return err
 				}
 			default:
-				fmt.Fprintln(w, "polaris-email preflight")
+				fmt.Fprintln(w, "polaris-mail preflight")
 				fmt.Fprintln(w)
 				preflight.RenderText(w, results, sum)
 			}
@@ -105,7 +105,7 @@ func assembleChecks(cfg *config.Config, envFile, repoRoot string, noCFProbe bool
 		preflight.CheckGit(),
 		preflight.CheckCurl(),
 		preflight.CheckEnvsubst(),
-		preflight.CheckPolarisEmail(),
+		preflight.CheckPolarisMail(),
 		preflight.CheckGitTrackedServices(repoRoot),
 		preflight.CheckEnvDeploy(envFile),
 	}

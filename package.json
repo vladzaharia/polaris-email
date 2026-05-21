@@ -1,5 +1,5 @@
 {
-  "name": "polaris-email",
+  "name": "polaris-mail",
   "version": "0.1.0",
   "private": true,
   "description": "Managed email service for the polaris-* family. Cloudflare Workers + Docker bridge.",

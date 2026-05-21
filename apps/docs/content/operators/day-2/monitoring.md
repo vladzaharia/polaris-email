@@ -1,13 +1,13 @@
 ---
 title: Monitoring and alerting
-description: Workers Analytics Engine queries, Logpush destinations, the ALERT_WEBHOOK integration point, and the SLOs polaris-email operators should aim for.
+description: Workers Analytics Engine queries, Logpush destinations, the ALERT_WEBHOOK integration point, and the SLOs polaris-mail operators should aim for.
 sidebar_label: Monitoring
 sidebar_position: 1
 ---
 
 # Monitoring and alerting
 
-polaris-email ships three observability surfaces out of the box:
+polaris-mail ships three observability surfaces out of the box:
 
 1. **Workers Analytics Engine** — Cloudflare's first-party metrics
    store, queryable via SQL. Free tier covers the Small tier in the
@@ -74,7 +74,7 @@ The webhook DLQ is a Cloudflare Queue, not Analytics Engine — depth
 is a live count, not a time series:
 
 ```sh
-wrangler queues consumer status polaris-email-fanout-dlq
+wrangler queues consumer status polaris-mail-fanout-dlq
 ```
 
 The fanout DLQ is the only one operators routinely watch. The
@@ -108,7 +108,7 @@ Bridges land their `last_seen_at` in D1, not Analytics Engine —
 they're rare and small, so D1 is the right home:
 
 ```sh
-wrangler d1 execute polaris-email --command "
+wrangler d1 execute polaris-mail --command "
   SELECT id, name, last_sync_at,
          (strftime('%s', 'now') * 1000 - strftime('%s', last_sync_at) * 1000) / 1000 AS lag_seconds
   FROM mail_bridges
@@ -122,7 +122,7 @@ alerting at 2 minutes).
 ## Logpush destinations
 
 Logpush jobs ship structured Worker logs (one JSON line per console
-output) to an external destination. polaris-email recommends one of:
+output) to an external destination. polaris-mail recommends one of:
 
 | Destination      | When                                                                             | Notes                                                             |
 | ---------------- | -------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
@@ -136,15 +136,15 @@ Create a Logpush job per Worker via `wrangler` or the dashboard:
 wrangler logpush create \
   --dataset workers_trace_events \
   --destination-conf "r2://polaris-logs/api/{DATE}" \
-  --filter '{"where":{"key":"ScriptName","operator":"eq","value":"polaris-email-api"}}'
+  --filter '{"where":{"key":"ScriptName","operator":"eq","value":"polaris-mail-api"}}'
 ```
 
-Repeat for `polaris-email-in`, `polaris-email-out`, and
-`polaris-email-panel`. The
+Repeat for `polaris-mail-in`, `polaris-mail-out`, and
+`polaris-mail-panel`. The
 [CF account compromise runbook](/operators/runbooks/cf-account-compromise)
 treats this Logpush mirror as **authoritative** in the case of a
 fully-compromised CF account — keep the destination outside the
-polaris-email CF account when possible (cross-account R2 or a third
+polaris-mail CF account when possible (cross-account R2 or a third
 party).
 
 ### What to grep for in Logpush
@@ -163,7 +163,7 @@ the operator can pattern-match on:
 ## `ALERT_WEBHOOK` integration
 
 `ALERT_WEBHOOK` is a single URL the control plane POSTs to on
-failure. It's configured via `polaris-email setup infra configure` and
+failure. It's configured via `polaris-mail setup infra configure` and
 surfaces in three places:
 
 | Caller                                    | When                                                                                                                                                                                                               |
@@ -182,11 +182,11 @@ a probe against private network ranges.
 Synthetic and staleness post a minimal JSON body:
 
 ```json
-{ "service": "polaris-email", "synthetic_failures": 2 }
+{ "service": "polaris-mail", "synthetic_failures": 2 }
 ```
 
 ```json
-{ "service": "polaris-email", "staleness": ["control_plane_secret_overdue"] }
+{ "service": "polaris-mail", "staleness": ["control_plane_secret_overdue"] }
 ```
 
 `sendAlert()` posts the richer admin-alert envelope:
@@ -254,7 +254,7 @@ four are reachable via Logpush (HTTP webhook destination) or
 Analytics Engine (most have a Cloudflare integration), and the
 fan-out shape is bespoke per receiver. If you're already on one of
 these stacks, point Logpush at it and write the dashboards there;
-don't expect polaris-email to ship a turnkey integration.
+don't expect polaris-mail to ship a turnkey integration.
 
 The
 [Cloudflare Analytics Engine integration docs](https://developers.cloudflare.com/analytics/analytics-engine/)

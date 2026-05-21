@@ -1,7 +1,7 @@
 // Error envelope helper. Every non-2xx response goes through buildError().
 import type { Context } from 'hono';
-import type { ErrorCode } from '@polaris-email/schema';
-import { requestId } from '@polaris-email/ids';
+import type { ErrorCode } from '@polaris-mail/schema';
+import { requestId } from '@polaris-mail/ids';
 
 export const ERROR_HTTP: Record<ErrorCode, number> = {
   bad_request: 400,

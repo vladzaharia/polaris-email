@@ -1,4 +1,4 @@
-// KV-backed credential revocation primitive for polaris-email.
+// KV-backed credential revocation primitive for polaris-mail.
 //
 // Replaces the per-principal RevocationDO. At ~tens of mailboxes and
 // <10k msg/day, the synchronous, single-region guarantees of a Durable

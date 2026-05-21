@@ -26,7 +26,7 @@ import { DEFAULT_BANDS } from './types.js';
 
 function makeDecisionId(): string {
   // Borrow Crockford-ULID shape from packages/ids without taking a dep
-  // (we don't have @polaris-email/ids in this workspace's deps and the
+  // (we don't have @polaris-mail/ids in this workspace's deps and the
   // engine should remain dep-light). Random-only is fine since the caller
   // can swap to ulid() at insert time if it prefers timestamp ordering.
   const bytes = new Uint8Array(16);

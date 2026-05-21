@@ -1,4 +1,4 @@
  ⛅️ wrangler 4.x.dev
 -------------------
-Uploaded polaris-email-api
+Uploaded polaris-mail-api
 (version line not emitted in this build)

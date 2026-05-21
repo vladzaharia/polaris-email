@@ -12,7 +12,7 @@ import (
 // return without exec'ing. The CLI's PersistentPreRunE will exit with
 // a non-zero code so the operator's shell prompt comes back; next
 // launch picks up the .new binary (the install path scripts on Windows
-// rename `polaris-email.exe.new` → `polaris-email.exe` on startup).
+// rename `polaris-mail.exe.new` → `polaris-mail.exe` on startup).
 func ReExec(path string) error {
 	if path == "" {
 		exe, _ := os.Executable()

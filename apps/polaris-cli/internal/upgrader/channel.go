@@ -1,10 +1,10 @@
-// Package upgrader implements polaris-email's self-upgrade pipeline:
+// Package upgrader implements polaris-mail's self-upgrade pipeline:
 // channel selection, install-method detection, version check, and the
 // actual replace-and-re-exec flow.
 //
 // Two surfaces consume this:
 //
-//   - `polaris-email version upgrade` / `polaris-email version channel`
+//   - `polaris-mail version upgrade` / `polaris-mail version channel`
 //     subcommands in internal/cmds/version.go.
 //   - The PersistentPreRunE hook in internal/cmds/root.go that runs an
 //     opportunistic check on every CLI invocation.
@@ -34,8 +34,8 @@ const (
 	// ChannelDev resolves to the `releases/tags/dev` release that the
 	// dev-snapshot.yml workflow force-replaces on every main-branch push.
 	ChannelDev Channel = "dev"
-	// ChannelLocal compares against a sibling polaris-email binary in
-	// the operator's checked-out repo (apps/polaris-cli/bin/polaris-email).
+	// ChannelLocal compares against a sibling polaris-mail binary in
+	// the operator's checked-out repo (apps/polaris-cli/bin/polaris-mail).
 	// Used by contributors iterating on the CLI itself.
 	ChannelLocal Channel = "local"
 )
@@ -117,7 +117,7 @@ const (
 	// hand-copied curl-style install in an arbitrary directory.
 	InstallMethodCurl InstallMethod = "curl"
 	// InstallMethodLocal — running from a checkout's
-	// apps/polaris-cli/bin/polaris-email. Used during dev.
+	// apps/polaris-cli/bin/polaris-mail. Used during dev.
 	InstallMethodLocal InstallMethod = "local"
 	// InstallMethodUnknown — none of the above. Upgrader falls back to
 	// the curl-style download path with a warning.

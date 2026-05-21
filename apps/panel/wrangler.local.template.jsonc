@@ -2,7 +2,7 @@
 // Go text/template syntax and are substituted by the Go renderer in
 // apps/polaris-cli/internal/setup/wranglercfg from .deploy-state.json +
 // .env.deploy. Do NOT hand-edit the materialized wrangler.local.jsonc —
-// re-run `polaris-email setup infra render`.
+// re-run `polaris-mail setup infra render`.
 {
   "account_id": "{{ .Account.ID }}",
   // Workers Custom Domain binding for the admin UI. wrangler manages the
@@ -12,13 +12,13 @@
   "routes": [
     { "pattern": "{{ .Hostnames.Panel }}", "custom_domain": true },
   ],
-  // Panel binds to the same `polaris-email` D1 as services/api so better-auth
+  // Panel binds to the same `polaris-mail` D1 as services/api so better-auth
   // can read the auth + sessions tables alongside the mailbox-centric schema.
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "polaris-email",
-      "database_id": "{{ .D1.PolarisEmail.ID }}",
+      "database_name": "polaris-mail",
+      "database_id": "{{ .D1.PolarisMail.ID }}",
     },
   ],
   "vars": {

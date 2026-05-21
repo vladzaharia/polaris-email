@@ -184,7 +184,7 @@ func (m ComposeLogsModel) View() string {
 	}
 	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("39"))
 	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
-	header := titleStyle.Render(fmt.Sprintf("polaris-email — bridge up · %s", m.title.Name))
+	header := titleStyle.Render(fmt.Sprintf("polaris-mail — bridge up · %s", m.title.Name))
 	subline := dimStyle.Render(fmt.Sprintf("image %s · mode %s · q to quit", m.title.ImageTag, m.title.Mode))
 	sep := lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render(strings.Repeat("─", maxInt(20, m.width-1)))
 

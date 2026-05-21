@@ -1,5 +1,5 @@
 // services/tail/wrangler.local.template.jsonc
-// Rendered into services/tail/wrangler.local.jsonc by `polaris-email setup
+// Rendered into services/tail/wrangler.local.jsonc by `polaris-mail setup
 // infra render`. Operator-supplied ALERT_WEBHOOK overrides the placeholder
 // in wrangler.jsonc.
 {

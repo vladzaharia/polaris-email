@@ -11,7 +11,7 @@
 // Polaris layout:
 //   - DNS TXT `_mta-sts.{tenant}` — bumped to invalidate sender caches.
 //   - HTTPS `mta-sts.{tenant}` — Worker custom domain pointing at
-//     polaris-email-api; the Worker route in services/api serves the policy
+//     polaris-mail-api; the Worker route in services/api serves the policy
 //     text file (Task C.9). CF Universal SSL handles the cert; we DO NOT
 //     publish a CNAME for mta-sts.{tenant} ourselves.
 //   - TLS-RPT TXT `_smtp._tls.{tenant}` — reports endpoint for TLS failures.
@@ -56,7 +56,7 @@ export function expectedMtaStsRecords(opts: {
       type: 'TXT',
       name: `_mta-sts.${opts.domain}`,
       content: `v=STSv1; id=${opts.policyId}`,
-      comment: 'polaris-email: MTA-STS policy id',
+      comment: 'polaris-mail: MTA-STS policy id',
     },
   ];
 }
@@ -70,7 +70,7 @@ export function expectedTlsRptRecord(opts: { domain: string; rua: string }): Dns
     type: 'TXT',
     name: `_smtp._tls.${opts.domain}`,
     content: `v=TLSRPTv1; rua=${opts.rua}`,
-    comment: 'polaris-email: TLS-RPT',
+    comment: 'polaris-mail: TLS-RPT',
   };
 }
 

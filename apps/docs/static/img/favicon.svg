@@ -1,9 +1,9 @@
 <!--
-  Favicon variant of the polaris-email logo. Heavier strokes + a punchier
+  Favicon variant of the polaris-mail logo. Heavier strokes + a punchier
   background tile so the glyph survives 16×16 rasterisation cleanly.
 -->
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32"
-     role="img" aria-label="polaris-email">
+     role="img" aria-label="polaris-mail">
   <rect width="32" height="32" rx="6" fill="#1e1235"/>
   <path d="M16 6
            L18.59 13.97

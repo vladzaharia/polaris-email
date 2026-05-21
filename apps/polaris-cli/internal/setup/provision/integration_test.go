@@ -8,7 +8,7 @@
 // CI does NOT run this build tag by default — only operator-initiated
 // integration sweeps should hit a real account.
 //
-// The test creates the standard polaris-email desired state in a
+// The test creates the standard polaris-mail desired state in a
 // scratch directory. It does NOT delete the resources afterwards —
 // operators are expected to clean up via the dashboard or
 // `setup infra rollback`.

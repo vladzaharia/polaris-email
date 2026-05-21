@@ -41,13 +41,13 @@ var Errw io.Writer = os.Stderr
 func NewRoot() *cobra.Command {
 	var themeName string
 	root := &cobra.Command{
-		Use:   "polaris-email",
-		Short: "polaris-email — operator CLI for the polaris-email control plane",
-		Long: `Operator CLI for polaris-email. The same binary is symlinked as ` + "`pml`" + `.
+		Use:   "polaris-mail",
+		Short: "polaris-mail — operator CLI for the polaris-mail control plane",
+		Long: `Operator CLI for polaris-mail. The same binary is symlinked as ` + "`pml`" + `.
 
 With no arguments (and a TTY on stdout), opens the fullscreen tabbed admin
-TUI — same as running ` + "`polaris-email tui`" + `. The TUI is also embeddable
-under Wish (` + "`polaris-email serve --ssh`" + `).`,
+TUI — same as running ` + "`polaris-mail tui`" + `. The TUI is also embeddable
+under Wish (` + "`polaris-mail serve --ssh`" + `).`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		Args:          cobra.NoArgs,
@@ -56,7 +56,7 @@ under Wish (` + "`polaris-email serve --ssh`" + `).`,
 		},
 	}
 	root.PersistentFlags().StringVar(&themeName, "theme", "macchiato", "TUI theme: macchiato|mocha|frappe|latte")
-	root.PersistentFlags().StringVar(&G.ConfigPath, "config", "", "config file (default ~/.config/polaris-email/config.toml)")
+	root.PersistentFlags().StringVar(&G.ConfigPath, "config", "", "config file (default ~/.config/polaris-mail/config.toml)")
 	root.PersistentFlags().StringVar(&G.Profile, "profile", "", "named profile in config file (default 'prod')")
 	root.PersistentFlags().StringVar(&G.APIURL, "api-url", "", "override admin API base URL")
 	root.PersistentFlags().StringVar(&G.Token, "token", "", "override admin API token (HMAC secret)")
@@ -192,10 +192,10 @@ func MakeClient() (*client.Client, error) {
 	}
 
 	if apiURL == "" {
-		return nil, fmt.Errorf("no api-url configured (set --api-url, $POLARIS_API_URL, or run `polaris-email login`)")
+		return nil, fmt.Errorf("no api-url configured (set --api-url, $POLARIS_API_URL, or run `polaris-mail login`)")
 	}
 	if token == "" {
-		return nil, fmt.Errorf("no token configured (set --token, $POLARIS_TOKEN, or run `polaris-email login`)")
+		return nil, fmt.Errorf("no token configured (set --token, $POLARIS_TOKEN, or run `polaris-mail login`)")
 	}
 	c := client.New(apiURL, keyID, token)
 	c.DryRun = G.DryRun

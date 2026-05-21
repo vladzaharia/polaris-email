@@ -1,6 +1,6 @@
 // Better-auth instance for the panel.
 //
-// Storage: drizzleAdapter(env.DB, { provider: 'sqlite' }) — same `polaris-email`
+// Storage: drizzleAdapter(env.DB, { provider: 'sqlite' }) — same `polaris-mail`
 // D1 database as services/api.
 //
 // Provider: the SSO plugin is used to delegate sign-in to an OIDC IdP. By

@@ -22,8 +22,8 @@ import type { Env } from '../env.js';
 import { audit } from '../audit.js';
 import { buildError } from '../errors.js';
 import { hashSecret } from '../hashing.js';
-import { ulid } from '@polaris-email/ids';
-import { generateSecret, verify } from '@polaris-email/hmac';
+import { ulid } from '@polaris-mail/ids';
+import { generateSecret, verify } from '@polaris-mail/hmac';
 
 export const bootstrap = new Hono<{ Bindings: Env }>();
 

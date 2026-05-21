@@ -5,6 +5,6 @@
     "type": "generated-index",
     "slug": "/operators/runbooks/comms",
     "title": "Incident comms templates",
-    "description": "Drop-in customer and internal comms drafts for a polaris-email incident. Use only after the incident commander has signed off."
+    "description": "Drop-in customer and internal comms drafts for a polaris-mail incident. Use only after the incident commander has signed off."
   }
 }

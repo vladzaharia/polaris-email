@@ -10,7 +10,7 @@ import (
 	"github.com/vladzaharia/polaris-email/apps/polaris-cli/internal/setup/state"
 )
 
-// newInfraMigrateCmd wires `polaris-email setup infra migrate`.
+// newInfraMigrateCmd wires `polaris-mail setup infra migrate`.
 func newInfraMigrateCmd() *cobra.Command {
 	var (
 		dbName    string
@@ -25,7 +25,7 @@ func newInfraMigrateCmd() *cobra.Command {
 	)
 	c := &cobra.Command{
 		Use:   "migrate",
-		Short: "Apply D1 migrations to the polaris-email database",
+		Short: "Apply D1 migrations to the polaris-mail database",
 		Long: "Shell out to `wrangler d1 migrations apply` to bring the D1\n" +
 			"schema to the latest revision. Parses the result, records the\n" +
 			"phase completion into .deploy-state.json, and prints a tidy\n" +
@@ -60,7 +60,7 @@ func newInfraMigrateCmd() *cobra.Command {
 			return nil
 		},
 	}
-	c.Flags().StringVar(&dbName, "db", "polaris-email", "D1 database name")
+	c.Flags().StringVar(&dbName, "db", "polaris-mail", "D1 database name")
 	c.Flags().StringVar(&statePath, "state-path", "", "override .deploy-state.json path")
 	c.Flags().BoolVar(&local, "local", false, "apply migrations to the local D1 binding instead of --remote")
 	c.Flags().BoolVar(&verbose, "verbose", false, "include the raw wrangler output in the summary")

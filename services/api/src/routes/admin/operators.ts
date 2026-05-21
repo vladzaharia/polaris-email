@@ -15,10 +15,10 @@
 // Read-once secret discipline: POST + rotate-key return the api_key_secret
 // exactly once (mirrors bridges.register / api-keys.issue).
 import { Hono } from 'hono';
-import { generateSecret } from '@polaris-email/hmac';
-import { ulid } from '@polaris-email/ids';
-import { revoke } from '@polaris-email/revocation';
-import { KeyScope } from '@polaris-email/schema';
+import { generateSecret } from '@polaris-mail/hmac';
+import { ulid } from '@polaris-mail/ids';
+import { revoke } from '@polaris-mail/revocation';
+import { KeyScope } from '@polaris-mail/schema';
 import { z } from 'zod';
 import { actorOf, buildAuditInsert } from '../../audit.js';
 import { bodyText, requireScope } from '../../auth.js';
@@ -250,7 +250,7 @@ operators.post('/v1/admin/operators', requireScope('admin:rotate'), async (c) =>
       api_key_id: apiKeyId,
       api_key_prefix: 'pk_op_',
       api_key_secret: secret,
-      // Single bearer string the new operator pastes into `polaris-email login`.
+      // Single bearer string the new operator pastes into `polaris-mail login`.
       // Format: polaris_{key_id}.{base64_secret}.
       login_token: `polaris_${apiKeyId}.${secret}`,
     },

@@ -5,6 +5,6 @@
     "type": "generated-index",
     "slug": "/operators/day-2",
     "title": "Day-2 operations",
-    "description": "Day-to-day operator workflows: managing domains, mailboxes, credentials, inbound routing, webhooks, bridges, monitoring, and activity inspection. All commands assume the polaris-email CLI is installed and a profile is configured. Incident response lives under Runbooks; bootstrap lives under Deployment."
+    "description": "Day-to-day operator workflows: managing domains, mailboxes, credentials, inbound routing, webhooks, bridges, monitoring, and activity inspection. All commands assume the polaris-mail CLI is installed and a profile is configured. Incident response lives under Runbooks; bootstrap lives under Deployment."
   }
 }

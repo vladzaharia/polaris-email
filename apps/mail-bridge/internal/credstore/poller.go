@@ -10,7 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	polarissdk "github.com/polaris-email/polaris-sdk-go"
+	polarissdk "github.com/polaris-mail/polaris-sdk-go"
 )
 
 // PollerConfig configures the poller HTTP calls.

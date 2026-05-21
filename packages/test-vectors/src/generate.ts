@@ -1,6 +1,6 @@
 // Generates the canonical HMAC test-vectors.json shared by all verifier libraries.
-// Run: `pnpm --filter @polaris-email/test-vectors generate`
-import { sign, type Direction } from '@polaris-email/hmac';
+// Run: `pnpm --filter @polaris-mail/test-vectors generate`
+import { sign, type Direction } from '@polaris-mail/hmac';
 
 interface Vector {
   name: string;

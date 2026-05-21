@@ -1,13 +1,13 @@
-// polaris-email-api Worker — committed config. Real IDs live in
+// polaris-mail-api Worker — committed config. Real IDs live in
 // wrangler.local.jsonc (gitignored) and are merged in before `wrangler
-// deploy` by `polaris-email setup infra deploy`.
+// deploy` by `polaris-mail setup infra deploy`.
 //
 // This Worker fronts three Cloudflare runtimes since (worker
 // consolidation): HTTP (`fetch`), cron triggers (`scheduled`), and the
 // FANOUT_QUEUE consumer (`queue`).
 {
   "$schema": "https://json-schema.org/draft-07/schema",
-  "name": "polaris-email-api",
+  "name": "polaris-mail-api",
   "main": "src/index.ts",
   "compatibility_date": "2026-04-15",
   "compatibility_flags": ["nodejs_compat_v2"],
@@ -17,12 +17,12 @@
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "polaris-email",
+      "database_name": "polaris-mail",
       "database_id": "REPLACE_WITH_LOCAL",
       "migrations_dir": "migrations",
     },
   ],
-  "r2_buckets": [{ "binding": "R2", "bucket_name": "polaris-email", "jurisdiction": "default" }],
+  "r2_buckets": [{ "binding": "R2", "bucket_name": "polaris-mail", "jurisdiction": "default" }],
   "kv_namespaces": [
     { "binding": "KV_NONCE", "id": "REPLACE_WITH_LOCAL" },
     { "binding": "KV_IDEMPOTENCY", "id": "REPLACE_WITH_LOCAL" },
@@ -68,33 +68,33 @@
   // batch window without holding events on the queue.
   "queues": {
     "producers": [
-      { "binding": "OUTBOUND_QUEUE", "queue": "polaris-email-outbound" },
-      { "binding": "FANOUT_QUEUE", "queue": "polaris-email-fanout" },
+      { "binding": "OUTBOUND_QUEUE", "queue": "polaris-mail-outbound" },
+      { "binding": "FANOUT_QUEUE", "queue": "polaris-mail-fanout" },
     ],
     "consumers": [
       {
-        "queue": "polaris-email-fanout",
+        "queue": "polaris-mail-fanout",
         "max_concurrency": 4,
         "max_batch_size": 10,
         "max_batch_timeout": 5,
         "max_retries": 6,
-        "dead_letter_queue": "polaris-email-fanout-dlq",
+        "dead_letter_queue": "polaris-mail-fanout-dlq",
       },
     ],
   },
   // Tail consumer: forwards error/warn logs to services/tail, which POSTs
   // them to ALERT_WEBHOOK. Configured here for symmetry with services/in,
   // services/out, apps/panel; the same Tail Worker handles all four.
-  "tail_consumers": [{ "service": "polaris-email-tail" }],
+  "tail_consumers": [{ "service": "polaris-mail-tail" }],
   // Analytics Engine: per-domain inbound rate, send_email outcomes, webhook
   // delivery latency. Queried via the CF SQL API in /v1/admin/metrics/*.
   "analytics_engine_datasets": [{ "binding": "ANALYTICS", "dataset": "polaris_metrics" }],
   "vars": {
-    "API_BASE_URL": "https://polaris-email-api.workers.dev",
+    "API_BASE_URL": "https://polaris-mail-api.workers.dev",
     // Public R2 custom domain for message bodies + attachments. Keys
     // are content-addressed (SHA-256) so URLs are unguessable; no signing.
     "R2_PUBLIC_HOST": "r2.mail.plrs.im",
-    "ALERT_WEBHOOK": "https://alerts.example.com/polaris-email",
+    "ALERT_WEBHOOK": "https://alerts.example.com/polaris-mail",
     "MAX_LATENCY_MS": "300000",
     // default TLS-RPT aggregation address. Single mailbox we own;
     // per-domain overrides are stored in mail_domains.tlsrpt_rua.

@@ -1,4 +1,4 @@
-# Contributing to polaris-email
+# Contributing to polaris-mail
 
 ## Toolchain
 

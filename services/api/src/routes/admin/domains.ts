@@ -1,13 +1,13 @@
 // Admin REST routes for mail_domains (the send/recv domain table).
 // All HMAC-signed (admin middleware applied at the parent `admin` Hono instance).
 import { Hono } from 'hono';
-import { CreateMailDomainRequest, UpdateMailDomainRequest } from '@polaris-email/schema';
-import { generatePolicyId, verifyMtaSts, verifyTlsRpt } from '@polaris-email/cf-api';
+import { CreateMailDomainRequest, UpdateMailDomainRequest } from '@polaris-mail/schema';
+import { generatePolicyId, verifyMtaSts, verifyTlsRpt } from '@polaris-mail/cf-api';
 import { actorOf, audit } from '../../audit.js';
 import { bodyText, requireScope } from '../../auth.js';
 import type { Env } from '../../env.js';
 import { buildError } from '../../errors.js';
-import { ulid } from '@polaris-email/ids';
+import { ulid } from '@polaris-mail/ids';
 
 export const domains = new Hono<{ Bindings: Env }>();
 

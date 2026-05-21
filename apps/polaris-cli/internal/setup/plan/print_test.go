@@ -39,7 +39,7 @@ func TestRender_DriftEmitsHint(t *testing.T) {
 	t.Parallel()
 	plan := &Plan{
 		Drift: []Entry{
-			{Kind: KindKV, Name: "polaris-email-nonce", Action: ActionDrift, StateID: "kv-stale"},
+			{Kind: KindKV, Name: "polaris-mail-nonce", Action: ActionDrift, StateID: "kv-stale"},
 		},
 	}
 	var buf bytes.Buffer
@@ -57,7 +57,7 @@ func TestRender_OnlySkips_QuietPath(t *testing.T) {
 	t.Parallel()
 	plan := &Plan{
 		Skips: []Entry{
-			{Kind: KindD1, Name: "polaris-email", Action: ActionSkip, LiveID: "db-1"},
+			{Kind: KindD1, Name: "polaris-mail", Action: ActionSkip, LiveID: "db-1"},
 		},
 	}
 	var buf bytes.Buffer

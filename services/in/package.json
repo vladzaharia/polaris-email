@@ -1,5 +1,5 @@
 {
-  "name": "@polaris-email/in",
+  "name": "@polaris-mail/in",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -10,16 +10,16 @@
     "lint": "oxlint ."
   },
   "dependencies": {
-    "@polaris-email/arf-parser": "workspace:*",
-    "@polaris-email/dmarc-parser": "workspace:*",
-    "@polaris-email/hmac": "workspace:*",
-    "@polaris-email/ids": "workspace:*",
-    "@polaris-email/mime": "workspace:*",
-    "@polaris-email/pipeline": "workspace:*",
-    "@polaris-email/policy-engine": "workspace:*",
-    "@polaris-email/suppressions": "workspace:*",
-    "@polaris-email/tlsrpt-parser": "workspace:*",
-    "@polaris-email/triage-schema": "workspace:*"
+    "@polaris-mail/arf-parser": "workspace:*",
+    "@polaris-mail/dmarc-parser": "workspace:*",
+    "@polaris-mail/hmac": "workspace:*",
+    "@polaris-mail/ids": "workspace:*",
+    "@polaris-mail/mime": "workspace:*",
+    "@polaris-mail/pipeline": "workspace:*",
+    "@polaris-mail/policy-engine": "workspace:*",
+    "@polaris-mail/suppressions": "workspace:*",
+    "@polaris-mail/tlsrpt-parser": "workspace:*",
+    "@polaris-mail/triage-schema": "workspace:*"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260517.1",

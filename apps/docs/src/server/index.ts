@@ -1,4 +1,4 @@
-// polaris-email-docs Worker entrypoint.
+// polaris-mail-docs Worker entrypoint.
 //
 // Serves the Docusaurus v3 static build under `build/` via the Workers
 // Assets binding. The Worker layer is intentionally thin:
@@ -83,7 +83,7 @@ const REDIRECTS: Record<string, string> = {
   // ----- Reference --------------------------------------------------
   '/cli': '/reference/cli',
   '/errors': '/reference/errors',
-  '/api': '/reference/api/polaris-email-api',
+  '/api': '/reference/api/polaris-mail-api',
   '/consumer-contract': '/reference/consumer-contract',
 
   // ----- Security ---------------------------------------------------

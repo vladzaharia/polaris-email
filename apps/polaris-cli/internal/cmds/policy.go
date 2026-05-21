@@ -1,13 +1,13 @@
-// 0019 — `polaris-email policy` CLI subtree.
+// 0019 — `polaris-mail policy` CLI subtree.
 //
 // Mirrors the admin REST surface in services/api/src/routes/admin/moderation.ts:
 //
-//   polaris-email policy decisions list [--verdict ...] [--direction ...] [--stream ...]
-//   polaris-email policy held list      [--direction ...] [--status open|released|dropped|all]
-//   polaris-email policy held show      <held_id>
-//   polaris-email policy held release   <held_id> [--as legit]
-//   polaris-email policy held drop      <held_id> [--as phishing|spam|marketing]
-//   polaris-email policy held reclassify <held_id> --verdict <v> [--notes ...]
+//   polaris-mail policy decisions list [--verdict ...] [--direction ...] [--stream ...]
+//   polaris-mail policy held list      [--direction ...] [--status open|released|dropped|all]
+//   polaris-mail policy held show      <held_id>
+//   polaris-mail policy held release   <held_id> [--as legit]
+//   polaris-mail policy held drop      <held_id> [--as phishing|spam|marketing]
+//   polaris-mail policy held reclassify <held_id> --verdict <v> [--notes ...]
 //
 // Release / drop / reclassify all write a moderation_feedback row that
 // feeds the inbound LLM's few-shot prompt on the next daily KV refresh.

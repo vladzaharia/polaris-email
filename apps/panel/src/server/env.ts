@@ -1,8 +1,8 @@
-// Cloudflare Worker bindings + vars for the polaris-email panel.
+// Cloudflare Worker bindings + vars for the polaris-mail panel.
 //
 // Bindings come from wrangler.jsonc:
-//   DB      — D1 (same `polaris-email` database used by services/api; better-auth tables live here)
-//   API     — service binding to polaris-email-api (one-way, panel → api only)
+//   DB      — D1 (same `polaris-mail` database used by services/api; better-auth tables live here)
+//   API     — service binding to polaris-mail-api (one-way, panel → api only)
 //   ASSETS  — Workers Assets binding serving dist/client
 //
 // Vars are plain strings; secrets are uploaded with `wrangler secret put`.

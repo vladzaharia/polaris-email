@@ -1,8 +1,8 @@
-// HMAC canonical-string signer/verifier for polaris-email.
+// HMAC canonical-string signer/verifier for polaris-mail.
 //
 // Domain-separation tags pin the signature to a direction:
-//   polaris-api     — inbound API requests (caller → polaris-email)
-//   polaris-webhook — outbound webhooks    (polaris-email → consumer)
+//   polaris-api     — inbound API requests (caller → polaris-mail)
+//   polaris-webhook — outbound webhooks    (polaris-mail → consumer)
 //
 // Canonical string (newline-joined, no trailing newline):
 //   <domain>\n

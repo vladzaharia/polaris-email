@@ -1,8 +1,8 @@
-// polaris-email-panel Worker — committed config. Real IDs live in
+// polaris-mail-panel Worker — committed config. Real IDs live in
 // wrangler.local.jsonc (gitignored) and are merged in before `wrangler deploy`
-// by `polaris-email setup infra deploy`.
+// by `polaris-mail setup infra deploy`.
 //
-// The panel binds to the SAME `polaris-email` D1 as services/api (auth tables
+// The panel binds to the SAME `polaris-mail` D1 as services/api (auth tables
 // live there alongside the canonical schema), and reaches services/api over a
 // one-way service binding (API). Static assets are served from dist/client via
 // the Workers Assets binding.
@@ -11,7 +11,7 @@
 //   "routes": [{ "pattern": "api.polaris.example.com/panel/*", "zone_name": "polaris.example.com" }]
 {
   "$schema": "https://json-schema.org/draft-07/schema",
-  "name": "polaris-email-panel",
+  "name": "polaris-mail-panel",
   "main": "src/server/index.ts",
   "compatibility_date": "2026-04-15",
   "compatibility_flags": ["nodejs_compat_v2"],
@@ -38,14 +38,14 @@
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "polaris-email",
+      "database_name": "polaris-mail",
       "database_id": "REPLACE_WITH_LOCAL",
       "migrations_dir": "migrations",
     },
   ],
-  "services": [{ "binding": "API", "service": "polaris-email-api" }],
+  "services": [{ "binding": "API", "service": "polaris-mail-api" }],
   // Tail consumer: forwards error/warn logs to services/tail.
-  "tail_consumers": [{ "service": "polaris-email-tail" }],
+  "tail_consumers": [{ "service": "polaris-mail-tail" }],
   "vars": {
     "OIDC_ADMIN_GROUP": "polaris-admins",
     // Cookie scope. The runtime defaults to Path=/ which matches the

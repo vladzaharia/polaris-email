@@ -33,8 +33,8 @@
 //      pick up sustained bounce volume).
 
 import { Hono } from 'hono';
-import { ulid } from '@polaris-email/ids';
-import { normalizeAddress } from '@polaris-email/suppressions';
+import { ulid } from '@polaris-mail/ids';
+import { normalizeAddress } from '@polaris-mail/suppressions';
 import { buildAuditInsert } from '../audit.js';
 import { buildError } from '../errors.js';
 import type { Env } from '../env.js';

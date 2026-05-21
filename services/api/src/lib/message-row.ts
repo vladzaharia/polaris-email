@@ -7,7 +7,7 @@
 // any new column the wire response cares about is added in exactly one
 // place.
 
-import type { MessageRowMeta } from '@polaris-email/mime';
+import type { MessageRowMeta } from '@polaris-mail/mime';
 
 export type MessageRow = {
   id: string;

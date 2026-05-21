@@ -62,13 +62,13 @@ type AccountInputs struct {
 
 // D1Inputs maps the logical D1 database names the templates reference
 // onto their concrete IDs. The control-plane is single-DB by design
-// (PolarisEmail); the struct is a struct rather than a map so missing
+// (PolarisMail); the struct is a struct rather than a map so missing
 // references explode at template-eval time instead of silently expanding
 // to "<no value>".
 type D1Inputs struct {
-	// PolarisEmail is the single shared D1 database. Mailboxes,
+	// PolarisMail is the single shared D1 database. Mailboxes,
 	// messages, audit_log, better-auth tables — all live here.
-	PolarisEmail D1Database
+	PolarisMail D1Database
 }
 
 // D1Database is one D1 instance.
@@ -79,10 +79,10 @@ type D1Database struct {
 
 // R2Inputs is the analogous shape for R2 buckets.
 type R2Inputs struct {
-	// PolarisEmail is the message-body + attachment bucket fronted by
+	// PolarisMail is the message-body + attachment bucket fronted by
 	// the unauthenticated r2.mail.plrs.im custom domain. SHA-256
 	// content addressing is the unguessability boundary.
-	PolarisEmail R2Bucket
+	PolarisMail R2Bucket
 }
 
 // R2Bucket is one R2 bucket. R2 has no separate ID; buckets are
@@ -131,10 +131,10 @@ type Queue struct {
 // HostnameInputs are the public hostnames the templates bake into vars.
 type HostnameInputs struct {
 	// PolarisAPI is the public API hostname (e.g. api.mail.plrs.im).
-	// Bound to polaris-email-api as a Workers Custom Domain.
+	// Bound to polaris-mail-api as a Workers Custom Domain.
 	PolarisAPI string
 	// Panel is the public admin-UI hostname (e.g. mail.plrs.im).
-	// Bound to polaris-email-panel as a Workers Custom Domain.
+	// Bound to polaris-mail-panel as a Workers Custom Domain.
 	Panel string
 	// R2Public is the unauthenticated R2 custom domain
 	// (e.g. r2.mail.plrs.im). See SECURITY.md.
@@ -167,7 +167,7 @@ type OIDCInputs struct {
 // Validate enforces every required field is populated. The current
 // service set requires:
 //   - Account.ID + Hostnames.PolarisAPI + Hostnames.Panel (all Workers)
-//   - D1.PolarisEmail.ID (api, in, out, panel)
+//   - D1.PolarisMail.ID (api, in, out, panel)
 //   - all five KV namespaces (api)
 //   - Hostnames.R2Public (api)
 //   - OIDC.Issuer + OIDC.ClientID (panel)
@@ -187,13 +187,13 @@ func (in *RenderInputs) Validate() error {
 	check("Hostnames.Panel (POLARIS_PANEL_HOSTNAME)", in.Hostnames.Panel)
 	check("Hostnames.R2Public (R2_PUBLIC_HOST)", in.Hostnames.R2Public)
 
-	check("D1.PolarisEmail.ID (state .d1[\"polaris-email\"].id)", in.D1.PolarisEmail.ID)
+	check("D1.PolarisMail.ID (state .d1[\"polaris-mail\"].id)", in.D1.PolarisMail.ID)
 
-	check("KV.Nonce.ID (state .kv[\"polaris-email-nonce\"].id)", in.KV.Nonce.ID)
-	check("KV.Idempotency.ID (state .kv[\"polaris-email-idempotency\"].id)", in.KV.Idempotency.ID)
-	check("KV.RateLimit.ID (state .kv[\"polaris-email-rate-limit\"].id)", in.KV.RateLimit.ID)
-	check("KV.KeyCache.ID (state .kv[\"polaris-email-key-cache\"].id)", in.KV.KeyCache.ID)
-	check("KV.Revocations.ID (state .kv[\"polaris-email-revocations\"].id)", in.KV.Revocations.ID)
+	check("KV.Nonce.ID (state .kv[\"polaris-mail-nonce\"].id)", in.KV.Nonce.ID)
+	check("KV.Idempotency.ID (state .kv[\"polaris-mail-idempotency\"].id)", in.KV.Idempotency.ID)
+	check("KV.RateLimit.ID (state .kv[\"polaris-mail-rate-limit\"].id)", in.KV.RateLimit.ID)
+	check("KV.KeyCache.ID (state .kv[\"polaris-mail-key-cache\"].id)", in.KV.KeyCache.ID)
+	check("KV.Revocations.ID (state .kv[\"polaris-mail-revocations\"].id)", in.KV.Revocations.ID)
 
 	check("OIDC.Issuer (OIDC_ISSUER)", in.OIDC.Issuer)
 	check("OIDC.ClientID (OIDC_CLIENT_ID)", in.OIDC.ClientID)
@@ -202,7 +202,7 @@ func (in *RenderInputs) Validate() error {
 		return nil
 	}
 	return fmt.Errorf(
-		"wranglercfg: %d required input(s) missing — rerun `polaris-email setup infra configure` (for env values) or `polaris-email setup infra apply` (for resource IDs):\n  - %s",
+		"wranglercfg: %d required input(s) missing — rerun `polaris-mail setup infra configure` (for env values) or `polaris-mail setup infra apply` (for resource IDs):\n  - %s",
 		len(missing),
 		strings.Join(missing, "\n  - "),
 	)

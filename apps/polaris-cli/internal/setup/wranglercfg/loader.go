@@ -67,15 +67,15 @@ func LoadInputs(doc *state.Doc, envPath string) (*RenderInputs, error) {
 }
 
 func populateD1(out *D1Inputs, doc *state.Doc) {
-	if r, ok := doc.D1["polaris-email"]; ok {
-		out.PolarisEmail = D1Database{ID: r.ID, Name: nameOr(r.Name, "polaris-email")}
+	if r, ok := doc.D1["polaris-mail"]; ok {
+		out.PolarisMail = D1Database{ID: r.ID, Name: nameOr(r.Name, "polaris-mail")}
 	}
 }
 
 func populateR2(out *R2Inputs, doc *state.Doc) {
-	if b, ok := doc.R2["polaris-email"]; ok {
-		out.PolarisEmail = R2Bucket{
-			Name:         nameOr(b.Name, "polaris-email"),
+	if b, ok := doc.R2["polaris-mail"]; ok {
+		out.PolarisMail = R2Bucket{
+			Name:         nameOr(b.Name, "polaris-mail"),
 			Jurisdiction: b.Jurisdiction,
 		}
 	}
@@ -85,11 +85,11 @@ func populateR2(out *R2Inputs, doc *state.Doc) {
 // RenderInputs field. Keeping this in one place makes "where does
 // .KV.Foo come from?" trivially greppable.
 var kvStateKeys = map[string]func(*KVInputs, state.Resource){
-	"polaris-email-nonce":       func(k *KVInputs, r state.Resource) { k.Nonce = toKV(r) },
-	"polaris-email-idempotency": func(k *KVInputs, r state.Resource) { k.Idempotency = toKV(r) },
-	"polaris-email-rate-limit":  func(k *KVInputs, r state.Resource) { k.RateLimit = toKV(r) },
-	"polaris-email-key-cache":   func(k *KVInputs, r state.Resource) { k.KeyCache = toKV(r) },
-	"polaris-email-revocations": func(k *KVInputs, r state.Resource) { k.Revocations = toKV(r) },
+	"polaris-mail-nonce":       func(k *KVInputs, r state.Resource) { k.Nonce = toKV(r) },
+	"polaris-mail-idempotency": func(k *KVInputs, r state.Resource) { k.Idempotency = toKV(r) },
+	"polaris-mail-rate-limit":  func(k *KVInputs, r state.Resource) { k.RateLimit = toKV(r) },
+	"polaris-mail-key-cache":   func(k *KVInputs, r state.Resource) { k.KeyCache = toKV(r) },
+	"polaris-mail-revocations": func(k *KVInputs, r state.Resource) { k.Revocations = toKV(r) },
 }
 
 func populateKV(out *KVInputs, doc *state.Doc) {
@@ -109,11 +109,11 @@ func toKV(r state.Resource) KVNamespace {
 // practice — the wiring is here so a follow-on PR doesn't have to
 // re-discover the mapping.
 var queueStateKeys = map[string]func(*QueueInputs, state.Resource){
-	"polaris-email-outbound":     func(q *QueueInputs, r state.Resource) { q.Outbound = toQueue(r) },
-	"polaris-email-inbound":      func(q *QueueInputs, r state.Resource) { q.Inbound = toQueue(r) },
-	"polaris-email-fanout":       func(q *QueueInputs, r state.Resource) { q.Fanout = toQueue(r) },
-	"polaris-email-outbound-dlq": func(q *QueueInputs, r state.Resource) { q.OutboundDLQ = toQueue(r) },
-	"polaris-email-fanout-dlq":   func(q *QueueInputs, r state.Resource) { q.FanoutDLQ = toQueue(r) },
+	"polaris-mail-outbound":     func(q *QueueInputs, r state.Resource) { q.Outbound = toQueue(r) },
+	"polaris-mail-inbound":      func(q *QueueInputs, r state.Resource) { q.Inbound = toQueue(r) },
+	"polaris-mail-fanout":       func(q *QueueInputs, r state.Resource) { q.Fanout = toQueue(r) },
+	"polaris-mail-outbound-dlq": func(q *QueueInputs, r state.Resource) { q.OutboundDLQ = toQueue(r) },
+	"polaris-mail-fanout-dlq":   func(q *QueueInputs, r state.Resource) { q.FanoutDLQ = toQueue(r) },
 }
 
 func populateQueues(out *QueueInputs, doc *state.Doc) {

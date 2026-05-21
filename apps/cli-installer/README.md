@@ -1,13 +1,13 @@
-# @polaris-email/cli-installer
+# @polaris-mail/cli-installer
 
-Cloudflare Worker that hosts the POSIX-sh installer for the `polaris-email`
+Cloudflare Worker that hosts the POSIX-sh installer for the `polaris-mail`
 CLI at `https://cli.mail.plrs.im`.
 
 ```sh
 curl -fsSL cli.mail.plrs.im | sh                # install latest
 curl -fsSL cli.mail.plrs.im | sh -s -- install  # install (explicit)
 curl -fsSL cli.mail.plrs.im | sh -s -- upgrade  # install / upgrade
-curl -fsSL cli.mail.plrs.im | sh -s -- <args>   # install if missing, then `polaris-email <args>`
+curl -fsSL cli.mail.plrs.im | sh -s -- <args>   # install if missing, then `polaris-mail <args>`
 curl -fsSL "cli.mail.plrs.im/?v=v1.2.3" | sh    # install pinned version v1.2.3
 ```
 
@@ -23,8 +23,8 @@ parameter (validated against a safe-version regex), and serves it as
 To change installer behaviour, edit `src/install.sh` and redeploy:
 
 ```sh
-pnpm --filter @polaris-email/cli-installer test    # vitest + shellcheck
-pnpm --filter @polaris-email/cli-installer deploy
+pnpm --filter @polaris-mail/cli-installer test    # vitest + shellcheck
+pnpm --filter @polaris-mail/cli-installer deploy
 ```
 
 ## Endpoints
@@ -42,8 +42,8 @@ and caps the length at 64 chars before substituting it into the script.
 ## Tests
 
 ```sh
-pnpm --filter @polaris-email/cli-installer run typecheck
-pnpm --filter @polaris-email/cli-installer run lint
-pnpm --filter @polaris-email/cli-installer run test
+pnpm --filter @polaris-mail/cli-installer run typecheck
+pnpm --filter @polaris-mail/cli-installer run lint
+pnpm --filter @polaris-mail/cli-installer run test
 shellcheck -s sh apps/cli-installer/src/install.sh   # CI gates this
 ```

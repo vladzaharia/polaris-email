@@ -71,7 +71,7 @@ func Prompt(initial *Config, opts PromptOptions) (*Config, error) {
 			key:  "POLARIS_API_HOSTNAME",
 			desc: "API hostname",
 			val:  &c.PolarisAPIHostname,
-			def:  defaultIfBlank(c.PolarisAPIHostname, "polaris-email-api.workers.dev"),
+			def:  defaultIfBlank(c.PolarisAPIHostname, "polaris-mail-api.workers.dev"),
 		},
 		{
 			key:  "CF_API_TOKEN",

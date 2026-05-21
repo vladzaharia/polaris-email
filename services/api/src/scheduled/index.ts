@@ -1,4 +1,4 @@
-// Scheduled (cron) dispatcher for polaris-email-api.
+// Scheduled (cron) dispatcher for polaris-mail-api.
 //
 // Cron triggers and their handlers (all routed off `event.cron`):
 //   * `0 9 * * 1`           — weekly control-plane staleness     → staleness

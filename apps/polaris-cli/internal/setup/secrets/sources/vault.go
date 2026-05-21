@@ -15,7 +15,7 @@ import (
 //
 // Vault, Item, and a field-mapping function are configurable so the
 // operator can point at their organisational structure. The defaults
-// match `op://Engineering/polaris-email/<name>`.
+// match `op://Engineering/polaris-mail/<name>`.
 //
 // The op CLI is expected to be already signed-in (interactively or via
 // `op signin --account ... --raw`); we do not attempt to drive a login
@@ -27,7 +27,7 @@ import (
 type VaultSource struct {
 	// Vault is the 1Password vault name. Defaults to "Engineering" when empty.
 	Vault string
-	// Item is the item name inside the vault. Defaults to "polaris-email" when empty.
+	// Item is the item name inside the vault. Defaults to "polaris-mail" when empty.
 	Item string
 	// FieldFor maps a secret name (POLARIS_SECRET_A) → field name on the
 	// 1Password item. When nil the secret name is used verbatim.
@@ -64,7 +64,7 @@ func (v *VaultSource) Load(ctx context.Context, name string) (string, error) {
 	}
 	item := v.Item
 	if item == "" {
-		item = "polaris-email"
+		item = "polaris-mail"
 	}
 	field := name
 	if v.FieldFor != nil {

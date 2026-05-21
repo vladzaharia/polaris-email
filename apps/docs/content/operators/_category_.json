@@ -5,6 +5,6 @@
     "type": "generated-index",
     "slug": "/operators",
     "title": "Operator documentation",
-    "description": "Stand up polaris-email from cold start, run it day-to-day with the polaris-email CLI, and recover from incidents using the runbook library. Covers Cloudflare-side deploys, the on-prem mail-bridge, and the audit-chain verification pipeline."
+    "description": "Stand up polaris-mail from cold start, run it day-to-day with the polaris-mail CLI, and recover from incidents using the runbook library. Covers Cloudflare-side deploys, the on-prem mail-bridge, and the audit-chain verification pipeline."
   }
 }

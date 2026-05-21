@@ -3,11 +3,11 @@
 // Inbound mail to the platform DMARC RUA mailbox lands here. Walks the
 // MIME body looking for the gzipped XML payload (Content-Type usually
 // application/gzip with a .xml.gz filename), gunzips + parses via
-// @polaris-email/dmarc-parser, writes both the per-report row and the
+// @polaris-mail/dmarc-parser, writes both the per-report row and the
 // per-(domain, day) alignment rollup that W8's auto-promotion cron reads.
 
-import { parseDmarcReportXml, gunzipUtf8, type DmarcReport } from '@polaris-email/dmarc-parser';
-import { ulid } from '@polaris-email/ids';
+import { parseDmarcReportXml, gunzipUtf8, type DmarcReport } from '@polaris-mail/dmarc-parser';
+import { ulid } from '@polaris-mail/ids';
 
 export const PLATFORM_DMARC_REPORTS_MAILBOX_ID = '01HXPLATFORMDMARCREPORTS00';
 

@@ -1,8 +1,8 @@
-// Template merged on top of wrangler.jsonc by `polaris-email setup infra
+// Template merged on top of wrangler.jsonc by `polaris-mail setup infra
 // deploy`. Placeholders use Go text/template syntax and are substituted
 // by the Go renderer in apps/polaris-cli/internal/setup/wranglercfg from
 // .deploy-state.json + .env.deploy. Do NOT hand-edit the materialized
-// wrangler.local.jsonc — re-run `polaris-email setup infra render` instead.
+// wrangler.local.jsonc — re-run `polaris-mail setup infra render` instead.
 {
   "account_id": "{{ .Account.ID }}",
   // Workers Custom Domain binding. wrangler manages the binding
@@ -15,11 +15,11 @@
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "polaris-email",
-      "database_id": "{{ .D1.PolarisEmail.ID }}",
+      "database_name": "polaris-mail",
+      "database_id": "{{ .D1.PolarisMail.ID }}",
     },
   ],
-  "r2_buckets": [{ "binding": "R2", "bucket_name": "polaris-email", "jurisdiction": "eu" }],
+  "r2_buckets": [{ "binding": "R2", "bucket_name": "polaris-mail", "jurisdiction": "eu" }],
   "kv_namespaces": [
     { "binding": "KV_NONCE", "id": "{{ .KV.Nonce.ID }}" },
     { "binding": "KV_IDEMPOTENCY", "id": "{{ .KV.Idempotency.ID }}" },
@@ -29,10 +29,10 @@
   ],
   "vars": {
     "API_BASE_URL": "https://{{ .Hostnames.PolarisAPI }}",
-    // R2 public custom domain. The R2 bucket `polaris-email` is fronted
+    // R2 public custom domain. The R2 bucket `polaris-mail` is fronted
     // by this hostname; both inbound and outbound message bodies/attachments
     // are served from it. The binding is provisioned during
-    // `polaris-email setup infra apply` from R2_PUBLIC_HOST in .env.deploy.
+    // `polaris-mail setup infra apply` from R2_PUBLIC_HOST in .env.deploy.
     "R2_PUBLIC_HOST": "{{ .Hostnames.R2Public }}",
     "ALERT_WEBHOOK": "{{ .AlertWebhook }}",
   },

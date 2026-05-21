@@ -127,7 +127,7 @@ describe('scheduled dispatch', () => {
       expect(fetched.length).toBe(1);
       const payload = JSON.parse(fetched[0]!.body) as Record<string, unknown>;
       expect(payload.synthetic_failures).toBe(2);
-      expect(payload.service).toBe('polaris-email');
+      expect(payload.service).toBe('polaris-mail');
 
       // Third failure: counter=3, another alert (over threshold every tick).
       await worker.scheduled!({ cron: '*/5 * * * *' } as ScheduledEvent, env, ctx);

@@ -134,10 +134,10 @@ importers:
       '@cloudflare/workers-types':
         specifier: ^4.20260517.1
         version: 4.20260517.1
-      '@polaris-email/hmac':
+      '@polaris-mail/hmac':
         specifier: workspace:*
         version: link:../../packages/hmac
-      '@polaris-email/schema':
+      '@polaris-mail/schema':
         specifier: workspace:*
         version: link:../../packages/schema
       '@polaris/sdk':
@@ -319,13 +319,13 @@ importers:
 
   packages/pipeline:
     dependencies:
-      '@polaris-email/hmac':
+      '@polaris-mail/hmac':
         specifier: workspace:*
         version: link:../hmac
-      '@polaris-email/ids':
+      '@polaris-mail/ids':
         specifier: workspace:*
         version: link:../ids
-      '@polaris-email/mime':
+      '@polaris-mail/mime':
         specifier: workspace:*
         version: link:../mime
     devDependencies:
@@ -341,10 +341,10 @@ importers:
 
   packages/policy-engine:
     dependencies:
-      '@polaris-email/mime':
+      '@polaris-mail/mime':
         specifier: workspace:*
         version: link:../mime
-      '@polaris-email/suppressions':
+      '@polaris-mail/suppressions':
         specifier: workspace:*
         version: link:../suppressions
     devDependencies:
@@ -369,7 +369,7 @@ importers:
 
   packages/schema:
     dependencies:
-      '@polaris-email/mime':
+      '@polaris-mail/mime':
         specifier: workspace:*
         version: link:../mime
       zod:
@@ -385,7 +385,7 @@ importers:
 
   packages/sdk-node:
     dependencies:
-      '@polaris-email/hmac':
+      '@polaris-mail/hmac':
         specifier: workspace:*
         version: link:../hmac
     devDependencies:
@@ -410,7 +410,7 @@ importers:
 
   packages/test-vectors:
     dependencies:
-      '@polaris-email/hmac':
+      '@polaris-mail/hmac':
         specifier: workspace:*
         version: link:../hmac
     devDependencies:
@@ -448,31 +448,31 @@ importers:
 
   services/api:
     dependencies:
-      '@polaris-email/cf-api':
+      '@polaris-mail/cf-api':
         specifier: workspace:*
         version: link:../../packages/cf-api
-      '@polaris-email/hmac':
+      '@polaris-mail/hmac':
         specifier: workspace:*
         version: link:../../packages/hmac
-      '@polaris-email/ids':
+      '@polaris-mail/ids':
         specifier: workspace:*
         version: link:../../packages/ids
-      '@polaris-email/mime':
+      '@polaris-mail/mime':
         specifier: workspace:*
         version: link:../../packages/mime
-      '@polaris-email/pipeline':
+      '@polaris-mail/pipeline':
         specifier: workspace:*
         version: link:../../packages/pipeline
-      '@polaris-email/policy-engine':
+      '@polaris-mail/policy-engine':
         specifier: workspace:*
         version: link:../../packages/policy-engine
-      '@polaris-email/revocation':
+      '@polaris-mail/revocation':
         specifier: workspace:*
         version: link:../../packages/revocation
-      '@polaris-email/schema':
+      '@polaris-mail/schema':
         specifier: workspace:*
         version: link:../../packages/schema
-      '@polaris-email/suppressions':
+      '@polaris-mail/suppressions':
         specifier: workspace:*
         version: link:../../packages/suppressions
       bcryptjs:
@@ -500,34 +500,34 @@ importers:
 
   services/in:
     dependencies:
-      '@polaris-email/arf-parser':
+      '@polaris-mail/arf-parser':
         specifier: workspace:*
         version: link:../../packages/arf-parser
-      '@polaris-email/dmarc-parser':
+      '@polaris-mail/dmarc-parser':
         specifier: workspace:*
         version: link:../../packages/dmarc-parser
-      '@polaris-email/hmac':
+      '@polaris-mail/hmac':
         specifier: workspace:*
         version: link:../../packages/hmac
-      '@polaris-email/ids':
+      '@polaris-mail/ids':
         specifier: workspace:*
         version: link:../../packages/ids
-      '@polaris-email/mime':
+      '@polaris-mail/mime':
         specifier: workspace:*
         version: link:../../packages/mime
-      '@polaris-email/pipeline':
+      '@polaris-mail/pipeline':
         specifier: workspace:*
         version: link:../../packages/pipeline
-      '@polaris-email/policy-engine':
+      '@polaris-mail/policy-engine':
         specifier: workspace:*
         version: link:../../packages/policy-engine
-      '@polaris-email/suppressions':
+      '@polaris-mail/suppressions':
         specifier: workspace:*
         version: link:../../packages/suppressions
-      '@polaris-email/tlsrpt-parser':
+      '@polaris-mail/tlsrpt-parser':
         specifier: workspace:*
         version: link:../../packages/tlsrpt-parser
-      '@polaris-email/triage-schema':
+      '@polaris-mail/triage-schema':
         specifier: workspace:*
         version: link:../../packages/triage-schema
     devDependencies:
@@ -543,19 +543,19 @@ importers:
 
   services/out:
     dependencies:
-      '@polaris-email/ids':
+      '@polaris-mail/ids':
         specifier: workspace:*
         version: link:../../packages/ids
-      '@polaris-email/mime':
+      '@polaris-mail/mime':
         specifier: workspace:*
         version: link:../../packages/mime
-      '@polaris-email/policy-engine':
+      '@polaris-mail/policy-engine':
         specifier: workspace:*
         version: link:../../packages/policy-engine
-      '@polaris-email/schema':
+      '@polaris-mail/schema':
         specifier: workspace:*
         version: link:../../packages/schema
-      '@polaris-email/suppressions':
+      '@polaris-mail/suppressions':
         specifier: workspace:*
         version: link:../../packages/suppressions
     devDependencies:

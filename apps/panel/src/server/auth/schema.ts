@@ -4,7 +4,7 @@
 // match the shape better-auth expects for its core (user/session/account) plus
 // the SSO plugin (sso_provider).
 //
-// All tables live in the same `polaris-email` D1 as services/api. Better-auth
+// All tables live in the same `polaris-mail` D1 as services/api. Better-auth
 // owns the user/session/account/verification/sso_provider tables. Destructive
 // admin actions are gated client-side via DestructiveActionDialog; the
 // audit_log chained-hash table is the canonical record of who did what.

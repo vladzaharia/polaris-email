@@ -13,9 +13,9 @@ either reads from the control plane or tails Worker logs.
 ## `status` — red/yellow/green snapshot
 
 ```sh
-polaris-email status                       # all rollups
-polaris-email status --domain acme.com     # one domain
-polaris-email status --queues              # queue + DLQ depths only
+polaris-mail status                       # all rollups
+polaris-mail status --domain acme.com     # one domain
+polaris-mail status --queues              # queue + DLQ depths only
 ```
 
 `--queues` is the recommended fast path for DLQ-depth alerts — it
@@ -38,21 +38,21 @@ Red rows are anything stale beyond the configured threshold; yellow is
 ## Worker log tails
 
 ```sh
-wrangler tail polaris-email-out --status error --search "acme.com"   # outbound errors
-wrangler tail polaris-email-in  --status error --search "acme.com"   # inbound errors
-wrangler tail polaris-email-api --status error --search "webhook"    # webhook + cron failures
-wrangler tail polaris-email-out --status ok                          # full log stream
-wrangler tail polaris-email-api --status error --since 1h            # last hour, errors only
+wrangler tail polaris-mail-out --status error --search "acme.com"   # outbound errors
+wrangler tail polaris-mail-in  --status error --search "acme.com"   # inbound errors
+wrangler tail polaris-mail-api --status error --search "webhook"    # webhook + cron failures
+wrangler tail polaris-mail-out --status ok                          # full log stream
+wrangler tail polaris-mail-api --status error --since 1h            # last hour, errors only
 ```
 
-The previous separate `polaris-email-fanout` and `polaris-email-cron`
-Workers were folded into `polaris-email-api`; webhook delivery and
+The previous separate `polaris-mail-fanout` and `polaris-mail-cron`
+Workers were folded into `polaris-mail-api`; webhook delivery and
 cron failures both surface under that Worker's tail.
 
 ## Audit chain
 
 ```sh
-polaris-email audit verify                     # walk hash chain end-to-end
+polaris-mail audit verify                     # walk hash chain end-to-end
 ```
 
 `audit verify` walks every row in `audit_log` and recomputes each
@@ -68,8 +68,8 @@ breaks in `cron_runs(job_name='audit-verify')`; the panel diagnostics
 ## Webhook DLQ
 
 ```sh
-polaris-email webhook dlq list
-polaris-email webhook dlq inspect <id>
+polaris-mail webhook dlq list
+polaris-mail webhook dlq inspect <id>
 ```
 
 Read-only fast path. Full DLQ operations
@@ -85,11 +85,11 @@ The suppression list is **bi-directional**:
 - **Inbound** — mail from suppressed addresses is also dropped.
 
 ```sh
-polaris-email suppress list
-polaris-email suppress check user@example.com
-polaris-email suppress show <id>
-polaris-email suppress add
-polaris-email suppress remove <id>
+polaris-mail suppress list
+polaris-mail suppress check user@example.com
+polaris-mail suppress show <id>
+polaris-mail suppress add
+polaris-mail suppress remove <id>
 ```
 
 `suppression add` is interactive (it prompts for the address, reason,
@@ -103,7 +103,7 @@ When a webhook consumer reports a `bad_signature` error, capture the
 `X-Polaris-*` headers and raw body and replay them locally:
 
 ```sh
-polaris-email auth verify \
+polaris-mail auth verify \
     --method POST --path /v1/messages --body req.json \
     --ts 1700000000000 --nonce <nonce> --sig <hex> \
     --secret "$(op read op://Vault/Polaris/secret)"
@@ -124,7 +124,7 @@ breakdown.
 
 ## Daily-ops checklist
 
-- **Watch DLQ depth**: alert if `polaris-email status --queues` shows
+- **Watch DLQ depth**: alert if `polaris-mail status --queues` shows
   DLQ growth > 0 over a 5-minute window.
 - **Watch the audit-verify cron**: the nightly chain walk writes to
   `cron_runs(job_name='audit-verify')`. A `status='error'` row means

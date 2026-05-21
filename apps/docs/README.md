@@ -1,6 +1,6 @@
-# @polaris-email/docs
+# @polaris-mail/docs
 
-Source for [docs.mail.plrs.im](https://docs.mail.plrs.im) — the polaris-email
+Source for [docs.mail.plrs.im](https://docs.mail.plrs.im) — the polaris-mail
 documentation site.
 
 Docusaurus v3 static build served by a thin Hono Worker via the
@@ -17,13 +17,13 @@ PR 12.
 
 ```sh
 pnpm install
-pnpm --filter @polaris-email/docs run docs:start    # Docusaurus dev server
-pnpm --filter @polaris-email/docs run build:client  # static build into ./build
-pnpm --filter @polaris-email/docs run dev:server    # wrangler dev (serves ./build)
+pnpm --filter @polaris-mail/docs run docs:start    # Docusaurus dev server
+pnpm --filter @polaris-mail/docs run build:client  # static build into ./build
+pnpm --filter @polaris-mail/docs run dev:server    # wrangler dev (serves ./build)
 ```
 
 ## Deploy
 
 ```sh
-polaris-email setup infra deploy service docs
+polaris-mail setup infra deploy service docs
 ```

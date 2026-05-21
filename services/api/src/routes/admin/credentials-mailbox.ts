@@ -19,8 +19,8 @@
 
 import { Hono } from 'hono';
 import bcrypt from 'bcryptjs';
-import { ulid } from '@polaris-email/ids';
-import { MailBridgeProtocol } from '@polaris-email/schema';
+import { ulid } from '@polaris-mail/ids';
+import { MailBridgeProtocol } from '@polaris-mail/schema';
 import { audit } from '../../audit.js';
 import { requireScope } from '../../auth.js';
 import type { Env } from '../../env.js';

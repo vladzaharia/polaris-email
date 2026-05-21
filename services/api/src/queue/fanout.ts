@@ -1,4 +1,4 @@
-// polaris-email-fanout: queue consumer that signs + POSTs webhook events.
+// polaris-mail-fanout: queue consumer that signs + POSTs webhook events.
 //
 // Canonical envelope:
 //   {
@@ -16,11 +16,11 @@
 // (terminal-success bookkeeping).
 //
 // Absorbed from the standalone `services/fanout` Worker. The
-// `polaris-email-api` Worker now binds the FANOUT_QUEUE consumer directly and
+// `polaris-mail-api` Worker now binds the FANOUT_QUEUE consumer directly and
 // routes batches to `fanoutQueueConsumer` from its top-level `queue` export.
-import { sign, generateNonce, sha256Hex } from '@polaris-email/hmac';
-import { ulid } from '@polaris-email/ids';
-import { extractAttachmentParts, mimeToMessage, type MessageRowMeta } from '@polaris-email/mime';
+import { sign, generateNonce, sha256Hex } from '@polaris-mail/hmac';
+import { ulid } from '@polaris-mail/ids';
+import { extractAttachmentParts, mimeToMessage, type MessageRowMeta } from '@polaris-mail/mime';
 import type { Env } from '../env.js';
 import { r2PublicUrl, attachmentR2Key } from '../lib/r2-public-url.js';
 import { safeFetch } from './ssrf.js';

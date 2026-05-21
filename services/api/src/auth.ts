@@ -1,8 +1,8 @@
 // HMAC auth middleware: looks up the key, fetches its secret, verifies signature,
 // performs nonce-dedup, and attaches the key record to the context.
 import type { Context, MiddlewareHandler } from 'hono';
-import { verify } from '@polaris-email/hmac';
-import { revocationCheck } from '@polaris-email/revocation';
+import { verify } from '@polaris-mail/hmac';
+import { revocationCheck } from '@polaris-mail/revocation';
 import type { Env } from './env.js';
 import { buildError } from './errors.js';
 
@@ -206,7 +206,7 @@ export function hmacAuth(direction: 'polaris-api'): MiddlewareHandler<{ Bindings
     const path = new URL(c.req.url).pathname;
     // Phase 3b.2 — strip the leading `?` to match the convention used by
     // bridge-auth.ts / messages.ts / messages-state.ts. canonicalQuery in
-    // @polaris-email/hmac normalises both forms identically; keeping every
+    // @polaris-mail/hmac normalises both forms identically; keeping every
     // call-site on the same form removes the chance of a future divergence.
     const query = new URL(c.req.url).search.slice(1);
     const result = await verify({

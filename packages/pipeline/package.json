@@ -1,5 +1,5 @@
 {
-  "name": "@polaris-email/pipeline",
+  "name": "@polaris-mail/pipeline",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -12,9 +12,9 @@
     "lint": "oxlint ."
   },
   "dependencies": {
-    "@polaris-email/hmac": "workspace:*",
-    "@polaris-email/ids": "workspace:*",
-    "@polaris-email/mime": "workspace:*"
+    "@polaris-mail/hmac": "workspace:*",
+    "@polaris-mail/ids": "workspace:*",
+    "@polaris-mail/mime": "workspace:*"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260517.1",

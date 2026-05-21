@@ -12,6 +12,11 @@ import { cn } from '../lib/cn.js';
 export interface BreadcrumbItem {
   label: string;
   to?: string;
+  /**
+   * Optional search-params object passed straight to `<Link search>`.
+   * Lets a breadcrumb point at, e.g., `/abuse?tab=suppressions`.
+   */
+  search?: Record<string, string>;
 }
 
 function Breadcrumbs({ items }: { items: BreadcrumbItem[] }) {
@@ -25,7 +30,11 @@ function Breadcrumbs({ items }: { items: BreadcrumbItem[] }) {
         return (
           <span key={`${item.label}-${idx}`} className="flex items-center gap-1">
             {item.to && !isLast ? (
-              <Link to={item.to} className="hover:text-[var(--color-foreground)] hover:underline">
+              <Link
+                to={item.to}
+                search={item.search}
+                className="hover:text-[var(--color-foreground)] hover:underline"
+              >
                 {item.label}
               </Link>
             ) : (
@@ -49,6 +58,7 @@ export function PageCard({
   title,
   description,
   breadcrumbs,
+  actions,
   decorative = false,
   className,
 }: {
@@ -56,6 +66,8 @@ export function PageCard({
   title?: ReactNode;
   description?: ReactNode;
   breadcrumbs?: BreadcrumbItem[];
+  /** Right-aligned slot in the header — primary action buttons (Send test, Rotate, etc.). */
+  actions?: ReactNode;
   decorative?: boolean;
   className?: string;
 }) {
@@ -83,10 +95,15 @@ export function PageCard({
               <Breadcrumbs items={breadcrumbs} />
             </div>
           ) : null}
-          {title ? <h1 className="text-2xl font-semibold tracking-tight">{title}</h1> : null}
-          {description ? (
-            <p className="mt-1 text-sm text-[var(--color-muted-foreground)]">{description}</p>
-          ) : null}
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0 flex-1">
+              {title ? <h1 className="text-2xl font-semibold tracking-tight">{title}</h1> : null}
+              {description ? (
+                <p className="mt-1 text-sm text-[var(--color-muted-foreground)]">{description}</p>
+              ) : null}
+            </div>
+            {actions ? <div className="flex shrink-0 items-center gap-2">{actions}</div> : null}
+          </div>
         </header>
       ) : null}
       <div className="p-6">{children}</div>

@@ -1,12 +1,12 @@
 ---
-title: What is polaris-email?
+title: What is polaris-mail?
 description: Managed email service for the polaris-* family — Cloudflare Workers control plane, on-prem Go mail-bridge, admin panel, and Go operator CLI.
-sidebar_label: What is polaris-email?
+sidebar_label: What is polaris-mail?
 sidebar_position: 1
 slug: /
 ---
 
-# What is polaris-email?
+# What is polaris-mail?
 
 A managed email service for the `polaris-*` family of internal apps.
 One HMAC-signed REST contract handles both outbound submission and
@@ -24,7 +24,7 @@ through an on-prem Go bridge.
   deployment modes: tailnet-fronted and local / host-network.
 - **`apps/panel`** — Hono + React 19 admin UI deployed as its own
   Worker. Mailboxes, API keys, routing, secrets, ops.
-- **`apps/polaris-cli`** — Go operator CLI (`polaris-email`, alias
+- **`apps/polaris-cli`** — Go operator CLI (`polaris-mail`, alias
   `pml`). Cold-start, day-2 ops, and the smoke checks.
 
 Three Workers. Three apps. About a dozen shared TypeScript packages.

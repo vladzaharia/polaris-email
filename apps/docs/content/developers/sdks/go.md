@@ -7,27 +7,27 @@ sidebar_position: 2
 
 # `polaris-sdk-go` (Go)
 
-Hand-written Go SDK for the polaris-email control plane. Used internally
-by the `polaris-email` CLI and the `mail-bridge` binary. The import path
-is `github.com/polaris-email/polaris-sdk-go`.
+Hand-written Go SDK for the polaris-mail control plane. Used internally
+by the `polaris-mail` CLI and the `mail-bridge` binary. The import path
+is `github.com/polaris-mail/polaris-sdk-go`.
 
 This package is **internal-only** within the polaris-\* service family. It
 is not published to the Go public proxy.
 
 ## Install
 
-The SDK is consumed via Go modules from the polaris-email monorepo. In the
+The SDK is consumed via Go modules from the polaris-mail monorepo. In the
 monorepo, the module is reachable directly:
 
 ```go
-import polarissdk "github.com/polaris-email/polaris-sdk-go"
+import polarissdk "github.com/polaris-mail/polaris-sdk-go"
 ```
 
 Outside the monorepo (e.g. when wiring a private fork), pin the module via
 `replace` in your `go.mod`:
 
 ```
-replace github.com/polaris-email/polaris-sdk-go => /path/to/packages/sdk-go
+replace github.com/polaris-mail/polaris-sdk-go => /path/to/packages/sdk-go
 ```
 
 ## Quickstart: signed API request
@@ -36,12 +36,12 @@ replace github.com/polaris-email/polaris-sdk-go => /path/to/packages/sdk-go
 import (
     "context"
 
-    polarissdk "github.com/polaris-email/polaris-sdk-go"
+    polarissdk "github.com/polaris-mail/polaris-sdk-go"
 )
 
-c := polarissdk.NewClient(os.Getenv("POLARIS_EMAIL_URL"))
-c.KeyID = os.Getenv("POLARIS_EMAIL_KEY_ID")
-c.KeySecret = []byte(os.Getenv("POLARIS_EMAIL_KEY_SECRET"))
+c := polarissdk.NewClient(os.Getenv("POLARIS_MAIL_URL"))
+c.KeyID = os.Getenv("POLARIS_MAIL_KEY_ID")
+c.KeySecret = []byte(os.Getenv("POLARIS_MAIL_KEY_SECRET"))
 
 msg, err := c.GetMessage(context.Background(), "01HABCDEFGHJKMNPQRSTVWXYZ0")
 if err != nil {
@@ -205,7 +205,7 @@ The retry contract is in the
 ## How the SDKs are kept in sync
 
 SDKs are **hand-written**, not generated. The contract is
-`openapi/polaris-email.yaml`. The Node and Go SDKs share canonical test
+`openapi/polaris-mail.yaml`. The Node and Go SDKs share canonical test
 vectors from `packages/test-vectors/vectors.json`; every verifier MUST
 pass them in CI.
 

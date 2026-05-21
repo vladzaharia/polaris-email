@@ -26,8 +26,8 @@
 // Drop semantics: just mark released_action='dropped'. The MIME blob in
 // R2 stays for forensic-window TTL (cleaned up by janitor cron later).
 import { Hono } from 'hono';
-import { ulid } from '@polaris-email/ids';
-import { recordModerationFeedback, type ModerationAction } from '@polaris-email/policy-engine';
+import { ulid } from '@polaris-mail/ids';
+import { recordModerationFeedback, type ModerationAction } from '@polaris-mail/policy-engine';
 import { bodyText, requireScope } from '../../auth.js';
 import { audit } from '../../audit.js';
 import type { Env } from '../../env.js';
@@ -84,6 +84,10 @@ moderation.get('/v1/admin/policy/decisions', requireScope('admin:read'), async (
   const direction = c.req.query('direction');
   const streamType = c.req.query('stream_type');
   const since = c.req.query('since');
+  // `message_id` lets MessageDetail pull the single decision for this message
+  // without scanning hundreds of unrelated rows. Most messages have ≤1
+  // decision, so the response is a list-of-one in practice.
+  const messageId = c.req.query('message_id');
   const limit = Math.min(Math.max(Number(c.req.query('limit') ?? '100'), 1), 500);
 
   const where: string[] = [];
@@ -103,6 +107,10 @@ moderation.get('/v1/admin/policy/decisions', requireScope('admin:read'), async (
   if (since) {
     where.push('decided_at >= ?');
     binds.push(since);
+  }
+  if (messageId) {
+    where.push('message_id = ?');
+    binds.push(messageId);
   }
   const clause = where.length > 0 ? `WHERE ${where.join(' AND ')}` : '';
   const sql = `SELECT ${DECISION_COLS} FROM policy_decisions ${clause}

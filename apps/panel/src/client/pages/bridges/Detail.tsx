@@ -11,6 +11,7 @@ import { Skeleton } from '../../components/ui/skeleton.js';
 import { StatusBadge } from '../../components/StatusBadge.js';
 import { DestructiveActionDialog } from '../../components/DestructiveActionDialog.js';
 import { SecretRevealDialog } from '../../components/SecretRevealDialog.js';
+import { ErrorText } from '../../components/ErrorText.js';
 import { useAdminMutation, useAdminQuery } from '../../hooks/useAdminApi.js';
 import { bridgeKeys } from '../../queryKeys.js';
 
@@ -47,17 +48,15 @@ export function BridgeDetail() {
   const breadcrumbs = [{ label: 'Bridges', to: '/bridges' }, { label: q.data?.name ?? id }];
   if (q.isLoading) {
     return (
-      <PageCard title="Bridge" breadcrumbs={breadcrumbs}>
+      <PageCard title="Bridge" breadcrumbs={breadcrumbs} decorative>
         <Skeleton className="h-32 w-full" />
       </PageCard>
     );
   }
   if (q.error || !q.data) {
     return (
-      <PageCard title="Bridge" breadcrumbs={breadcrumbs}>
-        <p className="text-sm text-[var(--color-destructive)]">
-          {q.error?.message ?? 'Not found.'}
-        </p>
+      <PageCard title="Bridge" breadcrumbs={breadcrumbs} decorative>
+        <ErrorText error={q.error ?? 'Not found.'} />
       </PageCard>
     );
   }

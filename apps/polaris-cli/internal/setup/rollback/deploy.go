@@ -15,7 +15,7 @@ import (
 
 // DeployOptions gates RollbackDeploy. All fields optional.
 type DeployOptions struct {
-	// RepoRoot is the absolute path to the polaris-email repository
+	// RepoRoot is the absolute path to the polaris-mail repository
 	// root. Empty defaults to os.Getwd().
 	RepoRoot string
 	// ToVersion is the wrangler version id to roll back to. When
@@ -96,7 +96,7 @@ func RollbackDeploy(ctx context.Context, svc string, store *state.Store, opts De
 	}
 
 	dir := filepath.Join(root, svcEntry.Path)
-	message := fmt.Sprintf("polaris-email setup rollback: %s -> %s", cur.VersionID, target)
+	message := fmt.Sprintf("polaris-mail setup rollback: %s -> %s", cur.VersionID, target)
 	args := []string{"rollback",
 		"--version-id", target,
 		"--message", message,

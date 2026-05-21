@@ -1,6 +1,6 @@
 // Append-only, hash-chained audit log reader/verifier.
 //
-// The single canonical writer (`audit()`) lives in `@polaris-email/pipeline`
+// The single canonical writer (`audit()`) lives in `@polaris-mail/pipeline`
 // so services/api, services/in, and services/out all hash-chain through the
 // same compare-and-swap. We re-export it here under its previous name so
 // existing in-tree callers (admin, messages, bootstrap, messages-state,
@@ -8,14 +8,14 @@
 //
 // Concurrency model is documented in `packages/pipeline/src/audit.ts`.
 import type { Context } from 'hono';
-import type { AuditAction } from '@polaris-email/schema';
+import type { AuditAction } from '@polaris-mail/schema';
 import {
   audit as pipelineAudit,
   buildAuditInsert as pipelineBuildAuditInsert,
   type AuditArgs as PipelineAuditArgs,
   type AuditWriterEnv,
-} from '@polaris-email/pipeline';
-import { sha256Hex } from '@polaris-email/hmac';
+} from '@polaris-mail/pipeline';
+import { sha256Hex } from '@polaris-mail/hmac';
 import type { Env } from './env.js';
 
 export interface AuditArgs {
@@ -48,7 +48,7 @@ export function actorOf(c: Context): string {
  * Write one audit row, chaining the row_hash to the previous row's row_hash.
  * Thin wrapper that narrows `AuditArgs.action` to the schema-validated
  * `AuditAction` enum at API boundaries; the actual CAS retry loop lives in
- * `@polaris-email/pipeline`.
+ * `@polaris-mail/pipeline`.
  */
 export async function audit(env: Env, args: AuditArgs): Promise<void> {
   return pipelineAudit(env as unknown as AuditWriterEnv, args satisfies PipelineAuditArgs);

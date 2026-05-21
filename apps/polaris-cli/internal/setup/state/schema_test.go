@@ -12,7 +12,7 @@ func TestMigrateSchema_V1FlatToV2Nested(t *testing.T) {
 		"schema_version": 1,
 		"account_id": "acc-xyz",
 		"d1_id": "abc-def",
-		"d1_name": "polaris-email",
+		"d1_name": "polaris-mail",
 		"r2_bucket": "polaris-mail-archive",
 		"kv_nonce_id": "kv-nonce-1",
 		"kv_revocations_id": "kv-rev-1",
@@ -35,7 +35,7 @@ func TestMigrateSchema_V1FlatToV2Nested(t *testing.T) {
 	if doc.AccountID != "acc-xyz" {
 		t.Errorf("AccountID lost: got %q", doc.AccountID)
 	}
-	if got := doc.D1["polaris-email"].ID; got != "abc-def" {
+	if got := doc.D1["polaris-mail"].ID; got != "abc-def" {
 		t.Errorf("D1 ID: want abc-def, got %q (D1=%+v)", got, doc.D1)
 	}
 	if _, ok := doc.R2["polaris-mail-archive"]; !ok {
@@ -71,7 +71,7 @@ func TestMigrateSchema_MissingVersionAssumesV1(t *testing.T) {
 	if doc.SchemaVersion != CurrentSchema {
 		t.Errorf("want schema bumped to %d, got %d", CurrentSchema, doc.SchemaVersion)
 	}
-	if doc.D1["polaris-email"].ID != "db-1" {
+	if doc.D1["polaris-mail"].ID != "db-1" {
 		t.Errorf("D1 not migrated: %+v", doc.D1)
 	}
 }
@@ -81,7 +81,7 @@ func TestMigrateSchema_AlreadyCurrentPassesThrough(t *testing.T) {
 	currentJSON := []byte(`{
 		"schema_version": 2,
 		"account_id": "acc-2",
-		"d1": {"polaris-email": {"id": "db-2", "name": "polaris-email"}}
+		"d1": {"polaris-mail": {"id": "db-2", "name": "polaris-mail"}}
 	}`)
 	dir := t.TempDir()
 	path := filepath.Join(dir, "state.json")
@@ -96,7 +96,7 @@ func TestMigrateSchema_AlreadyCurrentPassesThrough(t *testing.T) {
 	if doc.SchemaVersion != CurrentSchema {
 		t.Errorf("schema version garbled: %d", doc.SchemaVersion)
 	}
-	if doc.D1["polaris-email"].ID != "db-2" {
+	if doc.D1["polaris-mail"].ID != "db-2" {
 		t.Errorf("D1 decode mismatch: %+v", doc.D1)
 	}
 }

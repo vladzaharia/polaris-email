@@ -22,9 +22,9 @@ const polarisModulePath = "github.com/vladzaharia/polaris-email/apps/polaris-cli
 // Detection order (first match wins):
 //
 //  1. The path (resolved through symlinks) contains a Homebrew Cellar
-//     segment — `Cellar/polaris-email/` for macOS Homebrew or
-//     `linuxbrew/.linuxbrew/Cellar/polaris-email/`.
-//  2. The path lives inside a polaris-email git checkout, identified by
+//     segment — `Cellar/polaris-mail/` for macOS Homebrew or
+//     `linuxbrew/.linuxbrew/Cellar/polaris-mail/`.
+//  2. The path lives inside a polaris-mail git checkout, identified by
 //     the `apps/polaris-cli/bin/` segment AND the presence of a `.git`
 //     directory in some ancestor.
 //  3. The binary was built via `make build` (runtime/debug.BuildInfo's
@@ -35,12 +35,12 @@ const polarisModulePath = "github.com/vladzaharia/polaris-email/apps/polaris-cli
 //     build.
 //  4. A sentinel file at `<config-dir>/install-method` exists — the
 //     install.sh script writes "curl" here on a fresh install. This is
-//     the disambiguator for "binary lives at /usr/local/bin/polaris-email
+//     the disambiguator for "binary lives at /usr/local/bin/polaris-mail
 //     but we don't know how it got there."
 //  5. Default: InstallMethodUnknown. The upgrader will treat this like
 //     curl (tarball + replace) but log a warning.
 //
-// configDir is `~/.config/polaris-email` for production; tests pass a
+// configDir is `~/.config/polaris-mail` for production; tests pass a
 // temp directory.
 func DetectInstallMethod(configDir string, runningVersion string) (InstallMethod, error) {
 	exe, err := os.Executable()
@@ -102,13 +102,13 @@ func isDevBuild(runningVersion string) bool {
 // install-location patterns. Pure function; no I/O.
 //
 // We use simple substring matches rather than splitting on filepath.Sep
-// because Homebrew's macOS path (`/opt/homebrew/Cellar/polaris-email/...`)
+// because Homebrew's macOS path (`/opt/homebrew/Cellar/polaris-mail/...`)
 // and linuxbrew's path
-// (`/home/linuxbrew/.linuxbrew/Cellar/polaris-email/...`) both contain
-// the same `Cellar/polaris-email/` segment, and that's enough signal.
+// (`/home/linuxbrew/.linuxbrew/Cellar/polaris-mail/...`) both contain
+// the same `Cellar/polaris-mail/` segment, and that's enough signal.
 func detectFromPath(path string) InstallMethod {
 	switch {
-	case strings.Contains(path, filepath.FromSlash("/Cellar/polaris-email/")),
+	case strings.Contains(path, filepath.FromSlash("/Cellar/polaris-mail/")),
 		strings.Contains(path, filepath.FromSlash("/linuxbrew/")):
 		return InstallMethodBrew
 	case strings.Contains(path, filepath.FromSlash("/apps/polaris-cli/bin/")):

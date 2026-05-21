@@ -15,7 +15,7 @@
 // Logout is a thin audit-only endpoint: it doesn't invalidate anything
 // server-side (revocation is a separate admin action); it just lets the
 // CLI write the corresponding `auth.logout` row when the operator runs
-// `polaris-email logout`.
+// `polaris-mail logout`.
 import { Hono } from 'hono';
 import { actorOf, audit } from '../audit.js';
 import { hmacAuth } from '../auth.js';

@@ -41,7 +41,7 @@ Cloudflare dashboard → **Zero Trust** → **Settings** → **Authentication**
 
 Pick the relevant template and fill in the IdP's client id, client
 secret, and (for generic OIDC) the issuer / discovery URL. Required
-scopes for polaris-email:
+scopes for polaris-mail:
 
 | Scope                    | Why                                                                                                                                                   |
 | ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -82,12 +82,12 @@ values. The synthesised claim arrives under `cf-access-groups`.
 In the Cloudflare Zero Trust dashboard, **Access → Applications →
 Add an application → Self-hosted**:
 
-| Field                    | Value                                                       |
-| ------------------------ | ----------------------------------------------------------- |
-| Application name         | `polaris-email-panel`                                       |
-| Session duration         | `1 hour` (keep short for admin surfaces)                    |
-| Application domain       | `panel.example.com` (the FQDN you'll front the panel on)    |
-| Identity providers       | Tick the IdPs configured in step 1                          |
+| Field              | Value                                                    |
+| ------------------ | -------------------------------------------------------- |
+| Application name   | `polaris-mail-panel`                                     |
+| Session duration   | `1 hour` (keep short for admin surfaces)                 |
+| Application domain | `panel.example.com` (the FQDN you'll front the panel on) |
+| Identity providers | Tick the IdPs configured in step 1                       |
 
 Then add **one allow policy** with:
 
@@ -154,7 +154,7 @@ The caller presents the token's `CF-Access-Client-Id` and
 `CF-Access-Client-Secret` headers on every request; Access validates
 them before the request reaches the Worker. **Inside** the Worker, the
 API still requires its own HMAC signature — Access only gates _who can
-knock_; polaris-email's HMAC auth is what actually authorises the
+knock_; polaris-mail's HMAC auth is what actually authorises the
 action.
 
 This compounds nicely: a stolen service token is useless without an
@@ -211,7 +211,7 @@ granular role model:
 - Read the new columns in the panel's middleware
   (`apps/panel/src/server/auth/middleware.ts`).
 
-This is a deliberate v1 choice — most polaris-email deployments have
+This is a deliberate v1 choice — most polaris-mail deployments have
 one operator wearing all the hats. Don't grow the role model until
 you have a concrete second hat.
 
@@ -223,7 +223,7 @@ After saving the application and redeploying the panel Worker:
    page, then your IdP's sign-in flow, then (if WebAuthn step-up is
    on) the hardware-key prompt, then better-auth's OIDC bounce,
    then the panel dashboard.
-2. Tail the panel Worker: `wrangler tail polaris-email-panel --status error`.
+2. Tail the panel Worker: `wrangler tail polaris-mail-panel --status error`.
    A misconfigured `OIDC_REDIRECT_URL` shows up here immediately.
 3. Sign in as a non-admin. The panel should accept the session but
    refuse to render any admin route (every admin route runs the

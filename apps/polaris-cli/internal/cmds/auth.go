@@ -10,10 +10,10 @@ import (
 
 	"github.com/spf13/cobra"
 
-	polarissdk "github.com/polaris-email/polaris-sdk-go"
+	polarissdk "github.com/polaris-mail/polaris-sdk-go"
 )
 
-// newAuthCmd returns the `polaris-email auth` subcommand group. It
+// newAuthCmd returns the `polaris-mail auth` subcommand group. It
 // exposes `auth sign` (the canonical shell-callable signer) and
 // `auth verify` (so operators can debug bad-signature reports without
 // writing Go).
@@ -36,8 +36,8 @@ func authSignCmd() *cobra.Command {
 	)
 	c := &cobra.Command{
 		Use:   "sign",
-		Short: "Sign a request for the polaris-email API and print the headers",
-		Long: `Compute the canonical-string HMAC for a polaris-email API request and
+		Short: "Sign a request for the polaris-mail API and print the headers",
+		Long: `Compute the canonical-string HMAC for a polaris-mail API request and
 print the three required header values on stdout, one per line:
 
   X-Polaris-Ts: <unix-ms>
@@ -111,7 +111,7 @@ webhook deliveries.`,
 	return c
 }
 
-// authVerifyCmd implements `polaris-email auth verify` — a shell-callable
+// authVerifyCmd implements `polaris-mail auth verify` — a shell-callable
 // wrapper around polarissdk.VerifyWebhook for debugging bad-signature reports
 // in production. Returns exit 0 on a valid signature, exit 1 with a one-line
 // reason on stderr otherwise.
@@ -129,7 +129,7 @@ func authVerifyCmd() *cobra.Command {
 	)
 	c := &cobra.Command{
 		Use:   "verify",
-		Short: "Verify a polaris-email signature against the canonical scheme",
+		Short: "Verify a polaris-mail signature against the canonical scheme",
 		Long: `Re-compute the canonical-string HMAC for the supplied request and
 compare it against --sig. Returns 0 on a valid signature, 1 with a single-line
 reason on stderr otherwise.
@@ -137,7 +137,7 @@ reason on stderr otherwise.
 Use this to debug bad-signature reports from production: capture the
 X-Polaris-* headers + the body bytes, then run:
 
-  polaris-email auth verify \
+  polaris-mail auth verify \
     --method POST --path /v1/messages --body req.json \
     --ts 1700000000000 --nonce <nonce> --sig <hex> \
     --secret "$(op read op://Vault/Polaris/secret)"

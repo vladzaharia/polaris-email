@@ -13,7 +13,7 @@
 // truth for the KV key + serialisation shape — that way the writer and
 // the reader can never disagree.
 
-import { refreshFeedbackWindow } from '@polaris-email/policy-engine';
+import { refreshFeedbackWindow } from '@polaris-mail/policy-engine';
 import type { Env } from '../env.js';
 
 const DEFAULT_WINDOW_SIZE = 20;

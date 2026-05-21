@@ -18,8 +18,8 @@
 //      pure idempotency replay; no fresh send).
 
 import { describe, expect, it } from 'vitest';
-import { sign, generateNonce } from '@polaris-email/hmac';
-import { ulid } from '@polaris-email/ids';
+import { sign, generateNonce } from '@polaris-mail/hmac';
+import { ulid } from '@polaris-mail/ids';
 import {
   app,
   bootstrapEnv,

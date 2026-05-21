@@ -146,7 +146,7 @@ func TestCFZoneStatus_RendersAllChecks(t *testing.T) {
 	out, _ := withCapturedIO(t)
 	withTableFormat(t)
 
-	target := "polaris-email-in"
+	target := "polaris-mail-in"
 	resp := client.CFZoneGetResponse{
 		Data: client.ZoneDomainStatus{
 			Zone:                 client.ZoneSummary{ID: "zid", Name: "plrs.im"},
@@ -187,7 +187,7 @@ func TestCFZoneStatus_RendersAllChecks(t *testing.T) {
 		"Sender domain onboarded",
 		"missing: _dmarc TXT",
 		"Catch-all rule",
-		"polaris-email-in",
+		"polaris-mail-in",
 		"Named rules",
 		"noc@plrs.im",
 		"D1 mail_domains row present",
@@ -208,7 +208,7 @@ func TestCFZoneConfigureDryRun(t *testing.T) {
 			Zone: client.ZoneSummary{ID: "zid", Name: "plrs.im"},
 			Ops: []client.ZoneConfigureOp{
 				{Kind: "enable_routing", Description: "Enable Cloudflare Email Routing on plrs.im"},
-				{Kind: "set_catch_all_worker", Description: "Point catch-all rule at the polaris-email-in Worker"},
+				{Kind: "set_catch_all_worker", Description: "Point catch-all rule at the polaris-mail-in Worker"},
 			},
 			Warnings: []string{"2 named-address rule(s) on plrs.im route mail elsewhere"},
 		},
@@ -257,7 +257,7 @@ func TestCFZoneConfigureApplySuccess(t *testing.T) {
 	withTableFormat(t)
 
 	op1 := client.ZoneConfigureOp{Kind: "enable_routing", Description: "Enable CF Email Routing"}
-	op2 := client.ZoneConfigureOp{Kind: "create_d1_mail_domain", Description: "Create polaris-email mail_domains row"}
+	op2 := client.ZoneConfigureOp{Kind: "create_d1_mail_domain", Description: "Create polaris-mail mail_domains row"}
 	resp := client.ZoneConfigureResult{
 		DryRun: false,
 		Diff: client.ZoneConfigureDiff{
@@ -309,7 +309,7 @@ func TestCFZoneConfigureApplyPartialFailure(t *testing.T) {
 	withTableFormat(t)
 
 	good := client.ZoneConfigureOp{Kind: "enable_routing", Description: "Enable CF Email Routing"}
-	bad := client.ZoneConfigureOp{Kind: "set_catch_all_worker", Description: "Point catch-all at polaris-email-in"}
+	bad := client.ZoneConfigureOp{Kind: "set_catch_all_worker", Description: "Point catch-all at polaris-mail-in"}
 	resp := client.ZoneConfigureResult{
 		DryRun: false,
 		Diff: client.ZoneConfigureDiff{

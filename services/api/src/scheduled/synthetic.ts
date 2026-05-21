@@ -54,7 +54,7 @@ export async function synthetic(env: Env): Promise<void> {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
-          service: 'polaris-email',
+          service: 'polaris-mail',
           synthetic_failures: next,
         }),
       });

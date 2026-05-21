@@ -1,5 +1,5 @@
 {
-  "name": "@polaris-email/api",
+  "name": "@polaris-mail/api",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -8,18 +8,18 @@
     "build": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "lint": "oxlint .",
-    "deploy": "polaris-email setup infra deploy service api"
+    "deploy": "polaris-mail setup infra deploy service api"
   },
   "dependencies": {
-    "@polaris-email/cf-api": "workspace:*",
-    "@polaris-email/hmac": "workspace:*",
-    "@polaris-email/ids": "workspace:*",
-    "@polaris-email/mime": "workspace:*",
-    "@polaris-email/pipeline": "workspace:*",
-    "@polaris-email/policy-engine": "workspace:*",
-    "@polaris-email/revocation": "workspace:*",
-    "@polaris-email/schema": "workspace:*",
-    "@polaris-email/suppressions": "workspace:*",
+    "@polaris-mail/cf-api": "workspace:*",
+    "@polaris-mail/hmac": "workspace:*",
+    "@polaris-mail/ids": "workspace:*",
+    "@polaris-mail/mime": "workspace:*",
+    "@polaris-mail/pipeline": "workspace:*",
+    "@polaris-mail/policy-engine": "workspace:*",
+    "@polaris-mail/revocation": "workspace:*",
+    "@polaris-mail/schema": "workspace:*",
+    "@polaris-mail/suppressions": "workspace:*",
     "bcryptjs": "^2.4.3",
     "hono": "^4.12.19",
     "zod": "^3.23.0"

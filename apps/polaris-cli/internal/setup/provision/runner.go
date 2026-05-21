@@ -161,18 +161,18 @@ func Apply(ctx context.Context, client *cfapi.Client, store *state.Store, p *pla
 
 	// Logpush composes R2 bucket + token + job. Runs unconditionally
 	// (idempotent — guards on state + live presence) after the main
-	// resource loop, since the Logpush job needs the polaris-email-logs
+	// resource loop, since the Logpush job needs the polaris-mail-logs
 	// bucket to already exist. Failure is non-fatal at provision time —
 	// observability auto-config is a "nice to have", not a launch
 	// blocker. We surface the error to the reporter but advance the
 	// phase anyway.
-	r.Step("logpush", "polaris-email-workers")
+	r.Step("logpush", "polaris-mail-workers")
 	if err := ProvisionLogpush(ctx, client, doc, o.LogpushHTTPSink); err != nil {
-		r.StepDone("logpush", "polaris-email-workers", err)
-		// Log + continue; operator can `polaris-email setup infra apply`
+		r.StepDone("logpush", "polaris-mail-workers", err)
+		// Log + continue; operator can `polaris-mail setup infra apply`
 		// again to retry just this step.
 	} else {
-		r.StepDone("logpush", "polaris-email-workers", nil)
+		r.StepDone("logpush", "polaris-mail-workers", nil)
 		if err := store.Write(doc); err != nil {
 			return fmt.Errorf("provision: persist state after logpush: %w", err)
 		}

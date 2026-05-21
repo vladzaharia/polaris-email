@@ -1,7 +1,11 @@
-// Mailbox detail — header + four sections (Senders / Receivers / Credentials /
-// Webhook subs) + recent Messages. Each section has its own add Dialog.
-import { useState } from 'react';
-import { useParams } from '@tanstack/react-router';
+// Mailbox detail — header + stacked sections (Senders / Receivers /
+// Credentials / Webhook subs / Recent messages). Each section has its own
+// inline add Dialog so operators never have to navigate to another page to
+// configure mailbox-scoped resources. Test-send mounts as an inline modal
+// alongside the page header.
+import { useEffect, useState } from 'react';
+import { Link, useParams } from '@tanstack/react-router';
+import { Plus } from 'lucide-react';
 import { PageCard } from '../../layouts/PageCard.js';
 import {
   Table,
@@ -36,8 +40,28 @@ import { Badge } from '../../components/ui/badge.js';
 import { StatusBadge } from '../../components/StatusBadge.js';
 import { Skeleton } from '../../components/ui/skeleton.js';
 import { DestructiveActionDialog } from '../../components/DestructiveActionDialog.js';
+import { ErrorText } from '../../components/ErrorText.js';
+import { EmptyState } from '../../components/EmptyState.js';
+import { StatTile } from '../../components/StatTile.js';
+import { CompositeInput } from '../../components/CompositeInput.js';
+import { SuggestionChip, SuggestionChipRow } from '../../components/SuggestionChip.js';
 import { useAdminMutation, useAdminQuery } from '../../hooks/useAdminApi.js';
 import { domainKeys, mailboxKeys, webhookKeys } from '../../queryKeys.js';
+import { formatDate, formatRelative } from '../../lib/format.js';
+import { IssueCredentialDialog } from '../credentials/IssueCredentialDialog.js';
+import { CreateWebhookSubDialog } from '../webhook-subs/CreateWebhookSubDialog.js';
+import { SendTestDialog } from '../test-send/SendTestDialog.js';
+
+interface CredentialRow {
+  id: string;
+  mailbox_id: string;
+  protocol: 'smtps' | 'imap';
+  auth_type: 'password';
+  username: string;
+  created_at: string;
+  last_used_at: string | null;
+  disabled_at: string | null;
+}
 
 interface MailboxDetailPayload {
   mailbox: {
@@ -63,12 +87,96 @@ interface MailboxDetailPayload {
     enabled: number;
   }>;
   principals: Array<{ id: string; kind: string; display_name: string | null }>;
-  webhook_subs: Array<{ id: string; url: string; events: string; paused_at: string | null }>;
+  webhook_subs: Array<{
+    id: string;
+    url: string;
+    kind: string;
+    events: string;
+    paused_at: string | null;
+    disabled_at: string | null;
+  }>;
+  credentials: CredentialRow[];
 }
 
 interface DomainRow {
   id: string;
   name: string;
+}
+
+// Suggested local-part chips for Add Sender. These cover ~90% of operator
+// intent (transactional bounces, support inbox, generic noreply); operators
+// can still type a freeform local-part for anything else.
+const SENDER_LOCAL_PART_SUGGESTIONS = ['noreply', 'support', 'transactional', 'bounces'];
+
+// Row shape used by both "Recent sent" and "Recent received" panels.
+interface RecentMessageRow {
+  id: string;
+  subject: string | null;
+  status: string;
+  from_addr: string | null;
+  to_addrs: string | null;
+  created_at: string;
+}
+
+// One side of the split "recent activity" view. Reused for sent + received
+// so the two panels stay consistent; the only differences are the title,
+// empty-state copy, and which address column to render (To vs From).
+function RecentMessagesPanel({
+  title,
+  query,
+  emptyMessage,
+  addressLabel,
+  addressFor,
+}: {
+  title: string;
+  query: { isLoading: boolean; data: { data: RecentMessageRow[] } | undefined };
+  emptyMessage: string;
+  addressLabel: string;
+  addressFor: (m: RecentMessageRow) => string;
+}) {
+  const rows = query.data?.data ?? [];
+  return (
+    <section>
+      <h2 className="mb-2 text-xl font-medium">{title}</h2>
+      {query.isLoading ? (
+        <Skeleton className="h-24 w-full" />
+      ) : rows.length === 0 ? (
+        <p className="text-sm text-[var(--color-muted-foreground)]">{emptyMessage}</p>
+      ) : (
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Subject</TableHead>
+              <TableHead>{addressLabel}</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead>When</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {rows.map((m) => (
+              <TableRow key={m.id}>
+                <TableCell>
+                  <Link to="/messages/$id" params={{ id: m.id }} className="underline">
+                    {m.subject ?? '(no subject)'}
+                  </Link>
+                </TableCell>
+                <TableCell className="font-mono text-xs">{addressFor(m)}</TableCell>
+                <TableCell>
+                  <Badge variant="outline">{m.status}</Badge>
+                </TableCell>
+                <TableCell
+                  className="text-xs text-[var(--color-muted-foreground)]"
+                  title={formatDate(m.created_at)}
+                >
+                  {formatRelative(m.created_at)}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      )}
+    </section>
+  );
 }
 
 function AddSenderDialog({ mailboxId }: { mailboxId: string }) {
@@ -77,6 +185,20 @@ function AddSenderDialog({ mailboxId }: { mailboxId: string }) {
   const [localPart, setLocalPart] = useState('');
   const [isDefault, setIsDefault] = useState(false);
   const domains = useAdminQuery<{ data: DomainRow[] }>(domainKeys.list(), '/api/admin/domains');
+  const domainRows = domains.data?.data ?? [];
+
+  // Default to the first available domain so single-domain mailboxes never
+  // make the operator click into the dropdown. Depend on the first id (a
+  // stable string) rather than the array (re-allocated every render via ??[]).
+  const firstDomainId = domains.data?.data[0]?.id;
+  useEffect(() => {
+    if (!domainId && firstDomainId) {
+      setDomainId(firstDomainId);
+    }
+  }, [domainId, firstDomainId]);
+
+  const selectedDomain = domainRows.find((d) => d.id === domainId);
+
   const create = useAdminMutation<unknown, Record<string, unknown>>(
     (vars) => ({
       path: `/api/admin/mailboxes/${mailboxId}/senders`,
@@ -85,59 +207,77 @@ function AddSenderDialog({ mailboxId }: { mailboxId: string }) {
     }),
     { invalidateKeys: [mailboxKeys.detail(mailboxId)] },
   );
+  const reset = () => {
+    setLocalPart('');
+    setIsDefault(false);
+    create.reset();
+  };
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog
+      open={open}
+      onOpenChange={(o) => {
+        setOpen(o);
+        if (!o) reset();
+      }}
+    >
       <DialogTrigger asChild>
-        <Button size="sm">Add sender</Button>
+        <Button size="icon" title="Add sender" aria-label="Add sender">
+          <Plus className="h-4 w-4" />
+        </Button>
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Add sender</DialogTitle>
           <DialogDescription>
-            Bind a local-part to one of this mailbox&apos;s domains.
+            Compose an outbound From-address as <code className="font-mono">local-part@domain</code>
+            .
           </DialogDescription>
         </DialogHeader>
-        <div className="space-y-3">
+        <div className="space-y-4">
           <div>
-            <Label>Domain</Label>
-            <Select value={domainId || undefined} onValueChange={setDomainId}>
-              <SelectTrigger className="mt-1">
-                <SelectValue placeholder="Pick a domain" />
-              </SelectTrigger>
-              <SelectContent>
-                {(domains.data?.data ?? []).map((d) => (
-                  <SelectItem key={d.id} value={d.id}>
-                    {d.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div>
-            <Label htmlFor="lp">Local part</Label>
-            <Input id="lp" value={localPart} onChange={(e) => setLocalPart(e.target.value)} />
+            <Label>Address</Label>
+            <CompositeInput
+              leftValue={localPart}
+              onLeftChange={setLocalPart}
+              leftPlaceholder="noreply"
+              separator="@"
+              rightValue={domainId}
+              onRightChange={setDomainId}
+              rightOptions={domainRows.map((d) => ({ value: d.id, label: d.name }))}
+              rightLoading={domains.isLoading}
+              rightLoadingPlaceholder="Loading domains…"
+              rightPlaceholder="Pick a domain"
+              previewLabel={selectedDomain ? 'Will register' : undefined}
+              preview={
+                selectedDomain ? (localPart || 'noreply') + '@' + selectedDomain.name : undefined
+              }
+            />
+            <SuggestionChipRow>
+              {SENDER_LOCAL_PART_SUGGESTIONS.map((s) => (
+                <SuggestionChip key={s} onSelect={() => setLocalPart(s)} active={localPart === s}>
+                  {s}
+                </SuggestionChip>
+              ))}
+            </SuggestionChipRow>
           </div>
           <div className="flex items-center gap-2">
             <Switch checked={isDefault} onCheckedChange={setIsDefault} id="def" />
             <Label htmlFor="def">Default sender for this mailbox</Label>
           </div>
-          {create.error ? (
-            <p className="text-sm text-[var(--color-destructive)]">{create.error.message}</p>
-          ) : null}
+          <ErrorText error={create.error} />
         </div>
         <DialogFooter>
           <Button
             onClick={async () => {
               await create.mutateAsync({
                 domain_id: domainId,
-                local_part: localPart,
+                local_part: localPart.trim(),
                 default_for_mailbox: isDefault,
               });
               setOpen(false);
-              setLocalPart('');
-              setIsDefault(false);
+              reset();
             }}
-            disabled={!domainId || !localPart || create.isPending}
+            disabled={!domainId || !localPart.trim() || create.isPending}
           >
             {create.isPending ? 'Adding…' : 'Add sender'}
           </Button>
@@ -146,6 +286,11 @@ function AddSenderDialog({ mailboxId }: { mailboxId: string }) {
     </Dialog>
   );
 }
+
+// Suggested receive patterns. `*` (catch-all) is overwhelmingly the most
+// common; specific local-parts (`support`, `webhook`) come up for routing
+// a single address to a different downstream.
+const RECEIVER_PATTERN_SUGGESTIONS = ['*', 'support', 'webhook', 'unsubscribe'];
 
 function AddReceiverDialog({ mailboxId }: { mailboxId: string }) {
   const [open, setOpen] = useState(false);
@@ -156,10 +301,24 @@ function AddReceiverDialog({ mailboxId }: { mailboxId: string }) {
   const [webhookSubId, setWebhookSubId] = useState('');
   const [forwardTo, setForwardTo] = useState('');
   const domains = useAdminQuery<{ data: DomainRow[] }>(domainKeys.list(), '/api/admin/domains');
+  const domainRows = domains.data?.data ?? [];
   const subs = useAdminQuery<{ data: { id: string; url: string }[] }>(
     webhookKeys.list(mailboxId),
     `/api/admin/webhook-subs?mailbox_id=${mailboxId}`,
   );
+
+  // Default to the first domain like Add Sender does, so single-domain
+  // mailboxes never make the operator click into the dropdown. Same
+  // stable-dep trick — first id is a string, the array isn't.
+  const firstDomainId = domains.data?.data[0]?.id;
+  useEffect(() => {
+    if (!domainId && firstDomainId) {
+      setDomainId(firstDomainId);
+    }
+  }, [domainId, firstDomainId]);
+
+  const selectedDomain = domainRows.find((d) => d.id === domainId);
+
   const create = useAdminMutation<unknown, Record<string, unknown>>(
     (vars) => ({
       path: `/api/admin/mailboxes/${mailboxId}/receivers`,
@@ -168,67 +327,99 @@ function AddReceiverDialog({ mailboxId }: { mailboxId: string }) {
     }),
     { invalidateKeys: [mailboxKeys.detail(mailboxId)] },
   );
+  const reset = () => {
+    setPriority(100);
+    setPattern('*');
+    setAction('webhook');
+    setWebhookSubId('');
+    setForwardTo('');
+    create.reset();
+  };
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog
+      open={open}
+      onOpenChange={(o) => {
+        setOpen(o);
+        if (!o) reset();
+      }}
+    >
       <DialogTrigger asChild>
-        <Button size="sm">Add receiver</Button>
+        <Button size="icon" title="Add receiver" aria-label="Add receiver">
+          <Plus className="h-4 w-4" />
+        </Button>
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Add receiver</DialogTitle>
-          <DialogDescription>Address pattern + action.</DialogDescription>
+          <DialogDescription>
+            Match inbound mail to <code className="font-mono">pattern@domain</code> and pick what
+            happens — fan out to a webhook, forward to another address, or drop.
+          </DialogDescription>
         </DialogHeader>
-        <div className="space-y-3">
+        <div className="space-y-4">
           <div>
-            <Label>Domain</Label>
-            <Select value={domainId || undefined} onValueChange={setDomainId}>
-              <SelectTrigger className="mt-1">
-                <SelectValue placeholder="Pick a domain" />
-              </SelectTrigger>
-              <SelectContent>
-                {(domains.data?.data ?? []).map((d) => (
-                  <SelectItem key={d.id} value={d.id}>
-                    {d.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div>
-            <Label htmlFor="prio">Priority</Label>
-            <Input
-              id="prio"
-              type="number"
-              value={priority}
-              onChange={(e) => setPriority(Number(e.target.value))}
+            <Label>Match pattern</Label>
+            <CompositeInput
+              leftValue={pattern}
+              onLeftChange={setPattern}
+              leftPlaceholder="* or local-part"
+              separator="@"
+              rightValue={domainId}
+              onRightChange={setDomainId}
+              rightOptions={domainRows.map((d) => ({ value: d.id, label: d.name }))}
+              rightLoading={domains.isLoading}
+              rightLoadingPlaceholder="Loading domains…"
+              rightPlaceholder="Pick a domain"
+              previewLabel={selectedDomain ? 'Will match' : undefined}
+              preview={selectedDomain ? (pattern || '*') + '@' + selectedDomain.name : undefined}
+              previewNote={
+                selectedDomain ? (
+                  <span className="italic">{pattern === '*' ? 'catch-all' : 'exact'}</span>
+                ) : undefined
+              }
             />
+            <SuggestionChipRow>
+              {RECEIVER_PATTERN_SUGGESTIONS.map((s) => (
+                <SuggestionChip key={s} onSelect={() => setPattern(s)} active={pattern === s}>
+                  {s}
+                </SuggestionChip>
+              ))}
+            </SuggestionChipRow>
           </div>
-          <div>
-            <Label htmlFor="pat">Address pattern</Label>
-            <Input id="pat" value={pattern} onChange={(e) => setPattern(e.target.value)} />
-          </div>
-          <div>
-            <Label>Action</Label>
-            <Select
-              value={action}
-              onValueChange={(v) => setAction(v as 'webhook' | 'forward' | 'drop')}
-            >
-              <SelectTrigger className="mt-1">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="webhook">webhook</SelectItem>
-                <SelectItem value="forward">forward</SelectItem>
-                <SelectItem value="drop">drop</SelectItem>
-              </SelectContent>
-            </Select>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label htmlFor="prio">Priority</Label>
+              <Input
+                id="prio"
+                type="number"
+                value={priority}
+                onChange={(e) => setPriority(Number(e.target.value))}
+              />
+              <p className="mt-1 text-xs text-[var(--color-muted-foreground)]">Lower runs first.</p>
+            </div>
+            <div>
+              <Label>Action</Label>
+              <Select
+                value={action}
+                onValueChange={(v) => setAction(v as 'webhook' | 'forward' | 'drop')}
+              >
+                <SelectTrigger className="mt-1">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="webhook">Webhook</SelectItem>
+                  <SelectItem value="forward">Forward</SelectItem>
+                  <SelectItem value="drop">Drop</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
           {action === 'webhook' ? (
             <div>
-              <Label>Webhook subscription</Label>
+              <Label>Deliver to webhook subscription</Label>
               <Select value={webhookSubId || undefined} onValueChange={setWebhookSubId}>
                 <SelectTrigger className="mt-1">
-                  <SelectValue placeholder="Pick one" />
+                  <SelectValue placeholder="Pick a webhook subscription" />
                 </SelectTrigger>
                 <SelectContent>
                   {(subs.data?.data ?? []).map((s) => (
@@ -238,17 +429,26 @@ function AddReceiverDialog({ mailboxId }: { mailboxId: string }) {
                   ))}
                 </SelectContent>
               </Select>
+              {(subs.data?.data ?? []).length === 0 ? (
+                <p className="mt-1 text-xs text-[var(--color-muted-foreground)]">
+                  No webhook subscriptions yet — add one in the Webhook section above first.
+                </p>
+              ) : null}
             </div>
           ) : null}
           {action === 'forward' ? (
             <div>
-              <Label htmlFor="fwd">Forward to</Label>
-              <Input id="fwd" value={forwardTo} onChange={(e) => setForwardTo(e.target.value)} />
+              <Label htmlFor="fwd">Forward to address</Label>
+              <Input
+                id="fwd"
+                type="email"
+                value={forwardTo}
+                onChange={(e) => setForwardTo(e.target.value)}
+                placeholder="ops@example.com"
+              />
             </div>
           ) : null}
-          {create.error ? (
-            <p className="text-sm text-[var(--color-destructive)]">{create.error.message}</p>
-          ) : null}
+          <ErrorText error={create.error} />
         </div>
         <DialogFooter>
           <Button
@@ -279,9 +479,15 @@ export function MailboxDetail() {
     mailboxKeys.detail(id),
     `/api/admin/mailboxes/${id}`,
   );
-  const recent = useAdminQuery<{ data: Array<{ id: string; subject: string; status: string }> }>(
-    mailboxKeys.recentMessages(id),
-    `/api/messages?mailbox_id=${id}&limit=20`,
+  // Direction-scoped queries so the panel can render Sent + Received side-by-
+  // side. Last 10 each is plenty for "what's recent on this mailbox?".
+  const recentSent = useAdminQuery<{ data: RecentMessageRow[] }>(
+    mailboxKeys.recentMessages(id, 'out'),
+    `/api/messages?mailbox_id=${id}&direction=out&limit=10`,
+  );
+  const recentReceived = useAdminQuery<{ data: RecentMessageRow[] }>(
+    mailboxKeys.recentMessages(id, 'in'),
+    `/api/messages?mailbox_id=${id}&direction=in&limit=10`,
   );
   const disableSender = useAdminMutation<unknown, { senderId: string }>(
     (vars) => ({
@@ -297,6 +503,32 @@ export function MailboxDetail() {
     }),
     { invalidateKeys: [mailboxKeys.detail(id)], successMessage: 'Receiver disabled.' },
   );
+  const disableCredential = useAdminMutation<unknown, { credId: string }>(
+    (vars) => ({
+      path: `/api/admin/mailboxes/${id}/credentials/${vars.credId}`,
+      method: 'DELETE',
+    }),
+    { invalidateKeys: [mailboxKeys.detail(id)], successMessage: 'Credential disabled.' },
+  );
+  const pauseWebhookSub = useAdminMutation<unknown, { subId: string; pause: boolean }>(
+    (vars) => ({
+      path: `/api/admin/webhook-subs/${vars.subId}`,
+      method: 'PATCH',
+      body: { paused: vars.pause },
+    }),
+    {
+      invalidateKeys: [mailboxKeys.detail(id)],
+      successMessage: 'Webhook subscription updated.',
+    },
+  );
+  const deleteWebhookSub = useAdminMutation<unknown, { subId: string }>(
+    (vars) => ({
+      path: `/api/admin/webhook-subs/${vars.subId}`,
+      method: 'DELETE',
+    }),
+    { invalidateKeys: [mailboxKeys.detail(id)], successMessage: 'Webhook subscription removed.' },
+  );
+
   const [confirmDisableSender, setConfirmDisableSender] = useState<{
     id: string;
     address: string;
@@ -305,6 +537,14 @@ export function MailboxDetail() {
     id: string;
     pattern: string;
   } | null>(null);
+  const [confirmDisableCredential, setConfirmDisableCredential] = useState<{
+    id: string;
+    username: string;
+  } | null>(null);
+  const [confirmDeleteWebhook, setConfirmDeleteWebhook] = useState<{
+    id: string;
+    url: string;
+  } | null>(null);
 
   const breadcrumbs = [
     { label: 'Mailboxes', to: '/mailboxes' },
@@ -312,21 +552,26 @@ export function MailboxDetail() {
   ];
   if (q.isLoading) {
     return (
-      <PageCard title="Mailbox" breadcrumbs={breadcrumbs}>
+      <PageCard title="Mailbox" breadcrumbs={breadcrumbs} decorative>
         <Skeleton className="h-32 w-full" />
       </PageCard>
     );
   }
   if (q.error || !q.data) {
     return (
-      <PageCard title="Mailbox" breadcrumbs={breadcrumbs}>
-        <p className="text-sm text-[var(--color-destructive)]">
-          {q.error?.message ?? 'Failed to load.'}
-        </p>
+      <PageCard title="Mailbox" breadcrumbs={breadcrumbs} decorative>
+        <ErrorText error={q.error ?? 'Failed to load.'} />
       </PageCard>
     );
   }
   const d = q.data;
+  const activeSenders = d.senders.filter((s) => !s.disabled_at);
+  const activeReceivers = d.receivers.filter((r) => r.enabled);
+  const activeCredentials = d.credentials.filter((c) => !c.disabled_at);
+  const activeWebhooks = d.webhook_subs.filter((w) => !w.disabled_at);
+
+  const lastSentAt = recentSent.data?.data[0]?.created_at ?? null;
+  const lastReceivedAt = recentReceived.data?.data[0]?.created_at ?? null;
 
   return (
     <PageCard
@@ -334,31 +579,51 @@ export function MailboxDetail() {
       breadcrumbs={breadcrumbs}
       title={d.mailbox.name}
       description={d.mailbox.description ?? 'No description.'}
+      actions={<SendTestDialog mailboxId={id} senders={activeSenders} />}
     >
-      <div className="space-y-8">
+      <div className="space-y-6">
+        {/* Stats strip — quick "what is this mailbox?" glance before the
+            sub-resource sections. Counts are derived from the detail payload;
+            last-activity timestamps come from the recent-message queries. */}
+        <section className="grid grid-cols-2 gap-2 md:grid-cols-6">
+          <StatTile label="Senders" value={activeSenders.length} />
+          <StatTile label="Receivers" value={activeReceivers.length} />
+          <StatTile label="Credentials" value={activeCredentials.length} />
+          <StatTile label="Webhooks" value={activeWebhooks.length} />
+          <StatTile
+            label="Last sent"
+            value={lastSentAt ? formatRelative(lastSentAt) : '—'}
+            mono={!lastSentAt}
+            title={lastSentAt ? formatDate(lastSentAt) : undefined}
+          />
+          <StatTile
+            label="Last received"
+            value={lastReceivedAt ? formatRelative(lastReceivedAt) : '—'}
+            mono={!lastReceivedAt}
+            title={lastReceivedAt ? formatDate(lastReceivedAt) : undefined}
+          />
+        </section>
+
+        <Separator />
         <section>
           <header className="mb-2 flex items-center justify-between">
             <h2 className="text-xl font-medium">Senders</h2>
             <AddSenderDialog mailboxId={id} />
           </header>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Address</TableHead>
-                <TableHead>Default</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead></TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {d.senders.length === 0 ? (
+          {d.senders.length === 0 ? (
+            <EmptyState title="No senders yet" description="Add one to enable outbound mail." />
+          ) : (
+            <Table>
+              <TableHeader>
                 <TableRow>
-                  <TableCell colSpan={4} className="text-sm text-[var(--color-muted-foreground)]">
-                    No senders yet.
-                  </TableCell>
+                  <TableHead>Address</TableHead>
+                  <TableHead>Default</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead></TableHead>
                 </TableRow>
-              ) : (
-                d.senders.map((s) => (
+              </TableHeader>
+              <TableBody>
+                {d.senders.map((s) => (
                   <TableRow key={s.id}>
                     <TableCell>{s.address}</TableCell>
                     <TableCell>
@@ -383,10 +648,10 @@ export function MailboxDetail() {
                       )}
                     </TableCell>
                   </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
+                ))}
+              </TableBody>
+            </Table>
+          )}
         </section>
 
         <Separator />
@@ -396,25 +661,24 @@ export function MailboxDetail() {
             <h2 className="text-xl font-medium">Receivers</h2>
             <AddReceiverDialog mailboxId={id} />
           </header>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Priority</TableHead>
-                <TableHead>Pattern</TableHead>
-                <TableHead>Action</TableHead>
-                <TableHead>Enabled</TableHead>
-                <TableHead></TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {d.receivers.length === 0 ? (
+          {d.receivers.length === 0 ? (
+            <EmptyState
+              title="No receivers yet"
+              description="Add one to accept inbound mail at this mailbox."
+            />
+          ) : (
+            <Table>
+              <TableHeader>
                 <TableRow>
-                  <TableCell colSpan={5} className="text-sm text-[var(--color-muted-foreground)]">
-                    No receivers yet.
-                  </TableCell>
+                  <TableHead>Priority</TableHead>
+                  <TableHead>Pattern</TableHead>
+                  <TableHead>Action</TableHead>
+                  <TableHead>Enabled</TableHead>
+                  <TableHead></TableHead>
                 </TableRow>
-              ) : (
-                d.receivers.map((r) => (
+              </TableHeader>
+              <TableBody>
+                {d.receivers.map((r) => (
                   <TableRow key={r.id}>
                     <TableCell>{r.priority}</TableCell>
                     <TableCell className="font-mono text-xs">{r.address_pattern}</TableCell>
@@ -435,53 +699,159 @@ export function MailboxDetail() {
                       ) : null}
                     </TableCell>
                   </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
+                ))}
+              </TableBody>
+            </Table>
+          )}
         </section>
 
         <Separator />
 
         <section>
-          <h2 className="mb-2 text-xl font-medium">Credentials</h2>
-          <p className="text-sm text-[var(--color-muted-foreground)]">
-            {d.principals.length} principal(s). Manage from the Credentials page.
-          </p>
-        </section>
-
-        <Separator />
-
-        <section>
-          <h2 className="mb-2 text-xl font-medium">Webhook subscriptions</h2>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>URL</TableHead>
-                <TableHead>Events</TableHead>
-                <TableHead>Status</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {d.webhook_subs.length === 0 ? (
+          <header className="mb-2 flex items-center justify-between">
+            <h2 className="text-xl font-medium">Credentials</h2>
+            <IssueCredentialDialog mailboxId={id} />
+          </header>
+          {d.credentials.length === 0 ? (
+            <EmptyState
+              title="No credentials yet"
+              description="Issue one to enable SMTPS submission or IMAP read."
+            />
+          ) : (
+            <Table>
+              <TableHeader>
                 <TableRow>
-                  <TableCell colSpan={3} className="text-sm text-[var(--color-muted-foreground)]">
-                    None.
-                  </TableCell>
+                  <TableHead>Protocol</TableHead>
+                  <TableHead>Username</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Created</TableHead>
+                  <TableHead>Last used</TableHead>
+                  <TableHead></TableHead>
                 </TableRow>
-              ) : (
-                d.webhook_subs.map((w) => (
+              </TableHeader>
+              <TableBody>
+                {d.credentials.map((c) => (
+                  <TableRow key={c.id}>
+                    <TableCell>
+                      <Badge variant="outline">{c.protocol}</Badge>
+                    </TableCell>
+                    <TableCell className="font-mono text-xs">{c.username}</TableCell>
+                    <TableCell>
+                      <StatusBadge
+                        kind="credential"
+                        value={c.disabled_at ? 'disabled' : 'active'}
+                      />
+                    </TableCell>
+                    <TableCell className="text-xs" title={formatDate(c.created_at)}>
+                      {formatRelative(c.created_at)}
+                    </TableCell>
+                    <TableCell className="text-xs text-[var(--color-muted-foreground)]">
+                      {c.last_used_at ? (
+                        <span title={formatDate(c.last_used_at)}>
+                          {formatRelative(c.last_used_at)}
+                        </span>
+                      ) : (
+                        '—'
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        <Link
+                          to="/credentials/$id"
+                          params={{ id: c.id }}
+                          className="text-xs underline"
+                        >
+                          Manage
+                        </Link>
+                        {c.disabled_at ? null : (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() =>
+                              setConfirmDisableCredential({ id: c.id, username: c.username })
+                            }
+                            disabled={disableCredential.isPending}
+                          >
+                            Disable
+                          </Button>
+                        )}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+          {d.principals.length > 0 ? (
+            <p className="mt-2 text-xs text-[var(--color-muted-foreground)]">
+              {d.principals.length} principal{d.principals.length === 1 ? '' : 's'} attached.
+            </p>
+          ) : null}
+        </section>
+
+        <Separator />
+
+        <section>
+          <header className="mb-2 flex items-center justify-between">
+            <h2 className="text-xl font-medium">Webhook subscriptions</h2>
+            <CreateWebhookSubDialog mailboxId={id} />
+          </header>
+          {d.webhook_subs.length === 0 ? (
+            <EmptyState
+              title="No webhook subscriptions yet"
+              description="Add one to fan out per-event payloads to your service."
+            />
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>URL</TableHead>
+                  <TableHead>Kind</TableHead>
+                  <TableHead>Events</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead></TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {d.webhook_subs.map((w) => (
                   <TableRow key={w.id}>
-                    <TableCell className="font-mono text-xs">{w.url}</TableCell>
+                    <TableCell className="font-mono text-xs">
+                      <Link to="/webhook-subs/$id" params={{ id: w.id }} className="underline">
+                        {w.url}
+                      </Link>
+                    </TableCell>
+                    <TableCell>{w.kind}</TableCell>
                     <TableCell className="font-mono text-xs">{w.events}</TableCell>
                     <TableCell>
                       <StatusBadge kind="webhook" value={w.paused_at ? 'paused' : 'active'} />
                     </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() =>
+                            pauseWebhookSub.mutate({ subId: w.id, pause: !w.paused_at })
+                          }
+                          disabled={pauseWebhookSub.isPending}
+                        >
+                          {w.paused_at ? 'Resume' : 'Pause'}
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setConfirmDeleteWebhook({ id: w.id, url: w.url })}
+                          disabled={deleteWebhookSub.isPending}
+                        >
+                          Delete
+                        </Button>
+                      </div>
+                    </TableCell>
                   </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
+                ))}
+              </TableBody>
+            </Table>
+          )}
         </section>
 
         <Separator />
@@ -526,31 +896,64 @@ export function MailboxDetail() {
           isPending={disableReceiver.isPending}
         />
 
-        <section>
-          <h2 className="mb-2 text-xl font-medium">Recent messages</h2>
-          {recent.isLoading ? (
-            <Skeleton className="h-16 w-full" />
-          ) : (recent.data?.data ?? []).length === 0 ? (
-            <p className="text-sm text-[var(--color-muted-foreground)]">No messages yet.</p>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Subject</TableHead>
-                  <TableHead>Status</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {(recent.data?.data ?? []).map((m) => (
-                  <TableRow key={m.id}>
-                    <TableCell>{m.subject ?? '(no subject)'}</TableCell>
-                    <TableCell>{m.status}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
-        </section>
+        <DestructiveActionDialog
+          open={confirmDisableCredential != null}
+          onOpenChange={(o) => !o && setConfirmDisableCredential(null)}
+          action="Disable credential"
+          name={confirmDisableCredential?.username}
+          blastRadius={[
+            'Existing logins using this credential will be rejected immediately',
+            'In-flight sessions terminate on the next auth check (≤60s)',
+            'You can issue a fresh credential afterward; the disabled row remains for audit',
+          ]}
+          reversible={false}
+          confirmLabel="Disable credential"
+          onConfirm={async () => {
+            if (!confirmDisableCredential) return;
+            await disableCredential.mutateAsync({ credId: confirmDisableCredential.id });
+            setConfirmDisableCredential(null);
+          }}
+          isPending={disableCredential.isPending}
+        />
+
+        <DestructiveActionDialog
+          open={confirmDeleteWebhook != null}
+          onOpenChange={(o) => !o && setConfirmDeleteWebhook(null)}
+          action="Delete webhook subscription"
+          name={confirmDeleteWebhook?.url}
+          blastRadius={[
+            'No further events will be delivered to this URL',
+            'In-flight deliveries finish their existing retry budget',
+            'Receivers wired to this subscription stop routing — review the Receivers section',
+          ]}
+          reversible={false}
+          confirmLabel="Delete"
+          onConfirm={async () => {
+            if (!confirmDeleteWebhook) return;
+            await deleteWebhookSub.mutateAsync({ subId: confirmDeleteWebhook.id });
+            setConfirmDeleteWebhook(null);
+          }}
+          isPending={deleteWebhookSub.isPending}
+        />
+
+        {/* Recent activity — split sent / received so operators can scan
+            both directions at once. Rows drill into /messages/$id. */}
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+          <RecentMessagesPanel
+            title="Recent sent"
+            query={recentSent}
+            emptyMessage="Nothing sent yet."
+            addressLabel="To"
+            addressFor={(m) => m.to_addrs ?? '—'}
+          />
+          <RecentMessagesPanel
+            title="Recent received"
+            query={recentReceived}
+            emptyMessage="Nothing received yet."
+            addressLabel="From"
+            addressFor={(m) => m.from_addr ?? '—'}
+          />
+        </div>
       </div>
     </PageCard>
   );

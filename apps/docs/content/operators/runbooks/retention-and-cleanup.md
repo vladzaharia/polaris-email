@@ -1,13 +1,13 @@
 ---
 title: Retention and cleanup
-description: What polaris-email retains and what each class needs — bodies/attachments, message rows, deliveries, audit log, DMARC/TLS-RPT reports, policy decisions, held MIME blobs, idempotency keys, nonces, key plaintext. Plus manual pruning SQL and quota-pressure recovery.
+description: What polaris-mail retains and what each class needs — bodies/attachments, message rows, deliveries, audit log, DMARC/TLS-RPT reports, policy decisions, held MIME blobs, idempotency keys, nonces, key plaintext. Plus manual pruning SQL and quota-pressure recovery.
 sidebar_label: Retention and cleanup
 sidebar_position: 8
 ---
 
 # Retention and cleanup
 
-`polaris-email` retains every message, attachment, audit log entry,
+`polaris-mail` retains every message, attachment, audit log entry,
 delivery row, and policy decision for the lifetime of the deployment. A
 nightly janitor sweeps expired idempotency keys and short-lived caches
 but does NOT trim long-lived data. Operators are responsible for
@@ -17,18 +17,18 @@ This runbook documents what each retention class needs.
 
 ## Retention classes
 
-| Class                        | Where                       | Default retention      | Pruning         |
-| ---------------------------- | --------------------------- | ---------------------- | --------------- |
-| Message bodies + attachments | R2 (`polaris-email` bucket) | indefinite             | manual          |
-| Message rows                 | D1 `messages` table         | indefinite             | manual          |
-| Delivery rows                | D1 `message_deliveries`     | indefinite             | manual          |
-| Audit log                    | D1 `audit_log`              | indefinite             | not allowed     |
-| DMARC / TLS-RPT reports      | D1 + R2                     | indefinite             | manual          |
-| Policy decisions             | D1 `policy_decisions`       | indefinite             | manual          |
-| Held messages (MIME blobs)   | R2                          | until released/dropped | replay clears   |
-| Idempotency keys             | D1                          | per-row `expires_at`   | janitor nightly |
-| Nonces                       | KV                          | 10 min                 | KV TTL          |
-| API key plaintext            | KV                          | 15 min                 | KV TTL          |
+| Class                        | Where                      | Default retention      | Pruning         |
+| ---------------------------- | -------------------------- | ---------------------- | --------------- |
+| Message bodies + attachments | R2 (`polaris-mail` bucket) | indefinite             | manual          |
+| Message rows                 | D1 `messages` table        | indefinite             | manual          |
+| Delivery rows                | D1 `message_deliveries`    | indefinite             | manual          |
+| Audit log                    | D1 `audit_log`             | indefinite             | not allowed     |
+| DMARC / TLS-RPT reports      | D1 + R2                    | indefinite             | manual          |
+| Policy decisions             | D1 `policy_decisions`      | indefinite             | manual          |
+| Held messages (MIME blobs)   | R2                         | until released/dropped | replay clears   |
+| Idempotency keys             | D1                         | per-row `expires_at`   | janitor nightly |
+| Nonces                       | KV                         | 10 min                 | KV TTL          |
+| API key plaintext            | KV                         | 15 min                 | KV TTL          |
 
 ## Janitor
 
@@ -62,7 +62,7 @@ Then sweep R2 for the orphaned keys with `wrangler r2 object delete`.
 Attachments are content-addressed; if two messages shared a hash, only
 delete the R2 object after confirming no remaining row references it.
 
-A future operator-facing CLI (`polaris-email retention prune`) is
+A future operator-facing CLI (`polaris-mail retention prune`) is
 tracked in the backlog; until then this is manual.
 
 ## Held messages
@@ -70,7 +70,7 @@ tracked in the backlog; until then this is manual.
 `held_messages` rows + their R2 `policy_held/<decision_id>.eml` blobs
 persist until an operator releases or drops them. The Moderation panel
 shows the queue; bulk operations live in
-`polaris-email policy held list/release/drop`.
+`polaris-mail policy held list/release/drop`.
 
 R2 keys for dropped messages remain (the row records `released_at`); a
 future janitor cycle could sweep them.
@@ -101,12 +101,12 @@ If R2 usage spikes unexpectedly:
 
 ```sh
 # Look for fat attachments
-wrangler r2 object list polaris-email --prefix att/ --json \
+wrangler r2 object list polaris-mail --prefix att/ --json \
   | jq '. | sort_by(.size) | reverse | .[0:20]'
 ```
 
 A single sender pushing oversized attachments is the most common cause.
-Suppress the sender (`polaris-email suppress add ...`) and then
+Suppress the sender (`polaris-mail suppress add ...`) and then
 prune their messages per the SQL above.
 
 <!-- Verified against: docs/runbooks/retention-and-cleanup.md @ c3c1b5048dd5bfe92facdce24982141a07446042 -->

@@ -1,13 +1,13 @@
 ---
 title: CLI vocabulary
-description: The four state-change verbs the polaris-email CLI uses — revoke, deregister, disable, delete — and when each one applies.
+description: The four state-change verbs the polaris-mail CLI uses — revoke, deregister, disable, delete — and when each one applies.
 sidebar_label: CLI vocabulary
 sidebar_position: 3
 ---
 
-# polaris-email CLI vocabulary
+# polaris-mail CLI vocabulary
 
-The `polaris-email` CLI (and the panel admin UI) use four distinct verbs
+The `polaris-mail` CLI (and the panel admin UI) use four distinct verbs
 for state changes that look superficially similar. They are not
 interchangeable — pick the one that matches the intent.
 
@@ -29,7 +29,7 @@ authenticate any future request. Revocation is recorded in
 mints a new secret and shows it once.
 
 ```sh
-polaris-email cred revoke <id>
+polaris-mail cred revoke <id>
 ```
 
 Bridge HMAC keys do not have a `revoke` verb today — use `bridge rotate`
@@ -49,7 +49,7 @@ short window; after the tombstone GC runs the id is permanently
 retired.
 
 ```sh
-polaris-email bridge deregister <name> --confirm-name <name>
+polaris-mail bridge deregister <name> --confirm-name <name>
 ```
 
 `--confirm-name <name>` must match the bridge's name exactly. There is
@@ -68,9 +68,9 @@ target is rejected with a clear error code while it is disabled.
 same row resumes serving traffic.
 
 ```sh
-polaris-email domain disable <name>
-polaris-email route disable <id>
-polaris-email route enable <id>
+polaris-mail domain disable <name>
+polaris-mail route disable <id>
+polaris-mail route enable <id>
 ```
 
 Mailbox-, webhook-subscription-, and principal-level disable flows run
@@ -90,7 +90,7 @@ tombstoned rows after the configured grace period.
 **Reversible**: only by restoring D1 from PITR. There is no undo.
 
 ```sh
-polaris-email domain delete <name>
+polaris-mail domain delete <name>
 ```
 
 Mailbox- and principal-level deletes run through the admin REST surface

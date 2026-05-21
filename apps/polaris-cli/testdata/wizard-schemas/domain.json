@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://polaris-email.example.com/schemas/wizard/domain.json",
+  "$id": "https://polaris-mail.example.com/schemas/wizard/domain.json",
   "title": "DomainOnboardInput",
   "type": "object",
   "additionalProperties": false,

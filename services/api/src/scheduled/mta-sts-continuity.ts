@@ -8,7 +8,7 @@
 //
 // Each check writes a row to synthetic_runs for the panel diagnostics view.
 
-import { ulid } from '@polaris-email/ids';
+import { ulid } from '@polaris-mail/ids';
 import { sendAlert } from '../lib/admin-alert.js';
 import { runBatched } from '../lib/batch.js';
 import type { Env } from '../env.js';

@@ -16,7 +16,7 @@ require (
 	github.com/lrstanley/bubblezone v1.0.0
 	github.com/mattn/go-isatty v0.0.22
 	github.com/muesli/termenv v0.16.0
-	github.com/polaris-email/polaris-sdk-go v0.0.0
+	github.com/polaris-mail/polaris-sdk-go v0.0.0
 	github.com/spf13/cobra v1.8.1
 	github.com/tailscale/hujson v0.0.0-20260302212456-ecc657c15afd
 	github.com/zalando/go-keyring v0.2.8
@@ -25,7 +25,7 @@ require (
 	gopkg.in/yaml.v3 v3.0.1
 )
 
-replace github.com/polaris-email/polaris-sdk-go => ../../packages/sdk-go
+replace github.com/polaris-mail/polaris-sdk-go => ../../packages/sdk-go
 
 require (
 	github.com/99designs/go-keychain v0.0.0-20191008050251-8e49817e8af4 // indirect

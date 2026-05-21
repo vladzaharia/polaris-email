@@ -28,7 +28,7 @@ import (
 	"strings"
 	"time"
 
-	polarissdk "github.com/polaris-email/polaris-sdk-go"
+	polarissdk "github.com/polaris-mail/polaris-sdk-go"
 )
 
 // DefaultBootstrapOutputPath is the JSON blob containing the admin key
@@ -48,8 +48,8 @@ const DefaultPollTimeout = 5 * time.Minute
 
 // SealOptions tunes the seal flow. Zero values are sensible defaults.
 type SealOptions struct {
-	// APIBaseURL is the public URL of polaris-email-api (e.g.
-	// "https://polaris-email-api.example.com"). Required.
+	// APIBaseURL is the public URL of polaris-mail-api (e.g.
+	// "https://polaris-mail-api.example.com"). Required.
 	APIBaseURL string
 
 	// MasterSecret is POLARIS_SECRET_A's plaintext, passed through the
@@ -255,7 +255,7 @@ func postBootstrap(ctx context.Context, httpc *http.Client, opts SealOptions) ([
 	if opts.IdempotencyKey != "" {
 		req.Header.Set("Idempotency-Key", opts.IdempotencyKey)
 	}
-	req.Header.Set("User-Agent", "polaris-email-cli/genesis-seal")
+	req.Header.Set("User-Agent", "polaris-mail-cli/genesis-seal")
 	resp, err := httpc.Do(req)
 	if err != nil {
 		return nil, 0, fmt.Errorf("genesis: bootstrap POST: %w", err)
@@ -312,7 +312,7 @@ func completeWithToken(
 	req.Header.Set("X-Polaris-Nonce", nonce)
 	req.Header.Set("X-Polaris-Sig", sig)
 	req.Header.Set("X-Polaris-Key-Id", keyID)
-	req.Header.Set("User-Agent", "polaris-email-cli/genesis-seal")
+	req.Header.Set("User-Agent", "polaris-mail-cli/genesis-seal")
 	resp, err := httpc.Do(req)
 	if err != nil {
 		return err

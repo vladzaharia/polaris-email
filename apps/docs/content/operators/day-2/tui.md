@@ -1,30 +1,30 @@
 ---
-title: polaris-email TUI
-description: The fullscreen tabbed admin TUI — same eight tabs locally (`polaris-email tui`) or over SSH (`polaris-email serve --ssh`). Identity, polling, keymap, embedding under Wish.
+title: polaris-mail TUI
+description: The fullscreen tabbed admin TUI — same eight tabs locally (`polaris-mail tui`) or over SSH (`polaris-mail serve --ssh`). Identity, polling, keymap, embedding under Wish.
 sidebar_label: Admin TUI
 sidebar_position: 2
 ---
 
-The `polaris-email` binary ships a fullscreen tabbed admin TUI. It's the
+The `polaris-mail` binary ships a fullscreen tabbed admin TUI. It's the
 primary day-2 interface for operators — same eight tabs whether you launch
-it locally (`polaris-email tui`) or SSH into a Wish-fronted bastion
-(`polaris-email serve --ssh`).
+it locally (`polaris-mail tui`) or SSH into a Wish-fronted bastion
+(`polaris-mail serve --ssh`).
 
 ## Launch
 
 ```sh
 # Local — defaults to the active credstore profile
-polaris-email
-polaris-email tui                       # explicit
-polaris-email tui --theme=mocha         # macchiato | mocha | frappe | latte
+polaris-mail
+polaris-mail tui                       # explicit
+polaris-mail tui --theme=mocha         # macchiato | mocha | frappe | latte
 
 # Over SSH (operator-side)
 wishlist                                # via your Wishlist directory
 ssh -p 2222 polaris.internal            # direct
 ```
 
-`polaris-email` with no positional args opens the TUI when stdout is a
-TTY; piping (`polaris-email | head`) falls back to the cobra help text so
+`polaris-mail` with no positional args opens the TUI when stdout is a
+TTY; piping (`polaris-mail | head`) falls back to the cobra help text so
 scripts aren't broken by the alt-screen escape sequences.
 
 ## Tabs
@@ -66,7 +66,7 @@ it was given:
 
 - **Local:** the CLI's `MakeClient()` resolves credentials in priority
   order: `--token` flag → `$POLARIS_TOKEN` → OS keychain (per
-  `polaris-email login`) → legacy `~/.config/polaris-email/config.toml`.
+  `polaris-mail login`) → legacy `~/.config/polaris-mail/config.toml`.
 - **Over SSH:** the Wish handler injects an
   `X-Polaris-OBO: operator:<id>` header on every outbound
   request via an HTTP-transport wrapper, so audit attribution names the
@@ -123,4 +123,4 @@ operator's `X-Polaris-OBO` header. No SDK changes required.
 
 catppuccin variants via `github.com/catppuccin/go@v0.3.0`. Default is
 `macchiato`. The `--theme` persistent flag is honored by both
-`polaris-email tui` and the no-args launch path.
+`polaris-mail tui` and the no-args launch path.

@@ -48,7 +48,7 @@ func pollUntilComplete(
 		if err != nil {
 			return "", err
 		}
-		req.Header.Set("User-Agent", "polaris-email-cli/genesis-seal")
+		req.Header.Set("User-Agent", "polaris-mail-cli/genesis-seal")
 		resp, err := httpc.Do(req)
 		if err != nil {
 			return "", err

@@ -14,16 +14,16 @@
 // so the IMAP CONDSTORE / IDLE transport notices.
 
 import { Hono, type Context } from 'hono';
-import { MessageFlag, type Message } from '@polaris-email/schema';
-import { verify, sha256Hex } from '@polaris-email/hmac';
-import { extractAttachmentParts, mimeToMessage, type UnifiedMessage } from '@polaris-email/mime';
+import { MessageFlag, type Message } from '@polaris-mail/schema';
+import { verify, sha256Hex } from '@polaris-mail/hmac';
+import { extractAttachmentParts, mimeToMessage, type UnifiedMessage } from '@polaris-mail/mime';
 import type { Env } from '../env.js';
 import { buildError } from '../errors.js';
 import { audit } from '../audit.js';
 import { allocChangeId, ensureMailboxState, purgeMessageRow } from '../lib/state.js';
 import { r2PublicUrl, attachmentR2Key } from '../lib/r2-public-url.js';
 import { lookupBridgeSecret } from '../bridge-auth.js';
-import { revocationCheck } from '@polaris-email/revocation';
+import { revocationCheck } from '@polaris-mail/revocation';
 import { NONCE_TTL_SECONDS } from '../auth.js';
 import { MessageRow, rowMeta } from '../lib/message-row.js';
 import { loadR2Bytes } from '../lib/r2-helpers.js';

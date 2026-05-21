@@ -22,7 +22,7 @@ func TestRender_NestedFields(t *testing.T) {
 	t.Parallel()
 	in := fullyPopulatedInputs()
 	tmpl := `{
-  "d1": "{{ .D1.PolarisEmail.ID }}",
+  "d1": "{{ .D1.PolarisMail.ID }}",
   "kv_nonce": "{{ .KV.Nonce.ID }}",
   "host": "https://{{ .Hostnames.PolarisAPI }}",
   "alert_webhook": "{{ .AlertWebhook }}"

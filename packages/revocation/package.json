@@ -1,5 +1,5 @@
 {
-  "name": "@polaris-email/revocation",
+  "name": "@polaris-mail/revocation",
   "version": "0.1.0",
   "private": true,
   "type": "module",

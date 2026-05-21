@@ -51,7 +51,7 @@ const ZONE_BARE: Zone = { id: 'z2', name: 'example.com' };
 
 /**
  * Build a DoH resolver that returns the canonical expected content for each
- * polaris-email sender record on the given domain. Matches `expectedRecordsFor`
+ * polaris-mail sender record on the given domain. Matches `expectedRecordsFor`
  * in `email-service.ts`: cf._domainkey CNAME, *._domainkey CNAME (wildcard),
  * SPF TXT, DMARC TXT, cf-bounce MX.
  */
@@ -88,7 +88,7 @@ function dohResolverThatResolvesNothing(): typeof fetch {
     })) as typeof fetch;
 }
 
-const inboundWorkerName = 'polaris-email-in';
+const inboundWorkerName = 'polaris-mail-in';
 
 describe('inspectZone — fully configured', () => {
   it('reports overall=ok when every check passes', async () => {
@@ -114,7 +114,7 @@ describe('inspectZone — fully configured', () => {
           name: 'catch-all',
           enabled: true,
           matchers: [{ type: 'all' }],
-          actions: [{ type: 'worker', value: ['polaris-email-in'] }],
+          actions: [{ type: 'worker', value: ['polaris-mail-in'] }],
         }),
     });
     const env: InspectorEnv = {
@@ -142,7 +142,7 @@ describe('inspectZone — fully configured', () => {
       dns_record_errors: [],
       sender_onboarded: true,
       sender_missing_records: [],
-      catch_all_target: 'worker:polaris-email-in',
+      catch_all_target: 'worker:polaris-mail-in',
       catch_all_correct: true,
       named_rules: [],
       has_conflicting_rules: false,

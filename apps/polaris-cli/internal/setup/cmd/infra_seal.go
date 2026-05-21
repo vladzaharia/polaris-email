@@ -25,7 +25,7 @@ import (
 // this phase on --resume when CompletedAt is non-zero.
 const genesisSealPhaseName = "genesis-seal"
 
-// newInfraGenesisSealCmd wires `polaris-email setup infra genesis-seal`.
+// newInfraGenesisSealCmd wires `polaris-mail setup infra genesis-seal`.
 // Required input: POLARIS_SECRET_A — either via the in-memory secrets
 // context (from the runner) or via --secret on the CLI (operator-side
 // override when re-running the seal manually).
@@ -253,7 +253,7 @@ func (m sealTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m sealTUIModel) View() string {
 	var b strings.Builder
-	b.WriteString(m.headerStyle.Render("polaris-email — genesis seal"))
+	b.WriteString(m.headerStyle.Render("polaris-mail — genesis seal"))
 	b.WriteString("\n\n")
 	if !m.finished {
 		b.WriteString(fmt.Sprintf("  %s %s\n",

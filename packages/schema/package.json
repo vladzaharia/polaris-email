@@ -1,5 +1,5 @@
 {
-  "name": "@polaris-email/schema",
+  "name": "@polaris-mail/schema",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -12,7 +12,7 @@
     "lint": "oxlint ."
   },
   "dependencies": {
-    "@polaris-email/mime": "workspace:*",
+    "@polaris-mail/mime": "workspace:*",
     "zod": "^3.23.0"
   },
   "devDependencies": {

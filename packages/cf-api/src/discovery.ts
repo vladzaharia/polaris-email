@@ -2,7 +2,7 @@
 //
 // Pulls every zone in the operator's CF account, inspects each one's Email
 // Routing + Email Service state via CF APIs, and computes the operations
-// needed to bring it to polaris-email's canonical state. The applier runs
+// needed to bring it to polaris-mail's canonical state. The applier runs
 // the operations through CF's auto-publish endpoints (enable Email Routing,
 // onboard sender domain) so Cloudflare manages the DNS records — manual
 // `dns.ts` edits are reserved for non-CF DNS edge cases.
@@ -13,7 +13,7 @@
 //   - routing_status_ok  — CF reports `status === 'ready'`
 //   - dns_records_locked — CF auto-published + locked the inbound MX/SPF
 //   - sender_onboarded   — outbound DKIM/SPF/DMARC/bounce records resolve
-//   - catch_all_correct  — catch-all rule routes to our `polaris-email-in`
+//   - catch_all_correct  — catch-all rule routes to our `polaris-mail-in`
 //   - d1_mailbox_exists  — `mail_domains` row present (operator-tracked)
 //
 // `computeDiff()` is pure: given a status + canonical config, it lists the
@@ -44,7 +44,7 @@ export interface NamedRouteRule {
   action_type: string | null;
   /** First action target: worker name for 'worker', email for 'forward'. */
   action_target: string | null;
-  /** True when this rule routes to polaris-email-in (the canonical inbound Worker). */
+  /** True when this rule routes to polaris-mail-in (the canonical inbound Worker). */
   routes_to_polaris: boolean;
 }
 
@@ -64,15 +64,15 @@ export interface ZoneDomainStatus {
   catch_all_correct: boolean;
   /**
    * Named-address routing rules (excluding catch-all). Operator-defined:
-   * polaris-email lists them for visibility but does NOT modify them — those
+   * polaris-mail lists them for visibility but does NOT modify them — those
    * are the operator's domain. Use `has_conflicting_rules` to surface rules
-   * that route mail away from polaris-email-in.
+   * that route mail away from polaris-mail-in.
    */
   named_rules: NamedRouteRule[];
   /**
    * True when any enabled named rule routes mail somewhere other than
-   * polaris-email-in (e.g. forwards `support@` to a personal mailbox). These
-   * rules take priority over the catch-all, so polaris-email never sees that
+   * polaris-mail-in (e.g. forwards `support@` to a personal mailbox). These
+   * rules take priority over the catch-all, so polaris-mail never sees that
    * traffic. Surface to the operator; don't auto-remediate.
    */
   has_conflicting_rules: boolean;
@@ -103,13 +103,13 @@ export interface ZoneConfigureDiff {
   /**
    * Informational warnings — surfaced to the operator but not turned into
    * ops. Most common: existing named-address rules route mail away from
-   * polaris-email-in (operator-owned, not auto-remediated).
+   * polaris-mail-in (operator-owned, not auto-remediated).
    */
   warnings: string[];
 }
 
 export interface InspectorEnv {
-  /** Worker name the catch-all rule should target. Default 'polaris-email-in'. */
+  /** Worker name the catch-all rule should target. Default 'polaris-mail-in'. */
   inboundWorkerName: string;
   /** Whether a `mail_domains` row exists in D1 for this zone name. */
   d1HasMailDomain(zoneName: string): Promise<boolean>;
@@ -169,7 +169,7 @@ export async function inspectZone(
         dnsErrors = dnsState.errors ?? [];
         const records = dnsState.records ?? [];
         // CF locks the records it auto-published. If every required record
-        // is locked, polaris-email isn't fighting with operator-managed DNS.
+        // is locked, polaris-mail isn't fighting with operator-managed DNS.
         const required = records.filter((r) => r.required ?? true);
         dnsLocked = required.length > 0 && required.every((r) => r.locked === true);
       }
@@ -198,7 +198,7 @@ export async function inspectZone(
 
     // Named-address rules. Operator-owned: list for visibility, never auto-modify.
     // Mark as "conflicting" when an enabled rule routes mail somewhere other
-    // than polaris-email-in (those rules take priority over the catch-all).
+    // than polaris-mail-in (those rules take priority over the catch-all).
     try {
       const rules = await listEmailRoutingRules(client, zone.id);
       namedRules = rules
@@ -281,7 +281,7 @@ function summarizeRule(rule: EmailRoutingRule, inboundWorkerName: string): Named
 
 /**
  * Pure: given a status, return the operations needed to converge to
- * polaris-email's canonical state. Order is dependency-aware (enable
+ * polaris-mail's canonical state. Order is dependency-aware (enable
  * routing before setting catch-all; sender-onboard before D1 row).
  */
 export function computeDiff(
@@ -318,7 +318,7 @@ export function computeDiff(
   if (!status.d1_mail_domain_exists) {
     ops.push({
       kind: 'create_d1_mail_domain',
-      description: `Create polaris-email mail_domains row for ${status.zone.name}`,
+      description: `Create polaris-mail mail_domains row for ${status.zone.name}`,
     });
   }
 
@@ -327,7 +327,7 @@ export function computeDiff(
     const conflicting = status.named_rules.filter((r) => r.enabled && !r.routes_to_polaris);
     warnings.push(
       `${conflicting.length} named-address rule(s) on ${status.zone.name} route mail elsewhere ` +
-        `and will intercept those addresses before the catch-all reaches polaris-email-in: ` +
+        `and will intercept those addresses before the catch-all reaches polaris-mail-in: ` +
         conflicting
           .map((r) => `${r.address_pattern ?? '?'} → ${r.action_type}:${r.action_target ?? '?'}`)
           .join(', '),

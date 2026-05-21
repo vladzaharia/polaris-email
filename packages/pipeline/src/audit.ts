@@ -14,7 +14,7 @@
 //
 // This module is the single canonical writer for the `audit_log` table.
 // services/api re-exports `audit` from here; services/in/out and the
-// pipeline both depend on it directly via `@polaris-email/pipeline`. Having
+// pipeline both depend on it directly via `@polaris-mail/pipeline`. Having
 // one writer is a P0 correctness requirement: two private implementations
 // (one CAS, one naive) racing on the same table will fork the chain and
 // brick `verifyChain` for everything written after the fork.
@@ -26,7 +26,7 @@ export interface AuditWriterEnv {
 export interface AuditArgs {
   actor: string;
   // Kept as `string` (not the Zod-narrowed `AuditAction`) so this package
-  // doesn't take a hard dependency on `@polaris-email/schema`. The DB CHECK
+  // doesn't take a hard dependency on `@polaris-mail/schema`. The DB CHECK
   // constraint enforces the action enum at write time.
   action: string;
   target?: string | null;

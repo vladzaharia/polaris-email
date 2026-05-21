@@ -1,19 +1,19 @@
 openapi: 3.1.0
 info:
-  title: polaris-email API
+  title: polaris-mail API
   version: 0.2.0
   description: |
-    HMAC-authenticated REST surface for polaris-email. All requests are signed with
+    HMAC-authenticated REST surface for polaris-mail. All requests are signed with
     `X-Polaris-Sig: <hex(HMAC-SHA256(secret, canonical))>` where canonical is
     `polaris-api\n<METHOD>\n<path>\n<canonical-query>\n<X-Polaris-Ts>\n<X-Polaris-Nonce>\n<sha256-hex(body)>`.
 
     Webhooks delivered to subscribers (the WebhookEnvelope schema below) are signed
     `X-Polaris-Sig: <hex>` over the canonical string
     `polaris-webhook\nPOST\n<path>\n<canonical-query>\n<ts>\n<nonce>\n<sha256-hex(body)>`.
-    Consumers should verify with the SDK (`@polaris-email/sdk-node`'s `verifyWebhook`
+    Consumers should verify with the SDK (`@polaris-mail/sdk-node`'s `verifyWebhook`
     or `polariswebhook.VerifyWebhook` from `packages/sdk-go`).
 servers:
-  - url: https://polaris-email-api.workers.dev
+  - url: https://polaris-mail-api.workers.dev
 security:
   - HMACAuth: []
 components:
@@ -106,11 +106,11 @@ components:
         api_key_id: { $ref: '#/components/schemas/Ulid' }
         api_key_prefix: { type: string }
         api_key_secret:
-          { type: string, description: 'Returned ONCE — store via polaris-email login.' }
+          { type: string, description: 'Returned ONCE — store via polaris-mail login.' }
         login_token:
           type: string
           pattern: '^polaris_[0-9A-HJKMNP-TV-Z]{26}\..+$'
-          description: 'Convenience bundle (polaris_{key_id}.{secret}) for `polaris-email login`.'
+          description: 'Convenience bundle (polaris_{key_id}.{secret}) for `polaris-mail login`.'
     OperatorUpdateRequest:
       type: object
       properties:
@@ -1163,7 +1163,7 @@ webhooks:
     post:
       summary: Webhook delivered to a subscriber
       description: |
-        polaris-email POSTs a `WebhookEnvelope` to each matching subscription URL.
+        polaris-mail POSTs a `WebhookEnvelope` to each matching subscription URL.
         The request carries `X-Polaris-Sig: <hex>` signed over
         `polaris-webhook\nPOST\n<path>\n<canonical-query>\n<ts>\n<nonce>\n<sha256-hex(body)>`
         with the subscription's secret. Verify with the SDK

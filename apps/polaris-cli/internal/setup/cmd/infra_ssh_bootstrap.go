@@ -1,5 +1,5 @@
-// `polaris-email setup infra ssh-bootstrap` — mints the impersonation
-// api_key needed by `polaris-email serve --ssh` and seeds a fresh SSH
+// `polaris-mail setup infra ssh-bootstrap` — mints the impersonation
+// api_key needed by `polaris-mail serve --ssh` and seeds a fresh SSH
 // host key (if none exists).
 //
 // The genesis-seal phase mints the admin api_key (full admin:rotate);
@@ -31,7 +31,7 @@ import (
 const defaultSSHBootstrapOutput = ".ssh-bootstrap-output.json"
 
 // sshBootstrapOutput is the small JSON shape we write to disk so a future
-// `polaris-email serve --ssh` invocation can read it without re-prompting
+// `polaris-mail serve --ssh` invocation can read it without re-prompting
 // the operator for the impersonation bearer.
 type sshBootstrapOutput struct {
 	ImpersonateKeyID     string `json:"impersonate_key_id"`
@@ -59,10 +59,10 @@ Reads .bootstrap-output.json (the admin api_key minted by the genesis-seal phase
 and uses it to issue a NEW api_key whose only scope is admin:impersonate.
 
 The resulting bearer is written to .ssh-bootstrap-output.json so
-` + "`polaris-email serve --ssh`" + ` can pick it up without operator interaction.
+` + "`polaris-mail serve --ssh`" + ` can pick it up without operator interaction.
 
 Additionally, generates an ED25519 SSH host key at the configured path
-(default ~/.config/polaris-email/ssh_host_ed25519) if one doesn't exist.`,
+(default ~/.config/polaris-mail/ssh_host_ed25519) if one doesn't exist.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
 			if ctx == nil {
@@ -75,7 +75,7 @@ Additionally, generates an ED25519 SSH host key at the configured path
 			}
 			admin, err := loadAdminClient(baseURL, bootstrapPath)
 			if err != nil {
-				return fmt.Errorf("admin api_key not available (%w) — run `polaris-email setup infra genesis-seal` first", err)
+				return fmt.Errorf("admin api_key not available (%w) — run `polaris-mail setup infra genesis-seal` first", err)
 			}
 
 			// 1. Mint the impersonation api_key. This still needs a mailbox
@@ -122,7 +122,7 @@ Additionally, generates an ED25519 SSH host key at the configured path
 			// 2. Generate the SSH host key if missing.
 			if hostKeyPath == "" {
 				home, _ := os.UserHomeDir()
-				hostKeyPath = filepath.Join(home, ".config", "polaris-email", "ssh_host_ed25519")
+				hostKeyPath = filepath.Join(home, ".config", "polaris-mail", "ssh_host_ed25519")
 			}
 			fp, err := ensureHostKey(hostKeyPath)
 			if err != nil {
@@ -152,8 +152,8 @@ Additionally, generates an ED25519 SSH host key at the configured path
 			fmt.Fprintf(cmd.OutOrStdout(), "  host fingerprint:   %s\n", fp)
 			fmt.Fprintln(cmd.OutOrStdout())
 			fmt.Fprintln(cmd.OutOrStdout(), "Next:")
-			fmt.Fprintln(cmd.OutOrStdout(), "  polaris-email operator add        # register the first human operator")
-			fmt.Fprintln(cmd.OutOrStdout(), "  polaris-email serve --ssh \\")
+			fmt.Fprintln(cmd.OutOrStdout(), "  polaris-mail operator add        # register the first human operator")
+			fmt.Fprintln(cmd.OutOrStdout(), "  polaris-mail serve --ssh \\")
 			fmt.Fprintln(cmd.OutOrStdout(), "    --bootstrap-token "+out.ImpersonateBearer)
 			return nil
 		},
@@ -161,7 +161,7 @@ Additionally, generates an ED25519 SSH host key at the configured path
 	c.Flags().StringVar(&envFile, "env-file", defaultEnvFile, "path to .env.deploy")
 	c.Flags().StringVar(&bootstrapPath, "bootstrap-output", defaultBootstrapOutput, "path to .bootstrap-output.json (admin api_key)")
 	c.Flags().StringVar(&outputPath, "output", defaultSSHBootstrapOutput, "where to write the impersonation bearer JSON")
-	c.Flags().StringVar(&hostKeyPath, "host-key", "", "SSH host key path (default ~/.config/polaris-email/ssh_host_ed25519)")
+	c.Flags().StringVar(&hostKeyPath, "host-key", "", "SSH host key path (default ~/.config/polaris-mail/ssh_host_ed25519)")
 	c.Flags().StringVar(&impersonateName, "name", "wish-bootstrap", "display name for the impersonation api_key")
 	return c
 }
@@ -181,7 +181,7 @@ func ensureHostKey(path string) (string, error) {
 		if err != nil {
 			return "", fmt.Errorf("generate ed25519: %w", err)
 		}
-		pkBlock, err := ssh.MarshalPrivateKey(priv, "polaris-email-host")
+		pkBlock, err := ssh.MarshalPrivateKey(priv, "polaris-mail-host")
 		if err != nil {
 			return "", fmt.Errorf("marshal private key: %w", err)
 		}

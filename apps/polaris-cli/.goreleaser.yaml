@@ -1,18 +1,18 @@
-# goreleaser config for polaris-email CLI.
+# goreleaser config for polaris-mail CLI.
 #
 # `make release-dryrun` runs `goreleaser release --snapshot --clean --skip=publish`.
 version: 2
 
-project_name: polaris-email
+project_name: polaris-mail
 
 before:
   hooks:
     - go mod tidy
 
 builds:
-  - id: polaris-email
+  - id: polaris-mail
     main: ./cmd/polaris-email
-    binary: polaris-email
+    binary: polaris-mail
     env:
       - CGO_ENABLED=0
     goos:
@@ -47,7 +47,7 @@ archives:
 # Post-archive hooks emit the `pml` symlink alongside the binary inside each
 # archive. We do this with goreleaser's `extra_files`-style hook by including a
 # tiny install script in the archive; for now operators run `ln -sf
-# polaris-email pml` after extraction (Brew formula handles it automatically).
+# polaris-mail pml` after extraction (Brew formula handles it automatically).
 
 checksum:
   name_template: 'checksums.txt'
@@ -70,15 +70,15 @@ release:
   draft: true
 
 brews:
-  - name: polaris-email
+  - name: polaris-mail
     homepage: 'https://github.com/vladzaharia/polaris-email'
-    description: 'Operator CLI for the polaris-email control plane'
+    description: 'Operator CLI for the polaris-mail control plane'
     license: MIT
     repository:
       owner: vladzaharia
       name: homebrew-tap
     install: |
-      bin.install "polaris-email"
-      bin.install_symlink "polaris-email" => "pml"
+      bin.install "polaris-mail"
+      bin.install_symlink "polaris-mail" => "pml"
     test: |
-      system "#{bin}/polaris-email", "version"
+      system "#{bin}/polaris-mail", "version"

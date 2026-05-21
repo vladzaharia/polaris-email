@@ -1,6 +1,6 @@
-// @polaris-email/cf-api — Cloudflare API client + domain lifecycle automation.
+// @polaris-mail/cf-api — Cloudflare API client + domain lifecycle automation.
 //
-// Used by the modular monolith Worker (workers/control-plane) and the polaris-email
+// Used by the modular monolith Worker (workers/control-plane) and the polaris-mail
 // CLI to provision DNS, Email Routing rules, Email Service onboarding, DKIM
 // rotation with overlap, and full domain decommission with DoH read-back gates.
 

@@ -27,7 +27,7 @@ export interface Envelope<T> {
 export function useAdminQuery<T>(
   key: readonly unknown[],
   path: string,
-  options: { enabled?: boolean } = {},
+  options: { enabled?: boolean; staleTime?: number } = {},
 ): UseQueryResult<T, ApiError> {
   return useQuery<T, ApiError>({
     queryKey: key,
@@ -36,6 +36,7 @@ export function useAdminQuery<T>(
       return r.body;
     },
     enabled: options.enabled ?? true,
+    staleTime: options.staleTime,
     retry: (failureCount, err) => {
       // Don't burn retries on 4xx — they won't succeed on the next try.
       if (err instanceof ApiError && err.status < 500 && err.status !== 429) return false;

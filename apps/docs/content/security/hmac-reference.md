@@ -1,17 +1,17 @@
 ---
 title: HMAC reference
-description: The formal canonical-string layout, bare-hex header, domain tags, test-vector location, and the security guarantees plus caveats of the polaris-email HMAC scheme. Audience — security reviewers and integrators implementing a verifier from scratch.
+description: The formal canonical-string layout, bare-hex header, domain tags, test-vector location, and the security guarantees plus caveats of the polaris-mail HMAC scheme. Audience — security reviewers and integrators implementing a verifier from scratch.
 sidebar_label: HMAC reference
 sidebar_position: 3
 ---
 
-# polaris-email HMAC reference
+# polaris-mail HMAC reference
 
 This is the formal spec. If you want narrative ("why HMAC, why a
 nonce") read the [developer concept](/developers/authentication/concept)
 first. This page is byte-exact.
 
-polaris-email HMAC signatures are **un-versioned**. There is one
+polaris-mail HMAC signatures are **un-versioned**. There is one
 canonical-string format, two domain-separation tags, and one signature
 header. The historical `v1=` / `v2=` envelope tags and `.v1` suffixes
 were removed. This page is the source of truth.
@@ -76,10 +76,10 @@ containing `=`, `:`, or uppercase hex is refused with
 
 ## Domain tags
 
-| Tag               | Used for                                                     | Signer location                           |
-| ----------------- | ------------------------------------------------------------ | ----------------------------------------- |
-| `polaris-api`     | HTTP requests from a caller to the polaris-email REST API    | Caller's SDK or hand-rolled signing code  |
-| `polaris-webhook` | Outgoing webhook deliveries from polaris-email to a consumer | `services/api/src/queue/fanout.ts` (only) |
+| Tag               | Used for                                                    | Signer location                           |
+| ----------------- | ----------------------------------------------------------- | ----------------------------------------- |
+| `polaris-api`     | HTTP requests from a caller to the polaris-mail REST API    | Caller's SDK or hand-rolled signing code  |
+| `polaris-webhook` | Outgoing webhook deliveries from polaris-mail to a consumer | `services/api/src/queue/fanout.ts` (only) |
 
 Domain separation prevents an attacker from re-using an API-direction
 signature as a webhook-direction signature. The two tags are the only
@@ -113,12 +113,12 @@ recorded `ts` can be replayed deterministically.
 
 Verifiers MUST compare signatures with a constant-time byte comparison:
 
-| Language | Primitive                                            |
-| -------- | ---------------------------------------------------- |
-| Node     | `crypto.timingSafeEqual`                             |
-| Go       | `crypto/subtle.ConstantTimeCompare`                  |
-| Python   | `hmac.compare_digest`                                |
-| Shell    | `polaris-email auth verify` (wraps the Go primitive) |
+| Language | Primitive                                           |
+| -------- | --------------------------------------------------- |
+| Node     | `crypto.timingSafeEqual`                            |
+| Go       | `crypto/subtle.ConstantTimeCompare`                 |
+| Python   | `hmac.compare_digest`                               |
+| Shell    | `polaris-mail auth verify` (wraps the Go primitive) |
 
 A naïve `===` / `==` comparison leaks signature bytes via timing and is
 a verification bug.
@@ -217,7 +217,7 @@ Each entry has the shape:
 ```
 
 Every first-party verifier (`packages/hmac`, `packages/sdk-node`,
-`packages/sdk-go`, `polaris-email auth verify`) MUST pass every vector.
+`packages/sdk-go`, `polaris-mail auth verify`) MUST pass every vector.
 CI's `sdk-test-vectors` job enforces this.
 
 Verifiers are invoked with `now_ms == vector.ts` so the clock-skew gate
@@ -272,7 +272,7 @@ What the scheme does **not** do:
   `KV_REVOCATIONS` propagates within ≤60 s — see
   [Threat model](/security/threat-model).
 - **It does not prevent replay across the 5-minute boundary if your
-  nonce storage is shorter than 5 min.** polaris-email's KV nonce store
+  nonce storage is shorter than 5 min.** polaris-mail's KV nonce store
   has a TTL ≥ the skew window; verifiers you implement must do the
   same.
 - **It does not authenticate `X-Polaris-Key-Id`.** The key-id is
@@ -284,15 +284,15 @@ What the scheme does **not** do:
 
 ## Implementation references
 
-| Component                            | File                                                 |
-| ------------------------------------ | ---------------------------------------------------- |
-| Canonical signer + verifier          | `packages/hmac/src/index.ts`                         |
-| API direction (inbound auth)         | `services/api/src/auth.ts`                           |
-| Webhook direction (outbound signing) | `services/api/src/queue/fanout.ts`                   |
-| Node SDK verifier                    | `packages/sdk-node/`                                 |
-| Go SDK verifier                      | `packages/sdk-go/`                                   |
-| Operator-side CLI                    | `polaris-email auth verify` (in `apps/polaris-cli/`) |
-| Test vectors                         | `packages/test-vectors/vectors.json`                 |
+| Component                            | File                                                |
+| ------------------------------------ | --------------------------------------------------- |
+| Canonical signer + verifier          | `packages/hmac/src/index.ts`                        |
+| API direction (inbound auth)         | `services/api/src/auth.ts`                          |
+| Webhook direction (outbound signing) | `services/api/src/queue/fanout.ts`                  |
+| Node SDK verifier                    | `packages/sdk-node/`                                |
+| Go SDK verifier                      | `packages/sdk-go/`                                  |
+| Operator-side CLI                    | `polaris-mail auth verify` (in `apps/polaris-cli/`) |
+| Test vectors                         | `packages/test-vectors/vectors.json`                |
 
 ## See also
 

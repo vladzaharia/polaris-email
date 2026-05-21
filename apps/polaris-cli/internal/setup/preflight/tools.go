@@ -159,25 +159,25 @@ func CheckEnvsubst() Check {
 	return CheckTool("envsubst", "brew install gettext || apt-get install gettext-base")
 }
 
-// CheckPolarisEmail asserts the CLI binary is on PATH. Required for
+// CheckPolarisMail asserts the CLI binary is on PATH. Required for
 // bootstrap step 7 (admin-key minting) where the script invokes
-// `polaris-email auth sign`.
+// `polaris-mail auth sign`.
 //
 // We deliberately check by name (not by path to argv[0]) — the operator
 // may have installed it system-wide while running preflight from a
 // development tree.
-func CheckPolarisEmail() Check {
+func CheckPolarisMail() Check {
 	return Check{
-		Name:        "polaris-email CLI",
+		Name:        "polaris-mail CLI",
 		Required:    true,
-		Description: "the polaris-email Go binary must be on PATH (used for HMAC signing during bootstrap)",
+		Description: "the polaris-mail Go binary must be on PATH (used for HMAC signing during bootstrap)",
 		Run: func(ctx context.Context) Result {
 			_ = ctx
-			if _, err := exec.LookPath("polaris-email"); err != nil {
-				return fail("polaris-email not in PATH",
-					"(cd apps/polaris-cli && go build -o $(go env GOPATH)/bin/polaris-email ./cmd/polaris-email)")
+			if _, err := exec.LookPath("polaris-mail"); err != nil {
+				return fail("polaris-mail not in PATH",
+					"(cd apps/polaris-cli && go build -o $(go env GOPATH)/bin/polaris-mail ./cmd/polaris-email)")
 			}
-			return pass("polaris-email in PATH")
+			return pass("polaris-mail in PATH")
 		},
 	}
 }

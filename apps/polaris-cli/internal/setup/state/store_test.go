@@ -34,7 +34,7 @@ func TestWriteRead_RoundTrip(t *testing.T) {
 	orig := &Doc{
 		SchemaVersion: CurrentSchema,
 		AccountID:     "acc-123",
-		D1:            map[string]Resource{"polaris-email": {ID: "db-1", Name: "polaris-email"}},
+		D1:            map[string]Resource{"polaris-mail": {ID: "db-1", Name: "polaris-mail"}},
 		R2:            map[string]R2Bucket{"polaris-mail-archive": {Name: "polaris-mail-archive", Jurisdiction: "eu", ObjectLockHours: 2160}},
 		KV:            map[string]Resource{"POLARIS_NONCE_DEDUP": {ID: "kv-1", Name: "POLARIS_NONCE_DEDUP"}},
 		Queues:        map[string]Resource{"polaris-outbound": {ID: "q-1", Name: "polaris-outbound"}},
@@ -60,7 +60,7 @@ func TestWriteRead_RoundTrip(t *testing.T) {
 	if back.AccountID != orig.AccountID {
 		t.Errorf("AccountID: want %q got %q", orig.AccountID, back.AccountID)
 	}
-	if back.D1["polaris-email"].ID != "db-1" {
+	if back.D1["polaris-mail"].ID != "db-1" {
 		t.Errorf("D1 round-trip mismatch: %+v", back.D1)
 	}
 	if back.R2["polaris-mail-archive"].Jurisdiction != "eu" {

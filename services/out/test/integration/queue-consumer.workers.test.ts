@@ -154,7 +154,7 @@ describe('services/out queue consumer (pool-workers)', () => {
       domainId: 'd1',
       mode: 'live',
     };
-    const batch = createMessageBatch('polaris-email-outbound', [
+    const batch = createMessageBatch('polaris-mail-outbound', [
       { id: body.messageId, timestamp: new Date(), attempts: 1, body },
     ]);
     const ctx = createExecutionContext();
@@ -205,7 +205,7 @@ describe('services/out queue consumer (pool-workers)', () => {
       domainId: 'd1',
       mode: 'live',
     };
-    const batch = createMessageBatch('polaris-email-outbound', [
+    const batch = createMessageBatch('polaris-mail-outbound', [
       { id: body.messageId, timestamp: new Date(), attempts: 1, body },
     ]);
     const ctx = createExecutionContext();
@@ -246,7 +246,7 @@ describe('services/out queue consumer (pool-workers)', () => {
       domainId: 'd1',
       mode: 'live',
     };
-    const batch = createMessageBatch('polaris-email-outbound', [
+    const batch = createMessageBatch('polaris-mail-outbound', [
       { id: body.messageId, timestamp: new Date(), attempts: 1, body },
     ]);
     const ctx = createExecutionContext();

@@ -17,7 +17,7 @@ import (
 	"github.com/vladzaharia/polaris-email/apps/polaris-cli/internal/setup/state"
 )
 
-// newInfraApplyCmd wires `polaris-email setup infra apply` — the
+// newInfraApplyCmd wires `polaris-mail setup infra apply` — the
 // write side of plan/apply. It walks plan.Diff().Creates in the same
 // terraform-style flow, but actually invokes cfapi.Create* for each
 // missing resource and records the result into .deploy-state.json
@@ -41,7 +41,7 @@ func newInfraApplyCmd() *cobra.Command {
 	)
 	c := &cobra.Command{
 		Use:   "apply",
-		Short: "Create the Cloudflare resources polaris-email needs (idempotent)",
+		Short: "Create the Cloudflare resources polaris-mail needs (idempotent)",
 		Long: "Walk the create-plan and provision missing Cloudflare resources.\n" +
 			"\n" +
 			"State is written to .deploy-state.json atomically after every\n" +

@@ -636,7 +636,7 @@ export function mkEnv(overrides: Partial<Env> = {}): Env {
     KV_KEY_CACHE: new MockKV() as unknown as KVNamespace,
     KV_REVOCATIONS: new MockKV() as unknown as KVNamespace,
     OUTBOUND_QUEUE: new MockQueue<OutboundQueueMessage>() as unknown as Queue<OutboundQueueMessage>,
-    API_BASE_URL: 'https://polaris-email-api.workers.dev',
+    API_BASE_URL: 'https://polaris-mail-api.workers.dev',
     R2_PUBLIC_HOST: 'r2.mail.plrs.im',
     POLARIS_SECRET_A: 'test-control-plane-secret',
     ARGON2_PEPPER: 'test-pepper',

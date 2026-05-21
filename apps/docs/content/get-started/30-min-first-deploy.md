@@ -1,6 +1,6 @@
 ---
 title: 30-minute first deploy
-description: Stand up polaris-email from a cold Cloudflare account, mint your first credential, and send a test message — in roughly half an hour.
+description: Stand up polaris-mail from a cold Cloudflare account, mint your first credential, and send a test message — in roughly half an hour.
 sidebar_label: 30-minute first deploy
 sidebar_position: 1
 slug: /get-started/30-min-first-deploy
@@ -9,7 +9,7 @@ slug: /get-started/30-min-first-deploy
 # 30 minutes from zero to first send
 
 This is the operator-side hero tutorial. You have a fresh Cloudflare
-account; you want a healthy polaris-email control plane and one
+account; you want a healthy polaris-mail control plane and one
 credential you can `curl` against. Domain onboarding, mail-bridge
 install, and webhook subscriptions are covered in
 [next steps](#next-steps) — none of them are required to finish this
@@ -49,15 +49,15 @@ Or pick another channel — see
 [`apps/polaris-cli/README.md`](https://github.com/vladzaharia/polaris-email/blob/main/apps/polaris-cli/README.md):
 
 ```sh
-brew install vladzaharia/tap/polaris-email
+brew install vladzaharia/tap/polaris-mail
 # or
-go install github.com/vladzaharia/polaris-email/apps/polaris-cli/cmd/polaris-email@latest
+go install github.com/vladzaharia/polaris-email/apps/polaris-cli/cmd/polaris-mail@latest
 ```
 
 Verify:
 
 ```sh
-polaris-email --version
+polaris-mail --version
 ```
 
 The same binary is symlinked as `pml` for keystroke-conscious folks.
@@ -69,7 +69,7 @@ from interactive prompts. Press enter to keep any default shown in
 `[brackets]`.
 
 ```sh
-polaris-email setup infra configure
+polaris-mail setup infra configure
 ```
 
 You will be asked for, in order:
@@ -77,7 +77,7 @@ You will be asked for, in order:
 | Var                    | Source                                                                                      |
 | ---------------------- | ------------------------------------------------------------------------------------------- |
 | `CF_ACCOUNT_ID`        | Cloudflare dashboard → top-right corner.                                                    |
-| `POLARIS_API_HOSTNAME` | Where the API Worker will live (e.g. `polaris-email-api.workers.dev` or a custom hostname). |
+| `POLARIS_API_HOSTNAME` | Where the API Worker will live (e.g. `polaris-mail-api.workers.dev` or a custom hostname).  |
 | `CF_API_TOKEN`         | The token you minted in step 0.                                                             |
 | `CF_ZONE_ID`           | Default zone for domain ops (optional).                                                     |
 | `ALERT_WEBHOOK`        | Slack / PagerDuty inbound webhook for synthetic + staleness alerts (optional, recommended). |
@@ -94,7 +94,7 @@ Sanity-check tooling, env file, and CF token scopes before anything
 talks to Cloudflare:
 
 ```sh
-polaris-email setup infra preflight
+polaris-mail setup infra preflight
 ```
 
 Fix anything it complains about. The most common failure is a CF
@@ -106,7 +106,7 @@ it into `.env.deploy`, and re-run.
 Preview first — nothing is written:
 
 ```sh
-polaris-email setup infra plan
+polaris-mail setup infra plan
 ```
 
 This computes the diff between the desired set (one D1 database,
@@ -116,7 +116,7 @@ exists. Empty diff means you're already up.
 If the plan looks right, apply:
 
 ```sh
-polaris-email setup infra apply
+polaris-mail setup infra apply
 ```
 
 State lands atomically in `.deploy-state.json` after every successful
@@ -130,7 +130,7 @@ a gitignored `wrangler.local.jsonc` rendered from a template +
 `.deploy-state.json`. Materialise them:
 
 ```sh
-polaris-email setup infra render
+polaris-mail setup infra render
 ```
 
 Do **not** hand-edit the rendered files; the next render overwrites
@@ -141,7 +141,7 @@ under "Wrangler config convention".
 ## 6. Migrate D1 (1 min)
 
 ```sh
-polaris-email setup infra migrate
+polaris-mail setup infra migrate
 ```
 
 The schema lives under each service that owns it (custom
@@ -152,7 +152,7 @@ recovery if a deploy ever rolls back mid-migration.
 ## 7. Seed secrets (2 min)
 
 ```sh
-polaris-email setup infra secrets seed
+polaris-mail setup infra secrets seed
 ```
 
 This pushes generated master secrets (`POLARIS_SECRET_A`,
@@ -168,7 +168,7 @@ steps — write them down or stash them in your password manager
 ## 8. Deploy Workers (3 min)
 
 ```sh
-polaris-email setup infra deploy all
+polaris-mail setup infra deploy all
 ```
 
 Deploys `services/api`, `services/in`, `services/out`, and the panel
@@ -184,7 +184,7 @@ first row into the chained-hash `audit_log` — every later mutation
 links back to it.
 
 ```sh
-polaris-email bootstrap
+polaris-mail bootstrap
 ```
 
 The output prints — exactly once — the admin key id + secret. **Save
@@ -192,15 +192,15 @@ both immediately**; the secret is never recoverable. Stash it in your
 password manager and export it for the rest of this session:
 
 ```sh
-export POLARIS_EMAIL_KEY_ID=pk_live_...
-export POLARIS_EMAIL_KEY_SECRET=...
-export POLARIS_EMAIL_URL=https://<your-POLARIS_API_HOSTNAME>
+export POLARIS_MAIL_KEY_ID=pk_live_...
+export POLARIS_MAIL_KEY_SECRET=...
+export POLARIS_MAIL_URL=https://<your-POLARIS_API_HOSTNAME>
 ```
 
 End-to-end smoke:
 
 ```sh
-polaris-email setup infra smoke
+polaris-mail setup infra smoke
 ```
 
 This runs `healthz`, a signed `status` call, and a synthetic outbound
@@ -215,7 +215,7 @@ surface — for this tutorial we reuse the synthetic mailbox the smoke
 test landed on, or you can create one through the panel later.
 
 ```sh
-polaris-email cred issue \
+polaris-mail cred issue \
   --mailbox <mailbox-id> \
   --type http \
   --senders 'noreply@<your-domain>'
@@ -225,7 +225,7 @@ The plaintext secret is printed **exactly once**. Pipe to your
 secret store:
 
 ```sh
-polaris-email cred issue ... -o json | jq -r .secret | op item create ...
+polaris-mail cred issue ... -o json | jq -r .secret | op item create ...
 ```
 
 ## 11. Send a test message (2 min)
@@ -238,13 +238,13 @@ the surface differs. Pick one.
 ```sh
 TS=$(date +%s)000
 NONCE=$(openssl rand -hex 12)
-BODY='{"from":"noreply@example.com","to":["you@external.com"],"subject":"hello","text":"hi from polaris-email","category":"test"}'
+BODY='{"from":"noreply@example.com","to":["you@external.com"],"subject":"hello","text":"hi from polaris-mail","category":"test"}'
 BH=$(printf "%s" "$BODY" | openssl dgst -sha256 -hex | awk '{print $2}')
 CANON="polaris-api\nPOST\n/v1/messages\n\n$TS\n$NONCE\n$BH"
-SIG=$(printf "%b" "$CANON" | openssl dgst -sha256 -hmac "$POLARIS_EMAIL_KEY_SECRET" -hex | awk '{print $2}')
-curl -sS -X POST "$POLARIS_EMAIL_URL/v1/messages" \
+SIG=$(printf "%b" "$CANON" | openssl dgst -sha256 -hmac "$POLARIS_MAIL_KEY_SECRET" -hex | awk '{print $2}')
+curl -sS -X POST "$POLARIS_MAIL_URL/v1/messages" \
   -H "content-type: application/json" \
-  -H "x-polaris-key-id: $POLARIS_EMAIL_KEY_ID" \
+  -H "x-polaris-key-id: $POLARIS_MAIL_KEY_ID" \
   -H "x-polaris-ts: $TS" -H "x-polaris-nonce: $NONCE" -H "x-polaris-sig: $SIG" \
   -d "$BODY"
 ```
@@ -252,19 +252,19 @@ curl -sS -X POST "$POLARIS_EMAIL_URL/v1/messages" \
 ### Node SDK
 
 ```ts
-import { PolarisEmailClient } from '@polaris/sdk';
+import { PolarisMailClient } from '@polaris/sdk';
 
-const client = new PolarisEmailClient({
-  baseUrl: process.env.POLARIS_EMAIL_URL!,
-  keyId: process.env.POLARIS_EMAIL_KEY_ID!,
-  keySecret: process.env.POLARIS_EMAIL_KEY_SECRET!,
+const client = new PolarisMailClient({
+  baseUrl: process.env.POLARIS_MAIL_URL!,
+  keyId: process.env.POLARIS_MAIL_KEY_ID!,
+  keySecret: process.env.POLARIS_MAIL_KEY_SECRET!,
 });
 
 await client.messages.send({
   from: 'noreply@example.com',
   to: ['you@external.com'],
   subject: 'hello',
-  text: 'hi from polaris-email',
+  text: 'hi from polaris-mail',
   category: 'test',
 });
 ```
@@ -275,15 +275,15 @@ await client.messages.send({
 import polaris "github.com/vladzaharia/polaris-email/packages/sdk-go"
 
 c := polaris.NewClient(polaris.Config{
-    BaseURL:   os.Getenv("POLARIS_EMAIL_URL"),
-    KeyID:     os.Getenv("POLARIS_EMAIL_KEY_ID"),
-    KeySecret: os.Getenv("POLARIS_EMAIL_KEY_SECRET"),
+    BaseURL:   os.Getenv("POLARIS_MAIL_URL"),
+    KeyID:     os.Getenv("POLARIS_MAIL_KEY_ID"),
+    KeySecret: os.Getenv("POLARIS_MAIL_KEY_SECRET"),
 })
 _, err := c.Messages.Send(ctx, &polaris.SendRequest{
     From:     "noreply@example.com",
     To:       []string{"you@external.com"},
     Subject:  "hello",
-    Text:     "hi from polaris-email",
+    Text:     "hi from polaris-mail",
     Category: "test",
 })
 ```
@@ -316,7 +316,7 @@ You have a working control plane and one credential. To go from
 "single test send" to "this thing is in production":
 
 - **Onboard a sending domain** — DKIM, SPF, DMARC, MX. Single command:
-  `polaris-email domain onboard <domain> --inbound --outbound`. See the
+  `polaris-mail domain onboard <domain> --inbound --outbound`. See the
   [domain onboarding runbook](/operators/runbooks).
 - **Stand up the on-prem mail bridge** if you need SMTPS / IMAP for
   human-facing mailboxes. Two deployment modes —

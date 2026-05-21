@@ -1,4 +1,4 @@
-// polaris-email-cli-installer Worker — committed config. Real account ID
+// polaris-mail-cli-installer Worker — committed config. Real account ID
 // lives in wrangler.local.jsonc (gitignored) and is merged in before
 // `wrangler deploy`.
 //
@@ -12,7 +12,7 @@
 // See scripts/gen-install-sh.mjs for the full rationale.
 {
   "$schema": "https://json-schema.org/draft-07/schema",
-  "name": "polaris-email-cli-installer",
+  "name": "polaris-mail-cli-installer",
   "main": "src/index.ts",
   "compatibility_date": "2026-04-15",
   "observability": { "enabled": true },

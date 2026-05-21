@@ -41,4 +41,5 @@ export default ${JSON.stringify(b64)};
 `;
 
 writeFileSync(out, ts);
+// eslint-disable-next-line no-console -- build-time progress log
 console.log(`wrote ${out} (${b64.length} base64 chars, ${sh.length} source bytes)`);

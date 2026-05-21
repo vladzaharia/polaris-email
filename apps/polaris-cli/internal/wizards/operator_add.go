@@ -1,4 +1,4 @@
-// Wizard for `polaris-email operator add`.
+// Wizard for `polaris-mail operator add`.
 package wizards
 
 import (
@@ -250,14 +250,14 @@ func RunOperatorAdd(ctx context.Context, c *client.Client, in *OperatorAddInput,
 	fmt.Fprintf(w, "  Fingerprint: %s\n", in.SSHPubkeyFPSHA256)
 	fmt.Fprintf(w, "  API key:     %s\n", out.APIKeyID)
 	fmt.Fprintln(w)
-	fmt.Fprintln(w, "Login token (paste into `polaris-email login`):")
+	fmt.Fprintln(w, "Login token (paste into `polaris-mail login`):")
 	fmt.Fprintln(w)
 	fmt.Fprintf(w, "  %s\n", out.LoginToken)
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "↑ This is shown ONCE. Save it now or hand it to the new operator.")
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Next steps for the new operator:")
-	fmt.Fprintln(w, "  1. polaris-email login          # paste the token above")
-	fmt.Fprintln(w, "  2. polaris-email whoami         # confirm identity")
+	fmt.Fprintln(w, "  1. polaris-mail login          # paste the token above")
+	fmt.Fprintln(w, "  2. polaris-mail whoami         # confirm identity")
 	return &out, nil
 }

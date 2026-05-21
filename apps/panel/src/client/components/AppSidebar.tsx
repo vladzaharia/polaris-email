@@ -1,27 +1,22 @@
 // AppSidebar — left-rail navigation, grouped into Operations / Configuration
-// / Diagnostics. Used by SidebarLayout both as the desktop fixed rail and as
-// the Sheet body on mobile.
+// / Tools. Used by SidebarLayout both as the desktop fixed rail and as the
+// Sheet body on mobile.
 import { Link, useRouterState } from '@tanstack/react-router';
 import {
-  Activity,
-  AlertOctagon,
-  AlertTriangle,
-  AtSign,
-  BarChart3,
-  Cloud,
+  ArchiveX,
+  Cable,
+  Flag,
+  Gavel,
   Globe2,
   Inbox,
-  Key,
   LayoutDashboard,
   Mail,
   Moon,
-  Route,
-  ServerCog,
-  Settings,
-  ShieldOff,
+  Scale,
+  Send,
   Stethoscope,
   Sun,
-  Webhook,
+  UserCog,
 } from 'lucide-react';
 import { cn } from '../lib/cn.js';
 import { useTheme } from '../layouts/RootLayout.js';
@@ -33,41 +28,31 @@ interface NavItem {
   icon: React.ComponentType<{ className?: string }>;
 }
 
-// Sidebar IA — three groups, ordered by triage cadence:
-//   Operations: day-to-day verbs (Dashboard, Messages, DLQ)
-//   Configuration: long-lived registry objects (Mailboxes, Domains,
-//     Credentials, Webhook subs, Routing, Bridges)
-//   Diagnostics: incident-triage surfaces + per-account settings
-//     (Diagnostics overview ABOVE Account so the system-health page is
-//     reached faster during an incident)
+// Post-IA-consolidation sidebar — 12 items in 3 groups.
+//   Operations: day-to-day operator triage surfaces.
+//   Configuration: long-lived registry objects. Credentials, webhook subs,
+//     routing, CF zones, and DMARC promotion all fold into mailbox/domain
+//     detail pages now.
+//   Tools: incident-triage diagnostics + per-account settings. Test-send
+//     folded into MailboxDetail as an inline action.
 const OPERATIONS: NavItem[] = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard },
-  { to: '/messages', label: 'Messages', icon: Mail },
-  { to: '/policy/moderation', label: 'Moderation queue', icon: AlertOctagon },
-  { to: '/policy/decisions', label: 'Policy decisions', icon: BarChart3 },
-  { to: '/dlq', label: 'DLQ browser', icon: BarChart3 },
-  { to: '/reports/abuse', label: 'Abuse reports', icon: AlertTriangle },
-  { to: '/reports/triage', label: 'LLM triage', icon: AlertOctagon },
-  { to: '/admin-alerts', label: 'Admin alerts', icon: AlertOctagon },
-  { to: '/sender-abuse', label: 'Sender abuse', icon: AlertTriangle },
-  { to: '/dmarc-promotion', label: 'DMARC promotion', icon: Settings },
+  { to: '/messages', label: 'Messages', icon: Send },
+  { to: '/policy/moderation', label: 'Moderation', icon: Gavel },
+  { to: '/policy/decisions', label: 'Policy decisions', icon: Scale },
+  { to: '/dlq', label: 'DLQ', icon: ArchiveX },
+  { to: '/abuse', label: 'Abuse & alerts', icon: Flag },
 ];
 
 const CONFIGURATION: NavItem[] = [
   { to: '/mailboxes', label: 'Mailboxes', icon: Inbox },
-  { to: '/cf-zones', label: 'CF Zones', icon: Cloud },
   { to: '/domains', label: 'Domains', icon: Globe2 },
-  { to: '/credentials', label: 'Credentials', icon: Key },
-  { to: '/webhook-subs', label: 'Webhook subs', icon: Webhook },
-  { to: '/routing', label: 'Routing', icon: Route },
-  { to: '/bridges', label: 'Bridges', icon: ServerCog },
-  { to: '/suppressions', label: 'Suppressions', icon: ShieldOff },
+  { to: '/bridges', label: 'Bridges', icon: Cable },
 ];
 
-const DIAGNOSTICS: NavItem[] = [
+const TOOLS: NavItem[] = [
   { to: '/diagnostics', label: 'Diagnostics', icon: Stethoscope },
-  { to: '/test-send', label: 'Test send', icon: Activity },
-  { to: '/settings/account', label: 'Account', icon: AtSign },
+  { to: '/me', label: 'You', icon: UserCog },
 ];
 
 function Section({
@@ -145,16 +130,16 @@ export function AppSidebar() {
     <nav className="flex h-full flex-col gap-1 bg-[var(--color-sidebar)] text-[var(--color-sidebar-foreground)]">
       <div className="flex items-center gap-2 px-5 py-4">
         <div className="grid h-8 w-8 place-items-center rounded-md bg-[var(--color-primary)] text-[var(--color-primary-foreground)]">
-          <Settings className="h-4 w-4" />
+          <Mail className="h-4 w-4" />
         </div>
-        <div className="text-sm font-semibold">polaris-email</div>
+        <div className="text-sm font-semibold">Polaris Mail</div>
         <div className="ml-auto">
           <ThemeToggle />
         </div>
       </div>
       <Section title="Operations" items={OPERATIONS} currentPath={currentPath} />
       <Section title="Configuration" items={CONFIGURATION} currentPath={currentPath} />
-      <Section title="Diagnostics" items={DIAGNOSTICS} currentPath={currentPath} />
+      <Section title="Tools" items={TOOLS} currentPath={currentPath} />
     </nav>
   );
 }

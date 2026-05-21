@@ -18,7 +18,7 @@ this page assumes you are about to open the repo in an editor.
 services/{api,in,out,tail}   — Cloudflare Workers (TypeScript + Hono)
 apps/panel                   — Hono + React 19 + TanStack Router admin UI (Worker)
 apps/mail-bridge             — Go 1.25, SMTPS + IMAP4rev2 in one binary
-apps/polaris-cli             — Go 1.22, operator CLI (`polaris-email`, alias `pml`)
+apps/polaris-cli             — Go 1.22, operator CLI (`polaris-mail`, alias `pml`)
 apps/docs                    — Docusaurus v3 site (this site), deployed as a Worker
 apps/cli-installer           — installer Worker at cli.mail.plrs.im
 packages/{hmac,schema,pipeline,ids,mime,cf-api,revocation,test-vectors,sdk-node}
@@ -140,7 +140,7 @@ CDN, no per-object HMAC header. Treating a URL as a capability token is
 the explicit design.
 
 Audit-log readers implicitly gain content read access; this is acceptable
-at the internal-deployment scale polaris-email targets. Read
+at the internal-deployment scale polaris-mail targets. Read
 [SECURITY.md](https://github.com/vladzaharia/polaris-email/blob/main/SECURITY.md)
 before changing anything in this area.
 
@@ -165,8 +165,8 @@ Every Worker has:
 
 The local file is **generated** from
 `services/*/wrangler.local.template.jsonc` plus `.deploy-state.json` by
-`polaris-email setup infra render`. **Do not hand-edit the materialised
-file.** `polaris-email setup infra deploy` merges committed + local with
+`polaris-mail setup infra render`. **Do not hand-edit the materialised
+file.** `polaris-mail setup infra deploy` merges committed + local with
 the same precedence (local overlays public) into a throwaway
 `.wrangler.merged.json` for the `wrangler deploy` call, then deletes it.
 Do not commit `.wrangler.merged.json`.
@@ -176,7 +176,7 @@ Do not commit `.wrangler.merged.json`.
 - Server: Hono on Workers. Client: React 19 + TanStack Router served via
   the `ASSETS` binding.
 - Sessions in D1 via better-auth + drizzle adapter (shares the
-  `polaris-email` D1 database with `services/api`).
+  `polaris-mail` D1 database with `services/api`).
 - Talks to `services/api` via a service binding (`API`). No public fetch,
   no HMAC key in the happy path.
 - Destructive actions are gated **client-side** via
@@ -216,7 +216,7 @@ refactor as if one path were canonical.
 | "How is a request authenticated?"             | `services/api/src/auth.ts` + `packages/revocation/` (KV-backed, ≤60 s propagation)                               |
 | "How do I onboard a domain end-to-end?"       | `apps/polaris-cli/internal/cmds/domain.go` and the wizard in `apps/polaris-cli/internal/wizards/`                |
 | "Where does outbound mail actually leave CF?" | `services/out/src/index.ts` — the `send_email` binding invocation                                                |
-| "What is the unified `Message` shape?"        | `packages/schema/src/index.ts` (Zod) — normative wire format is `openapi/polaris-email.yaml`                     |
+| "What is the unified `Message` shape?"        | `packages/schema/src/index.ts` (Zod) — normative wire format is `openapi/polaris-mail.yaml`                      |
 
 ## Things contributors should not do
 

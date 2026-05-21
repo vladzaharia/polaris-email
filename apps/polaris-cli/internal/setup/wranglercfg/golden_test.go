@@ -93,7 +93,7 @@ func TestRender_Goldens(t *testing.T) {
 }
 
 // findRepoRoot walks up from the test cwd looking for the workspace
-// pnpm-workspace.yaml file, which marks the polaris-email repo root.
+// pnpm-workspace.yaml file, which marks the polaris-mail repo root.
 // The Go test cwd is the package dir, which is several levels down.
 func findRepoRoot(t *testing.T) string {
 	t.Helper()

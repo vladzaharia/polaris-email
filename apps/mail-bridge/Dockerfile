@@ -51,8 +51,8 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
 
 # OCI annotations — GHCR renders these on the package page.
 LABEL org.opencontainers.image.source="https://github.com/vladzaharia/polaris-email" \
-      org.opencontainers.image.description="polaris-email mail-bridge — SMTPS + IMAP4rev2 in one Go binary" \
+      org.opencontainers.image.description="polaris-mail mail-bridge — SMTPS + IMAP4rev2 in one Go binary" \
       org.opencontainers.image.title="polaris-mail-bridge" \
-      org.opencontainers.image.vendor="polaris-email"
+      org.opencontainers.image.vendor="polaris-mail"
 
 ENTRYPOINT ["/usr/local/bin/polaris-bridge"]

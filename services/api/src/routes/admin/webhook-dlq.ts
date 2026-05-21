@@ -2,7 +2,7 @@
 // services/api/src/queue/fanout.ts) writes a row here on terminal webhook
 // delivery failure; operators replay or drop them.
 import { Hono } from 'hono';
-import { ulid } from '@polaris-email/ids';
+import { ulid } from '@polaris-mail/ids';
 import { actorOf, audit } from '../../audit.js';
 import { requireScope } from '../../auth.js';
 import type { Env } from '../../env.js';
@@ -37,13 +37,30 @@ interface DlqRow {
 }
 
 webhookDlq.get('/v1/admin/webhook-dlq', requireScope('admin:read'), async (c) => {
-  const rows = await c.env.DB.prepare(
-    `SELECT id, message_id, webhook_sub_id, payload_sha256, last_status_code,
+  // Optional filters: `?webhook_sub_id=` for the per-subscription "failed
+  // deliveries" view embedded in WebhookSubDetail; `?message_id=` for the
+  // per-message pipeline strip on MessageDetail. Both are exact match;
+  // omitted filter means "every active DLQ row".
+  const webhookSubId = c.req.query('webhook_sub_id');
+  const messageId = c.req.query('message_id');
+  const where: string[] = ['dropped_at IS NULL', 'replayed_at IS NULL'];
+  const binds: unknown[] = [];
+  if (webhookSubId) {
+    where.push('webhook_sub_id = ?');
+    binds.push(webhookSubId);
+  }
+  if (messageId) {
+    where.push('message_id = ?');
+    binds.push(messageId);
+  }
+  const sql = `SELECT id, message_id, webhook_sub_id, payload_sha256, last_status_code,
             last_error, attempts, dlq_at, replayed_at, dropped_at
      FROM webhook_dlq
-     WHERE dropped_at IS NULL AND replayed_at IS NULL
-     ORDER BY dlq_at DESC LIMIT 200`,
-  ).all<DlqRow>();
+     WHERE ${where.join(' AND ')}
+     ORDER BY dlq_at DESC LIMIT 200`;
+  const rows = await c.env.DB.prepare(sql)
+    .bind(...binds)
+    .all<DlqRow>();
   return c.json({ data: rows.results });
 });
 

@@ -7,7 +7,7 @@
 // pipeline that's already exercised at send time); the cron's job is to
 // catch DNS drift between the operator's CNAME and our expected target.
 
-import { ulid } from '@polaris-email/ids';
+import { ulid } from '@polaris-mail/ids';
 import { sendAlert } from '../lib/admin-alert.js';
 import { runBatched } from '../lib/batch.js';
 import type { Env } from '../env.js';

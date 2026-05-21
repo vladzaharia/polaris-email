@@ -101,7 +101,7 @@ func TestWranglerPusher_WorkerNameMappingApplied(t *testing.T) {
 			if svc != "api" {
 				t.Errorf("svc passed to mapper: want api, got %q", svc)
 			}
-			return "polaris-email-api"
+			return "polaris-mail-api"
 		},
 	}
 	// Call the mapper directly to confirm it fires; we don't want to

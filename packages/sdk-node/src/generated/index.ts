@@ -1,4 +1,4 @@
-// Hand-maintained type mirrors of `openapi/polaris-email.yaml`.
+// Hand-maintained type mirrors of `openapi/polaris-mail.yaml`.
 //
 // Despite the `generated/` path, these types are hand-written and kept in
 // sync with the OpenAPI spec manually. The `packages/sdk-codegen/` package

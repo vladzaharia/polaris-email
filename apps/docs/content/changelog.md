@@ -1,6 +1,6 @@
 ---
 title: Changelog
-description: Notable architectural changes to polaris-email — hardening passes, cleanup phases, and the final pre-launch cutover.
+description: Notable architectural changes to polaris-mail — hardening passes, cleanup phases, and the final pre-launch cutover.
 sidebar_label: Changelog
 sidebar_position: 7
 ---
@@ -13,7 +13,7 @@ cutover runbooks, see [Operators → Deploy](/operators).
 
 ## 2026-05-18 — v0.1.3 — `pml version` shows update status
 
-`polaris-email version` (no subcommand) now prints a multi-line status
+`polaris-mail version` (no subcommand) now prints a multi-line status
 block instead of just the build banner: build line + channel +
 install method + last-check + update availability. One command for
 "what's my state?". `version channel` and `version upgrade` are
@@ -34,10 +34,10 @@ Implementation:
 ## 2026-05-18 — v0.1.2 — Smarter install-method detection
 
 Small follow-up to v0.1.1's self-upgrader: hand-built binaries that
-get copied OUT of the polaris-email checkout (e.g. via
-`make build && cp bin/polaris-email ~/.local/bin/`) now auto-classify
+get copied OUT of the polaris-mail checkout (e.g. via
+`make build && cp bin/polaris-mail ~/.local/bin/`) now auto-classify
 as `InstallMethodLocal` and auto-default to the `local` upgrade
-channel — no `polaris-email version channel set local` step required.
+channel — no `polaris-mail version channel set local` step required.
 
 How it works:
 
@@ -56,7 +56,7 @@ Operator impact:
 
 - Contributors iterating on the CLI no longer have a way to silently
   get a stable-tag upgrade clobber their in-flight work.
-- `polaris-email version channel` now shows whether the channel is
+- `polaris-mail version channel` now shows whether the channel is
   explicit (operator picked it) or default (derived from install
   method).
 
@@ -66,7 +66,7 @@ Four parallel workstreams in v0.1.1, all aimed at making the CLI +
 infra-provision flow zero-friction for fresh installs.
 
 - **Built-in self-upgrader.** New `internal/upgrader/` package plus
-  the `polaris-email version upgrade` / `version channel set` /
+  the `polaris-mail version upgrade` / `version channel set` /
   `version channel list` subcommands. Detects install method (brew /
   curl / local-repo via path patterns + a sentinel file the install
   script writes), resolves the latest release for the operator's
@@ -77,13 +77,13 @@ infra-provision flow zero-friction for fresh installs.
   status bar with a download bar that pivots to a 10-second
   countdown before relaunching; Enter restarts immediately, Esc
   cancels. CLI subcommands block via `PersistentPreRunE`. State
-  persisted in a separate `~/.config/polaris-email/upgrader-state.json`
+  persisted in a separate `~/.config/polaris-mail/upgrader-state.json`
   so the credentials TOML is never touched. New
   `dev-snapshot.yml` workflow force-replaces a persistent `dev`
   GitHub release on every main-branch push.
 
-- **Logpush R2 zero-config.** `polaris-email setup infra apply` now
-  auto-provisions the `polaris-email-logs` R2 bucket (default
+- **Logpush R2 zero-config.** `polaris-mail setup infra apply` now
+  auto-provisions the `polaris-mail-logs` R2 bucket (default
   jurisdiction, `wnam` region hint, 30-day lifecycle expiry), an R2
   API token scoped to that bucket, and the Logpush job that ships
   `workers_trace_events` into it. The four `LOGPUSH_R2_*` config
@@ -97,14 +97,14 @@ infra-provision flow zero-friction for fresh installs.
   and `pml domain cf-zone list/status/configure`. 23 doc lines
   flipped to the new paths.
 
-- **R2 buckets to US-west.** Both `polaris-email` (existing) and
-  `polaris-email-logs` (new) ship with `LocationHint: "wnam"` and no
+- **R2 buckets to US-west.** Both `polaris-mail` (existing) and
+  `polaris-mail-logs` (new) ship with `LocationHint: "wnam"` and no
   jurisdiction. Existing operators with the bucket already in `eu`
   keep that location — CF only honours hints on first creation.
 
 Operator-visible impact:
 
-- Existing v0.1.0 installs auto-update on first `polaris-email <cmd>`
+- Existing v0.1.0 installs auto-update on first `polaris-mail <cmd>`
   invocation (or via the orange infobox on TUI launch).
 - Fresh installs get observability out of the box — no manual R2
   bucket or API token creation.
@@ -120,7 +120,7 @@ single-Cloudflare-account compromise model it defended against have been
 removed. Tamper-evidence now relies entirely on the in-D1 chained-hash
 invariant verified by the nightly `audit-verify` cron, paired with D1
 Time-Travel (30-day point-in-time restore) and the weekly D1 export to
-the `polaris-email` R2 bucket under `backups/d1/` for longer-horizon
+the `polaris-mail` R2 bucket under `backups/d1/` for longer-horizon
 recovery.
 
 - **Removed packages / code paths.** `packages/object-lock/` is deleted;
@@ -170,7 +170,7 @@ and consumer-visible highlights:
 - **SDK + CLI polish.** sdk-go gained typed `*APIError` sub-types,
   `WebhookEnvelope` + `ParseWebhookEnvelope` + `VerifyAndParseWebhook`;
   sdk-node gained `listAllMessages` AsyncIterable + `assertIdempotencyKey`;
-  both SDKs ship README + LICENSE; `polaris-email` CLI gained
+  both SDKs ship README + LICENSE; `polaris-mail` CLI gained
   `--mailbox` (with deprecated `--tenant` alias warning), `auth verify`,
   `bridge deregister --confirm-name <name>`, and a fixed
   `POLARIS_TOKEN` env-priority bug.
@@ -197,7 +197,7 @@ the entry is accurate.
 
 ### Code consolidation + dead code (Phase 5)
 
-- **`@polaris-email/providers` package removed.** The `Provider`,
+- **`@polaris-mail/providers` package removed.** The `Provider`,
   `CloudflareProvider`, and `StaticProviderRegistry` abstractions had no
   consumer: `services/out` selects the outbound binding inline (it has
   exactly one provider — Cloudflare Email Service — and routes by binding
@@ -206,7 +206,7 @@ the entry is accurate.
   across launch was not. The package's local tests covered only the
   registry shape and were dead with the package.
 - **SHA-256 helpers consolidated** to `sha256Hex` exported from
-  `@polaris-email/hmac`. Replaced inline copies in
+  `@polaris-mail/hmac`. Replaced inline copies in
   `services/api/src/{routes/messages.ts, routes/messages-state.ts, queue/fanout.ts, hashing.ts}`,
   `packages/pipeline/src/process-message.ts`, and
   `packages/object-lock/src/index.ts`.
@@ -281,11 +281,11 @@ changed; net -3380 LOC.
   envelope (v2). Hard cutover; no parallel-accept.
 - **`daemon` → `bridge` terminology (B4)** — schema columns
   (`bridges` table), env vars (`BRIDGE_*`), CLI subcommand
-  (`polaris-email bridge ...`), and code references all renamed.
+  (`polaris-mail bridge ...`), and code references all renamed.
 - **R2 public custom domain `r2.mail.plrs.im` (B5)** — message bodies
   and attachments served via content-addressed URLs (SHA-256 keys are
   the unguessability boundary); replaces the previous signed-URL
-  expiry model. `polaris-email` bucket stays under Object Lock for
+  expiry model. `polaris-mail` bucket stays under Object Lock for
   retention. Privacy implication (URL = capability) documented in
   `SECURITY.md`.
 - **JMAP deleted (C1)** — ~1400 LOC removed (capabilities, methods,
@@ -316,7 +316,7 @@ changed; net -3380 LOC.
   Python jobs in `.github/workflows/ci.yml`.
 - **HMAC dedup (D2)**: three implementations (`packages/hmac`,
   `bin/_lib.sh`, in-SDK) collapsed to one in `packages/hmac`; the
-  new `polaris-email auth sign` / `polaris-email auth verify` CLI
+  new `polaris-mail auth sign` / `polaris-mail auth verify` CLI
   replaces shell-level `polaris_sign`.
 - **MIME promotion (D3)**: `services/in/parse.ts` moved to
   `packages/mime/headers.ts` so `services/api` (REST RFC822 submit)
@@ -346,7 +346,7 @@ changed; net -3380 LOC.
   both verifiers (G3).
 - `sdk-go` `Message` struct aligned with OpenAPI (G4).
 - `sdk-codegen` deleted; SDKs are hand-written from the
-  `openapi/polaris-email.yaml` contract (G2). See
+  `openapi/polaris-mail.yaml` contract (G2). See
   [SDKs](/developers/sdks).
 
 ### Docs

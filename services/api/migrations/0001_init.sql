@@ -1,4 +1,4 @@
--- 0001 — polaris-email initial consolidated schema (greenfield).
+-- 0001 — polaris-mail initial consolidated schema (greenfield).
 --
 -- This file replaces the 27 incremental migrations (0001-0027) that were
 -- collapsed during greenfield consolidation. Every table, view, index,

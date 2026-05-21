@@ -15,6 +15,7 @@ import { Badge } from '../../components/ui/badge.js';
 import { CodeBlock } from '../../components/CodeBlock.js';
 import { DestructiveActionDialog } from '../../components/DestructiveActionDialog.js';
 import { SecretRevealDialog } from '../../components/SecretRevealDialog.js';
+import { ErrorText } from '../../components/ErrorText.js';
 import { useAdminMutation, useAdminQuery } from '../../hooks/useAdminApi.js';
 import { credentialKeys } from '../../queryKeys.js';
 
@@ -24,7 +25,7 @@ interface CredStats {
   counts: { sent: number; delivered: number; failed: number; bounced: number };
 }
 
-const curlSample = `curl -X POST https://api.polaris-email.example/v1/messages \\
+const curlSample = `curl -X POST https://api.polaris-mail.example/v1/messages \\
   -H "X-Polaris-Key-Id: {{credential_id}}" \\
   -H "X-Polaris-Ts: $(date +%s)000" \\
   -H "X-Polaris-Nonce: $(uuidgen)" \\
@@ -35,7 +36,7 @@ const curlSample = `curl -X POST https://api.polaris-email.example/v1/messages \
 const nodeSample = `import { Polaris } from '@polaris/sdk';
 
 const polaris = new Polaris({
-  baseUrl: 'https://api.polaris-email.example',
+  baseUrl: 'https://api.polaris-mail.example',
   authBuilder: hmacAuthBuilder({{credential_id}}, process.env.POLARIS_SECRET!),
 });
 await polaris.sendMessage({
@@ -46,7 +47,7 @@ await polaris.sendMessage({
 });`;
 
 const goSample = `client := polaris.New(polaris.Options{
-    BaseURL:   "https://api.polaris-email.example",
+    BaseURL:   "https://api.polaris-mail.example",
     KeyID:     "{{credential_id}}",
     KeySecret: os.Getenv("POLARIS_SECRET"),
 })
@@ -88,7 +89,7 @@ export function CredentialDetail() {
     <PageCard
       title="Credential"
       breadcrumbs={[{ label: 'Credentials', to: '/credentials' }, { label: id }]}
-      description={id}
+      description="Mailbox credential — rotate, revoke, and view usage."
       decorative
     >
       <div className="space-y-6">
@@ -113,7 +114,7 @@ export function CredentialDetail() {
           {stats.isLoading ? (
             <p className="text-sm text-[var(--color-muted-foreground)]">Loading…</p>
           ) : stats.error ? (
-            <p className="text-sm text-[var(--color-destructive)]">{stats.error.message}</p>
+            <ErrorText error={stats.error} />
           ) : (
             <div className="flex flex-wrap gap-4 text-sm">
               <span>

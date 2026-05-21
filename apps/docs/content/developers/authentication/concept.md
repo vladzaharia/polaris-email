@@ -1,13 +1,13 @@
 ---
 title: HMAC concept
-description: How polaris-email authenticates API requests and outgoing webhooks — what the signature covers, the four request headers, the ±5-minute skew window, and why an idempotency key is a separate thing from the nonce.
+description: How polaris-mail authenticates API requests and outgoing webhooks — what the signature covers, the four request headers, the ±5-minute skew window, and why an idempotency key is a separate thing from the nonce.
 sidebar_label: HMAC concept
 sidebar_position: 1
 ---
 
 # HMAC, the developer view
 
-polaris-email signs every authenticated request. The signing scheme is
+polaris-mail signs every authenticated request. The signing scheme is
 also what receivers use to verify outgoing webhooks. This page explains
 **why** the scheme is shaped the way it is and **what** each header
 does. If you are implementing a verifier from scratch, you also want
@@ -18,7 +18,7 @@ canonical-string layout.
 
 A bearer token is a static string — present it and you authenticate.
 That's fine for short-lived API tokens behind TLS, but it has two
-properties polaris-email needs to avoid:
+properties polaris-mail needs to avoid:
 
 - **Replay**. A captured request can be re-sent indefinitely until the
   bearer is rotated.
@@ -76,7 +76,7 @@ of `1700000000000` can be replayed deterministically.
 ## Idempotency key — a separate thing
 
 `X-Idempotency-Key` is not part of the signature. It is a separate
-header that asks polaris-email to **dedupe** a request if you retry it.
+header that asks polaris-mail to **dedupe** a request if you retry it.
 Two different concerns:
 
 - The **nonce** stops an attacker from replaying _your_ request. It is
@@ -150,7 +150,7 @@ the [HMAC reference](/security/hmac-reference) has the formal spec.
 
 ## What verifiers must do
 
-Any verifier you write (or one polaris-email ships) must:
+Any verifier you write (or one polaris-mail ships) must:
 
 1. Reject any of the four headers containing whitespace, CR, LF, NUL, or
    any byte above `0x7e` — **before** running HMAC.
@@ -162,7 +162,7 @@ Any verifier you write (or one polaris-email ships) must:
 6. Pass every entry in `packages/test-vectors/vectors.json`.
 
 The first-party verifiers — `packages/hmac`, `packages/sdk-node`,
-`packages/sdk-go`, `polaris-email auth verify` — all do this. If you
+`packages/sdk-go`, `polaris-mail auth verify` — all do this. If you
 are writing a verifier in another language, the test-vector file is
 the source of truth.
 

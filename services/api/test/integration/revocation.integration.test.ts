@@ -15,7 +15,7 @@
 // expiry would actually fail the test.
 
 import { describe, expect, it } from 'vitest';
-import { ulid } from '@polaris-email/ids';
+import { ulid } from '@polaris-mail/ids';
 import {
   app,
   bootstrapEnv,

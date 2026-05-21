@@ -1,8 +1,8 @@
 // Admin credentials facade. Unions api_keys + submission_credentials so the
-// CLI's `polaris-email cred list|rotate|revoke` can operate on either kind
+// CLI's `polaris-mail cred list|rotate|revoke` can operate on either kind
 // without the operator caring.
 import { Hono } from 'hono';
-import { revoke } from '@polaris-email/revocation';
+import { revoke } from '@polaris-mail/revocation';
 import { actorOf, audit } from '../../audit.js';
 import { requireScope } from '../../auth.js';
 import type { Env } from '../../env.js';

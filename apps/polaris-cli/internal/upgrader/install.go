@@ -55,7 +55,7 @@ type ProgressFn func(Progress)
 // path to the new binary (== os.Executable()) on success.
 //
 // install method controls the strategy:
-//   - brew: shell out to `brew upgrade polaris-email` (Update is
+//   - brew: shell out to `brew upgrade polaris-mail` (Update is
 //     used only for the version we're upgrading TO, since brew
 //     resolves its own source-of-truth).
 //   - curl / unknown: tarball-from-GitHub-Releases path.
@@ -82,8 +82,8 @@ func Install(ctx context.Context, u *Update, method InstallMethod, onProgress Pr
 }
 
 func installBrew(ctx context.Context, u *Update, onProgress ProgressFn) error {
-	report(onProgress, Progress{Stage: StageBrewHandoff, Message: "brew upgrade polaris-email"})
-	cmd := exec.CommandContext(ctx, "brew", "upgrade", "polaris-email")
+	report(onProgress, Progress{Stage: StageBrewHandoff, Message: "brew upgrade polaris-mail"})
+	cmd := exec.CommandContext(ctx, "brew", "upgrade", "polaris-mail")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("upgrader: brew upgrade failed: %v: %s", err, strings.TrimSpace(string(out)))
@@ -109,7 +109,7 @@ func installLocal(ctx context.Context, _ *Update, onProgress ProgressFn) error {
 	}
 	repoRoot := findRepoRoot(resolved)
 	if repoRoot == "" {
-		return fmt.Errorf("upgrader: cannot find polaris-email repo root from %s", resolved)
+		return fmt.Errorf("upgrader: cannot find polaris-mail repo root from %s", resolved)
 	}
 	report(onProgress, Progress{Stage: StageExtract, Message: "make build"})
 	cmd := exec.CommandContext(ctx, "make", "build")
@@ -118,7 +118,7 @@ func installLocal(ctx context.Context, _ *Update, onProgress ProgressFn) error {
 	if err != nil {
 		return fmt.Errorf("upgrader: make build failed: %v: %s", err, strings.TrimSpace(string(out)))
 	}
-	freshBinary := filepath.Join(cmd.Dir, "bin", "polaris-email")
+	freshBinary := filepath.Join(cmd.Dir, "bin", "polaris-mail")
 	report(onProgress, Progress{Stage: StageReplace, Message: "Replacing binary"})
 	if err := atomicReplace(freshBinary, resolved); err != nil {
 		return err
@@ -128,10 +128,10 @@ func installLocal(ctx context.Context, _ *Update, onProgress ProgressFn) error {
 }
 
 // installFromTarball is the curl-path implementation: download tarball,
-// verify sha256 from checksums.txt, extract the polaris-email binary,
+// verify sha256 from checksums.txt, extract the polaris-mail binary,
 // atomic-replace the running executable.
 func installFromTarball(ctx context.Context, u *Update, onProgress ProgressFn) error {
-	tmp, err := os.MkdirTemp("", "polaris-email-upgrade-*")
+	tmp, err := os.MkdirTemp("", "polaris-mail-upgrade-*")
 	if err != nil {
 		return err
 	}
@@ -283,7 +283,7 @@ func verifyChecksum(ctx context.Context, path, assetName, checksumsURL string) e
 }
 
 // extractBinary unpacks the goreleaser archive shape — a single
-// `polaris-email` binary at the top level — into destDir and returns
+// `polaris-mail` binary at the top level — into destDir and returns
 // its path. Handles both tar.gz (Linux/Darwin) and zip (Windows).
 func extractBinary(archivePath, destDir string) (string, error) {
 	if strings.HasSuffix(archivePath, ".zip") {
@@ -304,9 +304,9 @@ func extractTarGzBinary(archivePath, destDir string) (string, error) {
 	}
 	defer gz.Close()
 	tr := tar.NewReader(gz)
-	binaryName := "polaris-email"
+	binaryName := "polaris-mail"
 	if runtime.GOOS == "windows" {
-		binaryName = "polaris-email.exe"
+		binaryName = "polaris-mail.exe"
 	}
 	for {
 		hdr, err := tr.Next()
@@ -334,7 +334,7 @@ func extractZipBinary(archivePath, destDir string) (string, error) {
 		return "", err
 	}
 	defer r.Close()
-	binaryName := "polaris-email.exe"
+	binaryName := "polaris-mail.exe"
 	for _, f := range r.File {
 		if filepath.Base(f.Name) != binaryName {
 			continue
@@ -383,7 +383,7 @@ func atomicReplace(src, dst string) error {
 	if err != nil {
 		return err
 	}
-	tmp, err := os.CreateTemp(filepath.Dir(dst), ".polaris-email-upgrade-*")
+	tmp, err := os.CreateTemp(filepath.Dir(dst), ".polaris-mail-upgrade-*")
 	if err != nil {
 		return err
 	}

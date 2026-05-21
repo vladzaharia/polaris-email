@@ -1,5 +1,5 @@
 // Re-export the unified pipeline so existing in-tree imports keep working.
-// Implementation lives in `@polaris-email/pipeline` so both services/api and
+// Implementation lives in `@polaris-mail/pipeline` so both services/api and
 // services/in can call the same function.
 export {
   processMessage,
@@ -8,4 +8,4 @@ export {
   type ProcessMessageResult,
   type FanoutEnqueue,
   type OutboundQueueMessage,
-} from '@polaris-email/pipeline';
+} from '@polaris-mail/pipeline';

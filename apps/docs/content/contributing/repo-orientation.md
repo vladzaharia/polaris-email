@@ -1,19 +1,19 @@
 ---
 title: Repo orientation
-description: Where things live in the polyglot polaris-email monorepo — the three Workers, the four apps, the shared packages, and a "where to look first" index.
+description: Where things live in the polyglot polaris-mail monorepo — the three Workers, the four apps, the shared packages, and a "where to look first" index.
 sidebar_label: Repo orientation
 sidebar_position: 2
 ---
 
 # Repo orientation
 
-polaris-email is a polyglot monorepo: TypeScript Workers, Go apps,
+polaris-mail is a polyglot monorepo: TypeScript Workers, Go apps,
 Terraform IaC, and a Docusaurus site. This page is the map.
 
 ## Top-level layout
 
 ```
-polaris-email/
+polaris-mail/
 ├── services/        # Cloudflare Workers (TypeScript + Hono)
 │   ├── api/         # REST surface, webhook fan-out, all cron triggers
 │   ├── in/          # Email Routing inbound handler
@@ -21,7 +21,7 @@ polaris-email/
 ├── apps/            # User-facing apps (panel, bridge, CLI, docs)
 │   ├── panel/       # Hono + React 19 admin UI (Worker)
 │   ├── mail-bridge/ # Go on-prem SMTPS + IMAP4rev2 daemon
-│   ├── polaris-cli/ # Go operator CLI (polaris-email / pml)
+│   ├── polaris-cli/ # Go operator CLI (polaris-mail / pml)
 │   └── docs/        # This Docusaurus site (Worker)
 ├── packages/        # Shared TypeScript libraries + the Go SDK
 ├── infra/           # Terraform (DNS, Email Routing, Access apps)
@@ -55,13 +55,13 @@ when the schema went zero-payload-by-default.
   mounted on the `ASSETS` binding. Talks to `services/api` over a
   **service binding** (`API`), not public fetch — no HMAC key needed
   on the happy path. Sessions live in D1 via better-auth + the drizzle
-  adapter, sharing the `polaris-email` DB with `services/api`.
+  adapter, sharing the `polaris-mail` DB with `services/api`.
 - **`apps/mail-bridge`** — Go 1.25, a single binary serving SMTPS
   (`:465`) and IMAP4rev2 (`:993`). Own `go.mod` and `Makefile`. Two
   equally-supported deployment modes (neither is "the default"):
   tailnet-fronted (`docker-compose.tailscale.yml`) and local /
   host-network (`docker-compose.local.yml`).
-- **`apps/polaris-cli`** — Go 1.22, the operator CLI (`polaris-email`,
+- **`apps/polaris-cli`** — Go 1.22, the operator CLI (`polaris-mail`,
   alias `pml`). Own `go.mod`. Cold-start, day-2 ops, smoke checks. The
   Go binary is the operator surface; `bin/*.sh` scripts and the root
   Makefile are orchestration layers, not the day-to-day workflow.
@@ -102,7 +102,7 @@ dependency, update `.github/workflows/ci.yml` too.
 
 ## Infrastructure
 
-`polaris-email setup infra apply` (the Go CLI's `apply` phase) owns the
+`polaris-mail setup infra apply` (the Go CLI's `apply` phase) owns the
 account-level Cloudflare resources — D1, R2 buckets (with lifecycle +
 Object Lock rules), KV namespaces, Queues, Logpush jobs, R2 API
 tokens, and the R2 public custom-domain binding — inside the single
@@ -182,7 +182,7 @@ Go:
 ```sh
 cd apps/mail-bridge && make build test vet
 cd apps/polaris-cli && make build test vet
-cd packages/sdk-go  && go test ./...     # run pnpm --filter @polaris-email/test-vectors run generate first
+cd packages/sdk-go  && go test ./...     # run pnpm --filter @polaris-mail/test-vectors run generate first
 ```
 
 For more on the integration-test tiers and the pull-request gates,

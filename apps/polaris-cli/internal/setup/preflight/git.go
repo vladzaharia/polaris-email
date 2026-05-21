@@ -10,7 +10,7 @@ import (
 	"strings"
 )
 
-// trackedServices is the canonical list of polaris-email service
+// trackedServices is the canonical list of polaris-mail service
 // directories that must be git-tracked.
 //
 // Order matters for human-readable output (api first, panel last).
@@ -34,7 +34,7 @@ type serviceDir struct {
 // you skip either implementation the operator can ship a deploy that
 // silently misses a service.
 //
-// repoRoot is the absolute path to the polaris-email repo root. Pass
+// repoRoot is the absolute path to the polaris-mail repo root. Pass
 // "" to use the current working directory.
 func CheckGitTrackedServices(repoRoot string) Check {
 	return Check{

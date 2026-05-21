@@ -1,4 +1,4 @@
-// 8a: coverage for the @polaris-email/ids module. Until now this package
+// 8a: coverage for the @polaris-mail/ids module. Until now this package
 // shipped without tests, despite generating every message_id /
 // audit-log id / request_id in the platform. The behaviour we lock down:
 //

@@ -1,6 +1,6 @@
 // R2 public-domain URL builder for B5.
 //
-// All polaris-email message bodies and attachments are served from the
+// All polaris-mail message bodies and attachments are served from the
 // `r2.mail.plrs.im` Cloudflare R2 custom domain. Keys are content-addressed
 // (SHA-256), so the URL itself is the capability token — no signature, no
 // expiry, no auth header.
@@ -14,7 +14,7 @@
 //               decoded attachment bytes (computed by the pipeline).
 //
 // See plan section B5. The previous signed-URL flow lived in
-// `@polaris-email/cf-api`'s `signed-urls.ts` and has been deleted.
+// `@polaris-mail/cf-api`'s `signed-urls.ts` and has been deleted.
 
 export interface R2PublicUrlEnv {
   R2_PUBLIC_HOST: string;

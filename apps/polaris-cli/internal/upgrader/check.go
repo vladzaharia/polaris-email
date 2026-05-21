@@ -12,11 +12,11 @@ import (
 )
 
 // repoOwner / repoName encode the GitHub repository the upgrader reads
-// releases from. Hard-coded — polaris-email isn't a polymorphic CLI
+// releases from. Hard-coded — polaris-mail isn't a polymorphic CLI
 // with multiple downstream forks; if you fork it you change these too.
 const (
 	repoOwner = "vladzaharia"
-	repoName  = "polaris-email"
+	repoName  = "polaris-mail"
 )
 
 // httpTimeout is short on purpose. The launch-time check runs against
@@ -156,9 +156,9 @@ func getRelease(ctx context.Context, url string) (*release, error) {
 
 // assetName constructs the goreleaser tarball name for the running
 // OS/arch. The tag has a leading `v` for stable releases (`v0.1.1`)
-// but the archive name drops it (`polaris-email_0.1.1_darwin_arm64.tar.gz`).
+// but the archive name drops it (`polaris-mail_0.1.1_darwin_arm64.tar.gz`).
 // For the `dev` tag we use the literal tag — dev archives are named
-// `polaris-email_dev_darwin_arm64.tar.gz` per the dev-snapshot workflow.
+// `polaris-mail_dev_darwin_arm64.tar.gz` per the dev-snapshot workflow.
 //
 // Windows binaries are .zip; everything else is .tar.gz. Matches the
 // goreleaser archive matrix in apps/polaris-cli/.goreleaser.yaml.
@@ -168,7 +168,7 @@ func assetName(tag string) string {
 	if runtime.GOOS == "windows" {
 		ext = "zip"
 	}
-	return fmt.Sprintf("polaris-email_%s_%s_%s.%s", version, runtime.GOOS, runtime.GOARCH, ext)
+	return fmt.Sprintf("polaris-mail_%s_%s_%s.%s", version, runtime.GOOS, runtime.GOARCH, ext)
 }
 
 // findAsset returns the browser_download_url for the asset matching

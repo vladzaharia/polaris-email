@@ -13,7 +13,7 @@ import { dirname, resolve } from 'node:path';
 import { ErrorCode } from '../src/index.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const openapiPath = resolve(here, '../../../openapi/polaris-email.yaml');
+const openapiPath = resolve(here, '../../../openapi/polaris-mail.yaml');
 const openapiText = readFileSync(openapiPath, 'utf8');
 
 describe('openapi error-code enum sync', () => {

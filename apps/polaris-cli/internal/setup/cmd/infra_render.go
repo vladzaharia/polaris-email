@@ -59,7 +59,7 @@ func newInfraRenderCmd() *cobra.Command {
 			"of .deploy-state.json + .env.deploy.\n" +
 			"\n" +
 			"Templates use Go text/template syntax (`{{ .Account.ID }}`,\n" +
-			"`{{ .D1.PolarisEmail.ID }}`, etc.) with missingkey=error so any\n" +
+			"`{{ .D1.PolarisMail.ID }}`, etc.) with missingkey=error so any\n" +
 			"undefined reference is a hard failure instead of a silent empty\n" +
 			"string.",
 		RunE: func(cmd *cobra.Command, _ []string) error {

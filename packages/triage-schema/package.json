@@ -1,5 +1,5 @@
 {
-  "name": "@polaris-email/triage-schema",
+  "name": "@polaris-mail/triage-schema",
   "version": "0.1.0",
   "private": true,
   "type": "module",

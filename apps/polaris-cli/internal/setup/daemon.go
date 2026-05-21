@@ -1,4 +1,4 @@
-// Package setup is the root of the polaris-email setup CLI tree. It
+// Package setup is the root of the polaris-mail setup CLI tree. It
 // declares the generic `Daemon` interface that every container-bootstrap
 // descriptor (mail-bridge, submission-daemon, ...) implements, plus a
 // small thread-safe registry the cobra command generator consumes.

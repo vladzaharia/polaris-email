@@ -1,5 +1,5 @@
 // Package smoke runs three end-to-end checks against a deployed
-// polaris-email stack:
+// polaris-mail stack:
 //
 //  1. GET /healthz → 200 (anonymous, no signing).
 //  2. Signed GET /v1/admin/status → mailbox + domain counts non-nil.
@@ -41,7 +41,7 @@ type Result struct {
 // for healthz but required for the signed checks.
 type Config struct {
 	// APIBaseURL is the public base URL, e.g.
-	// "https://polaris-email-api.example.com". Required.
+	// "https://polaris-mail-api.example.com". Required.
 	APIBaseURL string
 	// APIClient is a signed-request client (see internal/client). nil
 	// disables the admin-status + synthetic checks.

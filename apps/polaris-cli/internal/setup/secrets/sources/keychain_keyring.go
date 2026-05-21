@@ -14,7 +14,7 @@ import (
 // zalando/go-keyring. The lookup is scoped to a "service" namespace —
 // per platform conventions:
 //
-//   - macOS: keychain item under the "polaris-email" service.
+//   - macOS: keychain item under the "polaris-mail" service.
 //   - Linux: libsecret collection.
 //   - Windows: Credential Manager.
 //
@@ -35,7 +35,7 @@ func (k *KeyringSource) Load(_ context.Context, name string) (string, error) {
 	}
 	svc := k.Service
 	if svc == "" {
-		svc = "polaris-email"
+		svc = "polaris-mail"
 	}
 	v, err := keyring.Get(svc, name)
 	if err != nil {

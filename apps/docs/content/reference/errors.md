@@ -1,6 +1,6 @@
 ---
 title: Error catalog
-description: The polaris-email error envelope, the full code list with HTTP status + retryability, and the rules for retrying with idempotency keys.
+description: The polaris-mail error envelope, the full code list with HTTP status + retryability, and the rules for retrying with idempotency keys.
 sidebar_label: Errors
 sidebar_position: 4
 ---

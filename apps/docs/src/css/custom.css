@@ -1,5 +1,5 @@
 /* =============================================================================
-   polaris-email — Docusaurus brand stylesheet
+   polaris-mail — Docusaurus brand stylesheet
    -----------------------------------------------------------------------------
    Ported from the Polaris brand system in /Users/vlad/Repos/support-portal
    (apps/portal/src/styles/theme.css). Same surface family — deep cosmos-indigo
@@ -8,7 +8,7 @@
    Accent choice (the one thing intentionally NOT shared with support-portal):
      · support-portal's accent  ----  hue 195   electric cyan-teal
      · ExpressCharge's accent   ----  hue 200   electric volt
-     · polaris-email's accent   ----  hue 315   aurora violet (this file)
+     · polaris-mail's accent   ----  hue 315   aurora violet (this file)
 
    315° sits ~120° away from both sibling palettes on the color wheel, so the
    three sites are immediately tell-apart at a glance without leaving the

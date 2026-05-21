@@ -225,7 +225,7 @@ type ZoneSummary struct {
 
 // NamedRouteRule represents one named-address Email Routing rule on a zone.
 // `RoutesToPolaris` is the inspector's verdict on whether the rule's action
-// targets the polaris-email-in Worker (vs. forwarding mail elsewhere).
+// targets the polaris-mail-in Worker (vs. forwarding mail elsewhere).
 type NamedRouteRule struct {
 	Name            string `json:"name"`
 	Enabled         bool   `json:"enabled"`

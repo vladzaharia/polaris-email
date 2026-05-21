@@ -25,8 +25,8 @@
 // a miniflare-backed env and the tests in this directory will keep working
 // unchanged.
 
-import { sign, generateNonce } from '@polaris-email/hmac';
-import { _clearRevocationCacheForTests } from '@polaris-email/revocation';
+import { sign, generateNonce } from '@polaris-mail/hmac';
+import { _clearRevocationCacheForTests } from '@polaris-mail/revocation';
 import app from '../../src/index.js';
 import { mkEnv } from '../mocks.js';
 import type { Env } from '../../src/env.js';

@@ -1,4 +1,4 @@
-// Package cmd holds the cobra plumbing for the `polaris-email setup`
+// Package cmd holds the cobra plumbing for the `polaris-mail setup`
 // command tree. The infra subtree is wired explicitly in
 // internal/cmds; the daemon subtrees (bridge, future submission-daemon)
 // are generated from internal/setup's daemon registry.
@@ -50,12 +50,12 @@ type Options struct {
 func NewSetupCmd(opts Options) *cobra.Command {
 	c := &cobra.Command{
 		Use:   "setup",
-		Short: "Cold-start + ongoing deploy orchestration for polaris-email",
-		Long: "Cold-start and ongoing deploy orchestration for polaris-email.\n" +
+		Short: "Cold-start + ongoing deploy orchestration for polaris-mail",
+		Long: "Cold-start and ongoing deploy orchestration for polaris-mail.\n" +
 			"\n" +
 			"Subcommands replace the legacy bin/*.sh scripts and the root Makefile\n" +
-			"orchestration targets. See `polaris-email setup infra --help`\n" +
-			"and `polaris-email setup <daemon> --help`.",
+			"orchestration targets. See `polaris-mail setup infra --help`\n" +
+			"and `polaris-mail setup <daemon> --help`.",
 	}
 	c.AddCommand(newInfraCmd())
 	for _, name := range setup.Names() {

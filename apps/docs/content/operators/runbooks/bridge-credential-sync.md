@@ -58,12 +58,12 @@ If the bridge's HMAC key was rotated on polaris but the bridge's
 Recovery:
 
 1. On the control plane, re-issue the bridge HMAC key:
-   `polaris-email bridge rotate <bridge_id>`. The command prints the
+   `polaris-mail bridge rotate <bridge_id>`. The command prints the
    new secret once — capture it.
 2. Update the bridge's mount: write the new `registration.json` with the
    matching `hmac_key_secret`.
 3. `docker compose restart polaris-bridge`.
-4. Confirm: `wrangler tail polaris-email-api --search bridge-poll` shows
+4. Confirm: `wrangler tail polaris-mail-api --search bridge-poll` shows
    200s within the next poll interval.
 
 ## Force a full resync (operator escape hatch)

@@ -6,7 +6,7 @@ name: deploy
 # Gated on `vars.DEPLOY_ENABLED == 'true'` (repo Variables → Actions). When
 # unset, the auto-after-CI trigger is a no-op. Flip it once the deploy
 # secrets are seeded — see docs/operators/deployment/github-actions-setup.md
-# or `polaris-email setup infra preflight` for the required surface.
+# or `polaris-mail setup infra preflight` for the required surface.
 on:
   workflow_dispatch:
     inputs:
@@ -20,13 +20,13 @@ on:
     branches: [main]
 
 concurrency:
-  group: polaris-email-deploy
+  group: polaris-mail-deploy
   cancel-in-progress: false
 
 jobs:
   deploy:
     # Skip when the deploy hasn't been configured yet — auto-triggered runs
-    # would otherwise fail at `polaris-email setup infra render` complaining
+    # would otherwise fail at `polaris-mail setup infra render` complaining
     # about 15 missing inputs. Manual `workflow_dispatch` still runs so the
     # operator gets a clear failure when they're trying to deploy on purpose.
     if: >-
@@ -55,7 +55,7 @@ jobs:
           if [ ${#missing[@]} -gt 0 ]; then
             printf 'deploy: missing required GitHub secret:\n'
             printf '  - %s\n' "${missing[@]}"
-            printf '\nSeed locally with `polaris-email setup infra` then upload:\n'
+            printf '\nSeed locally with `polaris-mail setup infra` then upload:\n'
             printf '  gh secret set DEPLOY_STATE_JSON     < .deploy-state.json\n'
             printf '  gh secret set BOOTSTRAP_OUTPUT_JSON < .bootstrap-output.json\n'
             printf '  gh secret set CLOUDFLARE_API_TOKEN  --body "$CF_API_TOKEN"\n'
@@ -87,7 +87,7 @@ jobs:
           run-id: ${{ github.event.workflow_run.id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build polaris-email CLI (fallback)
+      - name: Build polaris-mail CLI (fallback)
         if: steps.restore-cli.outcome != 'success'
         working-directory: apps/polaris-cli
         run: make build
@@ -110,7 +110,7 @@ jobs:
           bootstrap-output-json: ${{ secrets.BOOTSTRAP_OUTPUT_JSON }}
 
       - name: Render wrangler.local.jsonc files
-        run: apps/polaris-cli/bin/polaris-email setup infra render
+        run: apps/polaris-cli/bin/polaris-mail setup infra render
 
       - name: Resolve base SHA from deployed/main tag
         id: base
@@ -129,18 +129,18 @@ jobs:
             echo "$BASE_SHA" > .deploy-state.last-sha
           fi
           if [ "$DEPLOY_ALL" = "true" ]; then
-            apps/polaris-cli/bin/polaris-email setup infra deploy all
+            apps/polaris-cli/bin/polaris-mail setup infra deploy all
           else
-            apps/polaris-cli/bin/polaris-email setup infra deploy changed
+            apps/polaris-cli/bin/polaris-mail setup infra deploy changed
           fi
 
       - name: Smoke
-        run: apps/polaris-cli/bin/polaris-email setup infra smoke
+        run: apps/polaris-cli/bin/polaris-mail setup infra smoke
 
       - name: Tag deployed/main at HEAD
         if: success()
         run: |
-          git config user.name  'polaris-email-bot'
-          git config user.email 'polaris-email-bot@users.noreply.github.com'
+          git config user.name  'polaris-mail-bot'
+          git config user.email 'polaris-mail-bot@users.noreply.github.com'
           git tag -f deployed/main HEAD
           git push -f origin deployed/main

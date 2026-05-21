@@ -122,7 +122,7 @@ type r2APITokenListItem struct {
 }
 
 // ListR2APITokens returns every account-scoped API token. CF's response
-// is paginated but for the polaris-email use case (one token per logs
+// is paginated but for the polaris-mail use case (one token per logs
 // bucket, a handful at most) the default first page is sufficient.
 func (c *Client) ListR2APITokens(ctx context.Context) ([]r2APITokenListItem, error) {
 	var resp struct {

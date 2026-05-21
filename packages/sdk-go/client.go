@@ -13,7 +13,7 @@ import (
 	"time"
 )
 
-// Client is an HMAC-signing HTTP client for the polaris-email API surface.
+// Client is an HMAC-signing HTTP client for the polaris-mail API surface.
 type Client struct {
 	BaseURL    string
 	HTTPClient *http.Client

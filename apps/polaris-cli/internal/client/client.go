@@ -1,8 +1,8 @@
-// Package client wraps polaris-sdk-go for the polaris-email admin CLI.
+// Package client wraps polaris-sdk-go for the polaris-mail admin CLI.
 //
 // The CLI used to carry its own copy of the HMAC scheme (see the deleted
 // `internal/client/hmac.go`). After cleanup the canonical helpers
-// live in `github.com/polaris-email/polaris-sdk-go`; this package just wraps
+// live in `github.com/polaris-mail/polaris-sdk-go`; this package just wraps
 // the SDK with the CLI's HTTP transport + dry-run sink.
 package client
 
@@ -17,10 +17,10 @@ import (
 	"strings"
 	"time"
 
-	polarissdk "github.com/polaris-email/polaris-sdk-go"
+	polarissdk "github.com/polaris-mail/polaris-sdk-go"
 )
 
-// Client is a thin HMAC-signing HTTP client for the polaris-email admin API.
+// Client is a thin HMAC-signing HTTP client for the polaris-mail admin API.
 type Client struct {
 	BaseURL    string
 	KeyID      string
@@ -41,7 +41,7 @@ func New(baseURL, keyID, secret string) *Client {
 		KeyID:      keyID,
 		Secret:     []byte(secret),
 		HTTPClient: &http.Client{Timeout: 30 * time.Second},
-		UserAgent:  "polaris-email-cli",
+		UserAgent:  "polaris-mail-cli",
 	}
 }
 
@@ -183,7 +183,7 @@ func (e *HTTPError) Error() string {
 		suffix = " (request-id: " + e.RequestID + ")"
 	}
 	return fmt.Sprintf(
-		"polaris-email API %s %s: HTTP %d: %s%s",
+		"polaris-mail API %s %s: HTTP %d: %s%s",
 		e.Method, e.Path, e.Status, strings.TrimSpace(e.Body), suffix,
 	)
 }

@@ -10,8 +10,8 @@ import { actorOf, audit } from '../../audit.js';
 import { bodyText, requireScope } from '../../auth.js';
 import type { Env } from '../../env.js';
 import { buildError } from '../../errors.js';
-import { ulid } from '@polaris-email/ids';
-import { generateSecret } from '@polaris-email/hmac';
+import { ulid } from '@polaris-mail/ids';
+import { generateSecret } from '@polaris-mail/hmac';
 import { hashSecret } from '../../hashing.js';
 import { bridgePlainKvKey, BRIDGE_PLAIN_KV_TTL_SECONDS } from '../../bridge-auth.js';
 

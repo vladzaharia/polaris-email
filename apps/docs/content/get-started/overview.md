@@ -5,7 +5,7 @@ sidebar_label: Overview
 sidebar_position: 0
 ---
 
-# Get started with polaris-email
+# Get started with polaris-mail
 
 Two doors. Pick the one that matches what you're trying to do today.
 
@@ -15,7 +15,7 @@ You have a Cloudflare account and you want a working control plane.
 
 → **[30-minute first deploy](/get-started/30-min-first-deploy)** —
 the hero tutorial. Zero to your first authenticated send in roughly
-half an hour. Covers CF token scopes, `polaris-email setup infra`
+half an hour. Covers CF token scopes, `polaris-mail setup infra`
 end-to-end, the genesis seal, minting a first credential, and three
 flavors of test send (curl, Node SDK, Go SDK).
 

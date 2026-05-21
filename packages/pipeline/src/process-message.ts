@@ -8,7 +8,7 @@
 //
 //   1. SHA-256 the canonical bytes and HEAD-then-PUT to R2 (reference-counted
 //      so the janitor can delete unreferenced objects).
-//   2. Parse + summarize MIME via `@polaris-email/mime`.
+//   2. Parse + summarize MIME via `@polaris-mail/mime`.
 //   3. Outbound only: claim idempotency key in D1.
 //   4. INSERT messages row at `status='received'` with thread_id +
 //      header_message_id.
@@ -17,9 +17,9 @@
 //      caller is responsible for dispatching to FANOUT_QUEUE.
 //   6. Audit `message.submitted` (outbound) / `message.received` (inbound).
 
-import { ulid } from '@polaris-email/ids';
-import { sha256Hex } from '@polaris-email/hmac';
-import { extractAttachmentParts, normalizeAddress, summarizeMime } from '@polaris-email/mime';
+import { ulid } from '@polaris-mail/ids';
+import { sha256Hex } from '@polaris-mail/hmac';
+import { extractAttachmentParts, normalizeAddress, summarizeMime } from '@polaris-mail/mime';
 import { audit } from './audit.js';
 
 export interface OutboundQueueMessage {

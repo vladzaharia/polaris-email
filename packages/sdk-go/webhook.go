@@ -1,7 +1,7 @@
-// Package polarissdk provides the Go SDK for polaris-email.
+// Package polarissdk provides the Go SDK for polaris-mail.
 //
 // All files in this package are **hand-written** and kept in sync with
-// `openapi/polaris-email.yaml` manually (see `docs/sdk.md` for the
+// `openapi/polaris-mail.yaml` manually (see `docs/sdk.md` for the
 // contract). The prior `packages/sdk-codegen/` orchestrator was deleted
 // in Phase M (commit 71f6e41); it never produced real output.
 //

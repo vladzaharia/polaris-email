@@ -1,4 +1,4 @@
-// Cloudflare environment bindings for polaris-email-api.
+// Cloudflare environment bindings for polaris-mail-api.
 export interface Env {
   DB: D1Database;
 
@@ -19,7 +19,7 @@ export interface Env {
   API_BASE_URL: string;
 
   /**
-   * Public host that serves the `polaris-email` R2 bucket. Bodies +
+   * Public host that serves the `polaris-mail` R2 bucket. Bodies +
    * attachments are surfaced at `https://${R2_PUBLIC_HOST}/<key>`.
    * Defaults to `r2.mail.plrs.im` in deployed configs.
    */
@@ -116,7 +116,7 @@ export interface Env {
 
   // -- CF zone discovery + configure (cf-zones.ts) --------------------------
   // CF_API_TOKEN + CF_ACCOUNT_ID are declared above and reused here.
-  /** Worker name the catch-all rule must target. Default `polaris-email-in`. */
+  /** Worker name the catch-all rule must target. Default `polaris-mail-in`. */
   WORKER_NAME_INBOUND?: string;
 }
 

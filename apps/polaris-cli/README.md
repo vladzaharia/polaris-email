@@ -1,6 +1,6 @@
-# polaris-email CLI
+# polaris-mail CLI
 
-Operator CLI for the [polaris-email](https://github.com/vladzaharia/polaris-email)
+Operator CLI for the [polaris-mail](https://github.com/vladzaharia/polaris-email)
 control plane. The same binary is symlinked as `pml`.
 
 ## Install
@@ -8,24 +8,24 @@ control plane. The same binary is symlinked as `pml`.
 ### Homebrew (macOS / Linux)
 
 ```sh
-brew install vladzaharia/tap/polaris-email
+brew install vladzaharia/tap/polaris-mail
 ```
 
 ### `go install`
 
 ```sh
-go install github.com/vladzaharia/polaris-email/apps/polaris-cli/cmd/polaris-email@latest
-ln -sf $(go env GOPATH)/bin/polaris-email $(go env GOPATH)/bin/pml
+go install github.com/vladzaharia/polaris-email/apps/polaris-cli/cmd/polaris-mail@latest
+ln -sf $(go env GOPATH)/bin/polaris-mail $(go env GOPATH)/bin/pml
 ```
 
 ### GitHub Releases
 
 Download a static binary for your platform from
 [Releases](https://github.com/vladzaharia/polaris-email/releases). Each archive
-includes the `polaris-email` binary; create a `pml` symlink in your path:
+includes the `polaris-mail` binary; create a `pml` symlink in your path:
 
 ```sh
-ln -sf polaris-email pml
+ln -sf polaris-mail pml
 ```
 
 ## First run — cold start
@@ -35,10 +35,10 @@ fullscreen tabbed TUI; with subcommands it operates non-interactively for
 scripting.
 
 ```sh
-polaris-email setup infra        # admin: cold-start (preflight → … → smoke)
-polaris-email                    # operator: no args + TTY ⇒ fullscreen tabbed TUI
-polaris-email tui --theme=mocha  # operator: explicit TUI launch
-polaris-email status             # operator: non-interactive subcommand
+polaris-mail setup infra        # admin: cold-start (preflight → … → smoke)
+polaris-mail                    # operator: no args + TTY ⇒ fullscreen tabbed TUI
+polaris-mail tui --theme=mocha  # operator: explicit TUI launch
+polaris-mail status             # operator: non-interactive subcommand
 ```
 
 `setup infra` (no leaf) drives the full happy path end-to-end:
@@ -60,47 +60,47 @@ Each phase records its completion to `.deploy-state.json` so
 `--resume` short-circuits past completed phases on retry:
 
 ```sh
-polaris-email setup infra --resume                 # pick up after a partial run
-polaris-email setup infra --phase smoke            # jump straight to smoke
-polaris-email setup infra --webauthn-token "<jwt>" # headless (CI) genesis-seal
-polaris-email setup infra --no-browser             # print enrolment URL only
-polaris-email setup infra --skip-smoke             # skip the final probe
+polaris-mail setup infra --resume                 # pick up after a partial run
+polaris-mail setup infra --phase smoke            # jump straight to smoke
+polaris-mail setup infra --webauthn-token "<jwt>" # headless (CI) genesis-seal
+polaris-mail setup infra --no-browser             # print enrolment URL only
+polaris-mail setup infra --skip-smoke             # skip the final probe
 ```
 
 Individual phases can also be invoked directly:
 
 ```sh
-polaris-email setup infra preflight
-polaris-email setup infra configure
-polaris-email setup infra plan
-polaris-email setup infra apply
-polaris-email setup infra render
-polaris-email setup infra migrate
-polaris-email setup infra secrets seed
-polaris-email setup infra deploy all
-polaris-email setup infra genesis-seal
-polaris-email setup infra smoke
-polaris-email setup infra ssh-bootstrap            # mint admin:impersonate key + SSH host key for `serve --ssh`
+polaris-mail setup infra preflight
+polaris-mail setup infra configure
+polaris-mail setup infra plan
+polaris-mail setup infra apply
+polaris-mail setup infra render
+polaris-mail setup infra migrate
+polaris-mail setup infra secrets seed
+polaris-mail setup infra deploy all
+polaris-mail setup infra genesis-seal
+polaris-mail setup infra smoke
+polaris-mail setup infra ssh-bootstrap            # mint admin:impersonate key + SSH host key for `serve --ssh`
 ```
 
-`polaris-email setup infra` is the only cold-start path; the legacy
+`polaris-mail setup infra` is the only cold-start path; the legacy
 `make bootstrap` shell flow was retired in PR 14.
 
 ### Login (operator-side, after cold-start)
 
-`polaris-email login` is the recommended way to provide credentials. It
-takes the bundled bearer printed by `polaris-email operator add`
+`polaris-mail login` is the recommended way to provide credentials. It
+takes the bundled bearer printed by `polaris-mail operator add`
 (`polaris_<key_id>.<secret>`) and stores it encrypted in the OS keychain
 (macOS Keychain, Linux Secret Service / KWallet, Windows Credential
 Manager). Headless hosts fall back to a passphrase-encrypted file in
-`~/.config/polaris-email/keyring/`.
+`~/.config/polaris-mail/keyring/`.
 
 ```sh
-polaris-email login              # interactive paste
-polaris-email login --method=stdin < /tmp/token   # for CI
-polaris-email whoami             # cached operator identity
-polaris-email logout
-polaris-email profile list       # all stored profiles
+polaris-mail login              # interactive paste
+polaris-mail login --method=stdin < /tmp/token   # for CI
+polaris-mail whoami             # cached operator identity
+polaris-mail logout
+polaris-mail profile list       # all stored profiles
 ```
 
 ### Credential resolution order
@@ -111,7 +111,7 @@ triple (api-url + key-id + secret) wins:
 1. CLI flag (`--api-url`, `--token`, `--key-id`)
 2. Environment variable (`POLARIS_API_URL`, `POLARIS_TOKEN`, `POLARIS_KEY_ID`)
 3. OS keychain credstore entry for the active `--profile` (or "default")
-4. Legacy `~/.config/polaris-email/config.toml` profile
+4. Legacy `~/.config/polaris-mail/config.toml` profile
 
 `--token` and `$POLARIS_TOKEN` accept either the bundled bearer
 (`polaris_<key_id>.<secret>`) or the raw secret with `--key-id` supplied
@@ -124,26 +124,26 @@ Any operator with `admin:rotate` scope can enroll new operators (it's not
 gated to the bootstrap key):
 
 ```sh
-polaris-email operator add                       # interactive huh wizard
-polaris-email operator add --from-file ops.yaml  # CI / batch onboarding
-polaris-email operator list
-polaris-email operator rotate-key <id>           # returns a new login_token ONCE
-polaris-email operator disable <id> --confirm-id <id>
+polaris-mail operator add                       # interactive huh wizard
+polaris-mail operator add --from-file ops.yaml  # CI / batch onboarding
+polaris-mail operator list
+polaris-mail operator rotate-key <id>           # returns a new login_token ONCE
+polaris-mail operator disable <id> --confirm-id <id>
 ```
 
 The wizard returns a one-shot `polaris_<id>.<secret>` token. Hand it to
-the new operator; they paste it into their own `polaris-email login`.
+the new operator; they paste it into their own `polaris-mail login`.
 
 ## Workflows
 
 ### A. Onboard a new domain
 
 ```sh
-polaris-email domain onboard acme.com --inbound --outbound
+polaris-mail domain onboard acme.com --inbound --outbound
 # or fully interactive (huh wizard):
-polaris-email domain onboard
+polaris-mail domain onboard
 # or non-interactive from a file:
-polaris-email domain onboard --from-file domain.yaml
+polaris-mail domain onboard --from-file domain.yaml
 ```
 
 The wizard discovers the Cloudflare zone, publishes DKIM/SPF/DMARC + MX,
@@ -155,7 +155,7 @@ managed.
 Bulk subdomain provisioning (PaaS workflow):
 
 ```sh
-polaris-email domain bulk-onboard \
+polaris-mail domain bulk-onboard \
   --pattern 'tenant-{1..100}.app.example.com' \
   --zone example.com --outbound
 ```
@@ -167,7 +167,7 @@ The schema is mailbox-centric. Mailbox CRUD lives in the admin REST surface
 credentials via:
 
 ```sh
-polaris-email cred issue \
+polaris-mail cred issue \
   --mailbox <mailbox-id> --type smtp \
   --senders 'noreply@acme.com,alerts@mail.acme.com'
 ```
@@ -179,16 +179,16 @@ will be removed in a future release.
 The plaintext secret is printed exactly once. Pipe to your secret store:
 
 ```sh
-polaris-email cred issue ... -o json | jq -r .secret | op item create ...
+polaris-mail cred issue ... -o json | jq -r .secret | op item create ...
 ```
 
 ### C. Manage routes
 
 ```sh
-polaris-email route list --domain acme.com
-polaris-email route add --domain acme.com --pattern 'support@*' \
+polaris-mail route list --domain acme.com
+polaris-mail route add --domain acme.com --pattern 'support@*' \
   --action webhook --url https://example.com/email-hook
-polaris-email route apply -f routes.yaml   # declarative reconciliation
+polaris-mail route apply -f routes.yaml   # declarative reconciliation
 ```
 
 `routes.yaml` example:
@@ -207,18 +207,18 @@ routes:
 ### D. Inspect activity
 
 ```sh
-wrangler tail polaris-email-out --status error --search "acme.com"
-wrangler tail polaris-email-api --status error --since 1h
-wrangler tail polaris-email-out --status ok   # full Workers log stream
-polaris-email status
-polaris-email webhook dlq list
-polaris-email webhook dlq drop <id> --confirm <id>
+wrangler tail polaris-mail-out --status error --search "acme.com"
+wrangler tail polaris-mail-api --status error --since 1h
+wrangler tail polaris-mail-out --status ok   # full Workers log stream
+polaris-mail status
+polaris-mail webhook dlq list
+polaris-mail webhook dlq drop <id> --confirm <id>
 ```
 
 ### E. Register a mail bridge
 
 ```sh
-polaris-email bridge register bridge-iad-1 --form compose \
+polaris-mail bridge register bridge-iad-1 --form compose \
   --write ./registration.json
 ```
 
@@ -229,35 +229,35 @@ Deregistering a bridge requires `--confirm-name <name>` so a fat-finger
 delete doesn't tear down a live host:
 
 ```sh
-polaris-email bridge deregister bridge-iad-1 --confirm-name bridge-iad-1
+polaris-mail bridge deregister bridge-iad-1 --confirm-name bridge-iad-1
 ```
 
 ### F. Discover + configure Cloudflare zones
 
 `cf-zone` operates against the live Cloudflare account (via the
 `POST /v1/admin/cf-zones[...]` admin endpoints) and reconciles each zone
-against polaris-email's six readiness checks: Email Routing on, MX/SPF
+against polaris-mail's six readiness checks: Email Routing on, MX/SPF
 records locked by Cloudflare, sender domain onboarded, catch-all rule
-points at the `polaris-email-in` Worker, no conflicting named rules, and
+points at the `polaris-mail-in` Worker, no conflicting named rules, and
 a matching `mail_domains` row in D1.
 
 ```sh
 # Inventory every zone with rolled-up readiness pills.
-polaris-email domain cf-zone list
-polaris-email domain cf-zone list --refresh   # bypass the 60s server-side cache
+polaris-mail domain cf-zone list
+polaris-mail domain cf-zone list --refresh   # bypass the 60s server-side cache
 
 # Drill into one zone — prints each check + DNS errors / missing records /
 # named-rule routing targets.
-polaris-email domain cf-zone status plrs.im
+polaris-mail domain cf-zone status plrs.im
 
 # Plan a configure run (dry-run by default — nothing is applied).
-polaris-email domain cf-zone configure plrs.im
+polaris-mail domain cf-zone configure plrs.im
 
 # Apply the planned ops (exits non-zero if any fail).
-polaris-email domain cf-zone configure plrs.im --apply
+polaris-mail domain cf-zone configure plrs.im --apply
 
 # Restrict to a subset of ops (useful for partial recovery after a failure).
-polaris-email domain cf-zone configure plrs.im --apply \
+polaris-mail domain cf-zone configure plrs.im --apply \
   --ops enable_routing,set_catch_all_worker
 ```
 
@@ -267,8 +267,8 @@ Output of a typical dry-run:
 Zone: plrs.im
 Diff:
   - enable_routing: Enable Cloudflare Email Routing on plrs.im
-  - set_catch_all_worker: Point catch-all rule at the polaris-email-in Worker
-  - create_d1_mail_domain: Create polaris-email mail_domains row for plrs.im
+  - set_catch_all_worker: Point catch-all rule at the polaris-mail-in Worker
+  - create_d1_mail_domain: Create polaris-mail mail_domains row for plrs.im
 
 Warnings:
   ⚠ 2 named-address rule(s) on plrs.im route mail elsewhere
@@ -286,7 +286,7 @@ When a webhook subscriber reports a verification failure, capture the
 `X-Polaris-*` headers + raw body and replay them locally:
 
 ```sh
-polaris-email auth verify \
+polaris-mail auth verify \
   --method POST --path /v1/messages --body req.json \
   --ts 1700000000000 --nonce <nonce> --sig <hex> \
   --secret "$(op read op://Vault/Polaris/secret)"
@@ -298,9 +298,9 @@ Returns `OK` on stdout (exit 0) for a valid signature; on failure prints
 ## Multi-profile usage
 
 ```sh
-polaris-email --profile staging domain list
-polaris-email --profile prod   tenant list
-POLARIS_TOKEN="$(op read op://Vault/Polaris/token)" polaris-email status
+polaris-mail --profile staging domain list
+polaris-mail --profile prod   tenant list
+POLARIS_TOKEN="$(op read op://Vault/Polaris/token)" polaris-mail status
 ```
 
 ## Wizard JSON-schema files
@@ -308,9 +308,9 @@ POLARIS_TOKEN="$(op read op://Vault/Polaris/token)" polaris-email status
 Schemas for `--from-file` payloads live under
 [`testdata/wizard-schemas/`](testdata/wizard-schemas):
 
-- `domain.json` — `polaris-email domain onboard --from-file ...`
-- `cred.json` — `polaris-email cred issue --from-file ...`
-- `bridge.json` — `polaris-email bridge register --from-file ...`
+- `domain.json` — `polaris-mail domain onboard --from-file ...`
+- `cred.json` — `polaris-mail cred issue --from-file ...`
+- `bridge.json` — `polaris-mail bridge register --from-file ...`
 
 YAML and JSON inputs are both accepted. Validate with any draft-2020-12 JSON
 Schema validator before piping into the CLI in CI.
@@ -323,14 +323,14 @@ returns immediately without sending the request. Use this for agent / CI
 preview mode:
 
 ```sh
-polaris-email domain onboard acme.com --inbound --outbound --dry-run
-polaris-email cred issue --mailbox <mailbox-id> --type smtp --senders 'a@b.com' --dry-run
+polaris-mail domain onboard acme.com --inbound --outbound --dry-run
+polaris-mail cred issue --mailbox <mailbox-id> --type smtp --senders 'a@b.com' --dry-run
 ```
 
 ## Build from source
 
 ```sh
-make build           # bin/polaris-email + bin/pml symlink
+make build           # bin/polaris-mail + bin/pml symlink
 make test            # go test ./...
 make vet             # go vet ./...
 make release-dryrun  # goreleaser release --snapshot --clean --skip=publish

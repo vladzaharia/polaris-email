@@ -1,4 +1,4 @@
-// Shared zod schemas + TypeScript types for polaris-email.
+// Shared zod schemas + TypeScript types for polaris-mail.
 //
 // Mailbox-centric model. Tenant / environment / forensic / routing-rule
 // types are gone; mailbox, sender, and receiver shapes replace them. See
@@ -15,7 +15,7 @@ import {
   PLATFORM_CONTROLLED_HEADERS,
   USE_API_FIELD_HEADERS,
   WHITELISTED_CUSTOM_HEADERS,
-} from '@polaris-email/mime';
+} from '@polaris-mail/mime';
 
 // ---------- primitives ----------
 
@@ -129,7 +129,7 @@ export type WebhookEventType = z.infer<typeof WebhookEventType>;
 // ---------- forbidden headers ----------
 //
 // Headers the submitter has no business setting on the JSON SendRequest path.
-// Sourced from `@polaris-email/mime/limits.ts` — the canonical CF Email
+// Sourced from `@polaris-mail/mime/limits.ts` — the canonical CF Email
 // Service list — so changes to CF's rules propagate via that one file.
 // Members come from PLATFORM_CONTROLLED_HEADERS (DKIM-Signature, Date,
 // Message-ID, ARC-*, etc.) plus USE_API_FIELD_HEADERS (From/To/Cc/Bcc/

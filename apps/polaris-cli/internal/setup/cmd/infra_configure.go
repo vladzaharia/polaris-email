@@ -13,13 +13,13 @@ import (
 	"github.com/vladzaharia/polaris-email/apps/polaris-cli/internal/setup/config"
 )
 
-// newInfraConfigureCmd wires `polaris-email setup infra configure`.
+// newInfraConfigureCmd wires `polaris-mail setup infra configure`.
 //
 // Modes:
 //
 //	(default)                  interactive huh-driven loop, save after each prompt.
 //	--non-interactive          fail if any required field is missing; never prompt.
-//	                           Env-overrides (CF_ACCOUNT_ID=... polaris-email setup ...)
+//	                           Env-overrides (CF_ACCOUNT_ID=... polaris-mail setup ...)
 //	                           are merged on top of the loaded file.
 //	--from-file <path>         load .json / .yaml / .yml / .toml-like .env file and use
 //	                           that as the source of truth. Combine with --validate
@@ -39,7 +39,7 @@ func newInfraConfigureCmd() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "configure",
 		Short: "Rebuild .env.deploy (interactive by default; --non-interactive for CI)",
-		Long: "Rebuild the .env.deploy file polaris-email reads for cold-start.\n" +
+		Long: "Rebuild the .env.deploy file polaris-mail reads for cold-start.\n" +
 			"\n" +
 			"Default mode prompts for each field with the current value as the\n" +
 			"default. Each accepted value is persisted atomically so a Ctrl-C\n" +
@@ -91,7 +91,7 @@ func newInfraConfigureCmd() *cobra.Command {
 			// Interactive: hand off to the huh-based prompt loop. Save
 			// after each field is the durability property.
 			fmt.Fprintln(cmd.OutOrStdout(),
-				"polaris-email configure — values are saved to .env.deploy (gitignored) after every prompt.")
+				"polaris-mail configure — values are saved to .env.deploy (gitignored) after every prompt.")
 			fmt.Fprintln(cmd.OutOrStdout(),
 				"Press enter to keep current values shown as placeholders. Leave optional fields blank to skip.")
 			fmt.Fprintln(cmd.OutOrStdout())

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	polarissdk "github.com/polaris-email/polaris-sdk-go"
+	polarissdk "github.com/polaris-mail/polaris-sdk-go"
 )
 
 // withCapturedIO swaps Out/Errw with bytes.Buffers and restores them on

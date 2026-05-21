@@ -18,7 +18,7 @@ import (
 // Options gates the runner's behaviour. All fields are optional; sensible
 // defaults apply.
 type Options struct {
-	// RepoRoot is the absolute path to the polaris-email repository
+	// RepoRoot is the absolute path to the polaris-mail repository
 	// root. Empty defaults to os.Getwd(). All Service.Path values are
 	// resolved relative to this.
 	RepoRoot string
@@ -119,7 +119,7 @@ func buildClient(ctx context.Context, root string, svc Service) error {
 	dir := filepath.Join(root, svc.Path)
 	// `pnpm --filter ./relative/path` is the most reliable form across
 	// pnpm major versions — it doesn't require knowing the package's
-	// scoped name (e.g. @polaris-email/panel) inside this package.
+	// scoped name (e.g. @polaris-mail/panel) inside this package.
 	cmd := exec.CommandContext(ctx, "pnpm", "--filter", "./"+svc.Path, "run", "build:client")
 	cmd.Dir = root
 	cmd.Stdout = os.Stderr // build chatter goes to stderr; stdout is reserved for structured output

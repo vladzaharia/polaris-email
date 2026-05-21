@@ -1,6 +1,6 @@
 ---
 title: Deployment prerequisites
-description: The Cloudflare scopes and local tooling you need before running the polaris-email cold-start.
+description: The Cloudflare scopes and local tooling you need before running the polaris-mail cold-start.
 sidebar_label: Prerequisites
 sidebar_position: 1
 ---
@@ -16,7 +16,7 @@ smoke.
 For day-to-day operator workflows (issue API keys, onboard domains,
 register bridges, replay webhook DLQ entries) jump to the
 [on-call runbook](/operators/runbooks) and the
-[polaris-email CLI](/reference/cli) — none of those depend on this page
+[polaris-mail CLI](/reference/cli) — none of those depend on this page
 once the cold-start has run.
 
 ## Cloudflare account
@@ -51,7 +51,7 @@ you want the panel, mint a client up-front and capture:
 - `OIDC_CLIENT_ID`
 - `OIDC_CLIENT_SECRET`
 
-Leave them blank during `polaris-email setup infra configure` to skip
+Leave them blank during `polaris-mail setup infra configure` to skip
 the panel — the API and the CLI still work without it.
 
 ## Local tooling
@@ -66,24 +66,24 @@ Install on the workstation that will run the cold-start:
 - `curl`
 - `go` ≥ 1.22
 
-You also need the **`polaris-email` Go CLI** on `$PATH`. Pick one of:
+You also need the **`polaris-mail` Go CLI** on `$PATH`. Pick one of:
 
-- `go install github.com/vladzaharia/polaris-email/apps/polaris-cli/cmd/polaris-email@latest`
-- `brew install vladzaharia/tap/polaris-email`
+- `go install github.com/vladzaharia/polaris-email/apps/polaris-cli/cmd/polaris-mail@latest`
+- `brew install vladzaharia/tap/polaris-mail`
 - Grab a release binary from the GitHub releases page.
 
 The CLI is the entire operator surface: cold-start, deploy, rollback,
-smoke, and every day-2 workflow live in `polaris-email setup infra` and
-the other `polaris-email` subcommands.
+smoke, and every day-2 workflow live in `polaris-mail setup infra` and
+the other `polaris-mail` subcommands.
 
 ## Validate
 
-Run these two commands. `polaris-email setup infra preflight` is a hard
+Run these two commands. `polaris-mail setup infra preflight` is a hard
 gate; each failing check prints its remediation on the next line.
 
 ```sh
 wrangler login
-polaris-email setup infra preflight
+polaris-mail setup infra preflight
 ```
 
 When `preflight` is green you are ready to start the
@@ -91,7 +91,7 @@ When `preflight` is green you are ready to start the
 
 ## Manual setup before cold-start
 
-`polaris-email setup infra` provisions everything account-scoped (D1,
+`polaris-mail setup infra` provisions everything account-scoped (D1,
 R2 buckets + lifecycle + Object Lock, KV, queues, Logpush, R2 tokens,
 and the R2 public custom-domain binding). A few resources sit outside
 that scope and require manual setup once per environment:
@@ -105,7 +105,7 @@ that scope and require manual setup once per environment:
 
 Per-domain DNS records (MX, SPF, DKIM, DMARC) + Email Routing rules +
 Email Service onboarding all happen later, automatically, when you
-onboard each domain via `polaris-email domain onboard <name>` (which
+onboard each domain via `polaris-mail domain onboard <name>` (which
 calls `POST /v1/admin/domains` → `packages/cf-api/`).
 
 <!-- Verified against: docs/deploy.md @ c3c1b5048dd5bfe92facdce24982141a07446042 -->

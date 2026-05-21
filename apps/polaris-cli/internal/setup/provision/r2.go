@@ -45,7 +45,7 @@ func createR2Step(client *cfapi.Client, doc *state.Doc) func(context.Context, pl
 		switch {
 		case hours > 0:
 			rule := cfapi.ObjectLockRule{
-				ID:      "polaris-email-retention",
+				ID:      "polaris-mail-retention",
 				Enabled: true,
 				Condition: cfapi.ObjectLockCondition{
 					Type:          "Age",

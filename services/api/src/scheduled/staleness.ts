@@ -21,7 +21,7 @@ export async function staleness(env: Env): Promise<void> {
       await safeFetch(env.ALERT_WEBHOOK, 'external', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ service: 'polaris-email', staleness: issues }),
+        body: JSON.stringify({ service: 'polaris-mail', staleness: issues }),
       });
     } catch (e) {
       // eslint-disable-next-line no-console

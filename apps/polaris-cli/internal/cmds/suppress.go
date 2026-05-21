@@ -1,14 +1,14 @@
-// W1 — `polaris-email suppress` CLI subtree.
+// W1 — `polaris-mail suppress` CLI subtree.
 //
 // Mirrors the admin REST surface in services/api/src/routes/admin/suppressions.ts:
 //
-//   polaris-email suppress list   [--entity recipient|sender] [--reason ...] [--severity ...]
-//   polaris-email suppress check  <address>
-//   polaris-email suppress add    --entity recipient|sender --address <a>
+//   polaris-mail suppress list   [--entity recipient|sender] [--reason ...] [--severity ...]
+//   polaris-mail suppress check  <address>
+//   polaris-mail suppress add    --entity recipient|sender --address <a>
 //                                    --reason <r> [--scope ...] [--scope-target ...]
 //                                    [--severity ...] [--notes ...]
-//   polaris-email suppress show   <id>
-//   polaris-email suppress remove <id> [--reason "why"]
+//   polaris-mail suppress show   <id>
+//   polaris-mail suppress remove <id> [--reason "why"]
 //
 // Manual add/remove are approval-gated server-side (dual-admin), so the CLI
 // surfaces a friendly hint when a 428 comes back.

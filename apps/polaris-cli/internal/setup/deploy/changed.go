@@ -13,7 +13,7 @@ import (
 
 // ChangedOptions configures the --changed selection.
 type ChangedOptions struct {
-	// RepoRoot is the absolute path to the polaris-email checkout.
+	// RepoRoot is the absolute path to the polaris-mail checkout.
 	// Required.
 	RepoRoot string
 	// BaseSHA is the SHA to diff against. When empty, the runner uses
@@ -102,7 +102,7 @@ func SelectChanged(ctx context.Context, opts ChangedOptions) ([]Service, string,
 //   - services/<svc>/...    → matches <svc>
 //   - apps/<app>/...        → matches <app> when <app> is in Services
 //   - packages/<pkg>/...    → matches every Service whose package.json
-//     lists @polaris-email/<pkg> in deps or devDeps (via revDeps)
+//     lists @polaris-mail/<pkg> in deps or devDeps (via revDeps)
 //   - bin/*, Makefile, .env.deploy → ignored
 //   - everything else       → ignored
 func classify(path string, revDeps map[string][]string, matched map[string]bool) {
@@ -225,7 +225,7 @@ type pkgJSON struct {
 //	package-dir → []service-name-that-depends-on-it
 //
 // We key by package directory (e.g. "policy-engine") rather than by
-// npm name (e.g. "@polaris-email/policy-engine") because the changed-
+// npm name (e.g. "@polaris-mail/policy-engine") because the changed-
 // file path arrives as packages/<dir>/* and the directory is what we
 // need to resolve.
 //

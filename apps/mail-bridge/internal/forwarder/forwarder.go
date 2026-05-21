@@ -17,7 +17,7 @@ import (
 	"strings"
 	"time"
 
-	polarissdk "github.com/polaris-email/polaris-sdk-go"
+	polarissdk "github.com/polaris-mail/polaris-sdk-go"
 )
 
 // Config carries the fixed bits each Forward call needs.

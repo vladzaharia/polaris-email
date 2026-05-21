@@ -15,7 +15,7 @@ import (
 // stays trivial.
 const stateFileName = "upgrader-state.json"
 
-// DefaultStateDir returns ~/.config/polaris-email. Tests can override
+// DefaultStateDir returns ~/.config/polaris-mail. Tests can override
 // by passing an explicit directory to LoadState / SaveState. The
 // directory is created as part of SaveState.
 func DefaultStateDir() (string, error) {
@@ -26,7 +26,7 @@ func DefaultStateDir() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(home, ".config", "polaris-email"), nil
+	return filepath.Join(home, ".config", "polaris-mail"), nil
 }
 
 // LoadState reads the upgrader state file from dir. Missing file →

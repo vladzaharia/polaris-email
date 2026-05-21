@@ -8,7 +8,7 @@ sidebar_position: 2
 # Cold-start bootstrap
 
 This is the one-time path from an empty Cloudflare account to a green
-`polaris-email setup infra smoke`. Run it once per deployment — after
+`polaris-mail setup infra smoke`. Run it once per deployment — after
 that, you live on [routine redeploy](/operators/runbooks) and the
 [on-call runbook](/operators/runbooks). The
 [prerequisites](/operators/deployment/prerequisites) page must be green
@@ -20,7 +20,7 @@ Install the CLI first:
 curl -fsSL cli.mail.plrs.im | sh
 ```
 
-The cold-start flow lives in `polaris-email setup infra` — a single Go
+The cold-start flow lives in `polaris-mail setup infra` — a single Go
 binary that drives resumable phases, atomic state writes, and `huh`-based
 prompts. It consumes the same `.env.deploy` / `.deploy-state.json`
 files that the previous shell flow used; existing deployments resume
@@ -29,7 +29,7 @@ without re-bootstrapping.
 ## Configure
 
 ```sh
-polaris-email setup infra configure
+polaris-mail setup infra configure
 ```
 
 Interactive — writes `.env.deploy` (gitignored, mode `0600`). Prompts for
@@ -41,7 +41,7 @@ Workers, including:
 - The alert webhook and the production hostname.
 
 `BRIDGE_HMAC_KEY` is **not** a global secret. Each bridge gets its own
-HMAC key minted at registration (`polaris-email bridge register <name>`);
+HMAC key minted at registration (`polaris-mail bridge register <name>`);
 the secret is delivered exactly once in the response and stored under
 that bridge's `BRIDGE_<NAME>_HMAC_KEY` slot. There is no shared bridge
 secret to seed at bootstrap.
@@ -49,7 +49,7 @@ secret to seed at bootstrap.
 ## Bootstrap
 
 ```sh
-polaris-email setup infra
+polaris-mail setup infra
 ```
 
 Drives the happy-path runner: `preflight → configure → plan → apply →
@@ -59,14 +59,14 @@ already-complete phases on retry. The phases are:
 
 1. `pnpm install --frozen-lockfile` + `pnpm -r run build`.
 2. Create the Cloudflare resources:
-   - **D1**: `polaris-email`.
-   - **R2**: `polaris-email`, EU jurisdiction, 90d compliance lock.
+   - **D1**: `polaris-mail`.
+   - **R2**: `polaris-mail`, EU jurisdiction, 90d compliance lock.
    - **5 KV namespaces**: nonce, idempotency, rate-limit, key-cache,
      and `KV_REVOCATIONS`. `KV_REVOCATIONS` backs the synchronous
      credential-revocation path (the previous Durable Object that owned
      this state was retired).
    - **3 Queues + 2 DLQs**: inbound and outbound queues each have their
-     own dead-letter queue, plus `polaris-email-fanout` for webhook
+     own dead-letter queue, plus `polaris-mail-fanout` for webhook
      delivery (consumed by `services/api`).
 
    Every resource ID is captured into `.deploy-state.json` (gitignored).
@@ -79,9 +79,9 @@ already-complete phases on retry. The phases are:
 5. Seed master secrets: `POLARIS_SECRET_A`, `ARGON2_PEPPER` (plus any
    sourced optional secrets like `OIDC_CLIENT_SECRET`). Creation
    timestamps go to `secrets.created.json` — names only, no values.
-6. `polaris-email setup infra deploy all` deploys the four Workers in
-   dependency order: `polaris-email-api` → `polaris-email-out` →
-   `polaris-email-in` → `polaris-email-panel`. The previous
+6. `polaris-mail setup infra deploy all` deploys the four Workers in
+   dependency order: `polaris-mail-api` → `polaris-mail-out` →
+   `polaris-mail-in` → `polaris-mail-panel`. The previous
    `services/fanout` and `services/cron` Workers were folded into
    `services/api`.
 7. HMAC-sign `POST /v1/admin/bootstrap`. The response carries the
@@ -96,14 +96,14 @@ recoverable.
 
 Open the admin panel and visit **`/cf-zones`**. Every Cloudflare zone in
 the account appears with a six-badge status grid. Click the zones you
-want polaris-email to handle and apply the diff — that is the primary
+want polaris-mail to handle and apply the diff — that is the primary
 onboarding path post-deploy. See the
 [domain-onboarding runbook](/operators/runbooks) for the full flow.
 
 ## Smoke
 
 ```sh
-polaris-email setup infra smoke
+polaris-mail setup infra smoke
 ```
 
 Checks, in order:
@@ -117,22 +117,22 @@ Exits non-zero on any FAIL. This is the canonical definition of
 ## State files
 
 All gitignored, all material. If you lose `.deploy-state.json`, run
-`polaris-email setup infra state rebuild` (or
-`polaris-email setup infra state rebuild --dry-run` to preview).
+`polaris-mail setup infra state rebuild` (or
+`polaris-mail setup infra state rebuild --dry-run` to preview).
 
 | File                     | Purpose                                                                               |
 | ------------------------ | ------------------------------------------------------------------------------------- |
-| `.env.deploy`            | Environment-specific config written by `polaris-email setup infra configure`.         |
+| `.env.deploy`            | Environment-specific config written by `polaris-mail setup infra configure`.          |
 | `.deploy-state.json`     | All Cloudflare resource IDs + last deployed version per service + rotation state.     |
 | `.bootstrap-output.json` | Admin `key_id` + `key_secret` from the one-time bootstrap. **Treat as a credential.** |
 | `secrets.created.json`   | Timestamps for master secret seeding (names only, no values).                         |
-| `.deploy-state.last-sha` | Last SHA `polaris-email setup infra deploy changed` deployed, for diff computation.   |
+| `.deploy-state.last-sha` | Last SHA `polaris-mail setup infra deploy changed` deployed, for diff computation.    |
 
 `state rebuild` queries `wrangler d1 list`, `wrangler kv namespace list`,
 and `wrangler queues list`, matches resources by name, and writes a fresh
 state file. The previous one (if any) is backed up to
 `.deploy-state.json.bak.<timestamp>`. Re-run
-`polaris-email setup infra render` afterwards to materialise the local
+`polaris-mail setup infra render` afterwards to materialise the local
 configs.
 
 ## Manual steps that remain
@@ -156,8 +156,8 @@ items:
 ## Doctor
 
 ```sh
-polaris-email setup infra preflight
-polaris-email setup infra smoke
+polaris-mail setup infra preflight
+polaris-mail setup infra smoke
 ```
 
 Run preflight + smoke back-to-back as a quick read of overall health
@@ -168,7 +168,7 @@ between deploys.
 - [Custom domains](/operators/deployment/custom-domains) — DNS, R2
   public domain, Workers custom hostnames.
 - [On-call runbook](/operators/runbooks) — day-to-day operations.
-- [CLI reference](/reference/cli) — the `polaris-email` operator
+- [CLI reference](/reference/cli) — the `polaris-mail` operator
   surface.
 
 <!-- Verified against: docs/deploy.md @ c3c1b5048dd5bfe92facdce24982141a07446042 -->

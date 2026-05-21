@@ -98,7 +98,7 @@ func newInfraRollbackSecretCmd() *cobra.Command {
 			var rep secrets.Reporter
 			var tuiR *rollbackTUIReporter
 			if isTTY {
-				tuiR = newRollbackTUIReporter(cmd.OutOrStdout(), "polaris-email — rolling back secret")
+				tuiR = newRollbackTUIReporter(cmd.OutOrStdout(), "polaris-mail — rolling back secret")
 				rep = tuiR
 			} else {
 				rep = newSecretsPlainReporter(cmd.OutOrStdout())

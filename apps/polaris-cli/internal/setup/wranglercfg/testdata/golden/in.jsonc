@@ -2,16 +2,16 @@
 // Go text/template syntax and are substituted by the Go renderer in
 // apps/polaris-cli/internal/setup/wranglercfg from .deploy-state.json +
 // .env.deploy. Do NOT hand-edit the materialized wrangler.local.jsonc —
-// re-run `polaris-email setup infra render`.
+// re-run `polaris-mail setup infra render`.
 {
   "account_id": "cf-account-id",
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "polaris-email",
+      "database_name": "polaris-mail",
       "database_id": "d1-id",
     },
   ],
-  "r2_buckets": [{ "binding": "R2", "bucket_name": "polaris-email", "jurisdiction": "eu" }],
+  "r2_buckets": [{ "binding": "R2", "bucket_name": "polaris-mail", "jurisdiction": "eu" }],
   "kv_namespaces": [{ "binding": "KV_RATE_LIMIT", "id": "kv-rl-id" }],
 }

@@ -51,7 +51,7 @@ func CheckCFAPIToken(cfg CFAPIConfig) Check {
 		Run: func(ctx context.Context) Result {
 			if cfg.Token == "" {
 				return warn("CF_API_TOKEN unset — skipping scope probe",
-					"set CF_API_TOKEN in .env.deploy if you plan to run `polaris-email domain onboard --apply`")
+					"set CF_API_TOKEN in .env.deploy if you plan to run `polaris-mail domain onboard --apply`")
 			}
 			if cfg.AccountID == "" {
 				return warn("CF_ACCOUNT_ID unset — cannot run scope probes",

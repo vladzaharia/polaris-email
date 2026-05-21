@@ -7,7 +7,7 @@ sidebar_position: 7
 
 # Bridge management
 
-The polaris-email mail bridge (Go binary `polaris-bridge`) accepts
+The polaris-mail mail bridge (Go binary `polaris-bridge`) accepts
 SMTPS submission on `:465`, serves IMAP4rev2 on `:993`, and forwards
 both to the control plane. Each bridge has its own identity, its own
 HMAC key in Workers Secrets, and its own Cloudflare Access service
@@ -36,7 +36,7 @@ env-var overrides. Only the network mode and TLS source differ.
 
 ## Live `up` TUI
 
-`polaris-email setup bridge up` brings the bridge online with a live
+`polaris-mail setup bridge up` brings the bridge online with a live
 Bubble Tea TUI: the merged `docker compose logs -f` stream renders at
 the top of the screen while a probe table at the bottom updates as
 each post-up health check (SMTPS handshake, IMAP CAPABILITY, webhook
@@ -57,7 +57,7 @@ keep working unchanged. Force the fallback explicitly with
 ## Register a new bridge
 
 ```sh
-polaris-email bridge register edge-eu1 --form compose \
+polaris-mail bridge register edge-eu1 --form compose \
     --write ./registration.json
 ```
 
@@ -81,9 +81,9 @@ around it differs.
 ## List, show, rotate
 
 ```sh
-polaris-email bridge list
-polaris-email bridge show edge-eu1
-polaris-email bridge rotate edge-eu1
+polaris-mail bridge list
+polaris-mail bridge show edge-eu1
+polaris-mail bridge rotate edge-eu1
 ```
 
 `bridge rotate` issues a new HMAC key and a new Cloudflare Access
@@ -95,7 +95,7 @@ first authenticated request, the old one is revoked automatically.
 ## Deregister
 
 ```sh
-polaris-email bridge deregister edge-eu1 --confirm-name edge-eu1
+polaris-mail bridge deregister edge-eu1 --confirm-name edge-eu1
 ```
 
 `bridge deregister` requires `--confirm-name <name>` matching the

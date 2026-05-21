@@ -1,4 +1,4 @@
-# polaris-email
+# polaris-mail
 
 Managed email service for the `polaris-*` family. One HMAC REST contract for
 both inbound retrieval and outbound submission (unified `Message` model),
@@ -11,15 +11,15 @@ Documentation lives at <https://docs.mail.plrs.im>.
 ## Quick start
 
 ```sh
-# Install the polaris-email Go CLI.
+# Install the polaris-mail Go CLI.
 curl -fsSL cli.mail.plrs.im | sh
 
 # Cold-start from zero: preflight → configure → plan → apply → render →
 # migrate → secrets seed → deploy → genesis-seal → smoke.
-polaris-email setup infra
+polaris-mail setup infra
 ```
 
-`polaris-email setup infra --resume` picks up after a partial run; each
+`polaris-mail setup infra --resume` picks up after a partial run; each
 phase records to `.deploy-state.json`. See `apps/polaris-cli/README.md`
 for the full subcommand tree.
 
@@ -58,12 +58,12 @@ On-prem (per host):
 
 Operator tooling:
 
-- `apps/polaris-cli` — Go CLI (`polaris-email`, aliased `pml`). Day-2 ops
-  surface: the same binary ships a **fullscreen tabbed TUI** (`polaris-email
-tui` or `polaris-email` with no args), an SSH-fronted server
-  (`polaris-email serve --ssh` via Wish), unified auth (`polaris-email
+- `apps/polaris-cli` — Go CLI (`polaris-mail`, aliased `pml`). Day-2 ops
+  surface: the same binary ships a **fullscreen tabbed TUI** (`polaris-mail
+tui` or `polaris-mail` with no args), an SSH-fronted server
+  (`polaris-mail serve --ssh` via Wish), unified auth (`polaris-mail
 login` stores tokens in the OS keychain), and an operator-identity
-  registry (`polaris-email operator add`). Cobra subcommands for mailboxes,
+  registry (`polaris-mail operator add`). Cobra subcommands for mailboxes,
   domains, zones, routes, credentials, bridges, webhooks, audit, status,
   setup. See `apps/polaris-cli/README.md` and [`docs/tui.md`](docs/tui.md).
 - `apps/panel` — Hono + React admin UI deployed as a Cloudflare Worker. better-auth
@@ -83,7 +83,7 @@ Shared packages:
 
 Infrastructure provisioning lives entirely in the Go CLI's `setup infra`
 phases — the account-level Cloudflare resources (D1, R2 buckets, KV,
-queues, Logpush, R2 tokens) are created by `polaris-email setup infra
+queues, Logpush, R2 tokens) are created by `polaris-mail setup infra
 apply`; per-Worker bindings + custom domains are declared in each
 service's `wrangler.jsonc`. Per-domain DNS records, Email Routing, and
 Email Service onboarding flow through `POST /v1/admin/domains` and the
@@ -109,7 +109,7 @@ R2 URLs (`SIGNED_URL_TTL_SECONDS`, default 10 min).
 
 `/v1/send/raw` was retired in favor of `POST /v1/messages` with
 `Content-Type: message/rfc822`. The full surface (admin, daemon, webhooks) is
-described in [`openapi/polaris-email.yaml`](openapi/polaris-email.yaml).
+described in [`openapi/polaris-mail.yaml`](openapi/polaris-mail.yaml).
 
 ## Local development
 
@@ -126,29 +126,29 @@ pnpm -r build
 Each Worker has a `wrangler.jsonc` (committed, placeholder IDs) and expects a gitignored
 `wrangler.local.jsonc` with real D1/R2/KV/Queue IDs. Those are generated from
 `services/*/wrangler.local.template.jsonc` + `.deploy-state.json` by
-`polaris-email setup infra render`; `polaris-email setup infra deploy` then merges
+`polaris-mail setup infra render`; `polaris-mail setup infra deploy` then merges
 the public + local configs before `wrangler deploy`. Do not hand-edit the materialised
 files.
 
 The panel (`apps/panel`) is a Worker too. For local panel dev:
 
 ```sh
-pnpm --filter @polaris-email/panel wrangler-dev
+pnpm --filter @polaris-mail/panel wrangler-dev
 ```
 
 ## Operator workflows
 
 Day-to-day operator workflows (cold-start, deploy, smoke, rollback, issue
 api keys, onboard domains, register bridges, rotate credentials, replay
-webhook DLQ entries, …) all run through the `polaris-email` CLI.
+webhook DLQ entries, …) all run through the `polaris-mail` CLI.
 
 ```sh
-polaris-email setup infra preflight          # verify required tools and env
-polaris-email setup infra configure          # write .env.deploy interactively
-polaris-email setup infra                    # cold-start: create CF resources, deploy, mint admin key
-polaris-email setup infra smoke              # end-to-end health probe
-polaris-email setup infra deploy changed     # deploy only services whose code (or deps) changed
-polaris-email setup infra rollback api       # roll one Worker back to its previous version
+polaris-mail setup infra preflight          # verify required tools and env
+polaris-mail setup infra configure          # write .env.deploy interactively
+polaris-mail setup infra                    # cold-start: create CF resources, deploy, mint admin key
+polaris-mail setup infra smoke              # end-to-end health probe
+polaris-mail setup infra deploy changed     # deploy only services whose code (or deps) changed
+polaris-mail setup infra rollback api       # roll one Worker back to its previous version
 ```
 
 The same binary is dual-mode — with no args (and a TTY) it opens the
@@ -157,11 +157,11 @@ for scripting. It also ships an SSH-fronted server so the same TUI can be
 published over Wish/Wishlist:
 
 ```sh
-polaris-email login                                 # one-time: paste your operator login token
-polaris-email                                       # → fullscreen TUI
-polaris-email tui --theme=mocha                     # explicit subcommand + theme override
-polaris-email operator add                          # mint a new operator (huh wizard)
-polaris-email serve --ssh --bootstrap-token …       # publish the TUI over SSH
+polaris-mail login                                 # one-time: paste your operator login token
+polaris-mail                                       # → fullscreen TUI
+polaris-mail tui --theme=mocha                     # explicit subcommand + theme override
+polaris-mail operator add                          # mint a new operator (huh wizard)
+polaris-mail serve --ssh --bootstrap-token …       # publish the TUI over SSH
 ```
 
 See `apps/polaris-cli/README.md` for the full subcommand tree, and

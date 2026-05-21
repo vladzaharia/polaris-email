@@ -18,23 +18,23 @@ import (
 // UI (TUI, setup-phase commands) and don't want a second progress bar
 // stomping on theirs.
 //
-// `polaris-email` with no subcommand is the bare TUI entry point — it
+// `polaris-mail` with no subcommand is the bare TUI entry point — it
 // shows up here as the root's Use value.
 var skippedCommandPaths = map[string]struct{}{
-	"polaris-email":             {},
-	"polaris-email tui":         {},
-	"polaris-email serve":       {},
-	"polaris-email version":     {},
-	"polaris-email setup":       {},
-	"polaris-email setup infra": {},
-	"polaris-email completion":  {},
-	"polaris-email help":        {},
+	"polaris-mail":             {},
+	"polaris-mail tui":         {},
+	"polaris-mail serve":       {},
+	"polaris-mail version":     {},
+	"polaris-mail setup":       {},
+	"polaris-mail setup infra": {},
+	"polaris-mail completion":  {},
+	"polaris-mail help":        {},
 }
 
 // shouldSkipUpgradeCheck returns true if the running cobra command is
 // one of the paths above (or a descendant of one). The CommandPath()
 // helper returns the full space-separated lineage (e.g.
-// "polaris-email setup infra apply"), which we prefix-match against the
+// "polaris-mail setup infra apply"), which we prefix-match against the
 // skip set so every subcommand under `setup` inherits the skip too.
 func shouldSkipUpgradeCheck(cmd *cobra.Command) bool {
 	if cmd == nil {
@@ -88,7 +88,7 @@ func maybeUpgrade(_ *cobra.Command) {
 	// peach close to Catppuccin macchiato Peach (#f5a97f) — same shade
 	// the TUI infobox uses. Plain ASCII border so we never break a
 	// non-UTF8 terminal.
-	fmt.Fprintln(os.Stderr, peachLine("+--- polaris-email upgrade ----------------------------------+"))
+	fmt.Fprintln(os.Stderr, peachLine("+--- polaris-mail upgrade ----------------------------------+"))
 	fmt.Fprintln(os.Stderr, peachLine(fmt.Sprintf("| %-58s |", upd.CurrentVersion+" -> "+upd.LatestVersion+" ("+string(channel)+" channel)")))
 	fmt.Fprintln(os.Stderr, peachLine("+------------------------------------------------------------+"))
 
@@ -136,7 +136,7 @@ func stderrProgress(p upgrader.Progress) {
 
 // peachLine wraps a string in ANSI 256-color peach (215) — a close
 // match to Catppuccin macchiato Peach (#f5a97f). No-op when stderr
-// isn't a TTY (operator piping `polaris-email ... 2>&1 | something`
+// isn't a TTY (operator piping `polaris-mail ... 2>&1 | something`
 // won't get embedded escapes in their pipe).
 func peachLine(s string) string {
 	if !isStderrTTY() {

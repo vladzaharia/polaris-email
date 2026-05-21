@@ -22,7 +22,7 @@
 // The cron uses the W1 suppressions ON CONFLICT DO NOTHING semantic so a
 // race with a parallel writer can never create duplicate rows.
 
-import { ulid } from '@polaris-email/ids';
+import { ulid } from '@polaris-mail/ids';
 import { sendAlert } from '../lib/admin-alert.js';
 import { buildAuditInsert } from '../audit.js';
 import type { Env } from '../env.js';

@@ -14,7 +14,7 @@ import (
 	"github.com/vladzaharia/polaris-email/apps/polaris-cli/internal/setup/state"
 )
 
-// newInfraPlanCmd wires `polaris-email setup infra plan` — a
+// newInfraPlanCmd wires `polaris-mail setup infra plan` — a
 // read-only, terraform-style diff between Desired() and (state +
 // live CF snapshot). Never writes.
 //

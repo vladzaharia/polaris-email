@@ -14,7 +14,7 @@ import (
 	"github.com/vladzaharia/polaris-email/apps/polaris-cli/internal/setup/state"
 )
 
-// newInfraResetCmd wires `polaris-email setup infra reset`. Subcommands
+// newInfraResetCmd wires `polaris-mail setup infra reset`. Subcommands
 // destroy specific CF resources and clear their entries from
 // .deploy-state.json so the next `setup infra apply` recreates them
 // fresh. Used for greenfield wipe-and-restart in dev/staging.
@@ -38,7 +38,7 @@ func newInfraResetCmd() *cobra.Command {
 	return c
 }
 
-// newInfraResetAllCmd wires `polaris-email setup infra reset all`.
+// newInfraResetAllCmd wires `polaris-mail setup infra reset all`.
 //
 // Walks .deploy-state.json and deletes every CF resource it references
 // (D1, R2 buckets, R2 API tokens, KV namespaces, queues, Logpush jobs),
@@ -205,7 +205,7 @@ func newInfraResetAllCmd() *cobra.Command {
 			// custom domains we own (not any unrelated Worker on the account).
 			ourScripts := map[string]bool{}
 			for _, svc := range deploy.Services {
-				ourScripts["polaris-email-"+svc.Name] = true
+				ourScripts["polaris-mail-"+svc.Name] = true
 			}
 			domains, err := client.ListWorkerCustomDomains(ctx)
 			if err != nil {
@@ -226,7 +226,7 @@ func newInfraResetAllCmd() *cobra.Command {
 			}
 
 			for _, svc := range deploy.Services {
-				workerName := "polaris-email-" + svc.Name
+				workerName := "polaris-mail-" + svc.Name
 				if err := client.DeleteScript(ctx, workerName); err != nil {
 					fmt.Fprintf(out, "  ✘ Worker %s: %v\n", workerName, err)
 					anyFailed = true
@@ -321,7 +321,7 @@ func newInfraResetAllCmd() *cobra.Command {
 				fmt.Fprintln(out, "\nreset all: some resources failed to delete — see above. State updated for resources that did delete.")
 				return errors.New("reset all: partial failure")
 			}
-			fmt.Fprintln(out, "\nreset all: stack destroyed. Run `polaris-email setup infra` to recreate.")
+			fmt.Fprintln(out, "\nreset all: stack destroyed. Run `polaris-mail setup infra` to recreate.")
 			return nil
 		},
 	}
@@ -331,7 +331,7 @@ func newInfraResetAllCmd() *cobra.Command {
 	return c
 }
 
-// newInfraResetD1Cmd wires `polaris-email setup infra reset d1`.
+// newInfraResetD1Cmd wires `polaris-mail setup infra reset d1`.
 func newInfraResetD1Cmd() *cobra.Command {
 	var (
 		envFile   string
@@ -341,7 +341,7 @@ func newInfraResetD1Cmd() *cobra.Command {
 	)
 	c := &cobra.Command{
 		Use:   "d1",
-		Short: "Delete the polaris-email D1 database and clear it from state",
+		Short: "Delete the polaris-mail D1 database and clear it from state",
 		Long: "Deletes the named D1 database from Cloudflare and removes its\n" +
 			"entry from .deploy-state.json. The next `setup infra apply`\n" +
 			"will recreate the database from desired state, and a\n" +
@@ -426,14 +426,14 @@ func newInfraResetD1Cmd() *cobra.Command {
 
 			fmt.Fprintf(cmd.OutOrStdout(),
 				"reset d1: deleted database %q (uuid %s) from Cloudflare and cleared state.\n"+
-					"Run `polaris-email setup infra apply` to recreate, then `polaris-email setup infra migrate` to apply migrations.\n",
+					"Run `polaris-mail setup infra apply` to recreate, then `polaris-mail setup infra migrate` to apply migrations.\n",
 				dbName, rec.ID)
 			return nil
 		},
 	}
 	c.Flags().StringVar(&envFile, "env-file", defaultEnvFile, "path to .env.deploy")
 	c.Flags().StringVar(&statePath, "state-path", "", "override .deploy-state.json path")
-	c.Flags().StringVar(&dbName, "db", "polaris-email", "logical D1 database name to delete")
+	c.Flags().StringVar(&dbName, "db", "polaris-mail", "logical D1 database name to delete")
 	c.Flags().BoolVarP(&yes, "yes", "y", false, "skip the type-the-name confirmation prompt")
 	return c
 }

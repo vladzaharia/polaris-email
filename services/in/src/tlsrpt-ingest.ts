@@ -10,8 +10,8 @@ import {
   parseGzippedTlsRptReport,
   parseTlsRptReportJson,
   type TlsRptReport,
-} from '@polaris-email/tlsrpt-parser';
-import { ulid } from '@polaris-email/ids';
+} from '@polaris-mail/tlsrpt-parser';
+import { ulid } from '@polaris-mail/ids';
 
 export const PLATFORM_TLS_REPORTS_MAILBOX_ID = '01HXPLATFORMTLSREPORTS0000';
 

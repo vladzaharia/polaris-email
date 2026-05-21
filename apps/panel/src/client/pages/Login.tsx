@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { PageCard } from '../layouts/PageCard.js';
 import { Button } from '../components/ui/button.js';
+import { ErrorText } from '../components/ErrorText.js';
 
 // Better-auth's genericOAuth plugin exposes sign-in at
 // POST /api/auth/sign-in/social with the configured providerId. The
@@ -136,7 +137,7 @@ export function Login() {
       <Button onClick={go} disabled={pending}>
         {pending ? 'Redirecting…' : err ? 'Try again' : 'Continue with SSO'}
       </Button>
-      {err ? <p className="mt-2 text-sm text-destructive">{err}</p> : null}
+      <ErrorText error={err} className="mt-2" />
     </PageCard>
   );
 }

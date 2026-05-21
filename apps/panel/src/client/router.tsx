@@ -104,12 +104,10 @@ const domainDetail = createRoute({
   component: lazyRouteComponent(() => import('./pages/domains/Detail.js'), 'DomainDetail'),
   errorComponent: RouteError,
 });
-const credentialsList = createRoute({
-  getParentRoute: () => rootRoute,
-  path: '/credentials',
-  component: lazyRouteComponent(() => import('./pages/credentials/List.js'), 'CredentialsList'),
-  errorComponent: RouteError,
-});
+// /credentials standalone list removed (Stage 4 consolidation); the page was
+// a mailbox picker funnel whose data now lives inline on /mailboxes/$id.
+// /credentials/$id stays — it's the rotate/revoke + stats surface, reached
+// from the inline table.
 const credentialDetail = createRoute({
   getParentRoute: () => rootRoute,
   path: '/credentials/$id',
@@ -128,27 +126,17 @@ const messageDetail = createRoute({
   component: lazyRouteComponent(() => import('./pages/messages/Detail.js'), 'MessageDetail'),
   errorComponent: RouteError,
 });
-const webhookSubsList = createRoute({
-  getParentRoute: () => rootRoute,
-  path: '/webhook-subs',
-  component: lazyRouteComponent(() => import('./pages/webhook-subs/List.js'), 'WebhookSubsList'),
-  errorComponent: RouteError,
-});
+// /webhook-subs standalone list removed (same rationale as /credentials).
+// The per-mailbox table now lives on the mailbox detail page. Detail stays
+// for edit / test / pause / delete.
 const webhookSubDetail = createRoute({
   getParentRoute: () => rootRoute,
   path: '/webhook-subs/$id',
   component: lazyRouteComponent(() => import('./pages/webhook-subs/Detail.js'), 'WebhookSubDetail'),
   errorComponent: RouteError,
 });
-const routingList = createRoute({
-  getParentRoute: () => rootRoute,
-  path: '/routing',
-  component: lazyRouteComponent(() => import('./pages/routing/List.js'), 'RoutingList'),
-  errorComponent: RouteError,
-});
-// /routing/$id was removed — receiver detail pages are nested under
-// MailboxDetail's Receivers section, so the standalone route was a redundant
-// stub. Routing list rows now link to the parent mailbox.
+// /routing removed — the per-mailbox receiver table on MailboxDetail is the
+// single source of truth. /routing/$id was already gone.
 const dlqBrowser = createRoute({
   getParentRoute: () => rootRoute,
   path: '/dlq',
@@ -167,16 +155,15 @@ const bridgeDetail = createRoute({
   component: lazyRouteComponent(() => import('./pages/bridges/Detail.js'), 'BridgeDetail'),
   errorComponent: RouteError,
 });
-const testSend = createRoute({
+// /test-send removed — folded into MailboxDetail as an inline SendTestDialog
+// action so operators don't have to leave the mailbox to fire a smoke send.
+// /settings/account collapsed into /me (Stage-4 follow-up). The /me hub
+// combines OIDC identity, the matched operators-row, and recent audit
+// activity for the current user.
+const me = createRoute({
   getParentRoute: () => rootRoute,
-  path: '/test-send',
-  component: lazyRouteComponent(() => import('./pages/test-send/Form.js'), 'TestSendForm'),
-  errorComponent: RouteError,
-});
-const account = createRoute({
-  getParentRoute: () => rootRoute,
-  path: '/settings/account',
-  component: lazyRouteComponent(() => import('./pages/settings/Account.js'), 'Account'),
+  path: '/me',
+  component: lazyRouteComponent(() => import('./pages/me/Me.js'), 'Me'),
   errorComponent: RouteError,
 });
 const diagnostics = createRoute({
@@ -185,57 +172,12 @@ const diagnostics = createRoute({
   component: lazyRouteComponent(() => import('./pages/diagnostics/Diagnostics.js'), 'Diagnostics'),
   errorComponent: RouteError,
 });
-const cfZonesList = createRoute({
-  getParentRoute: () => rootRoute,
-  path: '/cf-zones',
-  component: lazyRouteComponent(() => import('./pages/cf-zones/List.js'), 'CfZonesList'),
-  errorComponent: RouteError,
-});
-const cfZoneDetail = createRoute({
-  getParentRoute: () => rootRoute,
-  path: '/cf-zones/$name',
-  component: lazyRouteComponent(() => import('./pages/cf-zones/Detail.js'), 'CfZoneDetail'),
-  errorComponent: RouteError,
-});
-const suppressionsList = createRoute({
-  getParentRoute: () => rootRoute,
-  path: '/suppressions',
-  component: lazyRouteComponent(() => import('./pages/suppressions/List.js'), 'SuppressionsList'),
-  errorComponent: RouteError,
-});
-const abuseReportsList = createRoute({
-  getParentRoute: () => rootRoute,
-  path: '/reports/abuse',
-  component: lazyRouteComponent(() => import('./pages/reports/Abuse.js'), 'AbuseReportsList'),
-  errorComponent: RouteError,
-});
-const triageReportsList = createRoute({
-  getParentRoute: () => rootRoute,
-  path: '/reports/triage',
-  component: lazyRouteComponent(() => import('./pages/reports/Triage.js'), 'TriageReportsList'),
-  errorComponent: RouteError,
-});
-const adminAlertsList = createRoute({
-  getParentRoute: () => rootRoute,
-  path: '/admin-alerts',
-  component: lazyRouteComponent(() => import('./pages/admin-alerts/List.js'), 'AdminAlertsList'),
-  errorComponent: RouteError,
-});
-const senderAbuseList = createRoute({
-  getParentRoute: () => rootRoute,
-  path: '/sender-abuse',
-  component: lazyRouteComponent(() => import('./pages/sender-abuse/List.js'), 'SenderAbuseList'),
-  errorComponent: RouteError,
-});
-const dmarcPromotionList = createRoute({
-  getParentRoute: () => rootRoute,
-  path: '/dmarc-promotion',
-  component: lazyRouteComponent(
-    () => import('./pages/dmarc-promotion/List.js'),
-    'DmarcPromotionList',
-  ),
-  errorComponent: RouteError,
-});
+// /cf-zones and /cf-zones/$name removed — CF zone status now renders as a
+// section on /domains/$id with the same checks engine.
+// /dmarc-promotion removed — fold-in tab/section on /domains/$id.
+// /suppressions standalone list removed (Stage 4-followup): folded into
+// /abuse as the fifth tab. /suppressions/$id detail still resolves; rows on
+// the new tab link to it.
 const suppressionDetail = createRoute({
   getParentRoute: () => rootRoute,
   path: '/suppressions/$id',
@@ -243,6 +185,30 @@ const suppressionDetail = createRoute({
     () => import('./pages/suppressions/Detail.js'),
     'SuppressionDetail',
   ),
+  errorComponent: RouteError,
+});
+// Consolidated abuse hub — collapses /reports/abuse + /reports/triage +
+// /admin-alerts + /sender-abuse into one tabbed page. `?tab=...` preserves
+// deep links.
+const abuseHub = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/abuse',
+  validateSearch: (
+    search: Record<string, unknown>,
+  ): { tab?: 'complaints' | 'triage' | 'alerts' | 'senders' | 'suppressions' } => {
+    const t = search.tab;
+    if (
+      t === 'complaints' ||
+      t === 'triage' ||
+      t === 'alerts' ||
+      t === 'senders' ||
+      t === 'suppressions'
+    ) {
+      return { tab: t };
+    }
+    return {};
+  },
+  component: lazyRouteComponent(() => import('./pages/abuse/AbuseHub.js'), 'AbuseHub'),
   errorComponent: RouteError,
 });
 const policyModeration = createRoute({
@@ -265,28 +231,17 @@ const routeTree = rootRoute.addChildren([
   mailboxDetail,
   domainsList,
   domainDetail,
-  credentialsList,
   credentialDetail,
   messagesList,
   messageDetail,
-  webhookSubsList,
   webhookSubDetail,
-  routingList,
   dlqBrowser,
   bridgesList,
   bridgeDetail,
-  testSend,
-  account,
+  me,
   diagnostics,
-  cfZonesList,
-  cfZoneDetail,
-  suppressionsList,
   suppressionDetail,
-  abuseReportsList,
-  triageReportsList,
-  adminAlertsList,
-  senderAbuseList,
-  dmarcPromotionList,
+  abuseHub,
   policyModeration,
   policyDecisions,
 ]);

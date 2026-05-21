@@ -1,13 +1,13 @@
 ---
 title: Consumer contract
-description: The stability promises polaris-email makes to integrators — wire format, error envelope, retry semantics, and the unrecoverable-recipients fact.
+description: The stability promises polaris-mail makes to integrators — wire format, error envelope, retry semantics, and the unrecoverable-recipients fact.
 sidebar_label: Consumer contract
 sidebar_position: 2
 ---
 
-# polaris-email — consumer contract
+# polaris-mail — consumer contract
 
-This document binds your service to polaris-email. Read it before integrating.
+This document binds your service to polaris-mail. Read it before integrating.
 
 ## Stability
 
@@ -28,7 +28,7 @@ This document binds your service to polaris-email. Read it before integrating.
 
 - Idempotent sends on `Idempotency-Key` for 24 h. Same key + same body → original `messageId`. Same key + different body → `409 idempotency_conflict`.
 - Emergency rotation invalidates the old credential within ≤5 s of the panel button click. Planned rotation gives 24 h.
-- Zero-payload logging by default. **Recipients are unrecoverable post-submission**; the service does not retain plaintext recipient addresses past delivery. If you anticipate having to respond to subpoenas or otherwise reconstruct who you sent to, keep your own outbound logs on the consumer side — polaris-email cannot produce them after the fact.
+- Zero-payload logging by default. **Recipients are unrecoverable post-submission**; the service does not retain plaintext recipient addresses past delivery. If you anticipate having to respond to subpoenas or otherwise reconstruct who you sent to, keep your own outbound logs on the consumer side — polaris-mail cannot produce them after the fact.
 - Webhook deliveries retry with exponential backoff up to 6 attempts, then DLQ. DLQ messages can be replayed from the panel.
 - Audit chain is hash-linked in D1 and walked nightly. In-band tampering is detectable.
 

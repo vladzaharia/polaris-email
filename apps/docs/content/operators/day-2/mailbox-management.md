@@ -7,7 +7,7 @@ sidebar_position: 3
 
 # Mailbox management
 
-polaris-email is **mailbox-centric**: each operator owns N mailboxes,
+polaris-mail is **mailbox-centric**: each operator owns N mailboxes,
 and a mailbox is the unit of routing, auth scope, retention, and
 webhook delivery. Every message — inbound or outbound — has exactly
 one `mailbox_id`. The previous tenant-centric model is gone; any
@@ -56,15 +56,15 @@ four child tables inline and gates destructive actions
 ```sh
 # Create
 curl -X POST "$API/v1/admin/mailboxes" \
-    -H "X-Polaris-Sig: $(polaris-email auth sign --method POST --path /v1/admin/mailboxes --body req.json)" \
+    -H "X-Polaris-Sig: $(polaris-mail auth sign --method POST --path /v1/admin/mailboxes --body req.json)" \
     --data-binary @req.json
 
 # List
 curl -X GET "$API/v1/admin/mailboxes" \
-    -H "X-Polaris-Sig: $(polaris-email auth sign --method GET --path /v1/admin/mailboxes)"
+    -H "X-Polaris-Sig: $(polaris-mail auth sign --method GET --path /v1/admin/mailboxes)"
 ```
 
-See the [REST API reference](/reference/api/polaris-email-api) for full
+See the [REST API reference](/reference/api/polaris-mail-api) for full
 request / response shapes and required headers; the signing
 canonical-string is documented in the
 [HMAC reference](/security/hmac-reference).
@@ -74,15 +74,15 @@ canonical-string is documented in the
 Other day-2 workflows are mailbox-scoped:
 
 - **Senders and receivers** — attached at credential-issuance time via
-  `polaris-email cred issue --mailbox <id> --senders <list>`; see
+  `polaris-mail cred issue --mailbox <id> --senders <list>`; see
   [Credential management](/operators/day-2/credential-management).
-- **Inbound routes** — `polaris-email route` commands target a
+- **Inbound routes** — `polaris-mail route` commands target a
   `--domain`, and the inbound Worker resolves the recipient back to the
   owning mailbox; see
   [Routing and webhooks](/operators/day-2/routing-and-webhooks).
 - **Webhook subs** — managed under the same routing-and-webhooks page
   (admin REST surface today, panel UI for the common case).
-- **Activity inspection** — `polaris-email status` rolls up per-domain
+- **Activity inspection** — `polaris-mail status` rolls up per-domain
   and per-mailbox counters; see
   [Activity inspection](/operators/day-2/activity-inspection).
 

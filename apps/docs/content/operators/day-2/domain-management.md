@@ -7,12 +7,12 @@ sidebar_position: 2
 
 # Domain management
 
-Two paths exist for getting a domain into polaris-email:
+Two paths exist for getting a domain into polaris-mail:
 
-1. **CF zone discover + configure** (`polaris-email domain cf-zone configure`) —
+1. **CF zone discover + configure** (`polaris-mail domain cf-zone configure`) —
    the canonical path when the zone lives in the same Cloudflare account
    as the control plane.
-2. **Legacy declarative onboard** (`polaris-email domain onboard`) — the
+2. **Legacy declarative onboard** (`polaris-mail domain onboard`) — the
    fallback for the edge case where the zone lives in a different CF
    account (e.g. a partner-owned zone with a one-off delegation).
 
@@ -20,7 +20,7 @@ Prefer the first path unless you have a specific reason not to.
 
 ## CF zone discover and configure
 
-The polaris-email panel and CLI treat **Cloudflare as the source of
+The polaris-mail panel and CLI treat **Cloudflare as the source of
 truth for what zones exist**. Instead of declaring "onboard this domain
 by name", you pick from the live list of zones in your CF account and
 ask polaris to converge each one to the canonical state.
@@ -33,7 +33,7 @@ six status badges:
 1. Routing enabled
 2. DNS records locked by CF
 3. Sender onboarded
-4. Catch-all → `polaris-email-in`
+4. Catch-all → `polaris-mail-in`
 5. Named-rule conflicts
 6. D1 `mail_domains` row
 
@@ -45,12 +45,12 @@ audit log is the canonical record of who applied what.
 ### CLI (parity)
 
 ```sh
-polaris-email domain cf-zone list                # all zones, status grid
-polaris-email domain cf-zone list --refresh      # bypass the 60s server-side cache
-polaris-email domain cf-zone status plrs.im      # detailed per-zone view
-polaris-email domain cf-zone configure plrs.im              # dry-run diff (default)
-polaris-email domain cf-zone configure plrs.im --apply      # actually apply
-polaris-email domain cf-zone configure plrs.im --apply \
+polaris-mail domain cf-zone list                # all zones, status grid
+polaris-mail domain cf-zone list --refresh      # bypass the 60s server-side cache
+polaris-mail domain cf-zone status plrs.im      # detailed per-zone view
+polaris-mail domain cf-zone configure plrs.im              # dry-run diff (default)
+polaris-mail domain cf-zone configure plrs.im --apply      # actually apply
+polaris-mail domain cf-zone configure plrs.im --apply \
     --ops set_catch_all_worker            # subset (partial recovery)
 ```
 
@@ -60,8 +60,8 @@ A typical dry-run output:
 Zone: plrs.im
 Diff:
   - enable_routing: Enable Cloudflare Email Routing on plrs.im
-  - set_catch_all_worker: Point catch-all rule at the polaris-email-in Worker
-  - create_d1_mail_domain: Create polaris-email mail_domains row for plrs.im
+  - set_catch_all_worker: Point catch-all rule at the polaris-mail-in Worker
+  - create_d1_mail_domain: Create polaris-mail mail_domains row for plrs.im
 
 Warnings:
   ! 2 named-address rule(s) on plrs.im route mail elsewhere
@@ -82,12 +82,12 @@ In CF-first order:
    `route1/2/3.mx.cloudflare.net` and an SPF TXT record, locking them
    so subsequent edits go through CF.
 2. **`set_catch_all_worker`** — `PUT /zones/{id}/email/routing/rules/catch_all`
-   pointing at the `polaris-email-in` Worker.
+   pointing at the `polaris-mail-in` Worker.
 3. **`onboard_sender_domain`** — `POST /accounts/{acc}/email-service/sender-domains`.
    CF auto-publishes the DKIM CNAMEs (with wildcard), SPF include for
    `cf-bounce.<domain>`, DMARC, and the bounce MX. We DoH-verify after.
 4. **`create_d1_mail_domain`** — `INSERT` a `mail_domains` row so
-   polaris-email tracks the domain internally (used by sender lookups,
+   polaris-mail tracks the domain internally (used by sender lookups,
    `send_email` binding resolution, etc.).
 
 Operator-defined named rules (e.g. `support@example.com → forward to
@@ -107,21 +107,21 @@ The `CF_API_TOKEN` secret on `services/api` needs:
 - **Zone → Zone → Edit** (manual-DNS fallback)
 - **Zone → DNS → Edit** (same fallback)
 
-`polaris-email setup infra preflight` checks the Email Routing and
+`polaris-mail setup infra preflight` checks the Email Routing and
 Zone:Read scopes and fails loudly if either is missing.
 
 ## Legacy: declarative `domain onboard`
 
 The pre-CF-first flow still works for the edge case where the operator
-wants polaris-email to manage a domain that isn't in the same CF
+wants polaris-mail to manage a domain that isn't in the same CF
 account (e.g. a partner-owned zone with a one-off delegation):
 
 ```sh
-polaris-email domain onboard acme.com --inbound --outbound
+polaris-mail domain onboard acme.com --inbound --outbound
 # or fully interactive:
-polaris-email domain onboard
+polaris-mail domain onboard
 # or non-interactive from a file:
-polaris-email domain onboard --from-file domain.yaml
+polaris-mail domain onboard --from-file domain.yaml
 ```
 
 The wizard discovers the Cloudflare zone, publishes DKIM/SPF/DMARC +
@@ -133,7 +133,7 @@ when its parent `acme.com` is already managed.
 Bulk subdomain provisioning (PaaS workflow):
 
 ```sh
-polaris-email domain bulk-onboard \
+polaris-mail domain bulk-onboard \
     --pattern 'tenant-{1..100}.app.example.com' \
     --zone example.com --outbound
 ```
@@ -141,9 +141,9 @@ polaris-email domain bulk-onboard \
 ## Verify and show
 
 ```sh
-polaris-email domain list
-polaris-email domain show acme.com
-polaris-email domain verify acme.com
+polaris-mail domain list
+polaris-mail domain show acme.com
+polaris-mail domain verify acme.com
 ```
 
 `domain verify` runs the same readiness check the panel surfaces —
@@ -156,10 +156,10 @@ names the exact admin endpoint to call to remediate.
 
 ```sh
 # Per-domain (most-specific row gets a new key)
-polaris-email domain rotate-dkim acme.com
+polaris-mail domain rotate-dkim acme.com
 
 # Zone-wide (all child domains using wildcard inheritance rotate together)
-polaris-email domain zone rotate-dkim acme.com
+polaris-mail domain zone rotate-dkim acme.com
 ```
 
 Rotation flow:
@@ -177,7 +177,7 @@ key remains in service.
 ## Decommission a domain
 
 ```sh
-polaris-email domain delete acme.com
+polaris-mail domain delete acme.com
 ```
 
 State machine:
@@ -226,7 +226,7 @@ fleet-wide DNS writes.
 Calling `/mta-sts/enable` publishes three records:
 
 1. DNS `TXT` at `_mta-sts.{domain}` → `v=STSv1; id={policyId}`
-2. Workers custom domain `mta-sts.{domain}` → `polaris-email-api` (the
+2. Workers custom domain `mta-sts.{domain}` → `polaris-mail-api` (the
    public policy handler serves the policy body at
    `https://mta-sts.{domain}/.well-known/mta-sts.txt`)
 3. DNS `TXT` at `_smtp._tls.{domain}` → `v=TLSRPTv1; rua=mailto:tlsrpt@plrs.im`

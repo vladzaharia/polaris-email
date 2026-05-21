@@ -1,7 +1,7 @@
-// polaris-email-out Worker — queue consumer + send_email bindings.
+// polaris-mail-out Worker — queue consumer + send_email bindings.
 {
   "$schema": "https://json-schema.org/draft-07/schema",
-  "name": "polaris-email-out",
+  "name": "polaris-mail-out",
   "main": "src/index.ts",
   "compatibility_date": "2026-04-15",
   "compatibility_flags": ["nodejs_compat_v2"],
@@ -9,25 +9,25 @@
   "logpush": true,
   "placement": { "mode": "smart" },
   "d1_databases": [
-    { "binding": "DB", "database_name": "polaris-email", "database_id": "REPLACE_WITH_LOCAL" },
+    { "binding": "DB", "database_name": "polaris-mail", "database_id": "REPLACE_WITH_LOCAL" },
   ],
-  "r2_buckets": [{ "binding": "R2", "bucket_name": "polaris-email" }],
+  "r2_buckets": [{ "binding": "R2", "bucket_name": "polaris-mail" }],
   "queues": {
     "consumers": [
       {
-        "queue": "polaris-email-outbound",
+        "queue": "polaris-mail-outbound",
         "max_batch_size": 10,
         "max_batch_timeout": 5,
         "max_retries": 5,
-        "dead_letter_queue": "polaris-email-outbound-dlq",
+        "dead_letter_queue": "polaris-mail-outbound-dlq",
       },
     ],
-    "producers": [{ "binding": "FANOUT_QUEUE", "queue": "polaris-email-fanout" }],
+    "producers": [{ "binding": "FANOUT_QUEUE", "queue": "polaris-mail-fanout" }],
   },
   // send_email bindings — one per verified outbound domain. Real names live in wrangler.local.jsonc.
   "send_email": [{ "name": "EMAIL_DEFAULT" }],
   // Tail consumer: forwards error/warn logs to services/tail.
-  "tail_consumers": [{ "service": "polaris-email-tail" }],
+  "tail_consumers": [{ "service": "polaris-mail-tail" }],
   // Analytics Engine: send_email success/bounce/failed per domain.
   "analytics_engine_datasets": [{ "binding": "ANALYTICS", "dataset": "polaris_metrics" }],
 }

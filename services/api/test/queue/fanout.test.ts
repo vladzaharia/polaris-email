@@ -191,7 +191,7 @@ afterEach(() => {
 
 function mkBatch(body: FanoutEvent): MessageBatch<FanoutEvent> {
   return {
-    queue: 'polaris-email-fanout',
+    queue: 'polaris-mail-fanout',
     messages: [
       {
         body,

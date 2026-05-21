@@ -1,7 +1,11 @@
-// Message detail — renders the canonical Message JSON via MessageJsonView,
-// plus an attachments table whose Download buttons link straight to the R2
-// public custom domain. No signed-URL mint round-trip.
-import { useParams } from '@tanstack/react-router';
+// Message detail.
+//
+// Renders the canonical Message JSON returned by `GET /api/messages/:id`
+// alongside a per-message <MessagePipelineStrip> that surfaces queue/policy/
+// fanout state at a glance. Attachment Download buttons link straight to the
+// public R2 custom domain — no signed-URL mint round-trip.
+import { useParams, Link } from '@tanstack/react-router';
+import { ExternalLink } from 'lucide-react';
 import { PageCard } from '../../layouts/PageCard.js';
 import { Skeleton } from '../../components/ui/skeleton.js';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../components/ui/tabs.js';
@@ -14,14 +18,12 @@ import {
   TableHeader,
   TableRow,
 } from '../../components/ui/table.js';
-import {
-  Accordion,
-  AccordionItem,
-  AccordionTrigger,
-  AccordionContent,
-} from '../../components/ui/accordion.js';
 import { useAdminQuery } from '../../hooks/useAdminApi.js';
 import { messageKeys } from '../../queryKeys.js';
+import { StatusBadge } from '../../components/StatusBadge.js';
+import { ErrorText } from '../../components/ErrorText.js';
+import { formatDate, formatRelative } from '../../lib/format.js';
+import { MessagePipelineStrip } from './MessagePipelineStrip.js';
 
 interface MessagePayload {
   id: string;
@@ -29,12 +31,16 @@ interface MessagePayload {
   status: string;
   from: string;
   to: string[];
+  cc?: string[];
   subject?: string;
   text?: string;
   html?: string;
   // Public R2 URL for the raw RFC822 body.
   body_url?: string;
   headers?: Record<string, string>;
+  header_message_id?: string;
+  mailbox_id?: string;
+  created_at?: string;
   // Bridge-style payload shape for back-compat — kept as a fallback while
   // older callers still emit it.
   bodies?: {
@@ -51,6 +57,16 @@ interface MessagePayload {
   }>;
 }
 
+// Definition-list cell: `<dt>` muted small, `<dd>` reads as foreground.
+function MetaRow({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <>
+      <dt className="text-xs font-medium text-[var(--color-muted-foreground)]">{label}</dt>
+      <dd className="min-w-0 text-sm break-words">{children}</dd>
+    </>
+  );
+}
+
 export function MessageDetail() {
   const { id } = useParams({ from: '/messages/$id' });
   const q = useAdminQuery<MessagePayload>(messageKeys.detail(id), `/api/messages/${id}`);
@@ -60,17 +76,15 @@ export function MessageDetail() {
   ];
   if (q.isLoading) {
     return (
-      <PageCard title="Message" breadcrumbs={breadcrumbs}>
+      <PageCard title="Message" breadcrumbs={breadcrumbs} decorative>
         <Skeleton className="h-32 w-full" />
       </PageCard>
     );
   }
   if (q.error || !q.data) {
     return (
-      <PageCard title="Message" breadcrumbs={breadcrumbs}>
-        <p className="text-sm text-[var(--color-destructive)]">
-          {q.error?.message ?? 'Not found.'}
-        </p>
+      <PageCard title="Message" breadcrumbs={breadcrumbs} decorative>
+        <ErrorText error={q.error ?? 'Not found.'} />
       </PageCard>
     );
   }
@@ -80,42 +94,88 @@ export function MessageDetail() {
   // Body URL preference: the B5 `body_url` (full RFC822 on R2) takes precedence;
   // fall back to the legacy per-mime bridge-style URLs if they're still around.
   const bodyHref = m.body_url ?? m.bodies?.text?.url ?? m.bodies?.html?.url;
+  const createdRelative = m.created_at ? formatRelative(m.created_at) : null;
   return (
     <PageCard
       title={m.subject ?? '(no subject)'}
       breadcrumbs={breadcrumbs}
-      description={`${m.direction} · ${m.status}`}
+      description={
+        <span className="inline-flex items-center gap-2">
+          <span className="uppercase tracking-wide">{m.direction}</span>
+          <span aria-hidden>·</span>
+          <StatusBadge kind="message" value={m.status} />
+          {createdRelative ? (
+            <>
+              <span aria-hidden>·</span>
+              <span>{createdRelative}</span>
+            </>
+          ) : null}
+        </span>
+      }
       decorative
     >
       <div className="space-y-6">
-        <div className="text-sm">
-          <div>
-            <strong>From:</strong> {m.from}
-          </div>
-          <div>
-            <strong>To:</strong> {m.to.join(', ')}
-          </div>
-        </div>
+        {/* Metadata grid — two-column definition list with a max-content
+            label column so multi-line "to:" lists wrap cleanly. */}
+        <dl className="grid grid-cols-[max-content_minmax(0,1fr)] gap-x-4 gap-y-1">
+          <MetaRow label="From">
+            <span className="font-mono text-xs">{m.from}</span>
+          </MetaRow>
+          <MetaRow label="To">
+            <span className="font-mono text-xs">{m.to.join(', ')}</span>
+          </MetaRow>
+          {m.cc && m.cc.length > 0 ? (
+            <MetaRow label="Cc">
+              <span className="font-mono text-xs">{m.cc.join(', ')}</span>
+            </MetaRow>
+          ) : null}
+          {m.mailbox_id ? (
+            <MetaRow label="Mailbox">
+              <Link
+                to="/mailboxes/$id"
+                params={{ id: m.mailbox_id }}
+                className="font-mono text-xs underline-offset-2 hover:underline"
+              >
+                {m.mailbox_id}
+              </Link>
+            </MetaRow>
+          ) : null}
+          {m.header_message_id ? (
+            <MetaRow label="Message-ID">
+              <span className="font-mono text-xs">{m.header_message_id}</span>
+            </MetaRow>
+          ) : null}
+          {m.created_at ? (
+            <MetaRow label="Created">
+              <span className="text-sm">
+                {formatDate(m.created_at)}{' '}
+                <span className="text-[var(--color-muted-foreground)]">
+                  ({formatRelative(m.created_at)})
+                </span>
+              </span>
+            </MetaRow>
+          ) : null}
+          {bodyHref ? (
+            <MetaRow label="Raw">
+              <a
+                href={bodyHref}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 text-sm text-[var(--color-primary)] underline-offset-2 hover:underline"
+              >
+                RFC822 source <ExternalLink className="h-3 w-3" aria-hidden />
+              </a>
+            </MetaRow>
+          ) : null}
+        </dl>
 
-        {m.headers ? (
-          <Accordion type="single" collapsible>
-            <AccordionItem value="headers">
-              <AccordionTrigger>Headers</AccordionTrigger>
-              <AccordionContent>
-                <pre className="overflow-auto text-xs">
-                  {Object.entries(m.headers)
-                    .map(([k, v]) => `${k}: ${v}`)
-                    .join('\n')}
-                </pre>
-              </AccordionContent>
-            </AccordionItem>
-          </Accordion>
-        ) : null}
+        <MessagePipelineStrip messageId={m.id} direction={m.direction} status={m.status} />
 
         <Tabs defaultValue="text">
           <TabsList>
             <TabsTrigger value="text">Text</TabsTrigger>
             <TabsTrigger value="html">HTML</TabsTrigger>
+            <TabsTrigger value="headers">Headers</TabsTrigger>
           </TabsList>
           <TabsContent value="text" className="mt-3">
             {textInline ? (
@@ -142,6 +202,17 @@ export function MessageDetail() {
               </Button>
             ) : (
               <p className="text-sm text-[var(--color-muted-foreground)]">No HTML body.</p>
+            )}
+          </TabsContent>
+          <TabsContent value="headers" className="mt-3">
+            {m.headers && Object.keys(m.headers).length > 0 ? (
+              <pre className="overflow-auto rounded-md border bg-[var(--color-muted)]/30 p-3 text-xs">
+                {Object.entries(m.headers)
+                  .map(([k, v]) => `${k}: ${v}`)
+                  .join('\n')}
+              </pre>
+            ) : (
+              <p className="text-sm text-[var(--color-muted-foreground)]">No headers captured.</p>
             )}
           </TabsContent>
         </Tabs>

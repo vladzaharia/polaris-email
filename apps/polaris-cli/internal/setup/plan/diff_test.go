@@ -69,15 +69,15 @@ func TestDiff_PartialState_MixedCreatesAndSkips(t *testing.T) {
 	// State + live have D1 and KV (one entry each) but nothing else.
 	doc := &state.Doc{
 		D1: map[string]state.Resource{
-			"polaris-email": {ID: "db-1", Name: "polaris-email"},
+			"polaris-mail": {ID: "db-1", Name: "polaris-mail"},
 		},
 		KV: map[string]state.Resource{
-			"polaris-email-nonce": {ID: "kv-1", Name: "polaris-email-nonce"},
+			"polaris-mail-nonce": {ID: "kv-1", Name: "polaris-mail-nonce"},
 		},
 	}
 	snap := Snapshot{
-		D1: []LiveResource{{ID: "db-1", Name: "polaris-email"}},
-		KV: []LiveResource{{ID: "kv-1", Name: "polaris-email-nonce"}},
+		D1: []LiveResource{{ID: "db-1", Name: "polaris-mail"}},
+		KV: []LiveResource{{ID: "kv-1", Name: "polaris-mail-nonce"}},
 	}
 
 	got := Diff(d, doc, snap)
@@ -124,14 +124,14 @@ func TestDiff_LiveButNoState_AdoptPath(t *testing.T) {
 func TestDiff_StateButNoLive_DriftPath(t *testing.T) {
 	t.Parallel()
 	d := Desired()
-	// State claims polaris-email-nonce + polaris-email-fanout exist;
+	// State claims polaris-mail-nonce + polaris-mail-fanout exist;
 	// live snapshot says they don't.
 	doc := &state.Doc{
 		KV: map[string]state.Resource{
-			"polaris-email-nonce": {ID: "kv-stale", Name: "polaris-email-nonce"},
+			"polaris-mail-nonce": {ID: "kv-stale", Name: "polaris-mail-nonce"},
 		},
 		Queues: map[string]state.Resource{
-			"polaris-email-fanout": {ID: "q-stale", Name: "polaris-email-fanout"},
+			"polaris-mail-fanout": {ID: "q-stale", Name: "polaris-mail-fanout"},
 		},
 	}
 	snap := Snapshot{} // empty
@@ -161,12 +161,12 @@ func TestDiff_StateOnlyForUndesired_NotDrift(t *testing.T) {
 	// in state should not show up as Drift — it's just vestigial.
 	d := &DesiredState{
 		KV: []DesiredKV{
-			{Title: "polaris-email-nonce"},
+			{Title: "polaris-mail-nonce"},
 		},
 	}
 	doc := &state.Doc{
 		KV: map[string]state.Resource{
-			"polaris-email-vestigial": {ID: "kv-old", Name: "polaris-email-vestigial"},
+			"polaris-mail-vestigial": {ID: "kv-old", Name: "polaris-mail-vestigial"},
 		},
 	}
 	got := Diff(d, doc, Snapshot{})
@@ -207,12 +207,12 @@ func TestDiff_R2_AdoptCarriesLiveJurisdiction(t *testing.T) {
 	t.Parallel()
 	d := &DesiredState{
 		R2: []DesiredR2{
-			{Name: "polaris-email", Jurisdiction: "eu", ObjectLockHours: 2160},
+			{Name: "polaris-mail", Jurisdiction: "eu", ObjectLockHours: 2160},
 		},
 	}
 	snap := Snapshot{
 		R2: []LiveR2{
-			{Name: "polaris-email", Jurisdiction: "eu"},
+			{Name: "polaris-mail", Jurisdiction: "eu"},
 		},
 	}
 	got := Diff(d, &state.Doc{}, snap)

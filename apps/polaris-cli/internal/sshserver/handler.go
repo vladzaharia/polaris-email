@@ -18,7 +18,7 @@ import (
 //
 // The bootstrap client signs requests; the impersonation header attributes
 // every API call to the connecting operator. The TUI itself doesn't know
-// it's running under SSH — same code path as `polaris-email tui` locally.
+// it's running under SSH — same code path as `polaris-mail tui` locally.
 func newProgramHandler(bootstrap *client.Client, themeName string) bubbletea.ProgramHandler {
 	return func(sess ssh.Session) *tea.Program {
 		op := OperatorFromContext(sess.Context())

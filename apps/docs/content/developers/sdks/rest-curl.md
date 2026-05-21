@@ -45,10 +45,10 @@ NONCE=$(openssl rand -hex 12)
 BODY='{"from":"noreply@example.com","to":["user@external.com"],"subject":"Hello","text":"Hi","category":"svc.test"}'
 BH=$(printf "%s" "$BODY" | openssl dgst -sha256 -hex | awk '{print $2}')
 CANON="polaris-api\nPOST\n/v1/messages\n\n$TS\n$NONCE\n$BH"
-SIG=$(printf "%b" "$CANON" | openssl dgst -sha256 -hmac "$POLARIS_EMAIL_KEY_SECRET" -hex | awk '{print $2}')
-curl -sS -X POST "$POLARIS_EMAIL_URL/v1/messages" \
+SIG=$(printf "%b" "$CANON" | openssl dgst -sha256 -hmac "$POLARIS_MAIL_KEY_SECRET" -hex | awk '{print $2}')
+curl -sS -X POST "$POLARIS_MAIL_URL/v1/messages" \
   -H "content-type: application/json" \
-  -H "x-polaris-key-id: $POLARIS_EMAIL_KEY_ID" \
+  -H "x-polaris-key-id: $POLARIS_MAIL_KEY_ID" \
   -H "x-polaris-ts: $TS" \
   -H "x-polaris-nonce: $NONCE" \
   -H "x-polaris-sig: $SIG" \

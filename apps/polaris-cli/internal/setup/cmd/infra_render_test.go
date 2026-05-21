@@ -140,7 +140,7 @@ func TestRender_Merge_ReplacesShellPipeline(t *testing.T) {
 	if err := os.WriteFile(base, []byte(`// header
 {
   // comment
-  "name": "polaris-email-api",
+  "name": "polaris-mail-api",
   "d1_databases": [
     { "binding": "DB", "database_id": "REPLACE_WITH_LOCAL" }
   ]
@@ -171,7 +171,7 @@ func TestRender_Merge_ReplacesShellPipeline(t *testing.T) {
 		"// header",
 		"// comment",
 		`"account_id": "acc-123"`,
-		`"name": "polaris-email-api"`,
+		`"name": "polaris-mail-api"`,
 		`"database_id": "real-id"`,
 	} {
 		if !strings.Contains(s, want) {
@@ -214,17 +214,17 @@ func setupRenderFixture(t *testing.T) string {
 		SchemaVersion: state.CurrentSchema,
 		AccountID:     "cf-account-id",
 		D1: map[string]state.Resource{
-			"polaris-email": {ID: "d1-id", Name: "polaris-email"},
+			"polaris-mail": {ID: "d1-id", Name: "polaris-mail"},
 		},
 		R2: map[string]state.R2Bucket{
-			"polaris-email": {Name: "polaris-email", Jurisdiction: "eu"},
+			"polaris-mail": {Name: "polaris-mail", Jurisdiction: "eu"},
 		},
 		KV: map[string]state.Resource{
-			"polaris-email-nonce":       {ID: "kv-nonce-id", Name: "polaris-email-nonce"},
-			"polaris-email-idempotency": {ID: "kv-idem-id", Name: "polaris-email-idempotency"},
-			"polaris-email-rate-limit":  {ID: "kv-rate-limit-id", Name: "polaris-email-rate-limit"},
-			"polaris-email-key-cache":   {ID: "kv-kc-id", Name: "polaris-email-key-cache"},
-			"polaris-email-revocations": {ID: "kv-rev-id", Name: "polaris-email-revocations"},
+			"polaris-mail-nonce":       {ID: "kv-nonce-id", Name: "polaris-mail-nonce"},
+			"polaris-mail-idempotency": {ID: "kv-idem-id", Name: "polaris-mail-idempotency"},
+			"polaris-mail-rate-limit":  {ID: "kv-rate-limit-id", Name: "polaris-mail-rate-limit"},
+			"polaris-mail-key-cache":   {ID: "kv-kc-id", Name: "polaris-mail-key-cache"},
+			"polaris-mail-revocations": {ID: "kv-rev-id", Name: "polaris-mail-revocations"},
 		},
 	}
 	s := state.Open(filepath.Join(dir, ".deploy-state.json"))
@@ -235,6 +235,7 @@ func setupRenderFixture(t *testing.T) string {
 	// Drop a known-good .env.deploy.
 	if err := os.WriteFile(filepath.Join(dir, ".env.deploy"), []byte(`CF_ACCOUNT_ID="cf-account-id"
 POLARIS_API_HOSTNAME="api.example.com"
+POLARIS_PANEL_HOSTNAME="panel.example.com"
 R2_PUBLIC_HOST="r2.example.com"
 ALERT_WEBHOOK="https://alerts.example.com/hook"
 SYNTHETIC_FROM="synthetic@example.com"

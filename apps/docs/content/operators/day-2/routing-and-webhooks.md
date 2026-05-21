@@ -16,7 +16,7 @@ Two related surfaces:
    for deliveries that exhausted retries.
 
 The Cloudflare Email Routing rule is a single per-zone catch-all
-pointing at the `polaris-email-in` Worker; all the named-pattern logic
+pointing at the `polaris-mail-in` Worker; all the named-pattern logic
 lives in our code, not in CF.
 
 ## Inbound routing
@@ -24,10 +24,10 @@ lives in our code, not in CF.
 ### List, add, apply
 
 ```sh
-polaris-email route list --domain acme.com
-polaris-email route add --domain acme.com \
+polaris-mail route list --domain acme.com
+polaris-mail route add --domain acme.com \
     --pattern 'support@acme.com' --action webhook --url https://...
-polaris-email route apply -f routes.yaml      # declarative reconciliation
+polaris-mail route apply -f routes.yaml      # declarative reconciliation
 ```
 
 A typical `routes.yaml`:
@@ -51,9 +51,9 @@ and emits a transactional batch of inserts / updates / deletes. Pass
 ### Enable, disable, update
 
 ```sh
-polaris-email route disable <id>
-polaris-email route enable  <id>
-polaris-email route update  <id> --url https://new-host/email-hook
+polaris-mail route disable <id>
+polaris-mail route enable  <id>
+polaris-mail route update  <id> --url https://new-host/email-hook
 ```
 
 Disabled routes stay in `routing_rules` but are skipped during
@@ -79,7 +79,7 @@ Webhook subscriptions are per-mailbox. CRUD lives on the admin REST
 surface (`POST /v1/admin/mailboxes/:id/webhook-subs`) or the panel UI.
 
 :::warning Out of date
-The CLI does not yet expose a `webhook subs` verb. `polaris-email
+The CLI does not yet expose a `webhook subs` verb. `polaris-mail
 webhook` is currently the DLQ surface only; subscription CRUD runs
 through the admin REST surface or the panel. CLI parity is intentional
 follow-up.
@@ -100,10 +100,10 @@ land in a dead-letter queue. The DLQ is operator-managed: nothing
 moves out without explicit action.
 
 ```sh
-polaris-email webhook dlq list
-polaris-email webhook dlq inspect <id>
-polaris-email webhook dlq replay <id>
-polaris-email webhook dlq drop <id> --confirm <id>
+polaris-mail webhook dlq list
+polaris-mail webhook dlq inspect <id>
+polaris-mail webhook dlq replay <id>
+polaris-mail webhook dlq drop <id> --confirm <id>
 ```
 
 - **`list`** prints DLQ rows with attempt counts, last-error codes,
@@ -118,7 +118,7 @@ polaris-email webhook dlq drop <id> --confirm <id>
 - **`drop`** permanently removes the row. The `--confirm <id>` flag
   must repeat the row id back; a fat-finger drop is intentionally hard.
 
-Watch DLQ depth via `polaris-email status --queues` (see
+Watch DLQ depth via `polaris-mail status --queues` (see
 [Activity inspection](/operators/day-2/activity-inspection)); a
 growing DLQ is the on-call signal for the
 [webhook-dlq runbook](/operators/runbooks/webhook-dlq).

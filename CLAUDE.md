@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this repo is
 
-`polaris-email` is a managed email service for the `polaris-*` family.
+`polaris-mail` is a managed email service for the `polaris-*` family.
 Cloudflare Workers control plane (REST API, webhook fan-out, cron) + a Go
 on-prem mail bridge (SMTPS + IMAP) + a Go operator CLI + a Hono/React admin
 panel deployed as a Worker. Three Workers, three apps, ~12 packages.
@@ -26,7 +26,7 @@ before changing anything touching R2 public URLs, the audit chain, or HMAC).
   Worker with `dist/client/` mounted on the `ASSETS` binding.
 - `apps/mail-bridge` — Go 1.25, on-prem SMTPS (:465) + IMAP4rev2 (:993) in
   one binary. Its own `go.mod` + `Makefile`.
-- `apps/polaris-cli` — Go 1.22, operator CLI (`polaris-email`, alias `pml`).
+- `apps/polaris-cli` — Go 1.22, operator CLI (`polaris-mail`, alias `pml`).
   Own `go.mod`.
 - `packages/{hmac,schema,pipeline,ids,mime,cf-api,revocation,test-vectors,sdk-node}`
   TypeScript libs published as workspace packages.
@@ -35,7 +35,7 @@ before changing anything touching R2 public URLs, the audit chain, or HMAC).
   this job; if you add an external dep, update `.github/workflows/ci.yml`.
 - `bin/` — narrow operational scripts only (`killswitch-mx-flip.sh`,
   `killswitch-r2-pause.sh`, `dev.sh`). The cold-start /
-  deploy / smoke / rollback orchestration lives in the `polaris-email`
+  deploy / smoke / rollback orchestration lives in the `polaris-mail`
   Go CLI under `apps/polaris-cli/internal/setup/`.
 
 ## Commands
@@ -56,11 +56,11 @@ pnpm check                   # typecheck + lint + fmt:check (pre-PR gate)
 Per-workspace:
 
 ```sh
-pnpm --filter @polaris-email/api test                   # one Worker's tests
-pnpm --filter @polaris-email/panel dev:server           # panel Worker (recommended dev loop)
-pnpm --filter @polaris-email/panel dev:client           # Vite HMR (client-only)
-pnpm --filter @polaris-email/panel typecheck            # client + server tsc
-pnpm --filter @polaris-email/test-vectors run generate  # MUST run before go-test
+pnpm --filter @polaris-mail/api test                   # one Worker's tests
+pnpm --filter @polaris-mail/panel dev:server           # panel Worker (recommended dev loop)
+pnpm --filter @polaris-mail/panel dev:client           # Vite HMR (client-only)
+pnpm --filter @polaris-mail/panel typecheck            # client + server tsc
+pnpm --filter @polaris-mail/test-vectors run generate  # MUST run before go-test
 ```
 
 Single test file: `pnpm --filter <workspace> exec vitest run path/to/file.test.ts`.
@@ -69,47 +69,47 @@ Go:
 
 ```sh
 cd apps/mail-bridge && make build test vet   # Go 1.25; CI runs `go test -race ./...`
-cd apps/polaris-cli && make build test vet   # builds bin/polaris-email + bin/pml symlink
+cd apps/polaris-cli && make build test vet   # builds bin/polaris-mail + bin/pml symlink
 cd packages/sdk-go  && go test ./...         # needs test-vectors generated first
 ```
 
 Cold-start, deploy, smoke, rollback (Go CLI — canonical):
 
 ```sh
-polaris-email setup infra                    # full happy path: preflight → configure →
+polaris-mail setup infra                    # full happy path: preflight → configure →
                                              # plan → apply → render → migrate →
                                              # secrets seed → deploy → genesis-seal →
                                              # smoke. Each phase records to
                                              # .deploy-state.json so --resume short-
                                              # circuits past completed phases.
-polaris-email setup infra --resume           # pick up after a partial run
-polaris-email setup infra --phase migrate    # start at a specific phase
-polaris-email setup infra preflight          # validate tooling + .env.deploy
-polaris-email setup infra configure          # interactively (re)build .env.deploy
-polaris-email setup infra deploy all         # redeploy every Worker
-polaris-email setup infra deploy changed     # only services whose code/deps changed
-polaris-email setup infra deploy service api # one Worker
-polaris-email setup infra rollback api       # roll one Worker back to its previous version
-polaris-email setup infra smoke              # signed diagnostics + synthetic send
-polaris-email setup infra state rebuild      # reconstruct .deploy-state.json from live CF
+polaris-mail setup infra --resume           # pick up after a partial run
+polaris-mail setup infra --phase migrate    # start at a specific phase
+polaris-mail setup infra preflight          # validate tooling + .env.deploy
+polaris-mail setup infra configure          # interactively (re)build .env.deploy
+polaris-mail setup infra deploy all         # redeploy every Worker
+polaris-mail setup infra deploy changed     # only services whose code/deps changed
+polaris-mail setup infra deploy service api # one Worker
+polaris-mail setup infra rollback api       # roll one Worker back to its previous version
+polaris-mail setup infra smoke              # signed diagnostics + synthetic send
+polaris-mail setup infra state rebuild      # reconstruct .deploy-state.json from live CF
 ```
 
 Install the CLI with `curl -fsSL cli.mail.plrs.im | sh`. The root `Makefile`
 is a thin migration banner; see `make help`.
 
 Day-to-day operator workflows (issue keys, onboard domains, rotate creds,
-replay DLQ) all live in the `polaris-email` Go binary. The same binary is
+replay DLQ) all live in the `polaris-mail` Go binary. The same binary is
 dual-mode: with no args (and a TTY) it opens the fullscreen tabbed admin
 TUI; with subcommands it operates non-interactively for scripting.
 
 ```sh
-polaris-email                       # no args + TTY ⇒ fullscreen tabbed TUI
-polaris-email tui --theme=mocha     # explicit subcommand
-polaris-email login                 # paste a `polaris_{kid}.{secret}` token, store in OS keychain
-polaris-email whoami                # cached operator identity
-polaris-email operator add          # mint a new operator (huh wizard or --from-file)
-polaris-email serve --ssh           # publish the TUI over SSH for Wish/Wishlist
-polaris-email <cobra subcommand>    # domain/credential/bridge/webhook/audit/... (scripting surface)
+polaris-mail                       # no args + TTY ⇒ fullscreen tabbed TUI
+polaris-mail tui --theme=mocha     # explicit subcommand
+polaris-mail login                 # paste a `polaris_{kid}.{secret}` token, store in OS keychain
+polaris-mail whoami                # cached operator identity
+polaris-mail operator add          # mint a new operator (huh wizard or --from-file)
+polaris-mail serve --ssh           # publish the TUI over SSH for Wish/Wishlist
+polaris-mail <cobra subcommand>    # domain/credential/bridge/webhook/audit/... (scripting surface)
 ```
 
 See `apps/polaris-cli/README.md` and `apps/docs/content/operators/day-2/tui.md`
@@ -207,9 +207,9 @@ were the canonical one.
   gitignored `wrangler.local.jsonc` (real IDs).
 - `wrangler.local.jsonc` is **generated** from
   `services/*/wrangler.local.template.jsonc` + `.deploy-state.json` by
-  `polaris-email setup infra render`. **Do not hand-edit the
+  `polaris-mail setup infra render`. **Do not hand-edit the
   materialised file.**
-- `polaris-email setup infra deploy` merges the two with the same
+- `polaris-mail setup infra deploy` merges the two with the same
   precedence (`local` overlays public) into a throwaway
   `.wrangler.merged.json` before `wrangler deploy`, then deletes it.
   Don't commit `.wrangler.merged.json`.
@@ -218,7 +218,7 @@ were the canonical one.
 
 - Server: Hono on Workers. Client: React 19 + TanStack Router served via
   the `ASSETS` binding. Sessions in D1 via better-auth + drizzle adapter
-  (shares the `polaris-email` DB with `services/api`).
+  (shares the `polaris-mail` DB with `services/api`).
 - Talks to the API via a **service binding** (`API`), not public fetch.
   No HMAC key needed in the happy path.
 - Destructive actions are gated **client-side** via

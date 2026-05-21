@@ -1,6 +1,6 @@
 ---
 title: For operators
-description: Stand up polaris-email from cold start, run it day-to-day with the polaris-email CLI, and recover from incidents using the runbook library. Covers Cloudflare-side deploys and the on-prem mail-bridge.
+description: Stand up polaris-mail from cold start, run it day-to-day with the polaris-mail CLI, and recover from incidents using the runbook library. Covers Cloudflare-side deploys and the on-prem mail-bridge.
 sidebar_label: Overview
 sidebar_position: 0
 ---

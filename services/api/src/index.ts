@@ -1,4 +1,4 @@
-// polaris-email-api Worker entrypoint.
+// polaris-mail-api Worker entrypoint.
 //
 // Three Cloudflare entry points share this Worker, all bound from
 // `services/api/wrangler.jsonc`:
@@ -20,7 +20,7 @@ import { messagesState } from './routes/messages-state.js';
 import { internalCfEvents } from './routes/internal-cf-events.js';
 import { mtaStsPolicy } from './routes/mta-sts.js';
 import { unsub } from './routes/unsub.js';
-import { requestId } from '@polaris-email/ids';
+import { requestId } from '@polaris-mail/ids';
 import { buildError } from './errors.js';
 import { scheduled } from './scheduled/index.js';
 import { fanoutQueueConsumer, type FanoutEvent } from './queue/fanout.js';
@@ -83,7 +83,7 @@ app.onError((err, c) => {
 // continue to work without an indirection through the default export.
 export { app };
 
-const FANOUT_QUEUE_NAME = 'polaris-email-fanout';
+const FANOUT_QUEUE_NAME = 'polaris-mail-fanout';
 
 export default {
   fetch: app.fetch.bind(app),

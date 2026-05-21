@@ -2,7 +2,7 @@
 //
 // Pulls every zone in the operator's Cloudflare account and reports per-zone
 // status across six checks (Email Routing on, MX/SPF locked by CF, sender
-// onboarded, catch-all → polaris-email-in, D1 mailbox row present). The
+// onboarded, catch-all → polaris-mail-in, D1 mailbox row present). The
 // `configure` endpoint computes the diff and either dry-runs it (default)
 // or applies it via Cloudflare's auto-publish endpoints
 // (POST /email/routing/enable + POST /email-service/sender-domains) so CF
@@ -22,8 +22,8 @@ import {
   type ApplyEnv,
   type InspectorEnv,
   type ZoneDomainStatus,
-} from '@polaris-email/cf-api';
-import { ulid } from '@polaris-email/ids';
+} from '@polaris-mail/cf-api';
+import { ulid } from '@polaris-mail/ids';
 import { actorOf, audit } from '../../audit.js';
 import { bodyText, requireScope } from '../../auth.js';
 import type { Env } from '../../env.js';
@@ -31,7 +31,7 @@ import { buildError } from '../../errors.js';
 
 export const cfZones = new Hono<{ Bindings: Env }>();
 
-const DEFAULT_INBOUND_WORKER = 'polaris-email-in';
+const DEFAULT_INBOUND_WORKER = 'polaris-mail-in';
 const LIST_CACHE_TTL_MS = 60_000;
 
 interface CachedListing {
@@ -46,6 +46,8 @@ let listCache: CachedListing | null = null;
 
 function makeClient(env: Env): CloudflareApiClient | { error: Response } {
   // Defer the error response construction to keep the happy path branchless.
+  // 503 + retryable:false so the panel surfaces this as a "config needed"
+  // empty state rather than retrying as if the API were transiently down.
   if (!env.CF_API_TOKEN || !env.CF_ACCOUNT_ID) {
     return {
       error: new Response(
@@ -53,10 +55,11 @@ function makeClient(env: Env): CloudflareApiClient | { error: Response } {
           error: {
             code: 'cf_credentials_missing',
             message:
-              'CF_API_TOKEN and CF_ACCOUNT_ID must be configured (wrangler secret put + .env.deploy).',
+              'CF_API_TOKEN and CF_ACCOUNT_ID must be configured via `polaris-mail setup infra secrets seed`.',
+            retryable: false,
           },
         }),
-        { status: 500, headers: { 'content-type': 'application/json' } },
+        { status: 503, headers: { 'content-type': 'application/json' } },
       ),
     };
   }

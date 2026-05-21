@@ -1,4 +1,4 @@
-// Command polaris-email is the operator CLI for the polaris-email control
+// Command polaris-mail is the operator CLI for the polaris-mail control
 // plane. The same binary is symlinked as `pml`.
 package main
 

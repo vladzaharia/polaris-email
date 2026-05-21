@@ -1,5 +1,5 @@
 {
-  "name": "@polaris-email/docs",
+  "name": "@polaris-mail/docs",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -14,7 +14,7 @@
     "typecheck": "tsc -p tsconfig.server.json --noEmit && tsc -p tsconfig.json --noEmit",
     "lint": "oxlint .",
     "dev:server": "wrangler dev",
-    "deploy": "polaris-email setup infra deploy service docs"
+    "deploy": "polaris-mail setup infra deploy service docs"
   },
   "dependencies": {
     "@docusaurus/core": "^3.10.1",

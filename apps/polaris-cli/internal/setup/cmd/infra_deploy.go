@@ -23,7 +23,7 @@ import (
 // deploy?" record consumed by `deploy changed`.
 const lastSHAFile = ".deploy-state.last-sha"
 
-// newInfraDeployCmd wires `polaris-email setup infra deploy`. Three
+// newInfraDeployCmd wires `polaris-mail setup infra deploy`. Three
 // children:
 //
 //   - deploy <service>   single named service
@@ -337,7 +337,7 @@ func (m deployTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m deployTUIModel) View() string {
 	var b strings.Builder
-	b.WriteString(m.headerStyle.Render("polaris-email — deploying Workers"))
+	b.WriteString(m.headerStyle.Render("polaris-mail — deploying Workers"))
 	b.WriteString("\n\n")
 	for _, l := range m.history {
 		b.WriteString(l)

@@ -1,8 +1,8 @@
-// polaris-email tui — launch the fullscreen tabbed admin TUI locally.
+// polaris-mail tui — launch the fullscreen tabbed admin TUI locally.
 //
-// Also wired as the no-args RunE on the root command, so `polaris-email`
+// Also wired as the no-args RunE on the root command, so `polaris-mail`
 // with no positional args opens the TUI when stdout is a TTY; otherwise
-// it falls back to printing help (so piping `polaris-email | head` doesn't
+// it falls back to printing help (so piping `polaris-mail | head` doesn't
 // drop into an interactive UI).
 package cmds
 
@@ -24,8 +24,8 @@ func newTUICmd() *cobra.Command {
 		Long: `Open the interactive admin TUI: a tabbed view of Dashboard,
 Mailboxes, Domains, Credentials, Webhooks/DLQ, Bridges, Audit, and Logs.
 
-Identity comes from your credstore profile (` + "`polaris-email login`" + `).
-Same view is served over SSH by ` + "`polaris-email serve --ssh`" + ` (Wish).`,
+Identity comes from your credstore profile (` + "`polaris-mail login`" + `).
+Same view is served over SSH by ` + "`polaris-mail serve --ssh`" + ` (Wish).`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runTUI(cmd, themeName)
 		},

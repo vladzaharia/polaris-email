@@ -7,7 +7,7 @@ import (
 	"net/url"
 	"strings"
 
-	polarissdk "github.com/polaris-email/polaris-sdk-go"
+	polarissdk "github.com/polaris-mail/polaris-sdk-go"
 )
 
 // Bootstrap registers (or reuses) a webhook subscription pointing at this

@@ -146,6 +146,6 @@ func RunDomainOnboard(ctx context.Context, c *client.Client, in *DomainOnboardIn
 	if err := c.DoJSON(ctx, "POST", fmt.Sprintf("/v1/admin/domains/%s/verify", out.ID), nil, nil, &out); err != nil {
 		return &out, err
 	}
-	fmt.Fprintf(w, "next steps:\n  polaris-email cred issue --mailbox <id> --senders 'noreply@%s'\n  polaris-email route add --domain %s --pattern 'support@*' --action webhook --url ...\n", out.Name, out.Name)
+	fmt.Fprintf(w, "next steps:\n  polaris-mail cred issue --mailbox <id> --senders 'noreply@%s'\n  polaris-mail route add --domain %s --pattern 'support@*' --action webhook --url ...\n", out.Name, out.Name)
 	return &out, nil
 }

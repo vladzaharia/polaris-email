@@ -1,5 +1,5 @@
 // Package cfapi is a tiny, stdlib-only Cloudflare REST client tailored to
-// the resource-creation surface polaris-email needs during cold-start
+// the resource-creation surface polaris-mail needs during cold-start
 // (D1, R2, KV, Queues, Workers).
 //
 // It deliberately avoids the cloudflare-go SDK to keep the polaris-cli

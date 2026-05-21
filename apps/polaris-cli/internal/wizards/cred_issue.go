@@ -15,7 +15,7 @@ import (
 	"github.com/vladzaharia/polaris-email/apps/polaris-cli/internal/client"
 )
 
-// CredIssueInput drives `polaris-email cred issue`.
+// CredIssueInput drives `polaris-mail cred issue`.
 type CredIssueInput struct {
 	TenantName    string   `json:"tenant_name" yaml:"tenant_name"`
 	Type          string   `json:"type" yaml:"type"` // smtp|api

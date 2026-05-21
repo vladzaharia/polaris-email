@@ -1,10 +1,10 @@
 // Package plan describes the *desired* set of Cloudflare resources a
-// polaris-email deployment requires, and computes a terraform-style diff
+// polaris-mail deployment requires, and computes a terraform-style diff
 // against what the operator's state file + a live Cloudflare snapshot say
 // is actually present.
 //
 // The desired state is a constant — this package owns the canonical list
-// of "what every polaris-email install needs". When that list changes
+// of "what every polaris-mail install needs". When that list changes
 // (e.g. a new KV namespace is added), update [Desired] here and the
 // diff path automatically surfaces a Create for it.
 //
@@ -13,12 +13,12 @@
 // dependency graph one-way: cmd → plan → {cfapi, state}.
 package plan
 
-// DesiredState is the constant list of CF resources every polaris-email
+// DesiredState is the constant list of CF resources every polaris-mail
 // install must own. The shape mirrors state.Doc just enough that the
 // diff loop can compare names side-by-side.
 type DesiredState struct {
-	// D1 databases by logical name. polaris-email uses exactly one
-	// (`polaris-email`); the slice form leaves room for future schema
+	// D1 databases by logical name. polaris-mail uses exactly one
+	// (`polaris-mail`); the slice form leaves room for future schema
 	// changes.
 	D1 []DesiredD1
 
@@ -56,7 +56,7 @@ type DesiredD1 struct {
 // LifecycleExpiryDays is mutually exclusive with ObjectLockHours: when
 // non-zero, the provision step applies a delete-after-N-days lifecycle
 // rule instead of Object Lock COMPLIANCE. Used for the
-// `polaris-email-logs` bucket where we want bounded retention but not
+// `polaris-mail-logs` bucket where we want bounded retention but not
 // tamper-evidence (those logs are operator-side observability, not
 // audit chain anchors).
 type DesiredR2 struct {
@@ -86,10 +86,10 @@ type DesiredQueue struct {
 	DLQ  bool
 }
 
-// Desired returns the constant DesiredState every polaris-email install
+// Desired returns the constant DesiredState every polaris-mail install
 // requires.
 //
-// Resource names are NOT environment-prefixed — polaris-email runs in a
+// Resource names are NOT environment-prefixed — polaris-mail runs in a
 // single production CF account, so resource names are stable across
 // installs.
 //
@@ -99,7 +99,7 @@ type DesiredQueue struct {
 func Desired() *DesiredState {
 	return &DesiredState{
 		D1: []DesiredD1{
-			{Name: "polaris-email"},
+			{Name: "polaris-mail"},
 		},
 		R2: []DesiredR2{
 			{
@@ -108,7 +108,7 @@ func Desired() *DesiredState {
 				// and is preserved by adoption when an operator's
 				// account already has the bucket there). WNAM region
 				// hint places new buckets in Western North America.
-				Name:            "polaris-email",
+				Name:            "polaris-mail",
 				Jurisdiction:    "",
 				LocationHint:    "wnam",
 				ObjectLockHours: 2160, // 90 days, COMPLIANCE mode
@@ -120,31 +120,31 @@ func Desired() *DesiredState {
 				// without unbounded R2 spend. Object Lock is
 				// deliberately NOT applied — these are operator-side
 				// observability artifacts, not audit-chain anchors.
-				Name:                "polaris-email-logs",
+				Name:                "polaris-mail-logs",
 				Jurisdiction:        "",
 				LocationHint:        "wnam",
 				LifecycleExpiryDays: 30,
 			},
 		},
 		KV: []DesiredKV{
-			{Title: "polaris-email-nonce"},
-			{Title: "polaris-email-idempotency"},
-			{Title: "polaris-email-rate-limit"},
-			{Title: "polaris-email-key-cache"},
-			{Title: "polaris-email-revocations"},
+			{Title: "polaris-mail-nonce"},
+			{Title: "polaris-mail-idempotency"},
+			{Title: "polaris-mail-rate-limit"},
+			{Title: "polaris-mail-key-cache"},
+			{Title: "polaris-mail-revocations"},
 		},
 		Queues: []DesiredQueue{
-			{Name: "polaris-email-outbound"},
-			{Name: "polaris-email-inbound"},
-			{Name: "polaris-email-fanout"},
-			{Name: "polaris-email-outbound-dlq", DLQ: true},
-			{Name: "polaris-email-fanout-dlq", DLQ: true},
+			{Name: "polaris-mail-outbound"},
+			{Name: "polaris-mail-inbound"},
+			{Name: "polaris-mail-fanout"},
+			{Name: "polaris-mail-outbound-dlq", DLQ: true},
+			{Name: "polaris-mail-fanout-dlq", DLQ: true},
 		},
 	}
 }
 
 // WithR2PublicDomain sets the PublicDomain field on the bucket named
-// "polaris-email" (the archive bucket — the only one we publicly serve)
+// "polaris-mail" (the archive bucket — the only one we publicly serve)
 // and returns the state for chaining. Empty host is a no-op so callers
 // can pass through whatever .env.deploy gives them without branching.
 func WithR2PublicDomain(d *DesiredState, host string) *DesiredState {
@@ -152,7 +152,7 @@ func WithR2PublicDomain(d *DesiredState, host string) *DesiredState {
 		return d
 	}
 	for i := range d.R2 {
-		if d.R2[i].Name == "polaris-email" {
+		if d.R2[i].Name == "polaris-mail" {
 			d.R2[i].PublicDomain = host
 		}
 	}

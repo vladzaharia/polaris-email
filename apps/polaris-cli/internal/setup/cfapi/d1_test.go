@@ -16,7 +16,7 @@ func TestD1_List(t *testing.T) {
 			t.Errorf("unexpected path %s", r.URL.Path)
 		}
 		_, _ = w.Write(cfSuccess([]D1Database{
-			{UUID: "db-1", Name: "polaris-email"},
+			{UUID: "db-1", Name: "polaris-mail"},
 		}))
 	}))
 	defer srv.Close()
@@ -37,7 +37,7 @@ func TestD1_Get(t *testing.T) {
 		if !strings.HasSuffix(r.URL.Path, "/d1/database/db-1") {
 			t.Errorf("path: %s", r.URL.Path)
 		}
-		_, _ = w.Write(cfSuccess(D1Database{UUID: "db-1", Name: "polaris-email"}))
+		_, _ = w.Write(cfSuccess(D1Database{UUID: "db-1", Name: "polaris-mail"}))
 	}))
 	defer srv.Close()
 
@@ -46,7 +46,7 @@ func TestD1_Get(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetDatabase: %v", err)
 	}
-	if got.Name != "polaris-email" {
+	if got.Name != "polaris-mail" {
 		t.Errorf("got %+v", got)
 	}
 }
@@ -59,7 +59,7 @@ func TestD1_Create_HappyPath(t *testing.T) {
 		}
 		var body map[string]string
 		_ = json.NewDecoder(r.Body).Decode(&body)
-		if body["name"] != "polaris-email" {
+		if body["name"] != "polaris-mail" {
 			t.Errorf("body: %+v", body)
 		}
 		_, _ = w.Write(cfSuccess(D1Database{UUID: "new-uuid", Name: body["name"]}))
@@ -67,7 +67,7 @@ func TestD1_Create_HappyPath(t *testing.T) {
 	defer srv.Close()
 
 	c := newTestClient(t, srv)
-	got, err := c.CreateDatabase(context.Background(), "polaris-email")
+	got, err := c.CreateDatabase(context.Background(), "polaris-mail")
 	if err != nil {
 		t.Fatalf("CreateDatabase: %v", err)
 	}
@@ -87,13 +87,13 @@ func TestD1_Create_AlreadyExistsRefetches(t *testing.T) {
 			_, _ = w.Write(cfFailure(map[string]any{"code": 7405, "message": "already exists"}))
 		case http.MethodGet:
 			listHits++
-			_, _ = w.Write(cfSuccess([]D1Database{{UUID: "existing-uuid", Name: "polaris-email"}}))
+			_, _ = w.Write(cfSuccess([]D1Database{{UUID: "existing-uuid", Name: "polaris-mail"}}))
 		}
 	}))
 	defer srv.Close()
 
 	c := newTestClient(t, srv)
-	got, err := c.CreateDatabase(context.Background(), "polaris-email")
+	got, err := c.CreateDatabase(context.Background(), "polaris-mail")
 	if err != nil {
 		t.Fatalf("CreateDatabase: %v", err)
 	}

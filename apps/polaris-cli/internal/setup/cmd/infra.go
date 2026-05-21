@@ -64,8 +64,8 @@ func newInfraCmd() *cobra.Command {
 	)
 	c := &cobra.Command{
 		Use:   "infra",
-		Short: "Provision + deploy the Cloudflare-side polaris-email infrastructure",
-		Long: "Run the polaris-email cold-start happy path:\n" +
+		Short: "Provision + deploy the Cloudflare-side polaris-mail infrastructure",
+		Long: "Run the polaris-mail cold-start happy path:\n" +
 			"\n" +
 			"  preflight → configure → plan → apply → render → migrate →\n" +
 			"  secrets seed → deploy → genesis-seal → smoke\n" +
@@ -364,7 +364,7 @@ func phaseRender(_ context.Context, o happyPathOpts, store *state.Store) error {
 }
 
 func phaseMigrate(ctx context.Context, o happyPathOpts, store *state.Store) error {
-	res, err := migrate.Apply(ctx, "polaris-email", true, store)
+	res, err := migrate.Apply(ctx, "polaris-mail", true, store)
 	if err != nil {
 		return err
 	}
@@ -476,7 +476,7 @@ func phaseGenesisSeal(ctx context.Context, o happyPathOpts, _ *state.Store, seed
 	if err := pusher.Push(ctx, "panel", "PANEL_ADMIN_KEY_SECRET", result.AdminKeySecret); err != nil {
 		return fmt.Errorf("genesis-seal: push PANEL_ADMIN_KEY_SECRET to panel: %w", err)
 	}
-	fmt.Fprintln(o.out, "genesis-seal: pushed PANEL_ADMIN_KEY_{ID,SECRET} to polaris-email-panel")
+	fmt.Fprintln(o.out, "genesis-seal: pushed PANEL_ADMIN_KEY_{ID,SECRET} to polaris-mail-panel")
 	return nil
 }
 

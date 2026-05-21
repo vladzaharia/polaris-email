@@ -20,9 +20,17 @@ import {
   TableRow,
 } from '../../components/ui/table.js';
 import { DestructiveActionDialog } from '../../components/DestructiveActionDialog.js';
+import { ErrorText } from '../../components/ErrorText.js';
 import { useAdminMutation, useAdminQuery } from '../../hooks/useAdminApi.js';
 import { formatRelative } from '../../lib/format.js';
-import { dmarcKeys, domainKeys, tlsRptKeys } from '../../queryKeys.js';
+import {
+  cfZoneKeys,
+  dmarcKeys,
+  dmarcPromotionKeys,
+  domainKeys,
+  tlsRptKeys,
+} from '../../queryKeys.js';
+import { ApiError } from '../../lib/api.js';
 
 // W6 — DMARC alignment subsection. Embedded in the Inbound TLS hardening
 // section as a sibling block; pulls the 7/14/30-day alignment rollup.
@@ -203,6 +211,256 @@ interface DomainPayload {
   tlsrpt_verified_at?: string | null;
 }
 
+// Shape returned by `/api/admin/cf-zones/:name`.
+interface CfZoneStatus {
+  zone: { id: string; name: string };
+  routing_enabled: boolean;
+  routing_status: string;
+  routing_status_ok: boolean;
+  dns_records_locked: boolean;
+  dns_record_errors: string[];
+  sender_onboarded: boolean;
+  sender_missing_records: string[];
+  catch_all_correct: boolean;
+  catch_all_target: string | null;
+  has_conflicting_rules: boolean;
+  named_rules: { name: string; routes_to_polaris: boolean }[];
+  d1_mail_domain_exists: boolean;
+  overall: 'ok' | 'partial' | 'unconfigured' | 'error';
+}
+
+// CF Zone section embedded in Domain Detail. Replaces the standalone
+// /cf-zones page which folded into this view (Stage 3 of IA work).
+function CfZoneSection({ domainName }: { domainName: string }) {
+  const q = useAdminQuery<{ data: CfZoneStatus }>(
+    cfZoneKeys.detail(domainName),
+    `/api/admin/cf-zones/${encodeURIComponent(domainName)}`,
+  );
+  const cfCredsMissing = q.error instanceof ApiError && q.error.code === 'cf_credentials_missing';
+  return (
+    <section>
+      <h2 className="mb-2 text-xl font-medium">Cloudflare zone</h2>
+      {q.isLoading ? (
+        <Skeleton className="h-24 w-full" />
+      ) : cfCredsMissing ? (
+        <p className="text-sm text-[var(--color-muted-foreground)]">
+          CF zone status unavailable: set <code>CF_API_TOKEN</code> + <code>CF_ACCOUNT_ID</code> via{' '}
+          <code>polaris-mail setup infra secrets seed</code>.
+        </p>
+      ) : q.error ? (
+        <p className="text-sm text-[var(--color-muted-foreground)]">
+          No matching Cloudflare zone for <span className="font-mono">{domainName}</span>.
+        </p>
+      ) : !q.data ? null : (
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge
+              variant={
+                q.data.data.overall === 'ok'
+                  ? 'success'
+                  : q.data.data.overall === 'partial'
+                    ? 'warning'
+                    : q.data.data.overall === 'unconfigured'
+                      ? 'secondary'
+                      : 'destructive'
+              }
+            >
+              {q.data.data.overall}
+            </Badge>
+            <span className="font-mono text-xs text-[var(--color-muted-foreground)]">
+              {q.data.data.zone.name}
+            </span>
+          </div>
+          <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-sm md:grid-cols-3">
+            <span className="font-medium">Email Routing</span>
+            <span>
+              <Badge
+                variant={
+                  q.data.data.routing_enabled
+                    ? q.data.data.routing_status_ok
+                      ? 'success'
+                      : 'warning'
+                    : 'destructive'
+                }
+              >
+                {q.data.data.routing_status}
+              </Badge>
+            </span>
+            <span className="font-medium md:hidden"></span>
+            <span className="font-medium">DNS locked</span>
+            <span>
+              <Badge variant={q.data.data.dns_records_locked ? 'success' : 'destructive'}>
+                {q.data.data.dns_records_locked ? 'yes' : 'no'}
+              </Badge>
+            </span>
+            <span className="font-medium md:hidden"></span>
+            <span className="font-medium">Sender onboarded</span>
+            <span>
+              <Badge variant={q.data.data.sender_onboarded ? 'success' : 'destructive'}>
+                {q.data.data.sender_onboarded ? 'yes' : 'no'}
+              </Badge>
+            </span>
+            <span className="font-medium md:hidden"></span>
+            <span className="font-medium">Catch-all</span>
+            <span>
+              <Badge variant={q.data.data.catch_all_correct ? 'success' : 'destructive'}>
+                {q.data.data.catch_all_target ?? 'unset'}
+              </Badge>
+            </span>
+            <span className="font-medium md:hidden"></span>
+            <span className="font-medium">Conflicting rules</span>
+            <span>
+              <Badge variant={q.data.data.has_conflicting_rules ? 'warning' : 'success'}>
+                {q.data.data.has_conflicting_rules ? 'yes' : 'none'}
+              </Badge>
+            </span>
+            <span className="font-medium md:hidden"></span>
+            <span className="font-medium">D1 mailbox row</span>
+            <span>
+              <Badge variant={q.data.data.d1_mail_domain_exists ? 'success' : 'destructive'}>
+                {q.data.data.d1_mail_domain_exists ? 'present' : 'missing'}
+              </Badge>
+            </span>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
+// DMARC promotion section embedded in Domain Detail. Pulls the fleet endpoint
+// and filters to this domain's row — keeps the per-domain workflow inline
+// instead of forcing operators to the standalone /dmarc-promotion page.
+interface DmarcPromotionRow {
+  id: string;
+  name: string;
+  dmarc_policy: string | null;
+  dmarc_promotion_mode: 'auto' | 'manual' | 'paused';
+  dmarc_promotion_state:
+    | 'none'
+    | 'quarantine_ready'
+    | 'quarantine'
+    | 'reject_ready'
+    | 'reject'
+    | 'paused';
+  dmarc_promotion_last_at: string | null;
+  dmarc_record_managed_by_polaris: number;
+}
+
+function DmarcPromotionSection({ domainId }: { domainId: string }) {
+  const q = useAdminQuery<{ data: DmarcPromotionRow[] }>(
+    dmarcPromotionKeys.list(),
+    '/api/admin/dmarc-promotion',
+  );
+  const row = (q.data?.data ?? []).find((r) => r.id === domainId);
+  const pause = useAdminMutation<unknown, undefined>(
+    () => ({ path: `/api/admin/dmarc-promotion/${domainId}/pause`, method: 'POST' }),
+    { invalidateKeys: [dmarcPromotionKeys.all], successMessage: 'DMARC promotion paused.' },
+  );
+  const resume = useAdminMutation<unknown, undefined>(
+    () => ({ path: `/api/admin/dmarc-promotion/${domainId}/resume`, method: 'POST' }),
+    { invalidateKeys: [dmarcPromotionKeys.all], successMessage: 'DMARC promotion resumed.' },
+  );
+  const claim = useAdminMutation<unknown, undefined>(
+    () => ({ path: `/api/admin/dmarc-promotion/${domainId}/claim-management`, method: 'POST' }),
+    { invalidateKeys: [dmarcPromotionKeys.all], successMessage: 'Claimed DNS management.' },
+  );
+
+  return (
+    <section>
+      <h2 className="mb-2 text-xl font-medium">DMARC promotion</h2>
+      {q.isLoading ? (
+        <Skeleton className="h-16 w-full" />
+      ) : !row ? (
+        <p className="text-sm text-[var(--color-muted-foreground)]">
+          No DMARC promotion state yet — the cron has not seen this domain.
+        </p>
+      ) : (
+        <div className="space-y-3">
+          <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-sm md:grid-cols-3">
+            <span className="font-medium">Current policy</span>
+            <span className="font-mono text-xs">{row.dmarc_policy ?? 'none'}</span>
+            <span className="font-medium md:hidden"></span>
+            <span className="font-medium">Promotion state</span>
+            <span>
+              <Badge
+                variant={
+                  row.dmarc_promotion_state === 'reject'
+                    ? 'success'
+                    : row.dmarc_promotion_state === 'paused'
+                      ? 'destructive'
+                      : 'secondary'
+                }
+              >
+                {row.dmarc_promotion_state}
+              </Badge>
+            </span>
+            <span className="font-medium md:hidden"></span>
+            <span className="font-medium">Mode</span>
+            <span>
+              <Badge
+                variant={
+                  row.dmarc_promotion_mode === 'auto'
+                    ? 'success'
+                    : row.dmarc_promotion_mode === 'paused'
+                      ? 'destructive'
+                      : 'secondary'
+                }
+              >
+                {row.dmarc_promotion_mode}
+              </Badge>
+            </span>
+            <span className="font-medium md:hidden"></span>
+            <span className="font-medium">DNS managed</span>
+            <span>
+              <Badge variant={row.dmarc_record_managed_by_polaris ? 'success' : 'outline'}>
+                {row.dmarc_record_managed_by_polaris ? 'yes' : 'no'}
+              </Badge>
+            </span>
+            <span className="font-medium md:hidden"></span>
+            <span className="font-medium">Last transition</span>
+            <span className="text-xs text-[var(--color-muted-foreground)]">
+              {row.dmarc_promotion_last_at ? formatRelative(row.dmarc_promotion_last_at) : 'never'}
+            </span>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {row.dmarc_promotion_mode === 'auto' ? (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => pause.mutate(undefined)}
+                disabled={pause.isPending}
+              >
+                Pause auto-promotion
+              </Button>
+            ) : (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => resume.mutate(undefined)}
+                disabled={resume.isPending}
+              >
+                Resume auto-promotion
+              </Button>
+            )}
+            {row.dmarc_record_managed_by_polaris === 0 ? (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => claim.mutate(undefined)}
+                disabled={claim.isPending}
+                title="Opt in to letting Polaris write _dmarc DNS records for this domain"
+              >
+                Claim DNS management
+              </Button>
+            ) : null}
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
 interface VerifyCheck {
   name: string;
   ok: boolean;
@@ -271,17 +529,15 @@ export function DomainDetail() {
   const breadcrumbs = [{ label: 'Domains', to: '/domains' }, { label: q.data?.name ?? id }];
   if (q.isLoading) {
     return (
-      <PageCard title="Domain" breadcrumbs={breadcrumbs}>
+      <PageCard title="Domain" breadcrumbs={breadcrumbs} decorative>
         <Skeleton className="h-32 w-full" />
       </PageCard>
     );
   }
   if (q.error || !q.data) {
     return (
-      <PageCard title="Domain" breadcrumbs={breadcrumbs}>
-        <p className="text-sm text-[var(--color-destructive)]">
-          {q.error?.message ?? 'Not found.'}
-        </p>
+      <PageCard title="Domain" breadcrumbs={breadcrumbs} decorative>
+        <ErrorText error={q.error ?? 'Not found.'} />
       </PageCard>
     );
   }
@@ -375,7 +631,9 @@ export function DomainDetail() {
                     <TableRow
                       key={ch.name}
                       className={
-                        isOperatorAction ? 'bg-yellow-50 dark:bg-yellow-900/30' : undefined
+                        isOperatorAction
+                          ? 'bg-[color-mix(in_oklch,var(--color-warning)_15%,transparent)]'
+                          : undefined
                       }
                     >
                       <TableCell className="font-mono text-xs">{ch.name}</TableCell>
@@ -419,6 +677,10 @@ export function DomainDetail() {
             </p>
           )}
         </section>
+
+        <CfZoneSection domainName={d.name} />
+
+        <DmarcPromotionSection domainId={d.id} />
 
         <section>
           <h2 className="mb-2 text-xl font-medium">Inbound TLS hardening</h2>

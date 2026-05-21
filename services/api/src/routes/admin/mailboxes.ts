@@ -9,12 +9,12 @@ import {
   CreateMailboxReceiverRequest,
   CreateMailboxSenderRequest,
   MailboxReceiverAction,
-} from '@polaris-email/schema';
+} from '@polaris-mail/schema';
 import { actorOf, audit } from '../../audit.js';
 import { bodyText, requireScope } from '../../auth.js';
 import type { Env } from '../../env.js';
 import { buildError } from '../../errors.js';
-import { ulid } from '@polaris-email/ids';
+import { ulid } from '@polaris-mail/ids';
 
 export const mailboxes = new Hono<{ Bindings: Env }>();
 
@@ -83,12 +83,25 @@ mailboxes.get('/v1/admin/mailboxes/:id', requireScope('admin:read'), async (c) =
   )
     .bind(id)
     .all();
+  // mailbox_credentials embedded so the panel's MailboxDetail can render the
+  // Credentials section inline without a separate fetch (Stage 2 of the
+  // mailbox-as-source-of-truth IA work). bcrypt_hash is stripped here — the
+  // standalone GET endpoint applies the same `publicView`.
+  const credentials = await c.env.DB.prepare(
+    `SELECT id, mailbox_id, protocol, auth_type, username, created_at,
+            last_used_at, disabled_at
+     FROM mailbox_credentials WHERE mailbox_id = ?
+     ORDER BY created_at ASC`,
+  )
+    .bind(id)
+    .all();
   return c.json({
     mailbox: row,
     senders: senders.results,
     receivers: receivers.results,
     principals: principals.results,
     webhook_subs: webhookSubs.results,
+    credentials: credentials.results,
   });
 });
 

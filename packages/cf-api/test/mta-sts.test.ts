@@ -119,7 +119,7 @@ describe('provisionMtaSts', () => {
           id: 'dom-1',
           hostname: 'mta-sts.acme.com',
           zone_id: 'zone-1',
-          service: 'polaris-email-api',
+          service: 'polaris-mail-api',
         });
       }
       throw new Error(`unexpected ${call.method} ${call.url}`);
@@ -129,7 +129,7 @@ describe('provisionMtaSts', () => {
       zoneId: 'zone-1',
       domain: 'acme.com',
       policyId: '20260515T120000Z',
-      workerName: 'polaris-email-api',
+      workerName: 'polaris-mail-api',
     });
 
     expect(result.created).toBe(1);
@@ -148,7 +148,7 @@ describe('provisionMtaSts', () => {
     expect(puts).toHaveLength(1);
     expect(puts[0].body).toMatchObject({
       hostname: 'mta-sts.acme.com',
-      service: 'polaris-email-api',
+      service: 'polaris-mail-api',
       zone_id: 'zone-1',
     });
   });
@@ -171,7 +171,7 @@ describe('provisionMtaSts', () => {
             id: 'dom-1',
             hostname: 'mta-sts.acme.com',
             zone_id: 'zone-1',
-            service: 'polaris-email-api',
+            service: 'polaris-mail-api',
           },
         ]);
       }
@@ -182,7 +182,7 @@ describe('provisionMtaSts', () => {
       zoneId: 'zone-1',
       domain: 'acme.com',
       policyId: '20260515T120000Z',
-      workerName: 'polaris-email-api',
+      workerName: 'polaris-mail-api',
     });
 
     expect(result.created).toBe(0);
@@ -229,7 +229,7 @@ describe('provisionMtaSts', () => {
           id: 'dom-1',
           hostname: 'mta-sts.acme.com',
           zone_id: 'zone-1',
-          service: 'polaris-email-api',
+          service: 'polaris-mail-api',
         });
       }
       throw new Error(`unexpected ${call.method} ${call.url}`);
@@ -239,7 +239,7 @@ describe('provisionMtaSts', () => {
       zoneId: 'zone-1',
       domain: 'acme.com',
       policyId: 'NEW',
-      workerName: 'polaris-email-api',
+      workerName: 'polaris-mail-api',
     });
 
     // Tracked as created (the record was effectively replaced).
@@ -275,7 +275,7 @@ describe('unprovisionMtaSts', () => {
             id: 'dom-1',
             hostname: 'mta-sts.acme.com',
             zone_id: 'zone-1',
-            service: 'polaris-email-api',
+            service: 'polaris-mail-api',
           },
         ]);
       }

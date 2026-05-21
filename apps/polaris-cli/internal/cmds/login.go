@@ -1,4 +1,4 @@
-// polaris-email login / logout / whoami / profile — unified operator-session
+// polaris-mail login / logout / whoami / profile — unified operator-session
 // management for the CLI and TUI.
 package cmds
 
@@ -28,14 +28,14 @@ func newLoginCmd() *cobra.Command {
 		Use:   "login",
 		Short: "Sign in as an operator (paste a login token; stored encrypted in the OS keychain)",
 		Long: `Sign in as an operator. The "token" is the polaris_{key_id}.{secret}
-bearer printed by ` + "`polaris-email operator add`" + `.
+bearer printed by ` + "`polaris-mail operator add`" + `.
 
 Storage: OS keychain when available (macOS Keychain, Linux Secret Service /
 KWallet, Windows Credential Manager); falls back to a passphrase-encrypted
-file under ~/.config/polaris-email/keyring/ on headless hosts.
+file under ~/.config/polaris-mail/keyring/ on headless hosts.
 
 Bootstrap/root tokens are refused — only tokens linked to an operator row
-(via ` + "`polaris-email operator add`" + `) may log in. The bootstrap key can
+(via ` + "`polaris-mail operator add`" + `) may log in. The bootstrap key can
 still be used via --token / $POLARIS_TOKEN for one-shot operator-minting
 workflows; it just can't be stored in the credstore.`,
 		RunE: func(_ *cobra.Command, _ []string) error {
@@ -96,7 +96,7 @@ workflows; it just can't be stored in the credstore.`,
 					if httpErr.Status == http.StatusForbidden && strings.Contains(httpErr.Body, "not_an_operator_token") {
 						return errors.New(
 							"this token is not an operator token — bootstrap/admin keys cannot login.\n" +
-								"Ask an admin to run `polaris-email operator add` to mint you an operator credential.",
+								"Ask an admin to run `polaris-mail operator add` to mint you an operator credential.",
 						)
 					}
 				}
@@ -185,7 +185,7 @@ func newWhoamiCmd() *cobra.Command {
 			cred, err := store.Load(activeProfile)
 			if err != nil {
 				if errors.Is(err, credstore.ErrNotFound) {
-					return fmt.Errorf("no stored credential for profile %q (run `polaris-email login`)", activeProfile)
+					return fmt.Errorf("no stored credential for profile %q (run `polaris-mail login`)", activeProfile)
 				}
 				return err
 			}
@@ -233,7 +233,7 @@ func newProfileCmd() *cobra.Command {
 					return err
 				}
 				if len(names) == 0 {
-					fmt.Fprintln(Out, "(no stored profiles — run `polaris-email login` first)")
+					fmt.Fprintln(Out, "(no stored profiles — run `polaris-mail login` first)")
 					return nil
 				}
 				for _, n := range names {
@@ -244,7 +244,7 @@ func newProfileCmd() *cobra.Command {
 		},
 		&cobra.Command{
 			Use:   "delete <profile>",
-			Short: "Delete a stored profile (alias for `polaris-email logout --profile <name>`)",
+			Short: "Delete a stored profile (alias for `polaris-mail logout --profile <name>`)",
 			Args:  cobra.ExactArgs(1),
 			RunE: func(_ *cobra.Command, args []string) error {
 				store, err := credstore.New()

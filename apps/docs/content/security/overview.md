@@ -30,7 +30,7 @@ The developer-facing narrative — "why HMAC, why a nonce" — is at the
 ## Email authentication
 
 → **[DKIM / DMARC / SPF](/security/dkim-dmarc-spf)** — what
-polaris-email publishes per outbound domain, the default policy posture,
+polaris-mail publishes per outbound domain, the default policy posture,
 DKIM rotation, MTA-STS and TLS-RPT for inbound TLS hardening.
 
 ## Operational properties referenced by the threat model
@@ -45,7 +45,7 @@ DKIM rotation, MTA-STS and TLS-RPT for inbound TLS hardening.
   [D1 backup hygiene](/operators/day-2/d1-backup).
 - **Credential revocation is KV-backed, ≤60 s propagation.** See the
   [credential management page](/operators/day-2/credential-management).
-- **Read-once secrets** — every secret polaris-email issues is shown
+- **Read-once secrets** — every secret polaris-mail issues is shown
   exactly once at creation or rotation. The control plane stores hashes
   only.
 - **R2 public domain is intentionally unauthenticated** — SHA-256 keys

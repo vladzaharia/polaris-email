@@ -1,4 +1,4 @@
-// polaris-email serve --ssh — runs the Wish-fronted TUI as an SSH server.
+// polaris-mail serve --ssh — runs the Wish-fronted TUI as an SSH server.
 //
 // The Wish server signs every outgoing API call with the bootstrap key
 // supplied via flags (which must hold the `admin:impersonate` scope), and
@@ -35,13 +35,13 @@ func newServeCmd() *cobra.Command {
 	)
 	c := &cobra.Command{
 		Use:   "serve",
-		Short: "Run polaris-email as a long-running server (currently: SSH-fronted TUI)",
+		Short: "Run polaris-mail as a long-running server (currently: SSH-fronted TUI)",
 		Long: `Run the fullscreen tabbed TUI as an SSH server, fronted by Wish.
 
-Operators SSH in with the same key registered via ` + "`polaris-email operator add`" + `;
+Operators SSH in with the same key registered via ` + "`polaris-mail operator add`" + `;
 every action they take is attributed to their operator id in the audit log.
 
-Setup is part of ` + "`polaris-email setup infra`" + ` (which can mint the bootstrap
+Setup is part of ` + "`polaris-mail setup infra`" + ` (which can mint the bootstrap
 impersonation key for you); see ` + "`docs/operator.md`" + ` for the cold-start
 sequence.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
