@@ -85,6 +85,14 @@ export function makeAuth(env: Env): Auth {
               : '',
             clientId: env.OIDC_CLIENT_ID ?? '',
             clientSecret: env.OIDC_CLIENT_SECRET ?? '',
+            // PKCE is required by most modern OIDC providers (including
+            // Pocket ID's strict-mode clients). Without this, the IdP
+            // returns "Invalid code verifier" on the token exchange and
+            // the callback fails with `oauth_code_verification_failed`.
+            // Better-auth ships PKCE off-by-default; we opt in so the
+            // panel works against PKCE-required clients (the modern
+            // default) and continues to work against optional ones.
+            pkce: true,
             // Scopes are operator-configurable via OIDC_SCOPES
             // (space-separated). The `groups` scope is required for
             // role-sync; the configure wizard defaults to

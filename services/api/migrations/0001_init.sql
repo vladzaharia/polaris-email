@@ -765,6 +765,11 @@ CREATE TABLE "user" (
   email          TEXT NOT NULL UNIQUE,
   email_verified INTEGER NOT NULL DEFAULT 0,
   image          TEXT,
+  -- Panel-specific: cached admin flag set by the OIDC role-sync hook
+  -- (apps/panel/src/server/auth/role-sync.ts). Better-auth's INSERT
+  -- targets this column on first sign-in; missing it surfaces as
+  -- `unable_to_create_user` to the operator.
+  admin          INTEGER NOT NULL DEFAULT 0,
   created_at     INTEGER NOT NULL,
   updated_at     INTEGER NOT NULL
 );
