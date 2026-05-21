@@ -139,6 +139,16 @@ type HostnameInputs struct {
 	// R2Public is the unauthenticated R2 custom domain
 	// (e.g. r2.mail.plrs.im). See SECURITY.md.
 	R2Public string
+	// Docs is the public docs-site hostname (e.g. docs.mail.plrs.im).
+	// Bound as a route on polaris-mail-docs via `routes[].pattern`.
+	// Optional — leaving it blank skips the route binding (the docs
+	// Worker is still deployed but only reachable via its workers.dev
+	// subdomain).
+	Docs string
+	// DocsZone is the CF zone name that owns `Docs`
+	// (e.g. mail.plrs.im). Required when Docs is set; the renderer
+	// emits both into the docs `routes[]` block.
+	DocsZone string
 }
 
 // SyntheticInputs are the synthetic-monitor-loop config knobs.

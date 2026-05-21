@@ -1,15 +1,13 @@
 // Template merged on top of apps/docs/wrangler.jsonc during deploy.
-// Placeholders are substituted from .deploy-state.json + .env.deploy.
-// Do NOT hand-edit the materialized wrangler.local.jsonc — re-run
-// `polaris-mail setup infra render` instead.
+// Placeholders are substituted from .deploy-state.json + .env.deploy via
+// the typed RenderInputs (see apps/polaris-cli/internal/setup/wranglercfg/
+// inputs.go). Do NOT hand-edit the materialized wrangler.local.jsonc —
+// re-run `polaris-mail setup infra render` instead.
 {
-  "account_id": "{{ .Env.CF_ACCOUNT_ID }}",
-  // docs.mail.plrs.im is the canonical hostname for the docs site. The
-  // zone is the same `mail.plrs.im` zone that fronts r2.mail.plrs.im.
-  "routes": [
-    {
-      "pattern": "{{ .Env.POLARIS_DOCS_HOSTNAME }}/*",
-      "zone_name": "{{ .Env.POLARIS_DOCS_ZONE }}",
-    },
-  ],
+  "account_id": "{{ .Account.ID }}",
+  // Workers Custom Domain binding — wrangler auto-provisions the CNAME
+  // (api.* and panel use the same recipe). The pattern is the hostname
+  // ONLY (no `/*`), and zone_name is implicit. DocsZone is left in
+  // HostnameInputs for future use but isn't materialised here.
+  "routes": [{ "pattern": "{{ .Hostnames.Docs }}", "custom_domain": true }],
 }

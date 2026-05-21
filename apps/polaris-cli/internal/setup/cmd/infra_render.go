@@ -23,6 +23,7 @@ var renderableServices = []renderableService{
 	{Name: "in", Dir: "services/in"},
 	{Name: "out", Dir: "services/out"},
 	{Name: "panel", Dir: "apps/panel"},
+	{Name: "docs", Dir: "apps/docs"},
 	{Name: "cli-installer", Dir: "apps/cli-installer"},
 }
 

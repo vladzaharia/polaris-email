@@ -36,6 +36,8 @@ func LoadInputs(doc *state.Doc, envPath string) (*RenderInputs, error) {
 			PolarisAPI: get("POLARIS_API_HOSTNAME"),
 			Panel:      get("POLARIS_PANEL_HOSTNAME"),
 			R2Public:   get("R2_PUBLIC_HOST"),
+			Docs:       get("POLARIS_DOCS_HOSTNAME"),
+			DocsZone:   get("POLARIS_DOCS_ZONE"),
 		},
 		Synthetic: SyntheticInputs{
 			From:          get("SYNTHETIC_FROM"),

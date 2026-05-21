@@ -6,4 +6,11 @@ pre-commit:
       run: pnpm exec oxlint {staged_files}
     oxfmt:
       glob: '*.{ts,tsx,js,jsx,mjs,cjs,json,jsonc}'
+      # Skip snapshot fixtures and templated wrangler files — those are
+      # excluded from oxfmt globally (see .oxfmtrc.json), and oxfmt exits 2
+      # when the file list is empty after ignore-filtering, breaking the
+      # hook on commits that only touch those files.
+      exclude:
+        - '**/testdata/golden/**'
+        - '**/wrangler.local.template.jsonc'
       run: pnpm exec oxfmt --check {staged_files}
