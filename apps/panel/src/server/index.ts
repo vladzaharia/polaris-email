@@ -64,6 +64,20 @@ app.use('*', async (c, next) => {
 
 app.get('/healthz', (c) => c.json({ ok: true }));
 
+// Better-auth's failure path is `302 /api/auth/error?error=<code>` —
+// e.g. an expired authorization code, a state-cookie mismatch, or an
+// IdP-side denial. Without this intercept the operator lands on
+// better-auth's bare API error response and the panel's UI never gets a
+// chance to surface a friendly retry. Forward to /login with the same
+// query so Login.tsx's existing `?error` handling can render an error
+// state + manual retry button. Registered BEFORE the catch-all so it
+// wins in Hono's first-match routing.
+app.get('/api/auth/error', (c) => {
+  const u = new URL(c.req.url);
+  const qs = u.search.length > 1 ? u.search.slice(1) : 'error=unknown';
+  return c.redirect(`/login?${qs}`, 302);
+});
+
 // Better-auth's HTTP handler covers /api/auth/* (sign-in, sign-out, OIDC
 // callback, sessions). Mounted before the session middleware so the auth
 // flow itself doesn't require an existing session.
