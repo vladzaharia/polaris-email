@@ -463,6 +463,20 @@ func phaseGenesisSeal(ctx context.Context, o happyPathOpts, _ *state.Store, seed
 	}
 	fmt.Fprintf(o.out, "genesis-seal: admin_key_id=%s webauthn_enrolled=%t\n",
 		result.AdminKeyID, result.WebAuthnEnrolled)
+
+	// Push the freshly minted admin key into the panel Worker so its
+	// admin-proxy can HMAC-sign requests to services/api. Without these
+	// secrets, every /api/admin/* call from the SPA fails at the API
+	// boundary with `X-Polaris-Key-Id required` (which the panel
+	// surfaces as a 500 to the browser).
+	pusher := secrets.WranglerPusher{}
+	if err := pusher.Push(ctx, "panel", "PANEL_ADMIN_KEY_ID", result.AdminKeyID); err != nil {
+		return fmt.Errorf("genesis-seal: push PANEL_ADMIN_KEY_ID to panel: %w", err)
+	}
+	if err := pusher.Push(ctx, "panel", "PANEL_ADMIN_KEY_SECRET", result.AdminKeySecret); err != nil {
+		return fmt.Errorf("genesis-seal: push PANEL_ADMIN_KEY_SECRET to panel: %w", err)
+	}
+	fmt.Fprintln(o.out, "genesis-seal: pushed PANEL_ADMIN_KEY_{ID,SECRET} to polaris-email-panel")
 	return nil
 }
 
