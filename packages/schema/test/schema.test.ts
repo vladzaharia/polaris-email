@@ -389,7 +389,6 @@ describe('Phase C — MTA-STS + TLS-RPT schema', () => {
     status: 'verified' as const,
     wildcard_subdomains: 0,
     dmarc_policy: 'quarantine',
-    dmarc_rua: 'mailto:dmarc@acme.example',
     inbound_enabled: 1,
     outbound_enabled: 1,
     provider: 'cloudflare',
