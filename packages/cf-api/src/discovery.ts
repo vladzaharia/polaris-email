@@ -31,7 +31,7 @@ import {
   listEmailRoutingRules,
   setCatchAllRule,
 } from './email-routing.js';
-import { onboardSenderDomain, verifyOnboarding } from './email-service.js';
+import { checkSenderOnboardedViaCf, onboardSenderDomain } from './email-service.js';
 import type { EmailRoutingRule, Zone } from './types.js';
 
 export interface NamedRouteRule {
@@ -162,10 +162,11 @@ export async function inspectZone(
     topErr = errorMessage(err);
   }
 
-  // CF's routing-DNS endpoint returns the records it auto-publishes
-  // (MX × N + DKIM TXT under whatever selector CF chose + SPF). We
-  // store the response so the sender-onboarding heuristic below can
-  // read it too — keeps the two derivations consistent.
+  // CF's routing-DNS endpoint returns the records CF auto-publishes for
+  // Email Routing (apex MX × N + apex SPF + a CF-versioned DKIM TXT).
+  // We use this only for the dnsLocked signal below; sender-onboarded
+  // queries the cf-bounce subdomain via the zone DNS API (separate
+  // feature, separate records).
   let routingDnsRecords: import('./types.js').EmailRoutingDnsRecord[] = [];
   if (routingEnabled) {
     try {
@@ -225,45 +226,25 @@ export async function inspectZone(
     }
   }
 
-  // Sender onboarding heuristic — two-stage:
+  // Sender onboarding: query CF's zone DNS for the canonical Email
+  // Sending records (cf-bounce.<domain> MX + SPF + DKIM). These are the
+  // records CF publishes specifically for outbound Email Sending — they
+  // are independent of the Email Routing records on the apex.
   //
-  //   1. If CF's Email Routing is `ready` AND its routing-DNS state
-  //      response contains the records CF auto-publishes (≥1 MX, a DKIM
-  //      TXT at any `*._domainkey.<domain>` selector, and an SPF TXT),
-  //      the domain IS onboarded from CF's perspective — exactly the
-  //      signal CF's own UI uses for "Email Sending is enabled."
-  //      Honour that as the source of truth.
-  //
-  //   2. Otherwise fall back to verifyOnboarding's DoH-canonical
-  //      comparison so operators with operator-managed DKIM (custom
-  //      selector, no CF auto-publish) still get a deterministic answer.
-  //      `sender_missing_records` is populated from the strict DoH check
-  //      in both cases — it's diagnostic info for the operator to see
-  //      what CF's wizard would have published vs what's there.
-  const cfManagedDkim = routingDnsRecords.some(
-    (r) => r.type.toUpperCase() === 'TXT' && /_domainkey\./i.test(r.name),
-  );
-  const cfManagedSpf = routingDnsRecords.some(
-    (r) =>
-      r.type.toUpperCase() === 'TXT' &&
-      r.name.toLowerCase() === zone.name.toLowerCase() &&
-      /v=spf1/i.test(r.content),
-  );
-  const cfManagedMx = routingDnsRecords.some((r) => r.type.toUpperCase() === 'MX');
-  const cfReportsOnboarded =
-    routingEnabled &&
-    routingStatus === 'ready' &&
-    cfManagedDkim &&
-    cfManagedSpf &&
-    cfManagedMx &&
-    dnsErrors.length === 0;
+  // Prior heuristic (d795634) used the routing-DNS endpoint as proxy and
+  // returned true whenever Email Routing was set up. That was wrong: a
+  // domain can have Routing enabled and Sending disabled (the polaris.gdn
+  // case that surfaced the bug), and the panel falsely reported
+  // "Sender onboarded: yes". The zone DNS check below is the authoritative
+  // CF signal — no propagation lag, no conflation with Routing.
   try {
-    const v = await verifyOnboarding(client, zone.id, zone.name, { dohFetch: env.dohFetch });
-    senderOnboarded = cfReportsOnboarded || v.verified;
-    senderMissing = v.missing;
+    const r = await checkSenderOnboardedViaCf(client, zone.id, zone.name);
+    senderOnboarded = r.onboarded;
+    senderMissing = r.missing;
   } catch (err) {
     topErr ??= errorMessage(err);
-    senderOnboarded = cfReportsOnboarded;
+    senderOnboarded = false;
+    senderMissing = ['CF DNS query failed'];
   }
 
   try {

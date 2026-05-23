@@ -68,7 +68,11 @@ describe('W11 — MTA-STS continuity cron', () => {
 });
 
 describe('W11 — DKIM self-verify cron', () => {
-  it('records a row per verified outbound-enabled domain', async () => {
+  it('records a skipped run when cf-bounce subdomain does not resolve (sender not onboarded)', async () => {
+    // `cf-bounce.<domain>` MX is the sender-onboarded gate — when it
+    // resolves to nothing (the workerd test env has no DoH reachability,
+    // so every lookup returns empty), the cron skips DKIM verification
+    // and records the skip rather than alerting.
     const now = new Date().toISOString();
     await testEnv.DB.prepare(
       `INSERT INTO mail_domains (id, zone_id, name, status, outbound_enabled,
@@ -79,11 +83,21 @@ describe('W11 — DKIM self-verify cron', () => {
       .run();
     const r = await dkimSelfVerifyRun(testEnv as unknown as Env);
     expect(r.candidates).toBe(1);
-    expect(r.ok + r.failed).toBe(1);
+    expect(r.skipped).toBe(1);
+    expect(r.failed).toBe(0);
     const row = await testEnv.DB.prepare(
-      `SELECT check_kind, target FROM synthetic_runs ORDER BY run_at DESC LIMIT 1`,
-    ).first<{ check_kind: string; target: string }>();
+      `SELECT check_kind, target, detail, ok FROM synthetic_runs ORDER BY run_at DESC LIMIT 1`,
+    ).first<{ check_kind: string; target: string; detail: string; ok: number }>();
     expect(row?.check_kind).toBe('dkim_self_verify');
     expect(row?.target).toBe('dkim.test.invalid');
+    expect(row?.ok).toBe(0); // skipped is not "ok"
+    const detail = JSON.parse(row!.detail) as { outcome: string; reason?: string };
+    expect(detail.outcome).toBe('skipped');
+    expect(detail.reason).toBe('sender_not_onboarded');
+    // No admin_alert should fire on a skipped check.
+    const alerts = await testEnv.DB.prepare(`SELECT COUNT(*) AS n FROM admin_alerts`).first<{
+      n: number;
+    }>();
+    expect(alerts?.n).toBe(0);
   });
 });

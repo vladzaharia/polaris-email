@@ -19,7 +19,7 @@
 // DMARC `rua=` mailbox) that need surgical adjustments.
 
 import type { CloudflareApiClient } from './client.js';
-import { createRecord, deleteRecord, findRecord, type DnsRecordInput } from './dns.js';
+import { createRecord, deleteRecord, findRecord, listRecords, type DnsRecordInput } from './dns.js';
 import type { ExpectedRecord } from './types.js';
 
 export interface OnboardSenderDomainOpts {
@@ -148,6 +148,74 @@ export async function verifyOnboarding(
     }
   }
   return { verified: missing.length === 0, missing };
+}
+
+/**
+ * Authoritative "is Email Sending onboarded?" check against CF's zone DNS.
+ *
+ * Email Sending and Email Routing are independent CF features with separate
+ * DNS records — both must be onboarded independently in CF. The records CF
+ * publishes when Email Sending is onboarded all live on the
+ * `cf-bounce.<domain>` subdomain:
+ *
+ *   - MX           at `cf-bounce.<domain>`            (bounce processing)
+ *   - TXT (SPF)    at `cf-bounce.<domain>`            (`v=spf1 …`)
+ *   - TXT (DKIM)   at `cf-bounce._domainkey.<domain>` (`v=DKIM1 …`)
+ *
+ * (`_dmarc.<domain>` is shared between Routing and Sending so we don't gate
+ * on it — its presence proves nothing about Sending specifically.)
+ *
+ * Using the CF zone DNS API (not DoH) means we read directly from CF's
+ * source of truth, so there's no propagation lag. Querying the routing-
+ * DNS endpoint — what the old `cfReportsOnboarded` heuristic did — was the
+ * bug being fixed here: that endpoint reports records for *routing*, which
+ * coexist with Sending-off domains.
+ */
+export async function checkSenderOnboardedViaCf(
+  client: CloudflareApiClient,
+  zoneId: string,
+  domain: string,
+): Promise<{ onboarded: boolean; missing: string[] }> {
+  const missing: string[] = [];
+  const checks: Array<{ type: string; name: string; contentPrefix?: string }> = [
+    { type: 'MX', name: `cf-bounce.${domain}` },
+    { type: 'TXT', name: `cf-bounce.${domain}`, contentPrefix: 'v=spf1' },
+    { type: 'TXT', name: `cf-bounce._domainkey.${domain}`, contentPrefix: 'v=DKIM1' },
+  ];
+  for (const c of checks) {
+    let records: Array<{ content: string }> = [];
+    try {
+      records = await listRecords(client, zoneId, { type: c.type, name: c.name });
+    } catch (err) {
+      // A real CF outage shouldn't crash the whole zone inspector — record
+      // the diagnostic and treat the record as missing. The caller surfaces
+      // these via `sender_missing_records` so the operator can still see
+      // what the inspector couldn't reach.
+      missing.push(`${c.type} ${c.name} (CF DNS query failed: ${errorMessage(err)})`);
+      continue;
+    }
+    if (records.length === 0) {
+      missing.push(`${c.type} ${c.name} (not present in zone)`);
+      continue;
+    }
+    if (c.contentPrefix) {
+      const ok = records.some((r) =>
+        r.content
+          .replace(/^"+|"+$/g, '')
+          .toLowerCase()
+          .includes(c.contentPrefix!.toLowerCase()),
+      );
+      if (!ok) {
+        missing.push(`${c.type} ${c.name} (content missing ${c.contentPrefix})`);
+      }
+    }
+  }
+  return { onboarded: missing.length === 0, missing };
+}
+
+function errorMessage(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  return String(err);
 }
 
 export async function unboardSenderDomain(

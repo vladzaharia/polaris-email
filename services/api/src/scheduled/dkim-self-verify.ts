@@ -1,11 +1,37 @@
 // W11 — DKIM self-verify cron.
 //
 // Every 6h (cron `30 */6 * * *`), for each mail_domains row that's
-// verified + outbound-enabled, DoH-lookup the CNAME/TXT for each known
-// DKIM selector and confirm a record exists. We don't try to verify the
-// signature of recent messages here (that requires raw MIME + Web Crypto
-// pipeline that's already exercised at send time); the cron's job is to
-// catch DNS drift between the operator's CNAME and our expected target.
+// verified + outbound-enabled, DoH-lookup the outbound DKIM record and
+// confirm it resolves. We don't try to verify the signature of recent
+// messages here (that requires raw MIME + Web Crypto pipeline that's
+// already exercised at send time); the cron's job is catching DNS drift
+// after onboarding — a record that was published correctly but later
+// disappeared (operator manually deleted it, CF rotation didn't
+// propagate, registrar change clobbered the zone).
+//
+// Selector model:
+//   * `cf-bounce` is CF's canonical Email Sending DKIM selector (CF
+//     publishes the DKIM TXT at `cf-bounce._domainkey.<domain>`, per
+//     https://developers.cloudflare.com/email-service/configuration/domains/).
+//     This is what receivers verify against for mail signed by CF.
+//   * Any rows in `dkim_keys` with state pending/active — captures
+//     operator-managed selectors (custom keys, in-flight rotation).
+//
+// Selectors we deliberately do NOT check:
+//   * `cf2024-1` — CF's Email Routing DKIM, an inbound infra record
+//     unrelated to outbound signing. Used to be hardcoded here; that
+//     was wrong and caused false alerts on domains without routing.
+//   * `dkim_selector` from mail_domains (default `polaris1` or `cf`)
+//     — historical, never actually published by CF Email Sending.
+//
+// Sender-onboarded gate:
+//   Before checking DKIM, DoH-probe the MX at `cf-bounce.<domain>`. CF
+//   only publishes the cf-bounce subdomain when Email Sending is
+//   onboarded; if it doesn't resolve, the domain is mid-onboarding (or
+//   was never onboarded) and the DKIM record won't exist yet. Skip
+//   silently — the operator gets a separate signal from the
+//   sender_onboarded inspector. We do still record the skip in
+//   synthetic_runs so the cron's coverage is observable.
 
 import { ulid } from '@polaris-mail/ids';
 import { sendAlert } from '../lib/admin-alert.js';
@@ -28,8 +54,8 @@ interface DohResponse {
   Answer?: DohAnswer[];
 }
 
-async function dohAny(host: string): Promise<DohAnswer[]> {
-  const url = `https://cloudflare-dns.com/dns-query?name=${encodeURIComponent(host)}&type=ANY`;
+async function doh(host: string, type: 'ANY' | 'MX' | 'TXT'): Promise<DohAnswer[]> {
+  const url = `https://cloudflare-dns.com/dns-query?name=${encodeURIComponent(host)}&type=${type}`;
   const r = await fetch(url, {
     method: 'GET',
     headers: { accept: 'application/dns-json' },
@@ -40,11 +66,13 @@ async function dohAny(host: string): Promise<DohAnswer[]> {
   return j.Answer ?? [];
 }
 
+type RunOutcome = 'ok' | 'failed' | 'skipped';
+
 async function recordRun(
   env: Env,
   args: {
     target: string;
-    ok: boolean;
+    outcome: RunOutcome;
     latency_ms: number;
     detail: Record<string, unknown>;
   },
@@ -56,9 +84,9 @@ async function recordRun(
     .bind(
       ulid(),
       args.target,
-      args.ok ? 1 : 0,
+      args.outcome === 'ok' ? 1 : 0,
       args.latency_ms,
-      JSON.stringify(args.detail),
+      JSON.stringify({ outcome: args.outcome, ...args.detail }),
       new Date().toISOString(),
     )
     .run();
@@ -68,15 +96,34 @@ export interface DkimSelfVerifyResult {
   candidates: number;
   ok: number;
   failed: number;
+  skipped: number;
 }
 
-async function checkOneDomain(env: Env, d: DomainRow): Promise<boolean> {
+async function checkOneDomain(env: Env, d: DomainRow): Promise<RunOutcome> {
   const start = Date.now();
-  // Always check the canonical CF selector AND any polaris-namespace
-  // selectors recorded on the row (legacy `cf`, the active dkim_keys
-  // entries).
+
+  // Sender-onboarded gate. CF only publishes `cf-bounce.<domain>` MX
+  // records when Email Sending is onboarded; absence means the domain
+  // isn't expected to have an outbound DKIM record yet. Skip rather
+  // than alert — onboarding state is reported elsewhere (inspectZone +
+  // the panel's Sender row). Routing-only domains (cf2024-1 present but
+  // no cf-bounce) should not appear here.
+  const bounceMx = await doh(`cf-bounce.${d.name}`, 'MX').catch(() => [] as DohAnswer[]);
+  if (bounceMx.length === 0) {
+    await recordRun(env, {
+      target: d.name,
+      outcome: 'skipped',
+      latency_ms: Date.now() - start,
+      detail: { reason: 'sender_not_onboarded' },
+    });
+    return 'skipped';
+  }
+
+  // CF-managed Email Sending DKIM lives at `cf-bounce._domainkey`. Any
+  // legacy/operator-managed selectors recorded on `dkim_keys` get
+  // checked too so in-flight rotations don't get missed.
   const checked: Array<{ selector: string; recordCount: number }> = [];
-  const selectorsToCheck = new Set<string>([d.dkim_selector ?? 'cf', 'cf2024-1']);
+  const selectorsToCheck = new Set<string>(['cf-bounce']);
   const dkimRows = await env.DB.prepare(
     `SELECT selector FROM dkim_keys WHERE domain_id = ? AND state IN ('pending','active')`,
   )
@@ -84,11 +131,11 @@ async function checkOneDomain(env: Env, d: DomainRow): Promise<boolean> {
     .all<{ selector: string }>();
   for (const k of dkimRows.results ?? []) selectorsToCheck.add(k.selector);
 
-  // Resolve selectors in parallel — each domain has at most ~4 selectors so
-  // this stays inside the DoH RPS envelope even when the outer batch is full.
   const selectorList = [...selectorsToCheck];
   const ansList = await Promise.all(
-    selectorList.map((sel) => dohAny(`${sel}._domainkey.${d.name}`).catch(() => [] as DohAnswer[])),
+    selectorList.map((sel) =>
+      doh(`${sel}._domainkey.${d.name}`, 'TXT').catch(() => [] as DohAnswer[]),
+    ),
   );
   let anyMissing = false;
   for (let i = 0; i < selectorList.length; i++) {
@@ -100,7 +147,7 @@ async function checkOneDomain(env: Env, d: DomainRow): Promise<boolean> {
   const allOk = !anyMissing;
   await recordRun(env, {
     target: d.name,
-    ok: allOk,
+    outcome: allOk ? 'ok' : 'failed',
     latency_ms: Date.now() - start,
     detail: { selectors: checked },
   });
@@ -120,7 +167,7 @@ async function checkOneDomain(env: Env, d: DomainRow): Promise<boolean> {
       /* non-fatal */
     }
   }
-  return allOk;
+  return allOk ? 'ok' : 'failed';
 }
 
 export async function dkimSelfVerifyRun(env: Env): Promise<DkimSelfVerifyResult> {
@@ -130,7 +177,13 @@ export async function dkimSelfVerifyRun(env: Env): Promise<DkimSelfVerifyResult>
   ).all<DomainRow>();
   const domains: DomainRow[] = rows.results ?? [];
   const outcomes = await runBatched(domains, DOMAIN_PARALLELISM, (d) => checkOneDomain(env, d));
-  const ok = outcomes.filter((x) => x).length;
-  const failed = outcomes.length - ok;
-  return { candidates: domains.length, ok, failed };
+  let ok = 0;
+  let failed = 0;
+  let skipped = 0;
+  for (const o of outcomes) {
+    if (o === 'ok') ok += 1;
+    else if (o === 'skipped') skipped += 1;
+    else failed += 1;
+  }
+  return { candidates: domains.length, ok, failed, skipped };
 }
