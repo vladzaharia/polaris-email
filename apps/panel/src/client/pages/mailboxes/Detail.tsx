@@ -749,6 +749,16 @@ export function MailboxDetail() {
   // ---------- activity filter (Activity tab only) ----------
   const [activityDir, setActivityDir] = useState<'all' | 'out' | 'in'>('all');
 
+  // Recent message feeds — read above the early returns so the
+  // useMemoMerge() hook below is called on every render, not just the
+  // loaded one. (React enforces stable hook order; calling useMemoMerge
+  // only when q.data resolves trips error #310 the moment the query
+  // hydrates.)
+  const sentRows = recentSent.data?.data ?? [];
+  const receivedRows = recentReceived.data?.data ?? [];
+  // Merged + sorted recent feed for the Overview "Latest activity" mini-table.
+  const mixedRecent: RecentMessageRow[] = useMemoMerge(sentRows, receivedRows);
+
   const breadcrumbs = [
     { label: 'Mailboxes', to: '/mailboxes' },
     { label: q.data?.mailbox.name ?? id },
@@ -786,8 +796,8 @@ export function MailboxDetail() {
 
   // Rolled-up stats from the last 50 sent rows. Drives the header strip; we
   // don't hit a separate per-mailbox stats endpoint because there isn't one.
-  const sentRows = recentSent.data?.data ?? [];
-  const receivedRows = recentReceived.data?.data ?? [];
+  // (sentRows/receivedRows are hoisted above the early returns so the
+  // useMemoMerge() hook stays in stable order — see above.)
   const rollup = rollupSent(sentRows);
   const lastSentAt = sentRows[0]?.created_at ?? null;
   const lastReceivedAt = receivedRows[0]?.created_at ?? null;
@@ -795,9 +805,6 @@ export function MailboxDetail() {
   // Stale-credential watchlist — surfaced on Overview.
   const now = Date.now();
   const staleCredentials = activeCredentials.filter((c) => isStaleCredential(c, now));
-
-  // Merged + sorted recent feed for the Overview "Latest activity" mini-table.
-  const mixedRecent: RecentMessageRow[] = useMemoMerge(sentRows, receivedRows);
 
   const headerActions = (
     <>
