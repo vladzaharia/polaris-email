@@ -84,7 +84,8 @@ export async function scheduled(event: ScheduledEvent, env: Env): Promise<void> 
         // eslint-disable-next-line no-console
         console.log(
           'domain-verify cron:',
-          `candidates=${r.candidates} verified=${r.verified} incomplete=${r.incomplete} no_creds=${r.no_creds} failed=${r.failed}`,
+          `candidates=${r.candidates} verified=${r.verified} incomplete=${r.incomplete} ` +
+            `no_creds=${r.no_creds} failed=${r.failed} cf_zones_cached=${r.cf_zones_cached ?? 'skipped'}`,
         );
       });
       return;

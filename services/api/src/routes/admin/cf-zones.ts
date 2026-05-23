@@ -6,12 +6,23 @@
 // `configure` endpoint computes the diff and either dry-runs it (default)
 // or applies it via Cloudflare's auto-publish endpoints
 // (POST /email/routing/enable + POST /email-service/sender-domains) so CF
-// owns the DNS lifecycle. Manual DNS edits via dns.ts are reserved for
-// non-CF-DNS edge cases (handled inside packages/cf-api).
+// owns the DNS lifecycle.
 //
-// Distinct from the existing `/v1/admin/zones` endpoint which lists rows
-// from the D1 `zones` table (the internal mirror that mail_domains.zone_id
-// FKs into). These endpoints sit at `/v1/admin/cf-zones`.
+// Caching has two layers:
+//   * Per-isolate module-scope cache (60s) — saves repeated calls inside
+//     the same Worker isolate (panel re-renders, back-to-back GETs).
+//   * KV-backed shared cache (`cfz:listing`, 90min TTL) — survives Worker
+//     redeploys and is shared across colos. Primed by the hourly
+//     `domain-verify` cron so the panel never has to pay the cost of a
+//     cold inspect (typically ≥5s for an account with several zones).
+//
+// `GET /v1/admin/cf-zones` and `GET /v1/admin/cf-zones/:name` both read
+// through this stack. `?refresh=1` bypasses both layers and forces a
+// live inspect. `POST /v1/admin/cf-zones/:name/configure` invalidates
+// both caches on apply.
+//
+// Distinct from `/v1/admin/zones` which lists rows from the D1 `zones`
+// table (the internal mirror that mail_domains.zone_id FKs into).
 import { Hono } from 'hono';
 import {
   CloudflareApiClient,
@@ -32,22 +43,23 @@ import { buildError } from '../../errors.js';
 export const cfZones = new Hono<{ Bindings: Env }>();
 
 const DEFAULT_INBOUND_WORKER = 'polaris-mail-in';
-const LIST_CACHE_TTL_MS = 60_000;
+const MODULE_CACHE_TTL_MS = 60_000;
+const KV_CACHE_KEY = 'cfz:listing';
+// 90min KV TTL covers the 1h cron interval plus 30min of headroom for a
+// missed run; after that, the next request pays the cost of a live
+// inspect and re-primes the cache.
+const KV_CACHE_TTL_SECONDS = 90 * 60;
 
 interface CachedListing {
   fetched_at: number;
   data: ZoneDomainStatus[];
 }
 
-// Module-scope per-isolate cache. CF zone listings can be expensive (one
-// API call per zone for inspect); 60s is enough to absorb panel re-renders
-// without staleness biting an operator who just hit Apply.
+// Per-isolate L1 cache. Workers can recycle isolates at any time; the KV
+// layer is the durable backstop.
 let listCache: CachedListing | null = null;
 
 function makeClient(env: Env): CloudflareApiClient | { error: Response } {
-  // Defer the error response construction to keep the happy path branchless.
-  // 503 + retryable:false so the panel surfaces this as a "config needed"
-  // empty state rather than retrying as if the API were transiently down.
   if (!env.CF_API_TOKEN || !env.CF_ACCOUNT_ID) {
     return {
       error: new Response(
@@ -88,13 +100,9 @@ function makeApplyEnv(env: Env): ApplyEnv {
   return {
     ...insp,
     async d1InsertMailDomain(zoneName: string): Promise<void> {
-      // Mirror the shape of the create path in routes/admin/domains.ts:
-      // ensure a `zones` row exists (synthesise one when CF zone id is
-      // unknown to this code path), then insert mail_domains.
       const id = ulid();
       const nowIso = new Date().toISOString();
-      const cfPlaceholder = `cf-${id}`; // configure caller has the real cf_zone_id but
-      // doesn't thread it through; ensureZone resolves by name later if needed.
+      const cfPlaceholder = `cf-${id}`;
       const zoneRow = await env.DB.prepare(`SELECT id FROM zones WHERE name = ? LIMIT 1`)
         .bind(zoneName)
         .first<{ id: string }>();
@@ -122,53 +130,124 @@ function makeApplyEnv(env: Env): ApplyEnv {
   };
 }
 
+// ---------------------------------------------------------------------------
+// Cache primitives
+// ---------------------------------------------------------------------------
+
+async function readKvCache(env: Env): Promise<CachedListing | null> {
+  const raw = await env.KV_KEY_CACHE.get(KV_CACHE_KEY, 'json').catch(() => null);
+  if (!raw || typeof raw !== 'object') return null;
+  const r = raw as Record<string, unknown>;
+  if (typeof r.fetched_at !== 'number' || !Array.isArray(r.data)) return null;
+  return { fetched_at: r.fetched_at, data: r.data as ZoneDomainStatus[] };
+}
+
+async function writeKvCache(env: Env, listing: CachedListing): Promise<void> {
+  await env.KV_KEY_CACHE.put(KV_CACHE_KEY, JSON.stringify(listing), {
+    expirationTtl: KV_CACHE_TTL_SECONDS,
+  }).catch(() => {
+    // KV is best-effort; on failure we still have the module cache.
+  });
+}
+
+async function bustCaches(env: Env): Promise<void> {
+  listCache = null;
+  await env.KV_KEY_CACHE.delete(KV_CACHE_KEY).catch(() => undefined);
+}
+
+/**
+ * Force-refresh the listing — live `inspectAllZones`, write to both
+ * caches. Exposed so the hourly domain-verify cron can prime the cache
+ * (services/api/src/scheduled/domain-verify.ts). Returns the count of
+ * zones seen so the cron can include it in its telemetry line.
+ */
+export async function refreshCfZoneCache(env: Env): Promise<{ zones: number; skipped: boolean }> {
+  const made = makeClient(env);
+  if ('error' in made) return { zones: 0, skipped: true };
+  const data = await inspectAllZones(made, makeInspectorEnv(env));
+  const listing: CachedListing = { fetched_at: Date.now(), data };
+  listCache = listing;
+  await writeKvCache(env, listing);
+  return { zones: data.length, skipped: false };
+}
+
+/**
+ * Read-through listing fetch. Module cache → KV cache → live inspect.
+ * `forceLive=true` (operators clicking refresh) bypasses both caches.
+ */
+async function getCfZoneListing(
+  env: Env,
+  client: CloudflareApiClient,
+  forceLive: boolean,
+): Promise<{ listing: CachedListing; from: 'module' | 'kv' | 'live' }> {
+  const now = Date.now();
+  if (!forceLive && listCache && now - listCache.fetched_at < MODULE_CACHE_TTL_MS) {
+    return { listing: listCache, from: 'module' };
+  }
+  if (!forceLive) {
+    const kv = await readKvCache(env);
+    if (kv) {
+      listCache = kv;
+      return { listing: kv, from: 'kv' };
+    }
+  }
+  const data = await inspectAllZones(client, makeInspectorEnv(env));
+  const listing: CachedListing = { fetched_at: now, data };
+  listCache = listing;
+  await writeKvCache(env, listing);
+  return { listing, from: 'live' };
+}
+
 // ---------- GET /v1/admin/cf-zones ----------
 // Lists every zone in the operator's CF account with per-zone status.
-// 60s in-Worker cache; pass ?refresh=1 to bypass.
+// Read-through cache (module 60s → KV 90min → live). `?refresh=1` forces
+// a live inspect.
 cfZones.get('/v1/admin/cf-zones', requireScope('admin:read'), async (c) => {
   const made = makeClient(c.env);
   if ('error' in made) return made.error;
-  const refresh = c.req.query('refresh') === '1';
-  if (!refresh && listCache && Date.now() - listCache.fetched_at < LIST_CACHE_TTL_MS) {
-    return c.json({
-      data: listCache.data,
-      fetched_at: new Date(listCache.fetched_at).toISOString(),
-      cached: true,
-    });
-  }
-  const data = await inspectAllZones(made, makeInspectorEnv(c.env));
-  listCache = { fetched_at: Date.now(), data };
+  const forceLive = c.req.query('refresh') === '1';
+  const { listing, from } = await getCfZoneListing(c.env, made, forceLive);
   return c.json({
-    data,
-    fetched_at: new Date(listCache.fetched_at).toISOString(),
-    cached: false,
+    data: listing.data,
+    fetched_at: new Date(listing.fetched_at).toISOString(),
+    cached: from !== 'live',
+    source: from,
   });
 });
 
 // ---------- GET /v1/admin/cf-zones/:name ----------
-// Refresh + return single-zone status. Bypasses the list cache entirely
-// (operators expect fresh data after clicking Apply).
+// Returns the per-zone status from the cached listing. `?refresh=1`
+// forces a fresh inspect (the legacy semantic for the panel's Refresh
+// button). No extra `inspectZone` re-fetch on the cached path — the
+// listing already carries every field the panel renders.
 cfZones.get('/v1/admin/cf-zones/:name', requireScope('admin:read'), async (c) => {
   const made = makeClient(c.env);
   if ('error' in made) return made.error;
   const name = c.req.param('name');
-  // Find the zone by name in the CF account (zone listing is scoped via
-  // /zones?account.id=... per packages/cf-api/src/zones.ts).
-  const all = await inspectAllZones(made, makeInspectorEnv(c.env));
-  const found = all.find((z) => z.zone.name === name);
+  const forceLive = c.req.query('refresh') === '1';
+  if (forceLive) {
+    // The operator wants the freshest possible view of this single zone
+    // (typically after hitting Apply). Refresh the listing then return
+    // the matching row's re-inspected status.
+    const refreshed = await refreshCfZoneCache(c.env);
+    void refreshed;
+    const found = listCache?.data.find((z) => z.zone.name === name);
+    if (!found) return buildError(c, 'not_found', `no CF zone named ${name} in this account`);
+    const fresh = await inspectZone(made, found.zone, makeInspectorEnv(c.env));
+    return c.json({ data: fresh, cached: false, source: 'live' });
+  }
+  const { listing, from } = await getCfZoneListing(c.env, made, false);
+  const found = listing.data.find((z) => z.zone.name === name);
   if (!found) return buildError(c, 'not_found', `no CF zone named ${name} in this account`);
-  // Refresh the just-listed zone (inspectAllZones already inspected, but
-  // re-inspect to bypass any per-call memoization we may add later).
-  const refreshed = await inspectZone(made, found.zone, makeInspectorEnv(c.env));
-  return c.json({ data: refreshed });
+  return c.json({
+    data: found,
+    fetched_at: new Date(listing.fetched_at).toISOString(),
+    cached: from !== 'live',
+    source: from,
+  });
 });
 
 // ---------- POST /v1/admin/cf-zones/:name/configure ----------
-// Body: { dry_run?: boolean (default true), op_kinds?: ZoneConfigureOpKind[] }
-// dry_run=true → return the diff without applying.
-// dry_run=false → apply the diff (or just the listed op_kinds). The panel
-// gates this client-side via DestructiveActionDialog; CLI/SDK callers use
-// the admin key directly.
 cfZones.post('/v1/admin/cf-zones/:name/configure', requireScope('admin:rotate'), async (c) => {
   const made = makeClient(c.env);
   if ('error' in made) return made.error;
@@ -187,12 +266,13 @@ cfZones.post('/v1/admin/cf-zones/:name/configure', requireScope('admin:rotate'),
   const inboundWorkerName = c.env.WORKER_NAME_INBOUND ?? DEFAULT_INBOUND_WORKER;
   const insp = makeInspectorEnv(c.env);
 
+  // Live inspect at configure time — the operator is about to mutate
+  // state and we don't want to apply ops based on a stale cache.
   const all = await inspectAllZones(made, insp);
   const found = all.find((z) => z.zone.name === name);
   if (!found) return buildError(c, 'not_found', `no CF zone named ${name} in this account`);
   const status = await inspectZone(made, found.zone, insp);
 
-  // computeDiff is pure; selecting a subset of ops is filter+rebuild.
   const fullDiff = computeDiff(status, { inboundWorkerName });
   const selectedOps = body.op_kinds
     ? fullDiff.ops.filter((op) => body.op_kinds!.includes(op.kind))
@@ -203,9 +283,9 @@ cfZones.post('/v1/admin/cf-zones/:name/configure', requireScope('admin:rotate'),
     return c.json({ dry_run: true, diff });
   }
 
-  // Bust the listing cache before applying so the next GET reflects the
-  // post-apply state even if our own apply succeeded.
-  listCache = null;
+  // Invalidate both caches before applying so the next GET reflects
+  // post-apply state. The next cron run (or panel refresh) re-primes.
+  await bustCaches(c.env);
 
   const result = await applyDiff(made, diff, makeApplyEnv(c.env));
   await audit(c.env, {
@@ -229,7 +309,6 @@ cfZones.post('/v1/admin/cf-zones/:name/configure', requireScope('admin:rotate'),
 });
 
 // Test-only: clear the in-memory cache so consecutive tests start fresh.
-// Safe to expose at module level; CF only sees /v1/admin/cf-zones/* requests.
 export function _resetCfZoneListCache(): void {
   listCache = null;
 }
