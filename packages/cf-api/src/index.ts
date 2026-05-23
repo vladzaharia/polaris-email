@@ -94,3 +94,17 @@ export {
 // MTA-STS + TLS-RPT provisioning and verification.
 export * from './mta-sts.js';
 export * from './workers-routes.js';
+
+export { graphqlQuery, type GraphqlRequest } from './graphql.js';
+export {
+  fetchDmarcAggregatesByDay,
+  type DmarcAggregateRow,
+  type FetchDmarcAggregatesOpts,
+} from './dmarc-graphql.js';
+export {
+  enableDmarcManagement,
+  setDmarcPolicy,
+  getDmarcManagementStatus,
+  type DmarcPolicy,
+  type DmarcManagementStatus,
+} from './dmarc-management.js';

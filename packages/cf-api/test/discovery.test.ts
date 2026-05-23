@@ -53,7 +53,8 @@ const ZONE_BARE: Zone = { id: 'z2', name: 'example.com' };
  * Build a DoH resolver that returns the canonical expected content for each
  * polaris-mail sender record on the given domain. Matches `expectedRecordsFor`
  * in `email-service.ts`: cf._domainkey CNAME, *._domainkey CNAME (wildcard),
- * SPF TXT, DMARC TXT, cf-bounce MX.
+ * SPF TXT, cf-bounce MX. (`_dmarc` is published by Cloudflare DMARC
+ * Management, not polaris-mail, so it isn't part of the verify set.)
  */
 function dohResolverFor(domain: string): typeof fetch {
   return (async (input: RequestInfo | URL) => {
@@ -67,8 +68,6 @@ function dohResolverFor(domain: string): typeof fetch {
       // Primary DKIM CNAME points at CF's hosted DKIM target.
       if (type === 'CNAME' && name === `cf._domainkey.${domain}`)
         return `cf.${domain}.dkim.cfemail.net`;
-      if (type === 'TXT' && name === `_dmarc.${domain}`)
-        return `v=DMARC1; p=quarantine; rua=mailto:dmarc@${domain}`;
       if (type === 'TXT' && name === domain) return 'v=spf1 include:_spf.mx.cloudflare.net -all';
       if (type === 'MX' && name === `cf-bounce.${domain}`) return 'route.mx.cloudflare.net';
       return '';

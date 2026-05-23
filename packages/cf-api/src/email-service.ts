@@ -19,6 +19,7 @@
 // DMARC `rua=` mailbox) that need surgical adjustments.
 
 import type { CloudflareApiClient } from './client.js';
+import { enableDmarcManagement } from './dmarc-management.js';
 import { createRecord, deleteRecord, findRecord, listRecords, type DnsRecordInput } from './dns.js';
 import type { ExpectedRecord } from './types.js';
 
@@ -46,6 +47,10 @@ export interface OnboardResult {
   expectedRecords: DnsRecordInput[];
   /** True when CF was asked to manage the DNS itself. */
   cfManaged: boolean;
+  /** True when CF DMARC Management was successfully enabled (or already on). */
+  dmarcManagementEnabled: boolean;
+  /** Set when DMARC Management enablement failed; onboarding still succeeded. */
+  dmarcManagementError?: string;
 }
 
 /**
@@ -74,7 +79,13 @@ export async function onboardSenderDomain(
         dkim_selector: opts.dkimSelector,
         wildcard_dkim: opts.wildcardDkim ?? true,
       });
-      return { expectedRecords: expected, cfManaged: true };
+      const dmarc = await tryEnableDmarcManagement(client, opts.zoneId, opts.domain);
+      return {
+        expectedRecords: expected,
+        cfManaged: true,
+        dmarcManagementEnabled: dmarc.enabled,
+        dmarcManagementError: dmarc.error,
+      };
     } catch (err) {
       // 404 / 405 / 501 from the API => endpoint not yet GA on this account.
       // Fall through to manual publish so onboarding still completes.
@@ -103,7 +114,26 @@ export async function onboardSenderDomain(
     if (existing) continue; // leave conflicts for verifyOnboarding to surface
     await createRecord(client, opts.zoneId, r);
   }
-  return { expectedRecords: expected, cfManaged: false };
+  return { expectedRecords: expected, cfManaged: false, dmarcManagementEnabled: false };
+}
+
+async function tryEnableDmarcManagement(
+  client: CloudflareApiClient,
+  zoneId: string,
+  domain: string,
+): Promise<{ enabled: boolean; error?: string }> {
+  try {
+    await enableDmarcManagement(client, zoneId);
+    return { enabled: true };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    // eslint-disable-next-line no-console
+    console.warn(
+      'email-service: DMARC Management enable failed; onboarding continues, operator can retry',
+      { domain, zoneId, error: msg },
+    );
+    return { enabled: false, error: msg };
+  }
 }
 
 /**
@@ -253,12 +283,6 @@ export function expectedRecordsFor(opts: OnboardSenderDomainOpts): DnsRecordInpu
       name: opts.domain,
       content: 'v=spf1 include:_spf.mx.cloudflare.net -all',
       comment: 'polaris-mail: SPF (CF-managed)',
-    },
-    {
-      type: 'TXT',
-      name: `_dmarc.${opts.domain}`,
-      content: `v=DMARC1; p=quarantine; rua=mailto:dmarc@${opts.domain}`,
-      comment: 'polaris-mail: DMARC',
     },
     {
       type: 'MX',
