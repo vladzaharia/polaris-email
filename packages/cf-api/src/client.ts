@@ -72,7 +72,7 @@ export class CloudflareApiClient {
   readonly apiToken: string;
   readonly accountId: string;
   readonly baseUrl: string;
-  private readonly fetchImpl: typeof fetch;
+  readonly fetchImpl: typeof fetch;
   private readonly maxRetries: number;
   private readonly sleepImpl: (ms: number) => Promise<void>;
 
