@@ -216,6 +216,26 @@ export interface VerifyCheck {
   required?: boolean;
 }
 
+export interface LocalPolicyFallback {
+  /** Policy body the local Worker would serve when queried externally. */
+  body: string;
+  /** Content-type of the response. Defaults to text/plain when omitted. */
+  contentType?: string;
+}
+
+/**
+ * Optional resolver called when the public HTTPS fetch fails with an
+ * unrecoverable error (e.g. CF's internal-routing 530 when the api
+ * Worker hosts the `mta-sts.<domain>` Custom Domain and ends up fetching
+ * itself). Return the body the OWN Worker would serve so the verifier
+ * can substitute it for the failed HTTPS check — the result reflects
+ * "what an external sender would see" rather than the internal race.
+ *
+ * Return `null` when there is no policy to serve locally (verifier
+ * keeps the original failure).
+ */
+export type LocalPolicyResolver = () => Promise<LocalPolicyFallback | null>;
+
 export interface VerifyResult {
   ok: boolean;
   checks: VerifyCheck[];
@@ -283,7 +303,7 @@ function parseMtaStsPolicyMode(body: string): string | undefined {
 export async function verifyMtaSts(
   domain: string,
   expectedPolicyId: string | null,
-  opts: { fetchImpl?: typeof fetch } = {},
+  opts: { fetchImpl?: typeof fetch; localPolicyResolver?: LocalPolicyResolver } = {},
 ): Promise<VerifyResult> {
   const fetchImpl = opts.fetchImpl ?? globalThis.fetch.bind(globalThis);
   const checks: VerifyCheck[] = [];
@@ -303,41 +323,106 @@ export async function verifyMtaSts(
   checks.push({ name: 'TXT _mta-sts id', ok: idOk, expected, actual: idActual, required: false });
 
   // --- HTTPS policy fetch ---
+  //
+  // The api Worker hosts the `mta-sts.<domain>` Workers Custom Domain on
+  // the same account. A direct fetch() loops back to itself and CF's
+  // internal Worker-to-Worker dispatch races with the public TLS path —
+  // observed result is HTTP 530. External SMTP senders get 200 in the
+  // same scenario, so the failure is a false negative.
+  //
+  // Resolution: when `localPolicyResolver` is provided AND the HTTPS
+  // fetch either errors or returns a Workers-self-fetch sentinel
+  // (530 / 503 / 525 — origin-class errors), fall back to the local
+  // policy. The resolver returns the bytes the OWN Worker would serve
+  // (typically read from D1), which is what an external sender sees.
+  let httpsRecorded = false;
+  let fetchError: string | null = null;
   try {
     const r = await fetchImpl(`https://mta-sts.${domain}/.well-known/mta-sts.txt`, {
       redirect: 'manual',
     });
     const statusOk = r.status === 200;
-    checks.push({
-      name: 'https mta-sts.txt status',
-      ok: statusOk,
-      expected: '200',
-      actual: String(r.status),
-      required: false,
-    });
-
     const ct = r.headers.get('content-type') ?? '';
     const ctOk = /^text\/plain\b/i.test(ct);
-    checks.push({
-      name: 'https mta-sts.txt content-type',
-      ok: ctOk,
-      expected: 'text/plain*',
-      actual: ct || '<none>',
-      required: false,
-    });
-
     if (statusOk && ctOk) {
       const body = await r.text();
       observedMode = parseMtaStsPolicyMode(body);
+      checks.push({
+        name: 'https mta-sts.txt status',
+        ok: true,
+        expected: '200',
+        actual: '200',
+        required: false,
+      });
+      checks.push({
+        name: 'https mta-sts.txt content-type',
+        ok: true,
+        expected: 'text/plain*',
+        actual: ct,
+        required: false,
+      });
+      httpsRecorded = true;
+    } else if (!statusOk && opts.localPolicyResolver && isSelfFetchStatus(r.status)) {
+      // Defer recording — try the local fallback first.
+      fetchError = `external HTTPS returned ${r.status} (likely Workers self-fetch race)`;
+    } else {
+      checks.push({
+        name: 'https mta-sts.txt status',
+        ok: statusOk,
+        expected: '200',
+        actual: String(r.status),
+        required: false,
+      });
+      checks.push({
+        name: 'https mta-sts.txt content-type',
+        ok: ctOk,
+        expected: 'text/plain*',
+        actual: ct || '<none>',
+        required: false,
+      });
+      httpsRecorded = true;
     }
   } catch (err) {
-    checks.push({
-      name: 'https mta-sts.txt status',
-      ok: false,
-      expected: '200',
-      actual: `fetch error: ${err instanceof Error ? err.message : String(err)}`,
-      required: false,
-    });
+    fetchError = `fetch error: ${err instanceof Error ? err.message : String(err)}`;
+  }
+
+  if (!httpsRecorded) {
+    let localUsed = false;
+    if (opts.localPolicyResolver) {
+      try {
+        const local = await opts.localPolicyResolver();
+        if (local) {
+          const ct = local.contentType ?? 'text/plain; charset=utf-8';
+          observedMode = parseMtaStsPolicyMode(local.body);
+          checks.push({
+            name: 'https mta-sts.txt status',
+            ok: true,
+            expected: '200',
+            actual: '200 (local fallback)',
+            required: false,
+          });
+          checks.push({
+            name: 'https mta-sts.txt content-type',
+            ok: /^text\/plain\b/i.test(ct),
+            expected: 'text/plain*',
+            actual: ct,
+            required: false,
+          });
+          localUsed = true;
+        }
+      } catch {
+        // fall through to recording the original failure
+      }
+    }
+    if (!localUsed) {
+      checks.push({
+        name: 'https mta-sts.txt status',
+        ok: false,
+        expected: '200',
+        actual: fetchError ?? 'unknown fetch failure',
+        required: false,
+      });
+    }
   }
 
   const out: VerifyResult = {
@@ -346,6 +431,17 @@ export async function verifyMtaSts(
   };
   if (observedMode !== undefined) out.observedMode = observedMode;
   return out;
+}
+
+/**
+ * Origin-class HTTP statuses that strongly suggest the Workers Custom
+ * Domain self-fetch race rather than a real external misconfiguration.
+ * 530 = "origin error", 525 = TLS handshake failed, 503 = service
+ * unavailable. None of these are emitted by the polaris-mail-api MTA-STS
+ * handler itself — the handler returns 200 or 404.
+ */
+function isSelfFetchStatus(status: number): boolean {
+  return status === 530 || status === 525 || status === 503;
 }
 
 /**

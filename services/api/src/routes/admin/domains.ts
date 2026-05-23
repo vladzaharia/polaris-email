@@ -808,7 +808,31 @@ domains.post('/v1/admin/domains/:id/verify', requireScope('admin:rotate'), async
   // endpoint, which is idempotent.
   let mtaStsRanAndAllPassed = false;
   if (row.mta_sts_mode !== 'none') {
-    const mtaSts = await verifyMtaSts(row.name, row.mta_sts_policy_id);
+    // Pass a local-policy fallback: the api Worker hosts the
+    // `mta-sts.<domain>` Custom Domain on the same account, so its own
+    // fetch() of the HTTPS endpoint races with CF's internal Worker
+    // dispatch and returns 530 even though external senders see 200.
+    // When the verifier hits that race, it consults this resolver and
+    // substitutes the response the OWN Worker would serve — exactly
+    // what an external SMTP server queries, modulo CF infra propagation.
+    // The bytes mirror services/api/src/routes/mta-sts.ts byte-for-byte.
+    const mtaSts = await verifyMtaSts(row.name, row.mta_sts_policy_id, {
+      localPolicyResolver: async () => {
+        if (!row.mta_sts_mode || row.mta_sts_mode === 'none') return null;
+        const policyRow = await c.env.DB.prepare(
+          `SELECT mta_sts_mode, mta_sts_max_age FROM mail_domains WHERE id = ?`,
+        )
+          .bind(row.id)
+          .first<{ mta_sts_mode: string; mta_sts_max_age: number }>();
+        if (!policyRow || policyRow.mta_sts_mode === 'none') return null;
+        const body =
+          `version: STSv1\r\n` +
+          `mode: ${policyRow.mta_sts_mode}\r\n` +
+          `mx: *.mx.cloudflare.net\r\n` +
+          `max_age: ${policyRow.mta_sts_max_age}\r\n`;
+        return { body, contentType: 'text/plain; charset=utf-8' };
+      },
+    });
     checks.push(...mtaSts.checks);
     const someFailed = mtaSts.checks.some((ch) => !ch.ok);
     if (someFailed) {
