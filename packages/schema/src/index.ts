@@ -281,6 +281,12 @@ export type MailDomain = z.infer<typeof MailDomain>;
 
 export const CreateMailDomainRequest = z.object({
   name: DomainName,
+  // CF zone id is optional in the wire schema — when omitted the server
+  // auto-resolves it via CF's /zones API (longest-suffix match against
+  // `name`). The panel's Add Domain dialog already knows the id from its
+  // zone dropdown and passes it through; CLI / SDK consumers that don't
+  // pre-fetch zones get correct routing via the auto-resolve fallback.
+  cf_zone_id: z.string().max(64).optional(),
   dkim_selector: z.string().min(1).max(63).optional(),
   dmarc_policy: DmarcPolicy.optional(),
   dmarc_rua: z.string().max(320).optional(),

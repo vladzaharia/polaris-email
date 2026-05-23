@@ -98,7 +98,14 @@ function AddDomainDialog() {
       ? `${subdomain.trim()}.${zoneName}`
       : zoneName;
 
-  const create = useAdminMutation<{ id: string }, { name: string }>(
+  // The CF zone id lets the backend populate `mail_domains.cf_zone_id`
+  // at create time, which is what the verify check's
+  // `cf-email-routing-dns` test reads. The selectedZone object comes
+  // straight from the /api/admin/cf-zones dropdown — sending the id
+  // means the backend never has to round-trip to CF to resolve it.
+  const selectedZone = zoneRows.find((z) => z.zone.name === zoneName);
+
+  const create = useAdminMutation<{ id: string }, { name: string; cf_zone_id?: string }>(
     // dkim_selector intentionally omitted — backend defaults to `polaris1`
     // which is what we want. Operators can rotate via Domain Detail later.
     (vars) => ({ path: '/api/admin/domains', method: 'POST', body: vars }),
@@ -185,7 +192,10 @@ function AddDomainDialog() {
           <Button
             disabled={!composedDomain || create.isPending}
             onClick={async () => {
-              const r = await create.mutateAsync({ name: composedDomain });
+              const r = await create.mutateAsync({
+                name: composedDomain,
+                cf_zone_id: selectedZone?.zone.id,
+              });
               // The create endpoint defaults to inbound=0, outbound=1. Fire the
               // toggle endpoints only if the operator picked something else.
               const toggles: Array<Promise<unknown>> = [];

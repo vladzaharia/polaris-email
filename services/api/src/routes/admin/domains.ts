@@ -2,12 +2,45 @@
 // All HMAC-signed (admin middleware applied at the parent `admin` Hono instance).
 import { Hono } from 'hono';
 import { CreateMailDomainRequest, UpdateMailDomainRequest } from '@polaris-mail/schema';
-import { generatePolicyId, verifyMtaSts, verifyTlsRpt } from '@polaris-mail/cf-api';
+import {
+  CloudflareApiClient,
+  findZoneByName,
+  generatePolicyId,
+  verifyMtaSts,
+  verifyTlsRpt,
+} from '@polaris-mail/cf-api';
 import { actorOf, audit } from '../../audit.js';
 import { bodyText, requireScope } from '../../auth.js';
 import type { Env } from '../../env.js';
 import { buildError } from '../../errors.js';
 import { ulid } from '@polaris-mail/ids';
+
+/**
+ * Resolve a Cloudflare zone id for the given mail-domain name.
+ *
+ * Used at create time so `mail_domains.cf_zone_id` lands populated and
+ * the `cf-email-routing-dns` verify check can fire without a manual
+ * follow-up PATCH. Reuses {@link findZoneByName} which walks up DNS
+ * labels — `mail.acme.example` matches the `acme.example` zone, falling
+ * back to `example` if that's all the operator has.
+ *
+ * Returns `null` (never throws) when either CF credential is missing or
+ * the CF API call errors — the create handler tolerates a null result
+ * and lets the verify check report the gap clearly.
+ */
+async function resolveCfZoneId(env: Env, domainName: string): Promise<string | null> {
+  if (!env.CF_API_TOKEN || !env.CF_ACCOUNT_ID) return null;
+  try {
+    const client = new CloudflareApiClient({
+      apiToken: env.CF_API_TOKEN,
+      accountId: env.CF_ACCOUNT_ID,
+    });
+    const zone = await findZoneByName(client, domainName);
+    return zone?.id ?? null;
+  } catch {
+    return null;
+  }
+}
 
 export const domains = new Hono<{ Bindings: Env }>();
 
@@ -134,9 +167,15 @@ domains.post('/v1/admin/domains', requireScope('admin:rotate'), async (c) => {
   const mtaStsMaxAge = 86_400;
   const tlsrptEnabled = 1;
   const tlsrptRua = c.env.TLSRPT_DEFAULT_RUA ?? 'mailto:tlsrpt@plrs.im';
+  // Resolve the CF zone id: caller-supplied wins (panel passes the id
+  // from its dropdown), otherwise we look it up via CF's /zones API.
+  // The verify endpoint's `cf-email-routing-dns` check requires this
+  // to be populated; null is tolerated (verify reports it clearly) so a
+  // CF outage / missing-secret doesn't block a domain create.
+  const cfZoneId: string | null = body.cf_zone_id ?? (await resolveCfZoneId(c.env, body.name));
   let zoneId: string;
   try {
-    zoneId = await ensureZone(c, null, body.name);
+    zoneId = await ensureZone(c, cfZoneId, body.name);
   } catch (e) {
     if (String(e).includes('UNIQUE')) return buildError(c, 'conflict', 'domain already registered');
     throw e;
@@ -144,17 +183,18 @@ domains.post('/v1/admin/domains', requireScope('admin:rotate'), async (c) => {
   try {
     await c.env.DB.prepare(
       `INSERT INTO mail_domains
-         (id, zone_id, name, status, wildcard_subdomains, dmarc_policy,
+         (id, zone_id, name, status, wildcard_subdomains, cf_zone_id, dmarc_policy,
           dmarc_rua, inbound_enabled, outbound_enabled, provider, dkim_selector,
           mta_sts_mode, mta_sts_policy_id, mta_sts_max_age,
           tlsrpt_enabled, tlsrpt_rua,
           created_at, updated_at)
-       VALUES (?, ?, ?, 'pending', 1, ?, ?, 0, 1, 'cloudflare', ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, 'pending', 1, ?, ?, ?, 0, 1, 'cloudflare', ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
       .bind(
         id,
         zoneId,
         body.name,
+        cfZoneId,
         policy,
         rua,
         selector,
@@ -270,21 +310,26 @@ domains.post('/v1/admin/domains/bulk-onboard', requireScope('admin:rotate'), asy
     const id = ulid();
     const mtaStsPolicyId = generatePolicyId();
     try {
-      const zoneId = await ensureZone(c, null, name);
+      // Bulk onboard doesn't accept per-row cf_zone_id in the request
+      // body, so always auto-resolve via CF's /zones API. Same null-
+      // tolerant semantics as the single-create path.
+      const cfZoneId = await resolveCfZoneId(c.env, name);
+      const zoneId = await ensureZone(c, cfZoneId, name);
       await c.env.DB.prepare(
         `INSERT INTO mail_domains
-           (id, zone_id, name, status, wildcard_subdomains, dmarc_policy,
+           (id, zone_id, name, status, wildcard_subdomains, cf_zone_id, dmarc_policy,
             dmarc_rua, inbound_enabled, outbound_enabled, provider, dkim_selector,
             mta_sts_mode, mta_sts_policy_id, mta_sts_max_age,
             tlsrpt_enabled, tlsrpt_rua,
             created_at, updated_at)
-         VALUES (?, ?, ?, 'pending', 1, 'none', ?, 0, 1, 'cloudflare', 'cf',
+         VALUES (?, ?, ?, 'pending', 1, ?, 'none', ?, 0, 1, 'cloudflare', 'cf',
                  'testing', ?, 86400, 1, ?, ?, ?)`,
       )
         .bind(
           id,
           zoneId,
           name,
+          cfZoneId,
           `mailto:postmaster@${name}`,
           mtaStsPolicyId,
           tlsrptRuaDefault,
