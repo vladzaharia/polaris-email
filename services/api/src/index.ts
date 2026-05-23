@@ -14,6 +14,7 @@ import { secureHeaders } from 'hono/secure-headers';
 import { admin } from './routes/admin.js';
 import { auth } from './routes/auth.js';
 import { bootstrap } from './routes/bootstrap.js';
+import { debugRoutes } from './routes/debug.js';
 import type { Env } from './env.js';
 import { messages } from './routes/messages.js';
 import { messagesState } from './routes/messages-state.js';
@@ -56,6 +57,8 @@ app.route('/', unsub);
 app.route('/', admin);
 app.route('/', auth);
 app.route('/', bootstrap);
+// /v1/debug/* — self-gated on env.DEV_MODE. Production deploys 404 here.
+app.route('/', debugRoutes);
 
 app.notFound((c) =>
   buildError(c, 'not_found', `no route for ${c.req.method} ${new URL(c.req.url).pathname}`),

@@ -101,6 +101,13 @@ export interface Env {
   ARGON2_PEPPER?: string;
   /** HMAC master pepper for HKDF-derived per-tenant peppers (I13). */
   PEPPER_MASTER?: string;
+  /**
+   * `'1'` enables the /v1/debug/* surface (currently just
+   * /v1/debug/whoami for the mailbox-credential Bearer verifier).
+   * MUST never be set in production. The panel Worker has its own
+   * matching gate at apps/panel/src/server/index.ts.
+   */
+  DEV_MODE?: string;
   // Phase 2h: BRIDGE_HMAC_KEY (shared global) removed. Per-bridge HMAC
   // secrets live in `bridges.hmac_key_secret_name` (argon2 hash) plus
   // KV_KEY_CACHE under `bridge_plain:<id>` (plaintext, 1h TTL). See

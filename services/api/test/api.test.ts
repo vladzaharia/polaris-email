@@ -1129,7 +1129,10 @@ describe('admin: mailbox_credentials lifecycle', () => {
     );
     expect(delRes.status).toBe(204);
     const db = env.DB as unknown as MockDb;
-    const row = (db.tables.get('mailbox_credentials') ?? []).find((r) => r['id'] === target.id);
+    // After the cred-refactor (migration 0002), issuance writes to the
+    // unified mailbox_credentials_v2 table — the legacy table is now
+    // read-only until the cleanup migration drops it.
+    const row = (db.tables.get('mailbox_credentials_v2') ?? []).find((r) => r['id'] === target.id);
     expect(row?.['disabled_at']).toBeTruthy();
   });
 });

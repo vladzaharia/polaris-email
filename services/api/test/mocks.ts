@@ -56,6 +56,9 @@ export class MockD1 {
     this.tables.set('mailbox_uid_counter', []);
     this.tables.set('mailbox_change_counter', []);
     this.tables.set('mailbox_credentials', []);
+    // 0002_unified_credentials.sql — the v2 table that supersedes the
+    // three legacy credential tables.
+    this.tables.set('mailbox_credentials_v2', []);
     this.tables.set('audit_log', [
       {
         id: 0,

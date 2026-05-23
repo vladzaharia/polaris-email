@@ -50,3 +50,57 @@ export async function hashSecret(plain: string, pepper: string | undefined): Pro
   const out = await pbkdf2(peppered, salt, KDF_ITERATIONS, KDF_OUTLEN);
   return `$${KDF_ID}$i=${KDF_ITERATIONS}$${b64enc(salt)}$${b64enc(out)}`;
 }
+
+function b64dec(s: string): Uint8Array {
+  // Restore any padding stripped by b64enc above.
+  const padded = s + '='.repeat((4 - (s.length % 4)) % 4);
+  const bin = atob(padded);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+/**
+ * Constant-time verify of a candidate plaintext against a PHC-formatted
+ * PBKDF2-SHA256 hash produced by `hashSecret`. Returns `false` for any
+ * malformed input — never throws. The `pepper` MUST match the deploy
+ * pepper used at hash time (`ARGON2_PEPPER`), else verification fails.
+ *
+ * Used by the new mailbox-credential Bearer auth path (services/api/
+ * src/auth.ts) where the verifier needs to compare against the stored
+ * hash directly rather than against a KV-cached plaintext (the existing
+ * X-Polaris-Key-Id HMAC path goes through the KV plaintext cache).
+ */
+export async function verifyPbkdf2(
+  hash: string,
+  plain: string,
+  pepper: string | undefined,
+): Promise<boolean> {
+  // Format: `$pbkdf2-sha256$i=<iters>$<saltb64>$<hashb64>`
+  const parts = hash.split('$');
+  if (parts.length !== 5) return false;
+  if (parts[0] !== '') return false;
+  if (parts[1] !== KDF_ID) return false;
+  const itersStr = parts[2];
+  if (!itersStr || !itersStr.startsWith('i=')) return false;
+  const iters = Number.parseInt(itersStr.slice(2), 10);
+  if (!Number.isFinite(iters) || iters <= 0 || iters > 10_000_000) return false;
+  const saltB64 = parts[3];
+  const expectedB64 = parts[4];
+  if (!saltB64 || !expectedB64) return false;
+  let salt: Uint8Array;
+  let expected: Uint8Array;
+  try {
+    salt = b64dec(saltB64);
+    expected = b64dec(expectedB64);
+  } catch {
+    return false;
+  }
+  if (expected.length === 0) return false;
+  const peppered = new TextEncoder().encode(plain + (pepper ?? ''));
+  const computed = await pbkdf2(peppered, salt, iters, expected.length);
+  if (computed.length !== expected.length) return false;
+  let diff = 0;
+  for (let i = 0; i < computed.length; i++) diff |= computed[i]! ^ expected[i]!;
+  return diff === 0;
+}
