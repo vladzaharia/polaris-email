@@ -5,6 +5,7 @@
 //   * `*/5 * * * *`         — synthetic /healthz probe (5 min)   → synthetic
 //   * `0 3 * * *`           — nightly retention janitor           → janitor
 //   * `*/15 * * * *`        — sender abuse threshold              → senderAbuseThresholdRun
+//   * `0 2 * * *`           — daily DMARC aggregate mirror        → dmarcMirrorRun
 //   * `0 4 * * *`           — daily DMARC policy auto-promotion   → dmarcPromoteRun
 //   * `0 */6 * * *`         — MTA-STS continuity                  → mtaStsContinuityRun
 //   * `30 */6 * * *`        — DKIM self-verify                    → dkimSelfVerifyRun
@@ -25,6 +26,7 @@ import { janitor } from './janitor.js';
 import { staleness } from './staleness.js';
 import { synthetic } from './synthetic.js';
 import { senderAbuseThresholdRun } from './sender-abuse-threshold.js';
+import { dmarcMirrorRun } from './dmarc-mirror.js';
 import { dmarcPromoteRun } from './dmarc-promote.js';
 import { mtaStsContinuityRun } from './mta-sts-continuity.js';
 import { dkimSelfVerifyRun } from './dkim-self-verify.js';
@@ -46,6 +48,16 @@ export async function scheduled(event: ScheduledEvent, env: Env): Promise<void> 
         const r = await senderAbuseThresholdRun(env);
         // eslint-disable-next-line no-console
         console.log('sender-abuse-threshold cron:', `candidates=${r.candidates} fired=${r.fired}`);
+      });
+      return;
+    case '0 2 * * *':
+      await withCronTelemetry(env, 'dmarc-mirror', async () => {
+        const r = await dmarcMirrorRun(env);
+        // eslint-disable-next-line no-console
+        console.log(
+          'dmarc-mirror cron:',
+          `zones=${r.zones} rows=${r.rowsUpserted} failed=${r.failed} skipped=${r.skipped}`,
+        );
       });
       return;
     case '0 4 * * *':

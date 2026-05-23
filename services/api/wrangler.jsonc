@@ -38,6 +38,7 @@
   //   `0 9 * * 1`    weekly       → staleness (control-plane secret freshness)
   //   `0 3 * * *`    nightly      → janitor (retention sweep)
   //   `*/15 * * * *` qtr-hourly   → sender-abuse-threshold
+  //   `0 2 * * *`    daily 02:00  → dmarc-mirror (CF GraphQL → rollup)
   //   `0 4 * * *`    daily 04:00  → dmarc-promote
   //   `0 */6 * * *`  6-hourly     → mta-sts-continuity
   //   `30 */6 * * *` 6-hourly+30  → dkim-self-verify
@@ -52,6 +53,7 @@
       "0 9 * * 1",
       "0 3 * * *",
       "*/15 * * * *",
+      "0 2 * * *",
       "0 4 * * *",
       "0 */6 * * *",
       "30 */6 * * *",
