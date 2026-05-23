@@ -112,3 +112,9 @@ CREATE INDEX idx_audit_log_action ON audit_log(action);
 CREATE INDEX idx_audit_log_actor  ON audit_log(actor);
 
 PRAGMA foreign_keys = ON;
+
+-- ============================================================================
+-- Version stamp
+-- ============================================================================
+INSERT INTO schema_migrations (version, applied_at, sha)
+VALUES (4, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), '0004_admin_alerts_dismissal');
