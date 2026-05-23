@@ -647,7 +647,7 @@ function DnsChecklist({
                       : undefined
                   }
                 >
-                  <TableCell className="font-mono text-xs">{ch.name}</TableCell>
+                  <TableCell className="break-all font-mono text-xs">{ch.name}</TableCell>
                   <TableCell>
                     {ch.ok ? (
                       <Badge variant="success">ok</Badge>
@@ -657,8 +657,17 @@ function DnsChecklist({
                       </Badge>
                     )}
                   </TableCell>
-                  <TableCell className="font-mono text-xs">{ch.expected}</TableCell>
-                  <TableCell className={isOperatorAction ? 'text-xs' : 'font-mono text-xs'}>
+                  {/* `break-all` + `max-w-md` keeps long values (DKIM public
+                      keys, full URLs, hex digests, MX lists) inside their
+                      column instead of stretching the whole table off-screen. */}
+                  <TableCell className="max-w-md break-all font-mono text-xs">
+                    {ch.expected}
+                  </TableCell>
+                  <TableCell
+                    className={
+                      'max-w-md break-all ' + (isOperatorAction ? 'text-xs' : 'font-mono text-xs')
+                    }
+                  >
                     <div className="flex flex-col gap-2">
                       <span>{ch.actual}</span>
                       {inlineFix && (

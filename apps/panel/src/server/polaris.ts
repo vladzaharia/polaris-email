@@ -11,7 +11,7 @@
 // per-env saves the SDK construction (closure allocation, HMAC builder
 // resolution) on every request. WeakMap means a stale Env reference is
 // garbage-collected whenever the isolate recycles it.
-import { Polaris, type PolarisRequest } from '@polaris/sdk';
+import { Polaris, isPolarisError, type PolarisRequest } from '@polaris/sdk';
 import { sign, generateNonce } from '@polaris-mail/hmac';
 import type { Env } from './env.js';
 
@@ -68,12 +68,36 @@ export function makePolaris(env: Env): PolarisClient {
 
   const client: PolarisClient = {
     async call(method, path, body, query, extraHeaders) {
-      const res = await sdk.call(method, path, {
-        body: body ?? undefined,
-        query: query ?? undefined,
-        extraHeaders: extraHeaders ?? undefined,
-      });
-      return { status: res.status, body: res.body as never };
+      try {
+        const res = await sdk.call(method, path, {
+          body: body ?? undefined,
+          query: query ?? undefined,
+          extraHeaders: extraHeaders ?? undefined,
+        });
+        return { status: res.status, body: res.body as never };
+      } catch (e) {
+        // SDK throws PolarisError on non-2xx responses (see
+        // packages/sdk-node/src/errors.ts). For the panel proxy that
+        // shape is wrong — we want to forward the structured envelope
+        // verbatim so the browser-side ApiError gets the original code +
+        // message + request_id. Re-pack the thrown error as a normal
+        // (status, body) tuple; the proxy's `c.json(r.body, r.status)`
+        // then mirrors what the api Worker emitted.
+        if (isPolarisError(e)) {
+          return {
+            status: e.status,
+            body: {
+              error: {
+                code: e.code,
+                message: e.message,
+                retryable: e.retryable,
+                request_id: e.requestId,
+              },
+            } as never,
+          };
+        }
+        throw e;
+      }
     },
   };
   cache.set(env, client);
