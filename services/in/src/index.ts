@@ -9,7 +9,6 @@ import { ulid } from '@polaris-mail/ids';
 import { MAX_MESSAGE_SIZE_VERIFIED, parseAuthResults } from '@polaris-mail/mime';
 import { processMessage, type PipelineEnv } from '@polaris-mail/pipeline';
 import { handleComplaint, PLATFORM_COMPLAINTS_MAILBOX_ID } from './complaint-ingest.js';
-import { handleDmarcReport, PLATFORM_DMARC_REPORTS_MAILBOX_ID } from './dmarc-ingest.js';
 import { handleTlsRptReport, PLATFORM_TLS_REPORTS_MAILBOX_ID } from './tlsrpt-ingest.js';
 import { handleUnsubMailto } from './unsub-ingest.js';
 import { attachDecisionToMessage, evaluateInboundPolicy } from './lib/policy-dispatch.js';
@@ -230,31 +229,6 @@ export default {
     // migration 0011), parse the message as ARF/DSN and write into
     // abuse_events + suppressions instead of running the normal pipeline.
     // Unstructured complaints are flagged for W2b LLM triage.
-    if (match.mailbox_id === PLATFORM_DMARC_REPORTS_MAILBOX_ID) {
-      // W6 — DMARC aggregate report mailbox.
-      try {
-        const result = await handleDmarcReport(
-          env.DB as unknown as Parameters<typeof handleDmarcReport>[0],
-          raw,
-          null,
-        );
-        // eslint-disable-next-line no-console
-        console.log(
-          'in: dmarc ingested',
-          `domain=${result.domain ?? 'unknown'}`,
-          `total=${result.totalCount}`,
-          `rollup_day=${result.rollupDay}`,
-        );
-      } catch (e) {
-        // eslint-disable-next-line no-console
-        console.error(
-          'in: dmarc ingest error',
-          `domain=${domainPart || 'unknown'}`,
-          e instanceof Error ? e.message : 'unknown',
-        );
-      }
-      return;
-    }
     if (match.mailbox_id === PLATFORM_TLS_REPORTS_MAILBOX_ID) {
       // W5 — TLS-RPT report mailbox.
       try {

@@ -11,7 +11,6 @@
   },
   "dependencies": {
     "@polaris-mail/arf-parser": "workspace:*",
-    "@polaris-mail/dmarc-parser": "workspace:*",
     "@polaris-mail/hmac": "workspace:*",
     "@polaris-mail/ids": "workspace:*",
     "@polaris-mail/mime": "workspace:*",
