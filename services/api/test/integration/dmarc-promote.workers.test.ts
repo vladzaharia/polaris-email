@@ -8,7 +8,7 @@
 //   * paused domains skip the cron entirely
 import { applyD1Migrations } from 'cloudflare:test';
 import { env } from 'cloudflare:workers';
-import { beforeAll, beforeEach, describe, expect, inject, it } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, inject, it, vi } from 'vitest';
 import { dmarcPromoteRun } from '../../src/scheduled/dmarc-promote.js';
 import type { Env } from '../../src/env.js';
 
@@ -145,5 +145,45 @@ describe('W8 — DMARC promotion cron', () => {
     await seedRollupDays('paused.example', 14, 99.9);
     const r = await dmarcPromoteRun(testEnv as unknown as Env);
     expect(r.candidates).toBe(0); // mode != 'auto' → excluded from the query
+  });
+
+  describe('CF DMARC Management policy publish', () => {
+    let originalFetch: typeof fetch;
+    beforeEach(() => {
+      originalFetch = globalThis.fetch;
+      (testEnv as TestEnv & { CF_API_TOKEN?: string; CF_ACCOUNT_ID?: string }).CF_API_TOKEN = 'tkn';
+      (testEnv as TestEnv & { CF_API_TOKEN?: string; CF_ACCOUNT_ID?: string }).CF_ACCOUNT_ID =
+        'acct';
+    });
+    afterEach(() => {
+      globalThis.fetch = originalFetch;
+    });
+
+    it('calls setDmarcPolicy when auto-mode advances quarantine_ready → quarantine', async () => {
+      const longAgo = new Date(Date.now() - 8 * 24 * 3_600_000).toISOString();
+      await seedDomain({
+        id: 'd6',
+        name: 'cfcall.example',
+        state: 'quarantine_ready',
+        promotionLastAt: longAgo,
+      });
+      await seedRollupDays('cfcall.example', 14, 99.9);
+
+      const fetchMock = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+        const u = typeof url === 'string' ? url : url.toString();
+        expect(u).toContain('/zones/');
+        expect(u).toContain('/dmarc_management');
+        expect(init?.method).toBe('PATCH');
+        return new Response(JSON.stringify({ success: true, result: { policy: 'quarantine' } }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      });
+      globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+      const r = await dmarcPromoteRun(testEnv as unknown as Env);
+      expect(r.promoted).toBe(1);
+      expect(fetchMock).toHaveBeenCalled();
+    });
   });
 });

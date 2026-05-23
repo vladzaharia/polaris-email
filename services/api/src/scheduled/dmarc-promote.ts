@@ -1,13 +1,12 @@
-// W8 — DMARC policy auto-promotion cron.
+// DMARC policy auto-promotion cron.
 //
 // Runs daily. For each mail_domain with dmarc_promotion_mode='auto':
-//   1. Aggregate the last 14 days of dmarc_alignment_rollup.
+//   1. Aggregate the last 14 days of dmarc_alignment_rollup (mirrored
+//      nightly by dmarc-mirror from CF DMARC Management).
 //   2. Compute DMARC-pass percentage + volume threshold.
 //   3. Compute the recommended next state per the state machine.
-//   4. If `dmarc_record_managed_by_polaris=1`, actually publish the DNS
-//      change via packages/cf-api (W8 ties into the existing cf-api
-//      surface). Otherwise just update the promotion_state column so the
-//      panel can show "ready to promote".
+//   4. On advancement into 'quarantine' or 'reject', call CF DMARC
+//      Management to update the policy. CF owns the _dmarc TXT.
 //   5. On alignment drop below the rollback threshold, set
 //      dmarc_promotion_mode='paused' + audit + fire admin alert.
 //
@@ -20,6 +19,7 @@
 // Rollback (any state above 'none'):
 //   * DMARC-pass < 95% over the last 24h × ≥50 sessions → pause + alert
 
+import { CloudflareApiClient, setDmarcPolicy } from '@polaris-mail/cf-api';
 import { sendAlert } from '../lib/admin-alert.js';
 import { buildAuditInsert } from '../audit.js';
 import type { Env } from '../env.js';
@@ -31,7 +31,6 @@ interface DomainRow {
   dmarc_promotion_mode: string;
   dmarc_promotion_state: string;
   dmarc_promotion_last_at: string | null;
-  dmarc_record_managed_by_polaris: number;
 }
 
 interface AggregateRow {
@@ -94,17 +93,40 @@ function daysSince(iso: string | null): number {
   return Math.floor((Date.now() - t) / (24 * 3_600_000));
 }
 
+async function resolveCfZoneId(env: Env, domainId: string): Promise<string | null> {
+  const row = await env.DB.prepare(
+    `SELECT COALESCE(z.cf_zone_id, d.cf_zone_id) AS cf_zone_id
+     FROM mail_domains d
+     LEFT JOIN zones z ON z.id = d.zone_id
+     WHERE d.id = ?`,
+  )
+    .bind(domainId)
+    .first<{ cf_zone_id: string | null }>();
+  return row?.cf_zone_id ?? null;
+}
+
 async function publishDmarcRecord(
-  _env: Env,
-  _domain: string,
-  _newPolicy: 'quarantine' | 'reject',
+  env: Env,
+  domainId: string,
+  newPolicy: 'quarantine' | 'reject',
 ): Promise<{ published: boolean; reason: string }> {
-  // Hook: when packages/cf-api ships a `publishDmarcTxt(zone, domain, p)`
-  // helper, this becomes the call site. Until then, mark as not-published
-  // so the cron stays observe-only even when the managed flag is on.
-  // Returning false here is the safe default: we never want to silently
-  // touch operator DNS.
-  return { published: false, reason: 'cf-api publish helper not yet wired (W8 follow-up)' };
+  const zoneId = await resolveCfZoneId(env, domainId);
+  if (!zoneId) {
+    return { published: false, reason: 'mail_domains.cf_zone_id resolves NULL' };
+  }
+  if (!env.CF_API_TOKEN || !env.CF_ACCOUNT_ID) {
+    return { published: false, reason: 'CF credentials missing from env' };
+  }
+  const client = new CloudflareApiClient({
+    apiToken: env.CF_API_TOKEN,
+    accountId: env.CF_ACCOUNT_ID,
+  });
+  try {
+    await setDmarcPolicy(client, zoneId, newPolicy);
+    return { published: true, reason: '' };
+  } catch (err) {
+    return { published: false, reason: err instanceof Error ? err.message : String(err) };
+  }
 }
 
 async function transition(
@@ -118,12 +140,8 @@ async function transition(
   const nowIso = new Date().toISOString();
   let dnsPublished = false;
   let publishNote = '';
-  if (
-    newPolicy &&
-    domain.dmarc_record_managed_by_polaris === 1 &&
-    (newState === 'quarantine' || newState === 'reject')
-  ) {
-    const r = await publishDmarcRecord(env, domain.name, newState as 'quarantine' | 'reject');
+  if (newPolicy && (newState === 'quarantine' || newState === 'reject')) {
+    const r = await publishDmarcRecord(env, domain.id, newState as 'quarantine' | 'reject');
     dnsPublished = r.published;
     publishNote = r.reason;
   }
@@ -193,7 +211,7 @@ export interface DmarcPromoteResult {
 export async function dmarcPromoteRun(env: Env): Promise<DmarcPromoteResult> {
   const domains = await env.DB.prepare(
     `SELECT id, name, dmarc_policy, dmarc_promotion_mode, dmarc_promotion_state,
-            dmarc_promotion_last_at, dmarc_record_managed_by_polaris
+            dmarc_promotion_last_at
      FROM mail_domains
      WHERE dmarc_promotion_mode = 'auto'
        AND status NOT IN ('disabled')`,
