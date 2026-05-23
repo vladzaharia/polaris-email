@@ -560,6 +560,13 @@ domains.post('/v1/admin/domains/:id/verify', requireScope('admin:rotate'), async
   const accountId = env.CF_ACCOUNT_ID;
 
   const checks: VerifyCheck[] = [];
+  // Track which checks gate the `status='verified'` transition. Core =
+  // basic CF Email Routing health (MX + CNAMEs). Optional layers
+  // (MTA-STS, TLS-RPT) are surfaced to the operator but do NOT block
+  // the transition — they're opt-in hardening with their own enable
+  // lifecycle, which itself requires `status='verified'`. Conflating
+  // the two left fresh domains stuck pending forever (chicken-and-egg).
+  const coreChecks: VerifyCheck[] = [];
 
   let expected: RoutingDnsRecord[] = [];
   const haveCfCreds = !!(apiToken && accountId && row.cf_zone_id);
@@ -596,12 +603,14 @@ domains.post('/v1/admin/domains/:id/verify', requireScope('admin:rotate'), async
       return [];
     });
     const seen = got.map((a) => stripDot(a.data).toLowerCase());
-    checks.push({
+    const cnameCheck: VerifyCheck = {
       name: `cname:${rec.name}`,
       ok: seen.includes(want),
       expected: want,
       actual: seen.join(',') || '(empty)',
-    });
+    };
+    checks.push(cnameCheck);
+    coreChecks.push(cnameCheck);
   }
 
   const mxAnswers = await dohResolve(row.name, 'MX').catch((e: unknown) => {
@@ -623,12 +632,14 @@ domains.post('/v1/admin/domains/:id/verify', requireScope('admin:rotate'), async
   const wantMxSet = (expectedMxHosts.length > 0 ? expectedMxHosts : fallbackMx).sort();
   const haveMxSet = [...new Set(seenMxHosts)].sort();
   const mxOk = wantMxSet.length > 0 && wantMxSet.every((h) => haveMxSet.includes(h));
-  checks.push({
+  const mxCheck: VerifyCheck = {
     name: 'mx',
     ok: mxOk,
     expected: wantMxSet.join(','),
     actual: haveMxSet.join(',') || '(empty)',
-  });
+  };
+  checks.push(mxCheck);
+  coreChecks.push(mxCheck);
 
   // ---------- MTA-STS sub-block ----------
   //
@@ -682,6 +693,13 @@ domains.post('/v1/admin/domains/:id/verify', requireScope('admin:rotate'), async
     }
   }
 
+  // `coreOk` (not `allOk`) drives the `status='verified'` flip. MTA-STS
+  // and TLS-RPT add-on checks are surfaced but do not gate the
+  // transition — they have their own enable lifecycle that itself
+  // requires `status='verified'`. `allOk` is still tracked separately
+  // for the "did everything pass" response field, so callers can
+  // distinguish "fully hardened" from "verified but hardening pending".
+  const coreOk = coreChecks.length > 0 && coreChecks.every((ch) => ch.ok);
   const allOk = checks.length > 0 && checks.every((ch) => ch.ok);
   const nowIso = new Date().toISOString();
 
@@ -699,7 +717,7 @@ domains.post('/v1/admin/domains/:id/verify', requireScope('admin:rotate'), async
     subBinds.push(nowIso);
   }
 
-  if (allOk) {
+  if (coreOk) {
     const fullSet = ['status = ?', 'verified_at = ?', 'last_verify_check_at = ?', 'updated_at = ?'];
     const fullBinds: unknown[] = ['verified', nowIso, nowIso, nowIso];
     if (subUpdates.length) {
@@ -714,7 +732,14 @@ domains.post('/v1/admin/domains/:id/verify', requireScope('admin:rotate'), async
       actor: actorOf(c),
       action: 'domain.verify',
       target: id,
-      meta: { name: row.name, checks: checks.map((c2) => c2.name) },
+      meta: {
+        name: row.name,
+        checks: checks.map((c2) => c2.name),
+        // Note whether the hardening layers also passed in this pass.
+        // Doesn't affect status — operators look at *_verified_at columns
+        // for that — but the audit_log row should record the full picture.
+        all_layers_ok: allOk,
+      },
     });
     return c.json({ id, status: 'verified', verified_at: Date.now(), checks });
   }
