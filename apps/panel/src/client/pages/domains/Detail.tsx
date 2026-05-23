@@ -1377,7 +1377,7 @@ function OverviewTile({
       type="button"
       onClick={onClick}
       className={cn(
-        'flex flex-col items-start gap-1 rounded-md border px-3 py-3 text-left transition-colors',
+        'flex cursor-pointer flex-col items-start gap-1 rounded-md border px-3 py-3 text-left transition-colors',
         tintMap[variant],
       )}
     >
@@ -1441,11 +1441,20 @@ function OverviewTab({
 
   const recRows = receivers.data?.data ?? [];
   const sndRows = senders.data?.data ?? [];
-  const activeReceivers = recRows.filter((r) => r.enabled === 1 && r.disabled_at === null).length;
-  const totalReceivers = recRows.length;
+  const internalActive = recRows.filter((r) => r.enabled === 1 && r.disabled_at === null).length;
+  const internalTotal = recRows.length;
   const activeSenders = sndRows.filter((s) => !s.disabled_at).length;
   const totalSenders = sndRows.length;
   const z = zone.data?.data;
+  // External CF Email Routing rules that DON'T target polaris-mail-in —
+  // operator-managed forwarding/worker rules surfaced alongside Polaris
+  // receivers in the Routes tab. The catch-all to polaris-mail-in is
+  // already represented by the internal receiver list.
+  const externalRules = (z?.named_rules ?? []).filter((r) => !r.routes_to_polaris);
+  const externalActive = externalRules.filter((r) => r.enabled).length;
+  const externalTotal = externalRules.length;
+  const routesActive = internalActive + externalActive;
+  const routesTotal = internalTotal + externalTotal;
   const zoneSub = z
     ? [
         z.routing_enabled ? 'routing on' : 'routing off',
@@ -1522,9 +1531,13 @@ function OverviewTab({
         <OverviewTile
           icon={<Inbox className="h-4 w-4" aria-hidden />}
           label="Routes"
-          variant={activeReceivers > 0 ? 'success' : totalReceivers > 0 ? 'warning' : 'outline'}
-          value={`${activeReceivers} active`}
-          sub={totalReceivers > 0 ? `${totalReceivers} total` : 'no routes yet'}
+          variant={routesActive > 0 ? 'success' : routesTotal > 0 ? 'warning' : 'outline'}
+          value={`${routesActive} active`}
+          sub={
+            routesTotal > 0
+              ? `${internalActive} internal · ${externalActive} external`
+              : 'no routes yet'
+          }
           onClick={() => onSelectTab('routes')}
         />
         <OverviewTile
@@ -1592,8 +1605,8 @@ function OverviewTab({
             <HardeningRow
               label="Receivers / Senders"
               variant="outline"
-              value={`${activeReceivers}r · ${activeSenders}s`}
-              hint={`${totalReceivers + totalSenders} total bindings`}
+              value={`${internalActive}r · ${activeSenders}s`}
+              hint={`${internalTotal + totalSenders} total bindings`}
             />
           </div>
         </section>
