@@ -16,12 +16,18 @@ export interface MetaListProps {
 
 /**
  * Container <dl>. Pair with `<MetaRow>` children.
+ *
+ * Spacing: row-gap is `gap-y-3` (12px) — large enough that each label/value
+ * pair reads as a discrete record at scan-speed, small enough that a
+ * 10-row metadata block stays on-screen. Column gap is `gap-x-6` (24px)
+ * to give long mono values (DKIM keys, message-IDs) room to breathe
+ * before they bump into the muted label column.
  */
 export function MetaList({ children, className }: MetaListProps) {
   return (
     <dl
       className={cn(
-        'grid grid-cols-[max-content_minmax(0,1fr)] gap-x-4 gap-y-1 text-sm',
+        'grid grid-cols-[max-content_minmax(0,1fr)] gap-x-6 gap-y-3 text-sm',
         className,
       )}
     >

@@ -113,6 +113,13 @@ interface VerifyResponse {
 
 interface CfZoneStatus {
   zone: { id: string; name: string };
+  /**
+   * When the inspector's CF API calls fail (most commonly: the
+   * CF_API_TOKEN lacks Email Routing / DNS scopes), this carries the
+   * last-error message. UI uses it to give the operator an actionable
+   * "your token can't see this" hint instead of just "everything = no".
+   */
+  error: string | null;
   routing_enabled: boolean;
   routing_status: string;
   routing_status_ok: boolean;
@@ -477,6 +484,29 @@ function CfZoneCard({ domainName }: { domainName: string }) {
               {q.data.data.zone.name}
             </span>
           </div>
+          {/* When the inspector's CF API calls fail, every per-record
+              row collapses to a misleading "no" / "unset". Show the
+              concrete error so the operator knows what to fix —
+              typically the CF_API_TOKEN missing Email Routing scope. */}
+          {q.data.data.error ? (
+            <div className="rounded-md border border-[var(--color-destructive)]/40 bg-[color-mix(in_oklch,var(--color-destructive)_8%,transparent)] p-3 text-xs">
+              <div className="mb-1 font-medium text-[var(--color-destructive)]">
+                Cloudflare API error
+              </div>
+              <div className="font-mono break-all text-[var(--color-foreground)]">
+                {q.data.data.error}
+              </div>
+              <div className="mt-2 text-[var(--color-muted-foreground)]">
+                The per-record results below are unreliable while this error persists. The most
+                common cause is a CF_API_TOKEN missing{' '}
+                <code className="font-mono">Zone:Email Routing</code>,{' '}
+                <code className="font-mono">Account:Email Routing Addresses</code>, or{' '}
+                <code className="font-mono">Account:Email Service</code> scope. Re-mint the token
+                with those scopes and update the secret via{' '}
+                <code className="font-mono">polaris-mail setup infra secrets seed</code>.
+              </div>
+            </div>
+          ) : null}
           <MetaList>
             <MetaRow label="Email Routing">
               <Badge

@@ -55,10 +55,33 @@ interface MailDomainRow {
   dmarc_rua: string | null;
   verified_at: string | null;
   last_verify_check_at: string | null;
+  inbound_enabled: number;
+  outbound_enabled: number;
+  // MTA-STS + TLS-RPT projection. These were previously dropped on the
+  // floor by the GET / list / lookup handlers, so the panel rendered
+  // `mta_sts_mode: 'none'` and `tlsrpt_enabled: 0` even after the
+  // operator called the enable endpoints (which DO write the columns).
+  mta_sts_mode: string;
+  mta_sts_policy_id: string | null;
+  mta_sts_max_age: number | null;
+  mta_sts_verified_at: string | null;
+  tlsrpt_enabled: number;
+  tlsrpt_rua: string | null;
+  tlsrpt_verified_at: string | null;
   created_at: string;
   updated_at: string;
   disabled_at: string | null;
 }
+
+// Shared column list for the three read endpoints (list, lookup, get-by-id).
+// Centralising prevents the recurrence of the bug where one SELECT projected
+// a different subset than the others.
+const MAIL_DOMAIN_READ_COLS = `id, zone_id, name, dkim_selector, status, cf_zone_id,
+       dmarc_policy, dmarc_rua, verified_at, last_verify_check_at,
+       inbound_enabled, outbound_enabled,
+       mta_sts_mode, mta_sts_policy_id, mta_sts_max_age, mta_sts_verified_at,
+       tlsrpt_enabled, tlsrpt_rua, tlsrpt_verified_at,
+       created_at, updated_at, disabled_at`;
 
 /**
  * W2 — Well-known ID of the platform-owned complaints mailbox.
@@ -263,9 +286,7 @@ domains.post('/v1/admin/domains', requireScope('admin:rotate'), async (c) => {
 // ---------- list ----------
 domains.get('/v1/admin/domains', requireScope('admin:read'), async (c) => {
   const rows = await c.env.DB.prepare(
-    `SELECT id, zone_id, name, dkim_selector, status, cf_zone_id, dmarc_policy,
-            dmarc_rua, verified_at, last_verify_check_at, created_at, updated_at, disabled_at
-     FROM mail_domains ORDER BY name ASC`,
+    `SELECT ${MAIL_DOMAIN_READ_COLS} FROM mail_domains ORDER BY name ASC`,
   ).all<MailDomainRow>();
   return c.json({ data: rows.results });
 });
@@ -275,9 +296,7 @@ domains.get('/v1/admin/domains/lookup', requireScope('admin:read'), async (c) =>
   const name = c.req.query('name');
   if (!name) return buildError(c, 'bad_request', 'name required');
   const row = await c.env.DB.prepare(
-    `SELECT id, zone_id, name, dkim_selector, status, cf_zone_id, dmarc_policy,
-            dmarc_rua, verified_at, last_verify_check_at, created_at, updated_at, disabled_at
-     FROM mail_domains WHERE name = ?`,
+    `SELECT ${MAIL_DOMAIN_READ_COLS} FROM mail_domains WHERE name = ?`,
   )
     .bind(name)
     .first<MailDomainRow>();
@@ -399,9 +418,7 @@ domains.post('/v1/admin/domains/:id/rotate-dkim', requireScope('admin:rotate'), 
 domains.get('/v1/admin/domains/:id', requireScope('admin:read'), async (c) => {
   const id = c.req.param('id');
   const row = await c.env.DB.prepare(
-    `SELECT id, zone_id, name, dkim_selector, status, cf_zone_id, dmarc_policy,
-            dmarc_rua, verified_at, last_verify_check_at, created_at, updated_at, disabled_at
-     FROM mail_domains WHERE id = ?`,
+    `SELECT ${MAIL_DOMAIN_READ_COLS} FROM mail_domains WHERE id = ?`,
   )
     .bind(id)
     .first<MailDomainRow>();
