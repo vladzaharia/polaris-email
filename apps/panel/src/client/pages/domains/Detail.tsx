@@ -286,88 +286,6 @@ function pctVariant(pct: number): 'success' | 'secondary' | 'destructive' {
   return 'destructive';
 }
 
-// ---------- HealthHero: 4 status pills above the tab strip ----------
-
-function HealthHero({ d, promotion }: { d: DomainPayload; promotion?: DmarcPromotionRow }) {
-  const dnsVariant = pillVariant({ kind: 'dns', d });
-  const dkimVariant = pillVariant({ kind: 'dkim', d });
-  const dmarcVariant = pillVariant({ kind: 'dmarc', d, promotion });
-  const mtaVariant = pillVariant({ kind: 'mtasts', d });
-  const dmarcPolicy = promotion?.dmarc_policy ?? d.dmarc_policy ?? 'none';
-  return (
-    <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-      <HeroPill
-        icon={<Globe2 className="h-4 w-4" aria-hidden />}
-        label="DNS"
-        variant={dnsVariant}
-        value={d.status}
-        sub={d.verified_at ? `verified ${formatRelative(d.verified_at)}` : 'never verified'}
-      />
-      <HeroPill
-        icon={<Key className="h-4 w-4" aria-hidden />}
-        label="DKIM"
-        variant={dkimVariant}
-        value={d.dkim_selector ?? 'none'}
-        sub={d.dkim_selector ? 'selector set' : 'no selector — rotate'}
-      />
-      <HeroPill
-        icon={<ShieldCheck className="h-4 w-4" aria-hidden />}
-        label="DMARC"
-        variant={dmarcVariant}
-        value={`p=${dmarcPolicy}`}
-        sub={promotion?.dmarc_promotion_state ?? 'no promotion state'}
-      />
-      <HeroPill
-        icon={<Lock className="h-4 w-4" aria-hidden />}
-        label="MTA-STS"
-        variant={mtaVariant}
-        value={d.mta_sts_mode ?? 'none'}
-        sub={d.tlsrpt_enabled === 1 ? 'TLS-RPT on' : 'TLS-RPT off'}
-      />
-    </div>
-  );
-}
-
-function HeroPill({
-  icon,
-  label,
-  variant,
-  value,
-  sub,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  variant: 'success' | 'warning' | 'destructive' | 'secondary' | 'outline';
-  value: string;
-  sub: string;
-}) {
-  // Tint background using the variant's semantic colour so the eye groups
-  // the four pills by status. `color-mix` keeps the surface soft enough to
-  // sit under the foreground text.
-  const tintMap: Record<typeof variant, string> = {
-    success:
-      'border-[color-mix(in_oklch,var(--color-success)_30%,var(--color-border))] bg-[color-mix(in_oklch,var(--color-success)_10%,transparent)]',
-    warning:
-      'border-[color-mix(in_oklch,var(--color-warning)_30%,var(--color-border))] bg-[color-mix(in_oklch,var(--color-warning)_10%,transparent)]',
-    destructive:
-      'border-[color-mix(in_oklch,var(--color-destructive)_30%,var(--color-border))] bg-[color-mix(in_oklch,var(--color-destructive)_10%,transparent)]',
-    secondary: 'border-[var(--color-border)] bg-[var(--color-secondary)]',
-    outline: 'border-[var(--color-border)] bg-[var(--color-card)]',
-  };
-  return (
-    <div className={cn('rounded-md border px-3 py-2', tintMap[variant])}>
-      <div className="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wide text-[var(--color-muted-foreground)]">
-        {icon}
-        <span>{label}</span>
-      </div>
-      <div className="mt-1 flex flex-wrap items-center gap-2">
-        <Badge variant={variant}>{value}</Badge>
-      </div>
-      <div className="mt-1 text-xs text-[var(--color-muted-foreground)]">{sub}</div>
-    </div>
-  );
-}
-
 // ---------- RiskBanner: surfaces the worst single signal as a single line ----------
 
 interface RiskMessage {
@@ -1395,11 +1313,12 @@ function TransitionTimelineCard({ d }: { d: DomainPayload }) {
 // ---------- Overview tab ----------
 //
 // The Overview tab is the operator's "first glance" surface. The
-// HealthHero strip above already covers the four cross-cutting
-// status pills (DNS / DKIM / DMARC / MTA-STS); this body answers the
-// follow-up questions:
+// page header carries the name + status; the RiskBanner above
+// surfaces critical-action prompts; this body answers the
+// what-and-how-is-it-doing questions:
 //
-//   * Is the Cloudflare zone configured? (compact summary, drills to DNS)
+//   * DNS verification health (drills to DNS & TLS tab)
+//   * Cloudflare zone configuration (drills to DNS & TLS tab)
 //   * How many routes + senders are active? (count tiles, drill to tabs)
 //   * What hardening is on? (MTA-STS, TLS-RPT, DMARC promotion state)
 //   * What's the flow shape? (inbound/outbound + DKIM selector at a glance)
@@ -1842,7 +1761,6 @@ export function DomainDetail() {
       decorative
     >
       <div className="space-y-6">
-        <HealthHero d={d} promotion={promotion} />
         <RiskBanner risks={risks} />
 
         <Tabs
