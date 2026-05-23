@@ -482,8 +482,9 @@ interface VerifyCheck {
 
 const DNS_CNAME = 5;
 const DNS_MX = 15;
+const DNS_TXT = 16;
 
-async function dohResolve(host: string, type: 'CNAME' | 'MX'): Promise<DohAnswer[]> {
+async function dohResolve(host: string, type: 'CNAME' | 'MX' | 'TXT'): Promise<DohAnswer[]> {
   const url = `https://cloudflare-dns.com/dns-query?name=${encodeURIComponent(host)}&type=${type}`;
   const res = await fetch(url, {
     method: 'GET',
@@ -493,12 +494,63 @@ async function dohResolve(host: string, type: 'CNAME' | 'MX'): Promise<DohAnswer
   if (!res.ok) return [];
   const j = (await res.json()) as DohResponse;
   if (!j.Answer || !Array.isArray(j.Answer)) return [];
-  const want = type === 'CNAME' ? DNS_CNAME : DNS_MX;
+  const want = type === 'CNAME' ? DNS_CNAME : type === 'MX' ? DNS_MX : DNS_TXT;
   return j.Answer.filter((a) => a.type === want);
 }
 
 function stripDot(s: string): string {
   return s.endsWith('.') ? s.slice(0, -1) : s;
+}
+
+/**
+ * Parse the contents of a `_dmarc.<domain>` TXT record. RFC 7489 §6.3 — the
+ * record is a `;`-separated list of `key=value` pairs starting with
+ * `v=DMARC1`. Values surface as their canonical lower-case form for `p` and
+ * `sp` so the column ENUM checks in {@link DmarcPolicy} match. Returns
+ * `null` when the record doesn't parse as DMARC at all (so the caller can
+ * skip the sync).
+ *
+ * Tolerates DoH's quoted multi-string responses by stripping outer quotes
+ * before splitting — `"v=DMARC1; p=reject; rua=..."` and the unquoted form
+ * both parse the same way.
+ */
+function parseDmarcTxt(raw: string): { policy: string; sp?: string; rua?: string } | null {
+  let s = raw.trim();
+  // DoH wraps each string segment in quotes; multi-string TXT records come
+  // back as `"...""..."` — concatenate by stripping the inner quote pairs.
+  if (s.startsWith('"') && s.endsWith('"')) {
+    s = s.slice(1, -1).replace(/""/g, '');
+  }
+  const parts = s
+    .split(';')
+    .map((p) => p.trim())
+    .filter(Boolean);
+  if (parts.length === 0 || parts[0]!.toLowerCase() !== 'v=dmarc1') return null;
+  const out: { policy?: string; sp?: string; rua?: string } = {};
+  for (const part of parts.slice(1)) {
+    const eq = part.indexOf('=');
+    if (eq <= 0) continue;
+    const k = part.slice(0, eq).trim().toLowerCase();
+    const v = part.slice(eq + 1).trim();
+    if (k === 'p') out.policy = v.toLowerCase();
+    else if (k === 'sp') out.sp = v.toLowerCase();
+    else if (k === 'rua') out.rua = v;
+  }
+  if (!out.policy) return null;
+  return { policy: out.policy, sp: out.sp, rua: out.rua };
+}
+
+/**
+ * Promotion-state shorthand that follows from the live published policy.
+ * `quarantine_ready` and `reject_ready` are transitional cron states (the
+ * cron flagged the domain as eligible to bump policy but hasn't committed
+ * yet); when DNS already shows the higher policy we collapse them to the
+ * committed state.
+ */
+function promotionStateFromPolicy(policy: string): string {
+  if (policy === 'reject') return 'reject';
+  if (policy === 'quarantine') return 'quarantine';
+  return 'none';
 }
 
 interface RoutingDnsRecord {
@@ -542,18 +594,88 @@ interface VerifyDomainRow {
   mta_sts_policy_id: string | null;
   tlsrpt_enabled: number;
   tlsrpt_rua: string | null;
+  dmarc_policy: string | null;
+  dmarc_rua: string | null;
+  dmarc_promotion_state: string;
+  dmarc_record_managed_by_polaris: number;
 }
 
 domains.post('/v1/admin/domains/:id/verify', requireScope('admin:rotate'), async (c) => {
   const id = c.req.param('id');
   const row = await c.env.DB.prepare(
     `SELECT id, name, status, cf_zone_id,
-            mta_sts_mode, mta_sts_policy_id, tlsrpt_enabled, tlsrpt_rua
+            mta_sts_mode, mta_sts_policy_id, tlsrpt_enabled, tlsrpt_rua,
+            dmarc_policy, dmarc_rua, dmarc_promotion_state,
+            dmarc_record_managed_by_polaris
      FROM mail_domains WHERE id = ?`,
   )
     .bind(id)
     .first<VerifyDomainRow>();
   if (!row) return buildError(c, 'not_found', 'mail_domain not found');
+
+  // DMARC reconciliation — read the live `_dmarc.<name>` TXT and update
+  // dmarc_policy / dmarc_rua / dmarc_promotion_state to match. Polaris's
+  // column was an *intent* default (typically `p=none` at create time);
+  // when the operator's DNS publishes a tighter policy (e.g. CF Email
+  // Routing's "Set up DMARC" wizard auto-publishes `p=reject`), the panel
+  // would otherwise show stale `none` and the promotion workflow would
+  // prompt to promote a domain that's already at reject.
+  //
+  // Only reconciles when `dmarc_record_managed_by_polaris=0` (the
+  // operator owns DNS). When 1, Polaris is the source of truth and a
+  // drift is a different signal — leave the column alone so the
+  // operator can see Polaris's intent vs the published reality.
+  if (row.dmarc_record_managed_by_polaris === 0) {
+    const dmarcTxts = await dohResolve(`_dmarc.${row.name}`, 'TXT').catch(() => []);
+    for (const ans of dmarcTxts) {
+      const parsed = parseDmarcTxt(ans.data);
+      if (!parsed) continue;
+      const newPromotionState = promotionStateFromPolicy(parsed.policy);
+      const policyChanged = parsed.policy !== row.dmarc_policy;
+      const ruaChanged = (parsed.rua ?? null) !== row.dmarc_rua;
+      const promotionChanged = newPromotionState !== row.dmarc_promotion_state;
+      if (policyChanged || ruaChanged || promotionChanged) {
+        await c.env.DB.prepare(
+          `UPDATE mail_domains
+             SET dmarc_policy = ?, dmarc_rua = ?, dmarc_promotion_state = ?,
+                 dmarc_promotion_last_at = ?, updated_at = ?
+           WHERE id = ?`,
+        )
+          .bind(
+            parsed.policy,
+            parsed.rua ?? null,
+            newPromotionState,
+            new Date().toISOString(),
+            new Date().toISOString(),
+            id,
+          )
+          .run();
+        // Reflect the in-memory row so downstream checks see the synced
+        // values and the response payload reports them consistently.
+        row.dmarc_policy = parsed.policy;
+        row.dmarc_rua = parsed.rua ?? null;
+        row.dmarc_promotion_state = newPromotionState;
+        await audit(c.env, {
+          actor: actorOf(c),
+          // Re-using the generic `domain.update` action — adding a
+          // dedicated `domain.dmarc_sync` would require a D1 schema
+          // migration of the audit_log CHECK constraint. The `meta.via`
+          // field disambiguates this from operator-driven PATCHes.
+          action: 'domain.update',
+          target: id,
+          meta: {
+            name: row.name,
+            via: 'dmarc_sync',
+            policy: parsed.policy,
+            rua: parsed.rua ?? null,
+            promotion_state: newPromotionState,
+            source: '_dmarc-txt',
+          },
+        });
+      }
+      break; // first valid DMARC TXT wins (RFC 7489 §6.6.3)
+    }
+  }
 
   const env = c.env as unknown as { CF_API_TOKEN?: string; CF_ACCOUNT_ID?: string };
   const apiToken = env.CF_API_TOKEN;
