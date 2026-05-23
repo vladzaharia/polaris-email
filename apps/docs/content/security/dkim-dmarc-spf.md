@@ -17,10 +17,11 @@ later batch.
 ## What polaris-mail publishes
 
 For a domain with `capabilities.outbound = true`, polaris-mail
-publishes (or expects to find) four DNS records. All four are managed
-by the Cloudflare Email Service onboarding path
-(`packages/cf-api/src/email-service.ts`), which the admin API invokes
-during `POST /v1/admin/domains` and `polaris-mail domain onboard`.
+publishes (or expects to find) three DNS records via Cloudflare Email
+Service onboarding (`packages/cf-api/src/email-service.ts`, invoked
+by the admin API during `POST /v1/admin/domains` and `polaris-mail
+domain onboard`). The `_dmarc.<domain>` TXT is owned and managed by
+Cloudflare DMARC Management, not polaris (see below).
 
 ### DKIM CNAME — `polaris1._domainkey.<domain>` → CF Email Service
 
@@ -54,25 +55,29 @@ polaris1._domainkey.<domain>.   CNAME   polaris1.<domain>.dkim.cfemail.net.
   domain; if you also send through hand-rolled paths, replace the
   record manually after onboarding with `~all` (soft fail).
 
-### DMARC TXT — `_dmarc.<domain>`
+### DMARC — managed by Cloudflare DMARC Management
 
-```text
-_dmarc.<domain>.   TXT   "v=DMARC1; p=quarantine; rua=mailto:dmarc@<domain>"
-```
+polaris-mail no longer publishes its own `_dmarc.<domain>` TXT record.
+Cloudflare DMARC Management is enabled per-zone during domain
+onboarding (`packages/cf-api/src/dmarc-management.ts:enableDmarcManagement`,
+called automatically by `onboardSenderDomain`), and Cloudflare
+publishes the `_dmarc` record, ingests aggregate reports on its side,
+and surfaces the data via GraphQL Analytics (`dmarcReportsAdaptive`
++ `dmarcReportsSourcesAdaptiveGroups`).
 
-- The Email Service onboarding ships **`p=quarantine`** by default.
-  The control-plane domain handler defaults to `p=none` and lets the
-  operator tighten via `PATCH /v1/admin/domains/:id` once aggregate
-  reports show no false-positive flood.
-- The `rua` aggregate-report address defaults to
-  `mailto:postmaster@<domain>,<DMARC_RUA_PLATFORM_ALIAS>`, where
-  `DMARC_RUA_PLATFORM_ALIAS` defaults to `mailto:dmarc-rua@plrs.im`.
-  The platform aggregator is intentionally additive — it gives the
-  operator a verifier path even before they wire their own postmaster
-  routing. There is a guided promotion runbook for advancing
-  `p=none → p=quarantine → p=reject` based on aggregate-report
-  signal; see `services/api/migrations/0015_dmarc_reports.sql` and
-  `migrations/0016_dmarc_promotion.sql`.
+polaris-mail mirrors per-(domain, day) aggregates from CF into the
+`dmarc_alignment_rollup` D1 table nightly
+(`services/api/src/scheduled/dmarc-mirror.ts`, cron `0 2 * * *`).
+The auto-promotion cron at `0 4 * * *` reads the rollup and walks the
+soak state machine; when it advances into a write state it calls
+`setDmarcPolicy` on CF DMARC Management rather than publishing DNS
+directly.
+
+Operators can advance manually from the panel ("Advance now" on the
+domain detail page) or via
+`POST /v1/admin/dmarc-promotion/:id/advance` (scope `admin:rotate`).
+Both paths issue the same CF API call; CF re-publishes the `_dmarc`
+TXT with the new `p=` value.
 
 ### Bounce MX — `cf-bounce.<domain>`
 
