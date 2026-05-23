@@ -66,7 +66,7 @@ async function loadRow(env: Env, kid: string): Promise<CachedRow | null> {
   const row = await env.DB.prepare(
     `SELECT id, mailbox_id, type, prefix, secret_hash, secret_prev_hash,
             receiver_id, status, disabled_at, revoked_at
-     FROM mailbox_credentials_v2
+     FROM mailbox_credentials
      WHERE id = ?1
      LIMIT 1`,
   )

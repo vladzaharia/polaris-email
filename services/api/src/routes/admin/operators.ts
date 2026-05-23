@@ -223,7 +223,6 @@ operators.post('/v1/admin/operators', requireScope('admin:rotate'), async (c) =>
       mailbox_id: OPERATOR_SENTINEL_MAILBOX_ID,
       principal_id: principalId,
       secret_argon2id: hashed,
-      sender_scope_ids: [],
       scopes: JSON.stringify(body.scopes),
       rate_limit_per_min: body.rate_limit_per_min,
       status: 'primary',

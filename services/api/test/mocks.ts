@@ -42,8 +42,6 @@ export class MockD1 {
     this.tables.set('mailbox_receivers', []);
     this.tables.set('principals', []);
     this.tables.set('api_keys', []);
-    this.tables.set('api_key_sender_scopes', []);
-    this.tables.set('submission_credentials', []);
     this.tables.set('dkim_keys', []);
     this.tables.set('bridges', []);
     this.tables.set('webhook_subs', []);
@@ -55,10 +53,8 @@ export class MockD1 {
     this.tables.set('mailbox_messages_state', []);
     this.tables.set('mailbox_uid_counter', []);
     this.tables.set('mailbox_change_counter', []);
+    // Unified credentials (migrations 0002 + 0003).
     this.tables.set('mailbox_credentials', []);
-    // 0002_unified_credentials.sql — the v2 table that supersedes the
-    // three legacy credential tables.
-    this.tables.set('mailbox_credentials_v2', []);
     this.tables.set('audit_log', [
       {
         id: 0,

@@ -14,7 +14,6 @@ import { generateSecret } from '@polaris-mail/hmac';
 import { revoke } from '@polaris-mail/revocation';
 import { validateWebhookUrl } from '../lib/webhook-url.js';
 import { auditRoutes } from './admin/audit.js';
-import { credentials } from './admin/credentials.js';
 import { mailboxCredentials } from './admin/mailbox-credentials.js';
 import { bridgeCredentialLookup } from './bridge/credential-lookup.js';
 import { bridges } from './admin/bridges.js';
@@ -66,7 +65,6 @@ admin.route('/', sendersRoutes);
 admin.route('/', zones);
 admin.route('/', cfZones);
 admin.route('/', bridges);
-admin.route('/', credentials);
 admin.route('/', mailboxCredentials);
 admin.route('/', bridgeCredentialLookup);
 admin.route('/', webhookDlq);
@@ -112,15 +110,11 @@ admin.post('/v1/admin/api-keys', requireScope('admin:rotate'), async (c) => {
   const hashed = await hashSecret(secret, c.env.ARGON2_PEPPER);
   const now = Date.now();
   const nowIso = new Date(now).toISOString();
-  const senderIds = body.sender_ids ?? [];
-  // Fold every D1 mutation for this issuance into one batch:
-  //   1) principals INSERT
-  //   2) api_keys INSERT (the primary mutation)
-  //   3) api_key_sender_scopes INSERTs (one per scope)
-  //   4) audit_log INSERT (CAS)
-  // CF Workers may evict between awaits; if the api_keys INSERT lands but
-  // the audit row doesn't, the chain has a hole the issuance can never
-  // re-fill. Batching makes them atomic at the D1 layer.
+  // Operator-class api_keys only. The pk_live_ mailbox-scoped REST flow
+  // moved to `mailbox_credentials` (type='rest'); this endpoint now
+  // exists solely to mint operator-tier keys for non-operator-tied
+  // capabilities (e.g. the SSH server's `admin:impersonate` key —
+  // apps/polaris-cli/internal/setup/cmd/infra_ssh_bootstrap.go).
   const auditInsert = await buildAuditInsert(c.env, {
     actor: actorOf(c),
     action: 'api_key.issue',
@@ -129,10 +123,9 @@ admin.post('/v1/admin/api-keys', requireScope('admin:rotate'), async (c) => {
       mailbox_id: mailboxId,
       principal_id: principalId,
       scopes: body.scopes,
-      sender_scope_count: senderIds.length,
     },
   });
-  const stmts = [
+  await c.env.DB.batch([
     c.env.DB.prepare(
       `INSERT INTO principals (id, mailbox_id, kind, display_name, created_at)
        VALUES (?, ?, 'api_key', ?, ?)`,
@@ -141,34 +134,14 @@ admin.post('/v1/admin/api-keys', requireScope('admin:rotate'), async (c) => {
       `INSERT INTO api_keys
          (id, principal_id, prefix, secret_argon2id, scopes,
           rate_limit_per_min, status, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, 'primary', ?)`,
-    ).bind(
-      id,
-      principalId,
-      'pk_live_',
-      hashed,
-      JSON.stringify(body.scopes),
-      body.rate_limit_per_min,
-      nowIso,
-    ),
-  ];
-  for (const senderId of senderIds) {
-    stmts.push(
-      c.env.DB.prepare(
-        `INSERT INTO api_key_sender_scopes (api_key_id, sender_id, created_at)
-         VALUES (?, ?, ?)`,
-      ).bind(id, senderId, nowIso),
-    );
-  }
-  stmts.push(auditInsert.statement);
-  await c.env.DB.batch(stmts);
-  // Phase 3c — cache plaintext for 1h. The api_keys row stores only an
-  // argon2 hash; we can't re-derive the plaintext, so the operator's
-  // window to install the secret is bounded by this TTL. 1h matches the
-  // bridge plaintext convention (`bridge_plain:` in bridge-auth.ts) and
-  // is a deliberate trade-off: long enough to absorb client-side
+       VALUES (?, ?, 'pk_op_', ?, ?, ?, 'primary', ?)`,
+    ).bind(id, principalId, hashed, JSON.stringify(body.scopes), body.rate_limit_per_min, nowIso),
+    auditInsert.statement,
+  ]);
+  // Plaintext cache window matches the existing operator/bridge plain
+  // cache convention (15min — long enough to absorb client-side
   // propagation hiccups, short enough that a leaked KV snapshot doesn't
-  // grant indefinite key-recovery.
+  // grant indefinite key-recovery).
   await c.env.KV_KEY_CACHE.put(`plain:${id}`, secret, { expirationTtl: 15 * 60 });
   // Cache the row for warm lookups too.
   await c.env.KV_KEY_CACHE.put(
@@ -178,7 +151,6 @@ admin.post('/v1/admin/api-keys', requireScope('admin:rotate'), async (c) => {
       mailbox_id: mailboxId,
       principal_id: principalId,
       secret_argon2id: hashed,
-      sender_scope_ids: senderIds,
       scopes: JSON.stringify(body.scopes),
       rate_limit_per_min: body.rate_limit_per_min,
       status: 'primary',
@@ -186,7 +158,7 @@ admin.post('/v1/admin/api-keys', requireScope('admin:rotate'), async (c) => {
     }),
     { expirationTtl: 60 },
   );
-  return c.json({ key_id: id, key_secret: secret, prefix: 'pk_live_', created_at: now }, 201);
+  return c.json({ key_id: id, key_secret: secret, prefix: 'pk_op_', created_at: now }, 201);
 });
 
 admin.get('/v1/admin/api-keys', requireScope('admin:read'), async (c) => {
@@ -274,13 +246,6 @@ admin.post('/v1/admin/api-keys/:id/rotate', requireScope('admin:rotate'), async 
       prefix: string;
     }>();
   if (!fullOld) return buildError(c, 'not_found', 'race: api key vanished');
-  // Pre-fetch sender-scope junction rows so we can fold them into the batch.
-  const oldScopes = await c.env.DB.prepare(
-    `SELECT sender_id FROM api_key_sender_scopes WHERE api_key_id = ?`,
-  )
-    .bind(id)
-    .all<{ sender_id: string }>()
-    .catch(() => ({ results: [] as { sender_id: string }[] }));
   // Build the audit insert before the batch; CAS guard runs inside the batch.
   const auditInsert = await buildAuditInsert(c.env, {
     actor: actorOf(c),
@@ -293,10 +258,9 @@ admin.post('/v1/admin/api-keys/:id/rotate', requireScope('admin:rotate'), async 
   });
   // Fold every D1 mutation for this rotation into one batch:
   //   1) api_keys INSERT for the new primary
-  //   2) api_key_sender_scopes INSERTs (inherit restrictions)
-  //   3) api_keys UPDATE on the old key (status flip — this is the
-  //      irreversible state transition we MUST chain to the audit row)
-  //   4) audit_log INSERT (CAS)
+  //   2) api_keys UPDATE on the old key (status flip — the irreversible
+  //      transition that MUST chain to the audit row)
+  //   3) audit_log INSERT (CAS)
   const stmts = [
     c.env.DB.prepare(
       `INSERT INTO api_keys
@@ -313,14 +277,6 @@ admin.post('/v1/admin/api-keys/:id/rotate', requireScope('admin:rotate'), async 
       nowIso,
     ),
   ];
-  for (const s of oldScopes.results ?? []) {
-    stmts.push(
-      c.env.DB.prepare(
-        `INSERT INTO api_key_sender_scopes (api_key_id, sender_id, created_at)
-         VALUES (?, ?, ?)`,
-      ).bind(newId, s.sender_id, nowIso),
-    );
-  }
   if (body.mode === 'planned') {
     stmts.push(c.env.DB.prepare(`UPDATE api_keys SET status = 'secondary' WHERE id = ?`).bind(id));
   } else {
@@ -457,46 +413,52 @@ admin.get('/v1/bridge/credentials', requireScope('admin:read'), async (c) => {
   // locally. Returns a delta-style payload:
   //   { updates: Credential[], deletions: string[], mirror_version: number }
   // Where Credential is { id, username, bcrypt_hash, allowed_senders, mirror_version, ... }.
-  // The `since` query param is accepted for forward-compat but currently we always
-  // return the full active set — the bridge's UpsertBatch + DeleteByID handle
-  // reconciliation idempotently.
   //
-  // Submission credentials are 1:1 with mailbox_senders via
-  // `submission_credentials.sender_id` per the canonical schema. The
-  // `allowed_senders` array surfaces that single bound address.
+  // After the cred-refactor, SMTP credentials are mailbox-scoped: a
+  // single credential is valid for any sender on its mailbox, so
+  // `allowed_senders` enumerates every enabled mailbox_senders row for
+  // the cred's mailbox. The bridge enforces MAIL FROM ∈ allowed_senders.
   type CredRow = {
     id: string;
-    principal_id: string;
-    sender_id: string | null;
-    username: string;
-    bcrypt_hash: string;
+    mailbox_id: string;
+    prefix: string;
+    secret_hash: string;
     disabled_at: string | null;
-    last_used_at: string | null;
+    revoked_at: string | null;
   };
-  type SenderRow = { id: string; address: string };
+  type SenderRow = { mailbox_id: string; address: string };
   let credRows: { results: CredRow[] } = { results: [] };
   let senderRows: { results: SenderRow[] } = { results: [] };
   try {
     credRows = await c.env.DB.prepare(
-      `SELECT id, principal_id, sender_id, username, bcrypt_hash, disabled_at, last_used_at
-       FROM submission_credentials`,
+      `SELECT id, mailbox_id, prefix, secret_hash, disabled_at, revoked_at
+       FROM mailbox_credentials
+       WHERE type = 'smtp'`,
     ).all<CredRow>();
-    senderRows = await c.env.DB.prepare(`SELECT id, address FROM mailbox_senders`).all<SenderRow>();
+    senderRows = await c.env.DB.prepare(
+      `SELECT mailbox_id, address FROM mailbox_senders WHERE disabled_at IS NULL`,
+    ).all<SenderRow>();
   } catch {
     // Tables absent (degraded environment). Treat as empty.
   }
-  const senderAddrById = new Map<string, string>();
-  for (const s of senderRows.results) senderAddrById.set(s.id, s.address);
+  const sendersByMailbox = new Map<string, string[]>();
+  for (const s of senderRows.results) {
+    const list = sendersByMailbox.get(s.mailbox_id) ?? [];
+    list.push(s.address);
+    sendersByMailbox.set(s.mailbox_id, list);
+  }
   const mirrorVersion = Date.now();
   const updates = credRows.results
-    .filter((r) => r.disabled_at == null)
+    .filter((r) => r.disabled_at == null && r.revoked_at == null)
     .map((r) => ({
       id: r.id,
-      username: r.username,
-      bcrypt_hash: r.bcrypt_hash,
-      allowed_senders: r.sender_id ? [senderAddrById.get(r.sender_id) ?? ''].filter(Boolean) : [],
+      username: `${r.prefix}${r.id}`,
+      bcrypt_hash: r.secret_hash,
+      allowed_senders: sendersByMailbox.get(r.mailbox_id) ?? [],
       mirror_version: mirrorVersion,
     }));
-  const deletions = credRows.results.filter((r) => r.disabled_at != null).map((r) => r.id);
+  const deletions = credRows.results
+    .filter((r) => r.disabled_at != null || r.revoked_at != null)
+    .map((r) => r.id);
   return c.json({ updates, deletions, mirror_version: mirrorVersion });
 });

@@ -509,11 +509,13 @@ describe('domains + senders', () => {
     const sender = (await res.json()) as { id: string; address: string };
     expect(sender.address).toBe('noreply@plrs.im');
 
-    // Issue SMTP cred
+    // Issue SMTP credential via the unified mailbox-credentials endpoint.
+    // SMTP creds are now mailbox-scoped (not sender-bound); the bridge
+    // validates MAIL FROM against `mailbox_senders` per session.
     res = await app.fetch(
       await signedRequest(
-        `https://x/v1/admin/senders/${sender.id}/smtp-credentials`,
-        JSON.stringify({ label: 'expresscharge-prod' }),
+        `https://x/v1/admin/mailboxes/${mbId}/credentials`,
+        JSON.stringify({ type: 'smtp' }),
         'POST',
         admin.admin_key_secret,
         admin.admin_key_id,
@@ -522,26 +524,32 @@ describe('domains + senders', () => {
       ctx,
     );
     expect(res.status).toBe(201);
-    const cred = (await res.json()) as { id: string; username: string; secret: string };
-    expect(cred.username).toBe('noreply@plrs.im');
-    expect(cred.secret.length).toBeGreaterThan(20);
+    const cred = (await res.json()) as {
+      id: string;
+      type: string;
+      prefix: string;
+      username: string;
+      password: string;
+    };
+    expect(cred.type).toBe('smtp');
+    expect(cred.username).toBe(`pmsmtp_${cred.id}`);
+    expect(cred.password.length).toBeGreaterThan(20);
 
-    // The submission_credentials row carries the bcrypt_hash (NOT the
-    // plaintext) and binds 1:1 to the sender via `sender_id`.
+    // The row stores the bcrypt hash, never the plaintext.
     const mockDb = env.DB as unknown as { tables: Map<string, Record<string, unknown>[]> };
-    const credRows = mockDb.tables.get('submission_credentials') ?? [];
-    const credRow = credRows.find((r) => r['username'] === 'noreply@plrs.im');
+    const credRows = mockDb.tables.get('mailbox_credentials') ?? [];
+    const credRow = credRows.find((r) => r['id'] === cred.id);
     expect(credRow).toBeTruthy();
-    expect(credRow?.['id']).toBe(cred.id);
-    expect(credRow?.['sender_id']).toBe(sender.id);
-    expect(typeof credRow?.['bcrypt_hash']).toBe('string');
-    expect(credRow?.['bcrypt_hash']).not.toBe(cred.secret);
+    expect(credRow?.['type']).toBe('smtp');
+    expect(credRow?.['mailbox_id']).toBe(mbId);
+    expect(typeof credRow?.['secret_hash']).toBe('string');
+    expect(credRow?.['secret_hash']).not.toBe(cred.password);
     // Plaintext must not appear in any column of any row of any table.
     for (const [, rows] of mockDb.tables) {
       for (const row of rows) {
         for (const v of Object.values(row)) {
           if (typeof v === 'string') {
-            expect(v.includes(cred.secret)).toBe(false);
+            expect(v.includes(cred.password)).toBe(false);
           }
         }
       }
@@ -620,8 +628,8 @@ describe('bridge credential mirror', () => {
     const cred = (await (
       await app.fetch(
         await signedRequest(
-          `https://x/v1/admin/senders/${sender.id}/smtp-credentials`,
-          JSON.stringify({ label: 'test' }),
+          `https://x/v1/admin/mailboxes/${mbId}/credentials`,
+          JSON.stringify({ type: 'smtp' }),
           'POST',
           admin.admin_key_secret,
           admin.admin_key_id,
@@ -629,7 +637,7 @@ describe('bridge credential mirror', () => {
         env,
         ctx,
       )
-    ).json()) as { id: string; username: string; secret: string };
+    ).json()) as { id: string; username: string; password: string };
 
     const r = await app.fetch(
       await signedRequest(
@@ -651,10 +659,16 @@ describe('bridge credential mirror', () => {
     expect(Array.isArray(body.updates)).toBe(true);
     const u = body.updates.find((x) => x.id === cred.id);
     expect(u).toBeTruthy();
-    expect(u?.username).toBe('noreply@plrs.im');
+    // Bridge mirror now returns the prefixed username form
+    // (`pmsmtp_<kid>`); MAIL FROM enforcement happens against
+    // allowed_senders, which lists every enabled sender on the mailbox.
+    expect(u?.username).toBe(`pmsmtp_${cred.id}`);
     expect(typeof u?.bcrypt_hash).toBe('string');
-    expect(u?.bcrypt_hash).not.toBe(cred.secret);
+    expect(u?.bcrypt_hash).not.toBe(cred.password);
     expect(u?.allowed_senders).toEqual(['noreply@plrs.im']);
+    // `sender` is unused here now that allowed_senders comes from the
+    // mailbox-senders table; reference it explicitly to keep TS quiet.
+    void sender;
     expect(body.mirror_version).toBeGreaterThan(0);
     expect(Array.isArray(body.deletions)).toBe(true);
   });
@@ -1045,20 +1059,27 @@ describe('bridge: auto-mark-read', () => {
 });
 
 describe('admin: mailbox_credentials lifecycle', () => {
-  it('issues smtps/imap credentials then rotates and disables', async () => {
+  it('issues smtp/imap/rest credentials then rotates and disables', async () => {
     const { env, admin } = await bootstrapEnv();
     const mbId = await createMailbox(env, admin, 'cred-mb');
+    // Receiver IDs are required for IMAP issuance — fabricate one
+    // directly on the mailbox so the new endpoint accepts the bind.
+    const receiverId = '01HX00CREDRECV00000000IMAP';
+    await env.DB.prepare(
+      `INSERT INTO mailbox_receivers
+         (id, mailbox_id, domain_id, priority, pattern, action, enabled, created_at, updated_at)
+       VALUES (?, ?, NULL, 100, '*', 'drop', 1, ?, ?)`,
+    )
+      .bind(receiverId, mbId, new Date().toISOString(), new Date().toISOString())
+      .run();
 
-    const protocols: Array<{
-      protocol: 'smtps' | 'imap';
-      auth_type: 'password';
-      username?: string;
-    }> = [
-      { protocol: 'smtps', auth_type: 'password', username: 'smtp-user' },
-      { protocol: 'imap', auth_type: 'password', username: 'imap-user' },
+    const requests: Array<{ type: 'smtp' | 'imap' | 'rest'; receiver_id?: string }> = [
+      { type: 'smtp' },
+      { type: 'imap', receiver_id: receiverId },
+      { type: 'rest' },
     ];
-    const issued: { id: string; plaintext: string; protocol: string }[] = [];
-    for (const body of protocols) {
+    const issued: { id: string; type: string; secret: string }[] = [];
+    for (const body of requests) {
       const res = await app.fetch(
         await signedRequest(
           `https://x/v1/admin/mailboxes/${mbId}/credentials`,
@@ -1071,9 +1092,16 @@ describe('admin: mailbox_credentials lifecycle', () => {
         ctx,
       );
       expect(res.status).toBe(201);
-      const j = (await res.json()) as { id: string; plaintext: string };
-      expect(j.plaintext.length).toBeGreaterThan(20);
-      issued.push({ id: j.id, plaintext: j.plaintext, protocol: body.protocol });
+      const j = (await res.json()) as {
+        id: string;
+        type: string;
+        password?: string;
+        key_secret?: string;
+      };
+      const secret = j.password ?? j.key_secret;
+      expect(secret).toBeDefined();
+      expect(secret!.length).toBeGreaterThan(20);
+      issued.push({ id: j.id, type: j.type, secret: secret! });
     }
 
     // GET list — secrets not exposed.
@@ -1090,14 +1118,15 @@ describe('admin: mailbox_credentials lifecycle', () => {
     );
     expect(listRes.status).toBe(200);
     const listBody = (await listRes.json()) as {
-      data: { id: string; protocol: string; bcrypt_hash?: unknown }[];
+      data: { id: string; type: string; secret_hash?: unknown; secret_prev_hash?: unknown }[];
     };
-    expect(listBody.data.length).toBe(2);
+    expect(listBody.data.length).toBe(3);
     for (const r of listBody.data) {
-      expect(r.bcrypt_hash).toBeUndefined();
+      expect(r.secret_hash).toBeUndefined();
+      expect(r.secret_prev_hash).toBeUndefined();
     }
 
-    // Rotate one — fresh plaintext returned.
+    // Rotate the SMTP one — fresh plaintext returned, distinct from issuance.
     const target = issued[0]!;
     const rotRes = await app.fetch(
       await signedRequest(
@@ -1111,11 +1140,12 @@ describe('admin: mailbox_credentials lifecycle', () => {
       ctx,
     );
     expect(rotRes.status).toBe(200);
-    const rotJ = (await rotRes.json()) as { plaintext: string };
-    expect(rotJ.plaintext.length).toBeGreaterThan(20);
-    expect(rotJ.plaintext).not.toBe(target.plaintext);
+    const rotJ = (await rotRes.json()) as { password?: string };
+    expect(rotJ.password).toBeDefined();
+    expect(rotJ.password!.length).toBeGreaterThan(20);
+    expect(rotJ.password).not.toBe(target.secret);
 
-    // Disable.
+    // Disable (DELETE — soft-revoke).
     const delRes = await app.fetch(
       await signedRequest(
         `https://x/v1/admin/mailboxes/${mbId}/credentials/${target.id}`,
@@ -1129,10 +1159,7 @@ describe('admin: mailbox_credentials lifecycle', () => {
     );
     expect(delRes.status).toBe(204);
     const db = env.DB as unknown as MockDb;
-    // After the cred-refactor (migration 0002), issuance writes to the
-    // unified mailbox_credentials_v2 table — the legacy table is now
-    // read-only until the cleanup migration drops it.
-    const row = (db.tables.get('mailbox_credentials_v2') ?? []).find((r) => r['id'] === target.id);
+    const row = (db.tables.get('mailbox_credentials') ?? []).find((r) => r['id'] === target.id);
     expect(row?.['disabled_at']).toBeTruthy();
   });
 });
@@ -1178,28 +1205,29 @@ describe('bridge HMAC: per-bridge secret isolation', () => {
         ctx,
       )
     ).json()) as { id: string };
-    const sender = (await (
-      await app.fetch(
-        await signedRequest(
-          `https://x/v1/admin/domains/${domLookup.id}/senders`,
-          JSON.stringify({
-            mailbox_id: mbId,
-            local_part: 'noreply',
-            default_for_mailbox: true,
-          }),
-          'POST',
-          admin.admin_key_secret,
-          admin.admin_key_id,
-        ),
-        env,
-        ctx,
-      )
-    ).json()) as { id: string; address: string };
+    await app.fetch(
+      await signedRequest(
+        `https://x/v1/admin/domains/${domLookup.id}/senders`,
+        JSON.stringify({
+          mailbox_id: mbId,
+          local_part: 'noreply',
+          default_for_mailbox: true,
+        }),
+        'POST',
+        admin.admin_key_secret,
+        admin.admin_key_id,
+      ),
+      env,
+      ctx,
+    );
+    // SMTP cred now mints via the unified mailbox-credentials endpoint;
+    // the bridge enforces MAIL FROM against `mailbox_senders` per
+    // session rather than per-credential sender binding.
     const cred = (await (
       await app.fetch(
         await signedRequest(
-          `https://x/v1/admin/senders/${sender.id}/smtp-credentials`,
-          JSON.stringify({ label: 'iso-test' }),
+          `https://x/v1/admin/mailboxes/${mbId}/credentials`,
+          JSON.stringify({ type: 'smtp' }),
           'POST',
           admin.admin_key_secret,
           admin.admin_key_id,

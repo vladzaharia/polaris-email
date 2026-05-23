@@ -91,46 +91,9 @@ describe('A12: revocation propagation', () => {
     expect(afterBody.error.code).toBe('key_revoked');
   });
 
-  it('revoke also blocks via the /v1/admin/credentials/:id/revoke facade', async () => {
-    // Same coverage but via the unified credentials facade (admin/credentials.ts)
-    // — exercises the second call site of `revoke()` and the
-    // submission_credentials/api_keys union shape.
-    const { env, admin } = await bootstrapEnv();
-    const mbId = await createMailbox(env, admin, 'rev-mb-2');
-    await createVerifiedDomain(env, 'example.com');
-    const key = await issueApiKey(env, admin, mbId, ['send']);
-
-    // Confirm the key works first.
-    const before = await postMessage(env, key, {
-      from: 'noreply@example.com',
-      to: ['inbox@example.org'],
-      subject: 'pre-facade-revoke',
-      text: 'hi',
-    });
-    expect(before.status).toBe(202);
-
-    // Revoke via the facade.
-    const revokeRes = await app.fetch(
-      await signedRequest(
-        `https://x/v1/admin/credentials/${key.key_id}/revoke`,
-        '{}',
-        'POST',
-        admin.admin_key_secret,
-        admin.admin_key_id,
-      ),
-      env,
-      ctx,
-    );
-    expect(revokeRes.status).toBe(200);
-
-    const after = await postMessage(env, key, {
-      from: 'noreply@example.com',
-      to: ['inbox@example.org'],
-      subject: 'post-facade-revoke',
-      text: 'hi',
-    });
-    expect(after.status).toBe(403);
-    const afterBody = (await after.json()) as { error: { code: string } };
-    expect(afterBody.error.code).toBe('key_revoked');
-  });
+  // The unified-credentials facade at /v1/admin/credentials/:id/revoke
+  // was removed during the cred-refactor. The same revocation coverage
+  // is exercised by the `revoke → next POST /v1/messages` test above
+  // (operator-key path) and by the mailbox_credentials lifecycle test
+  // in services/api/test/api.test.ts (mailbox-cred path).
 });

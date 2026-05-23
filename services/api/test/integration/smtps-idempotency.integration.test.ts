@@ -121,11 +121,13 @@ describe('A12: SMTPS idempotency dedup', () => {
     );
     expect(senderRes.status).toBe(201);
     const sender = (await senderRes.json()) as { id: string; address: string };
+    void sender;
 
+    // SMTP cred mints via the unified mailbox-credentials endpoint.
     const credRes = await app.fetch(
       await signedRequest(
-        `https://x/v1/admin/senders/${sender.id}/smtp-credentials`,
-        JSON.stringify({ label: 'smtps-idem-test' }),
+        `https://x/v1/admin/mailboxes/${mbId}/credentials`,
+        JSON.stringify({ type: 'smtp' }),
         'POST',
         admin.admin_key_secret,
         admin.admin_key_id,

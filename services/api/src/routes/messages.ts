@@ -108,7 +108,6 @@ interface AuthenticatedApiKey {
   key_id: string;
   mailbox_id: string;
   principal_id: string;
-  sender_scope_ids: string[];
   scopes: string[];
   rate_limit_per_min: number;
 }
@@ -155,13 +154,6 @@ async function authenticateApiKey(
   if (!principal || principal.disabled_at) {
     return buildError(c, 'key_revoked', 'principal disabled');
   }
-  const scopeRows = await env.DB.prepare(
-    `SELECT sender_id FROM api_key_sender_scopes WHERE api_key_id = ?`,
-  )
-    .bind(keyRow.id)
-    .all<{ sender_id: string }>()
-    .catch(() => ({ results: [] as { sender_id: string }[] }));
-  const senderScopeIds = (scopeRows.results ?? []).map((r) => r.sender_id);
 
   // Per-principal revocation check BEFORE HMAC verify. Mirrors the order
   // used by the shared `hmacAuth` middleware in `auth.ts`: KV_REVOCATIONS
@@ -214,7 +206,6 @@ async function authenticateApiKey(
     key_id: keyRow.id,
     mailbox_id: principal.mailbox_id,
     principal_id: keyRow.principal_id,
-    sender_scope_ids: senderScopeIds,
     scopes: parsedScopes,
     rate_limit_per_min: keyRow.rate_limit_per_min,
   };
@@ -379,25 +370,12 @@ messages.post('/v1/messages', async (c) => {
     }
     const req: SendRequest = parseResult.data;
 
-    if (apiKey.sender_scope_ids.length > 0) {
-      const fromLc = req.from.toLowerCase();
-      const matches = await env.DB.prepare(
-        `SELECT id, address FROM mailbox_senders WHERE mailbox_id = ?`,
-      )
-        .bind(apiKey.mailbox_id)
-        .all<{ id: string; address: string }>()
-        .catch(() => ({ results: [] as { id: string; address: string }[] }));
-      let ok = false;
-      for (const s of matches.results) {
-        if (apiKey.sender_scope_ids.includes(s.id) && s.address.toLowerCase() === fromLc) {
-          ok = true;
-          break;
-        }
-      }
-      if (!ok) {
-        return buildError(c, 'scope_violation', 'from address not in sender_scopes');
-      }
-    }
+    // Sender-scope restriction (api_key_sender_scopes) was removed in the
+    // credentials refactor: mailbox-scoped credentials grant the holder
+    // full send-on-behalf-of access to every sender registered on the
+    // mailbox. The downstream pipeline (processMessage) validates that
+    // `req.from` resolves to an enabled `mailbox_senders` row on
+    // `apiKey.mailbox_id` and rejects mismatches there.
 
     // W9 — Auto-synthesize In-Reply-To + References from the parent message
     // when the caller provided in_reply_to_message_id (preferred) or thread_id.
@@ -505,17 +483,31 @@ messages.post('/v1/messages', async (c) => {
     if (!username) {
       return buildError(c, 'bad_request', 'X-Polaris-SMTP-Username header required');
     }
+    // Bridge usernames are always `pmsmtp_<26-ULID>` — the new unified
+    // credential format. Anything else is rejected.
+    if (!username.startsWith('pmsmtp_')) {
+      return buildError(c, 'unauthorized', 'unknown principal for SMTP username');
+    }
+    const kid = username.slice('pmsmtp_'.length);
+    if (!/^[0-9A-HJKMNP-TV-Z]{26}$/.test(kid)) {
+      return buildError(c, 'unauthorized', 'unknown principal for SMTP username');
+    }
     const credRow = await env.DB.prepare(
-      `SELECT principal_id, sender_id FROM submission_credentials
-        WHERE username = ?1 AND disabled_at IS NULL LIMIT 1`,
+      `SELECT id, mailbox_id FROM mailbox_credentials
+        WHERE id = ?1 AND type = 'smtp'
+          AND disabled_at IS NULL AND revoked_at IS NULL
+        LIMIT 1`,
     )
-      .bind(username)
-      .first<{ principal_id: string; sender_id: string }>();
+      .bind(kid)
+      .first<{ id: string; mailbox_id: string }>();
     if (!credRow) return buildError(c, 'unauthorized', 'unknown principal for SMTP username');
+    // The credential id doubles as the principal_id (matching principals
+    // row inserted alongside on issuance). This keeps idempotency_keys
+    // + messages.principal_id FK + audit actor on a single identifier.
     const principalRow = await env.DB.prepare(
       `SELECT id, mailbox_id, disabled_at FROM principals WHERE id = ?1 LIMIT 1`,
     )
-      .bind(credRow.principal_id)
+      .bind(credRow.id)
       .first<{ id: string; mailbox_id: string; disabled_at: string | null }>();
     if (!principalRow || principalRow.disabled_at) {
       return buildError(c, 'unauthorized', 'unknown principal for SMTP username');
@@ -524,13 +516,17 @@ messages.post('/v1/messages', async (c) => {
       return buildError(c, 'key_revoked', 'principal revoked');
     }
 
-    const senderRow = await env.DB.prepare(
-      `SELECT address FROM mailbox_senders WHERE id = ?1 AND disabled_at IS NULL LIMIT 1`,
+    // MAIL FROM allow-list = every enabled mailbox_senders address on
+    // the credential's mailbox. SMTP creds are mailbox-scoped now, not
+    // sender-bound.
+    const senderRows = await env.DB.prepare(
+      `SELECT address FROM mailbox_senders
+        WHERE mailbox_id = ?1 AND disabled_at IS NULL`,
     )
-      .bind(credRow.sender_id)
-      .first<{ address: string }>()
-      .catch(() => null);
-    const allowedSenders: string[] = senderRow?.address ? [senderRow.address] : [];
+      .bind(credRow.mailbox_id)
+      .all<{ address: string }>()
+      .catch(() => ({ results: [] as { address: string }[] }));
+    const allowedSenders: string[] = senderRows.results.map((r) => r.address);
     try {
       enforceSenderPolicy(mime, { allowedSenders });
     } catch (e) {
@@ -653,6 +649,10 @@ messages.get('/v1/messages', async (c) => {
   const since = params.get('since');
   const until = params.get('until');
   const q = params.get('q');
+  const domainId = params.get('domain');
+  if (domainId && !isAdmin) {
+    return buildError(c, 'scope_violation', 'domain-scoped query requires admin:read');
+  }
   const limitRaw = Number(params.get('limit') ?? '50');
   const limit = Math.min(200, Math.max(1, Number.isFinite(limitRaw) ? limitRaw : 50));
   const offsetRaw = Number(params.get('offset') ?? '0');
@@ -691,6 +691,20 @@ messages.get('/v1/messages', async (c) => {
   if (q) {
     where.push(`(subject LIKE ? OR from_addr LIKE ?)`);
     binds.push(`%${q}%`, `%${q}%`);
+  }
+  if (domainId) {
+    // Scope by mailbox membership rather than parsing addresses — index-
+    // friendly and consistent with how senders/receivers tie mailboxes to
+    // domains. A mailbox that serves multiple domains will surface its
+    // other-domain messages too; acceptable for the recent-activity feed.
+    where.push(
+      `mailbox_id IN (
+         SELECT DISTINCT mailbox_id FROM mailbox_senders   WHERE domain_id = ?
+         UNION
+         SELECT DISTINCT mailbox_id FROM mailbox_receivers WHERE domain_id = ?
+       )`,
+    );
+    binds.push(domainId, domainId);
   }
   const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
   // limit/offset are integer-validated above; inline them to keep the SQL

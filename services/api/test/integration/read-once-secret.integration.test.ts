@@ -94,110 +94,17 @@ describe('A12: read-once secrets — api_keys', () => {
     const listAllBody = (await listAllRes.json()) as { data: unknown[] };
     expect(detectSecretFields(listKeyPaths(listAllBody))).toEqual([]);
 
-    // GET single via credentials facade (the only "single api_key" read path
-    // exposed today; admin.ts has no per-id GET — list is the surface).
-    const facadeRes = await app.fetch(
-      await signedRequest(
-        `https://x/v1/admin/credentials?mailbox=${mbId}`,
-        '',
-        'GET',
-        admin.admin_key_secret,
-        admin.admin_key_id,
-      ),
-      env,
-      ctx,
-    );
-    expect(facadeRes.status).toBe(200);
-    const facadeBody = (await facadeRes.json()) as { data: unknown[] };
-    expect(detectSecretFields(listKeyPaths(facadeBody))).toEqual([]);
+    // The /v1/admin/credentials facade was removed in the cred-refactor;
+    // the api_keys list (above) plus the per-mailbox credentials list
+    // (covered by the mailbox_credentials read-once test below) provide
+    // the same coverage.
   });
 });
 
-describe('A12: read-once secrets — submission credentials', () => {
-  it('POST returns secret; GET list omits it', async () => {
-    const { env, admin } = await bootstrapEnv();
-    const mbId = await createMailbox(env, admin, 'ro-cred');
-    await createVerifiedDomain(env, 'example.com');
-
-    // Resolve domain id via lookup.
-    const lookupRes = await app.fetch(
-      await signedRequest(
-        'https://x/v1/admin/domains/lookup?name=example.com',
-        '',
-        'GET',
-        admin.admin_key_secret,
-        admin.admin_key_id,
-      ),
-      env,
-      ctx,
-    );
-    expect(lookupRes.status).toBe(200);
-    const dom = (await lookupRes.json()) as { id: string };
-
-    // Create sender.
-    const senderRes = await app.fetch(
-      await signedRequest(
-        `https://x/v1/admin/domains/${dom.id}/senders`,
-        JSON.stringify({ mailbox_id: mbId, local_part: 'noreply', default_for_mailbox: true }),
-        'POST',
-        admin.admin_key_secret,
-        admin.admin_key_id,
-      ),
-      env,
-      ctx,
-    );
-    expect(senderRes.status).toBe(201);
-    const sender = (await senderRes.json()) as { id: string };
-
-    // Issue submission credential. Returns plaintext `secret` once.
-    const credRes = await app.fetch(
-      await signedRequest(
-        `https://x/v1/admin/senders/${sender.id}/smtp-credentials`,
-        JSON.stringify({ label: 'ro-cred-test' }),
-        'POST',
-        admin.admin_key_secret,
-        admin.admin_key_id,
-      ),
-      env,
-      ctx,
-    );
-    expect(credRes.status).toBe(201);
-    const cred = (await credRes.json()) as { id: string; secret: string };
-    expect(cred.secret.length).toBeGreaterThan(20);
-
-    // GET list of smtp-credentials under sender — NO secret field anywhere.
-    const listRes = await app.fetch(
-      await signedRequest(
-        `https://x/v1/admin/senders/${sender.id}/smtp-credentials`,
-        '',
-        'GET',
-        admin.admin_key_secret,
-        admin.admin_key_id,
-      ),
-      env,
-      ctx,
-    );
-    expect(listRes.status).toBe(200);
-    const listBody = (await listRes.json()) as { data: unknown[] };
-    expect(detectSecretFields(listKeyPaths(listBody))).toEqual([]);
-
-    // GET via credentials facade — also omits plaintext.
-    const facadeRes = await app.fetch(
-      await signedRequest(
-        `https://x/v1/admin/credentials?mailbox=${mbId}`,
-        '',
-        'GET',
-        admin.admin_key_secret,
-        admin.admin_key_id,
-      ),
-      env,
-      ctx,
-    );
-    expect(facadeRes.status).toBe(200);
-    const facadeBody = (await facadeRes.json()) as { data: unknown[] };
-    expect(detectSecretFields(listKeyPaths(facadeBody))).toEqual([]);
-  });
-});
+// Submission credentials (POST /v1/admin/senders/:id/smtp-credentials)
+// were folded into the unified mailbox_credentials model in the
+// cred-refactor. The mailbox_credentials read-once test below covers
+// the same plaintext-once / GET-omits-hash invariants for SMTP creds.
 
 describe('A12: read-once secrets — bridges', () => {
   it('POST returns hmac_key; GET single + list omit it', async () => {
@@ -288,16 +195,16 @@ describe('A12: read-once secrets — bridges', () => {
   });
 });
 
-describe('A12: read-once secrets — mailbox credentials (SMTPS/IMAP)', () => {
-  it('POST + rotate return plaintext exactly once; GET list omits it', async () => {
+describe('A12: read-once secrets — mailbox credentials (unified)', () => {
+  it('POST + rotate return plaintext exactly once; GET list omits the hash', async () => {
     const { env, admin } = await bootstrapEnv();
     const mbId = await createMailbox(env, admin, 'ro-mb-cred');
 
-    // Issue SMTPS password credential — plaintext is returned once.
+    // Issue an SMTP credential. Plaintext password returned once.
     const issueRes = await app.fetch(
       await signedRequest(
         `https://x/v1/admin/mailboxes/${mbId}/credentials`,
-        JSON.stringify({ protocol: 'smtps', auth_type: 'password', username: 'ro-user' }),
+        JSON.stringify({ type: 'smtp' }),
         'POST',
         admin.admin_key_secret,
         admin.admin_key_id,
@@ -306,10 +213,10 @@ describe('A12: read-once secrets — mailbox credentials (SMTPS/IMAP)', () => {
       ctx,
     );
     expect(issueRes.status).toBe(201);
-    const issued = (await issueRes.json()) as { id: string; plaintext: string };
-    expect(issued.plaintext.length).toBeGreaterThan(20);
+    const issued = (await issueRes.json()) as { id: string; password: string };
+    expect(issued.password.length).toBeGreaterThan(20);
 
-    // GET list — no plaintext.
+    // GET list — no secret_hash, no plaintext anywhere.
     const listRes = await app.fetch(
       await signedRequest(
         `https://x/v1/admin/mailboxes/${mbId}/credentials`,
@@ -325,7 +232,7 @@ describe('A12: read-once secrets — mailbox credentials (SMTPS/IMAP)', () => {
     const listBody = (await listRes.json()) as { data: unknown[] };
     expect(detectSecretFields(listKeyPaths(listBody))).toEqual([]);
 
-    // Rotate — returns a fresh plaintext once.
+    // Rotate — returns a fresh password once.
     const rotRes = await app.fetch(
       await signedRequest(
         `https://x/v1/admin/mailboxes/${mbId}/credentials/${issued.id}/rotate`,
@@ -338,11 +245,11 @@ describe('A12: read-once secrets — mailbox credentials (SMTPS/IMAP)', () => {
       ctx,
     );
     expect(rotRes.status).toBe(200);
-    const rot = (await rotRes.json()) as { plaintext: string };
-    expect(rot.plaintext.length).toBeGreaterThan(20);
-    expect(rot.plaintext).not.toBe(issued.plaintext);
+    const rot = (await rotRes.json()) as { password: string };
+    expect(rot.password.length).toBeGreaterThan(20);
+    expect(rot.password).not.toBe(issued.password);
 
-    // GET list after rotation — still no plaintext.
+    // GET list after rotation — still no hash exposed.
     const listAfterRes = await app.fetch(
       await signedRequest(
         `https://x/v1/admin/mailboxes/${mbId}/credentials`,

@@ -12,8 +12,6 @@ export interface AuthenticatedKey {
   mailbox_id: string | null;
   /** Principal id (api_keys.principal_id → principals.id). */
   principal_id: string | null;
-  /** ULIDs of mailbox_senders this key is restricted to (empty = unrestricted). */
-  sender_scope_ids: string[];
   scopes_raw: string;
   rate_limit_per_min: number;
   status: 'primary' | 'secondary' | 'revoked';
@@ -74,7 +72,6 @@ export function hmacAuth(direction: 'polaris-api'): MiddlewareHandler<{ Bindings
       mailbox_id: string | null;
       principal_id: string | null;
       secret_argon2id: string;
-      sender_scope_ids: string[];
       scopes: string;
       rate_limit_per_min: number;
       status: 'primary' | 'secondary' | 'revoked';
@@ -94,7 +91,6 @@ export function hmacAuth(direction: 'polaris-api'): MiddlewareHandler<{ Bindings
       if (r.status !== 'primary' && r.status !== 'secondary' && r.status !== 'revoked') {
         return false;
       }
-      if (!Array.isArray(r.sender_scope_ids)) return false;
       return true;
     }
     let row: RowShape | null = null;
@@ -133,20 +129,11 @@ export function hmacAuth(direction: 'polaris-api'): MiddlewareHandler<{ Bindings
           }
           mailboxId = principalRow.mailbox_id;
         }
-        // Look up sender-scope junction rows. Empty set = unrestricted.
-        const scopeRows = await env.DB.prepare(
-          `SELECT sender_id FROM api_key_sender_scopes WHERE api_key_id = ?`,
-        )
-          .bind(keyRow.id)
-          .all<{ sender_id: string }>()
-          .catch(() => ({ results: [] as { sender_id: string }[] }));
-        const senderScopeIds = (scopeRows.results ?? []).map((r) => r.sender_id);
         row = {
           id: keyRow.id,
           mailbox_id: mailboxId,
           principal_id: keyRow.principal_id,
           secret_argon2id: keyRow.secret_argon2id,
-          sender_scope_ids: senderScopeIds,
           scopes: keyRow.scopes,
           rate_limit_per_min: keyRow.rate_limit_per_min,
           status: keyRow.status,
@@ -329,7 +316,6 @@ export function hmacAuth(direction: 'polaris-api'): MiddlewareHandler<{ Bindings
       key_id: row.id,
       mailbox_id: row.mailbox_id,
       principal_id: row.principal_id,
-      sender_scope_ids: row.sender_scope_ids,
       // `scopes_raw` is what `requireScope` reads. When impersonating, we
       // splice the operator's scopes so per-route `admin:rotate` etc. checks
       // evaluate against the operator's grant.

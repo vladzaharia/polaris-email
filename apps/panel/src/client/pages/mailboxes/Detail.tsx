@@ -809,7 +809,7 @@ export function MailboxDetail() {
   const headerActions = (
     <>
       <SendTestDialog mailboxId={id} senders={activeSenders} />
-      <IssueCredentialDialog mailboxId={id} defaultUsername={defaultSender?.address} />
+      <IssueCredentialDialog mailboxId={id} />
       <Button
         size="sm"
         variant={disabled ? 'outline' : 'outline'}
@@ -1235,7 +1235,7 @@ export function MailboxDetail() {
                     flagged.
                   </p>
                 </div>
-                <IssueCredentialDialog mailboxId={id} defaultUsername={defaultSender?.address} />
+                <IssueCredentialDialog mailboxId={id} />
               </header>
               {d.credentials.length === 0 ? (
                 <EmptyState

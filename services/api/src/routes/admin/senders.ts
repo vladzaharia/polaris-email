@@ -1,19 +1,14 @@
-// Admin REST routes for mailbox_senders (the domain-scoped sender list) and
-// submission_credentials. The mailbox-scoped sender CRUD lives in
-// `./mailboxes.ts`; this file keeps the historic domain-scoped variants the
-// CLI/panel still call, plus all SMTP-credential issuance.
-//
-// Submission credentials bind 1:1 to a `mailbox_senders` row via
-// `submission_credentials.sender_id` per the canonical schema; the bridge's
-// SMTP MAIL FROM allow-list is therefore exactly one address.
+// Admin REST routes for mailbox_senders (the domain-scoped sender list).
+// The mailbox-scoped sender CRUD lives in `./mailboxes.ts`; this file
+// keeps the historic domain-scoped variants the CLI/panel still call.
+// SMTP submission credentials moved to the unified mailbox_credentials
+// model — operators mint them via the mailbox credentials endpoint.
 import { Hono } from 'hono';
-import { CreateMailboxSenderRequest, CreateSmtpCredentialRequest } from '@polaris-mail/schema';
-import { generateSecret } from '@polaris-mail/hmac';
+import { CreateMailboxSenderRequest } from '@polaris-mail/schema';
 import { actorOf, audit } from '../../audit.js';
 import { bodyText, requireScope } from '../../auth.js';
 import type { Env } from '../../env.js';
 import { buildError } from '../../errors.js';
-import { hashSecret } from '../../hashing.js';
 import { ulid } from '@polaris-mail/ids';
 
 export const senders = new Hono<{ Bindings: Env }>();
@@ -140,110 +135,9 @@ senders.delete('/v1/admin/senders/:id', requireScope('admin:rotate'), async (c) 
   return c.json({ id, disabled_at: Date.now() });
 });
 
-// ---------- issue submission credential ----------
-//
-// The sender's owning mailbox supplies the principal's mailbox_id; the new
-// `submission_credentials.sender_id` column makes the principal↔sender binding
-// explicit (1:1, replacing the old principal_sender_scopes junction).
-senders.post('/v1/admin/senders/:id/smtp-credentials', requireScope('admin:rotate'), async (c) => {
-  const senderId = c.req.param('id');
-  try {
-    CreateSmtpCredentialRequest.parse(JSON.parse(bodyText(c) || '{}'));
-  } catch (e) {
-    return buildError(c, 'bad_request', e instanceof Error ? e.message : 'invalid body');
-  }
-  const senderRow = await c.env.DB.prepare(
-    `SELECT id, mailbox_id, domain_id, address FROM mailbox_senders
-       WHERE id = ? AND disabled_at IS NULL`,
-  )
-    .bind(senderId)
-    .first<{ id: string; mailbox_id: string; domain_id: string; address: string }>();
-  if (!senderRow) return buildError(c, 'not_found', 'sender not found or disabled');
-  const domRow = await c.env.DB.prepare(`SELECT id, name FROM mail_domains WHERE id = ?`)
-    .bind(senderRow.domain_id)
-    .first<{ id: string; name: string }>();
-  if (!domRow) return buildError(c, 'not_found', 'sender domain missing');
-
-  const id = ulid();
-  const principalId = ulid();
-  const nowIso = new Date().toISOString();
-  const username = senderRow.address;
-  const secret = generateSecret();
-  // Hash the secret before persistence — D1 only ever sees the hash. The
-  // submission bridge polls /v1/bridge/credentials and mirrors the hash
-  // locally; the plaintext is returned to the caller exactly once below.
-  const hashed = await hashSecret(secret, c.env.ARGON2_PEPPER);
-
-  // 1) Create the principal (kind='smtp_cred') bound to the sender's mailbox.
-  await c.env.DB.prepare(
-    `INSERT INTO principals (id, mailbox_id, kind, created_at)
-       VALUES (?, ?, 'smtp_cred', ?)`,
-  )
-    .bind(principalId, senderRow.mailbox_id, nowIso)
-    .run();
-  // 2) Insert the submission_credentials row (sender_id makes the binding explicit).
-  try {
-    await c.env.DB.prepare(
-      `INSERT INTO submission_credentials
-           (id, principal_id, sender_id, username, bcrypt_hash, created_at)
-         VALUES (?, ?, ?, ?, ?, ?)`,
-    )
-      .bind(id, principalId, senderId, username, hashed, nowIso)
-      .run();
-  } catch (e) {
-    if (String(e).includes('UNIQUE')) return buildError(c, 'conflict', 'username already in use');
-    throw e;
-  }
-  await audit(c.env, {
-    actor: actorOf(c),
-    action: 'smtp_credential.issue',
-    target: id,
-    meta: {
-      sender_id: senderId,
-      principal_id: principalId,
-      mailbox_id: senderRow.mailbox_id,
-      username,
-    },
-  });
-  return c.json(
-    {
-      id,
-      username,
-      // The plaintext is returned once at issuance and never again.
-      secret,
-      created_at: Date.now(),
-    },
-    201,
-  );
-});
-
-// ---------- soft-disable submission credential ----------
-senders.delete('/v1/admin/smtp-credentials/:id', requireScope('admin:rotate'), async (c) => {
-  const id = c.req.param('id');
-  const nowIso = new Date().toISOString();
-  const r = await c.env.DB.prepare(
-    `UPDATE submission_credentials SET disabled_at = ? WHERE id = ? AND disabled_at IS NULL`,
-  )
-    .bind(nowIso, id)
-    .run();
-  if (r.meta.changes === 0) return buildError(c, 'not_found', 'not found or already disabled');
-  await audit(c.env, {
-    actor: actorOf(c),
-    action: 'smtp_credential.disable',
-    target: id,
-    meta: {},
-  });
-  return c.json({ id, disabled_at: Date.now() });
-});
-
-// ---------- list submission credentials under a sender ----------
-senders.get('/v1/admin/senders/:id/smtp-credentials', requireScope('admin:read'), async (c) => {
-  const senderId = c.req.param('id');
-  const rows = await c.env.DB.prepare(
-    `SELECT id, principal_id, sender_id, username, last_used_at, disabled_at, created_at
-       FROM submission_credentials WHERE sender_id = ? ORDER BY created_at DESC`,
-  )
-    .bind(senderId)
-    .all();
-  return c.json({ data: rows.results });
-});
+// SMTP submission credentials (formerly issued per-sender via
+// /v1/admin/senders/:id/smtp-credentials) were folded into the unified
+// mailbox_credentials model in migration 0003. SMTP creds are now
+// mailbox-scoped (not sender-bound) — operators mint them via
+// POST /v1/admin/mailboxes/:id/credentials with type='smtp', and the
+// bridge validates MAIL FROM against `mailbox_senders` per session.
