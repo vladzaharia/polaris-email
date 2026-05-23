@@ -8,6 +8,7 @@
 //   * `0 4 * * *`           — daily DMARC policy auto-promotion   → dmarcPromoteRun
 //   * `0 */6 * * *`         — MTA-STS continuity                  → mtaStsContinuityRun
 //   * `30 */6 * * *`        — DKIM self-verify                    → dkimSelfVerifyRun
+//   * `15 * * * *`          — domain verify (hourly DNS+CF sync)   → domainVerifyRun
 //   * `0 5 * * *`           — feedback window refresh             → feedbackWindowRefresh
 //   * `20 5 * * *`          — full audit chain verification       → auditVerify
 //   * `50 5 * * *`          — policy_decision ↔ message backfill  → policyBackfill
@@ -27,6 +28,7 @@ import { senderAbuseThresholdRun } from './sender-abuse-threshold.js';
 import { dmarcPromoteRun } from './dmarc-promote.js';
 import { mtaStsContinuityRun } from './mta-sts-continuity.js';
 import { dkimSelfVerifyRun } from './dkim-self-verify.js';
+import { domainVerifyRun } from './domain-verify.js';
 import { feedbackWindowRefresh } from './feedback-window-refresh.js';
 import { withCronTelemetry } from './cron-runs.js';
 import type { Env } from '../env.js';
@@ -72,7 +74,17 @@ export async function scheduled(event: ScheduledEvent, env: Env): Promise<void> 
         // eslint-disable-next-line no-console
         console.log(
           'dkim-self-verify cron:',
-          `candidates=${r.candidates} ok=${r.ok} failed=${r.failed}`,
+          `candidates=${r.candidates} ok=${r.ok} failed=${r.failed} skipped=${r.skipped}`,
+        );
+      });
+      return;
+    case '15 * * * *':
+      await withCronTelemetry(env, 'domain-verify', async () => {
+        const r = await domainVerifyRun(env);
+        // eslint-disable-next-line no-console
+        console.log(
+          'domain-verify cron:',
+          `candidates=${r.candidates} verified=${r.verified} incomplete=${r.incomplete} no_creds=${r.no_creds} failed=${r.failed}`,
         );
       });
       return;

@@ -41,6 +41,7 @@
   //   `0 4 * * *`    daily 04:00  → dmarc-promote
   //   `0 */6 * * *`  6-hourly     → mta-sts-continuity
   //   `30 */6 * * *` 6-hourly+30  → dkim-self-verify
+  //   `15 * * * *`   hourly :15   → domain-verify (background DNS/CF reconciliation)
   //   `0 5 * * *`    daily 05:00  → feedback-window-refresh
   //   `20 5 * * *`   daily 05:20  → audit-verify
   //   `50 5 * * *`   daily 05:50  → policy-backfill
@@ -54,6 +55,7 @@
       "0 4 * * *",
       "0 */6 * * *",
       "30 */6 * * *",
+      "15 * * * *",
       "0 5 * * *",
       "20 5 * * *",
       "50 5 * * *",
