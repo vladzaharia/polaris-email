@@ -112,6 +112,14 @@ export function statusBadge(kind: StatusKind, value: string | number): StatusBad
       if (v === 'disabled') {
         return { variant: 'secondary', label: v, icon: 'x' };
       }
+      // CF zone-derived composite states (see compositeDomainStatus in the
+      // domains List page — surfaces the worse of verification vs zone health).
+      if (v === 'error') {
+        return { variant: 'destructive', label: v, icon: 'alert-triangle' };
+      }
+      if (v === 'unconfigured' || v === 'partial') {
+        return { variant: 'warning', label: v, icon: 'alert-triangle' };
+      }
       return { variant: 'outline', label: raw, icon: 'info' };
     }
     case 'credential': {

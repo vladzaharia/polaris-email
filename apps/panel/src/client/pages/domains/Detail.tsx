@@ -70,6 +70,9 @@ import {
 } from '../../queryKeys.js';
 import { ApiError } from '../../lib/api.js';
 import { cn } from '../../lib/cn.js';
+import { RoutesCard } from './RoutesCard.js';
+import { AuditFeedCard } from './AuditFeedCard.js';
+import { DomainMessagesCard } from './DomainMessagesCard.js';
 
 // ---------- domain query shape ----------
 
@@ -209,7 +212,7 @@ interface SenderRow {
 
 // ---------- search params ----------
 
-type DomainTab = 'overview' | 'dns' | 'dmarc' | 'activity';
+type DomainTab = 'overview' | 'dns' | 'routes' | 'senders' | 'dmarc' | 'activity';
 
 interface DomainDetailSearch {
   tab?: DomainTab;
@@ -218,8 +221,10 @@ interface DomainDetailSearch {
 const TAB_DESCRIPTIONS: Record<DomainTab, string> = {
   overview: 'At-a-glance health, key metadata, and recent transitions.',
   dns: 'DNS verification, Cloudflare routing, and inbound TLS hardening.',
+  routes: 'Inbound routes — Polaris receivers and externally-managed CF rules.',
+  senders: 'Outbound senders bound to this domain.',
   dmarc: 'Promotion state, alignment, and TLS-RPT aggregate reports.',
-  activity: 'Senders bound to this domain and recent activity timestamps.',
+  activity: 'Recent message log, operator changes, and state transitions.',
 };
 
 // ---------- small derived helpers ----------
@@ -679,50 +684,6 @@ function CfZoneCard({ domainName }: { domainName: string }) {
               )}
             </MetaRow>
           </MetaList>
-
-          {/* Externally managed CF Email Routing rules. These are
-              operator-defined catches that intercept specific addresses
-              before the catch-all (e.g. forwarding `vlad@plrs.im` to a
-              personal mailbox). They take priority over polaris-mail-in
-              by design; we surface them so the operator can see what's
-              covered without having to bounce to the CF dashboard. */}
-          {q.data.data.named_rules.length > 0 ? (
-            <div className="rounded-md border border-[var(--color-border)] p-3">
-              <div className="mb-2 flex items-center justify-between text-xs">
-                <span className="font-medium text-[var(--color-foreground)]">
-                  Externally managed routes
-                </span>
-                <span className="text-[var(--color-muted-foreground)]">
-                  {q.data.data.named_rules.length} CF rule
-                  {q.data.data.named_rules.length === 1 ? '' : 's'} — managed in Cloudflare, shown
-                  here for reference
-                </span>
-              </div>
-              <ul className="space-y-1">
-                {q.data.data.named_rules.map((rule) => {
-                  const action =
-                    rule.action_type && rule.action_target
-                      ? `${rule.action_type}:${rule.action_target}`
-                      : (rule.action_type ?? '?');
-                  return (
-                    <li key={rule.name} className="flex flex-wrap items-center gap-2 text-xs">
-                      <Badge variant={rule.enabled ? 'secondary' : 'outline'}>
-                        {rule.enabled ? 'active' : 'disabled'}
-                      </Badge>
-                      {rule.routes_to_polaris ? (
-                        <Badge variant="success">polaris</Badge>
-                      ) : (
-                        <Badge variant="outline">external</Badge>
-                      )}
-                      <span className="font-mono">{rule.address_pattern ?? '(no pattern)'}</span>
-                      <span className="text-[var(--color-muted-foreground)]">→</span>
-                      <span className="font-mono">{action}</span>
-                    </li>
-                  );
-                })}
-              </ul>
-            </div>
-          ) : null}
 
           {/* Confirmation dialog: the operator clicks "Fix X" inline next
               to a broken row, which opens this with the op-specific
@@ -1601,6 +1562,8 @@ export function DomainDetail() {
           <TabsList>
             <TabsTrigger value="overview">Overview</TabsTrigger>
             <TabsTrigger value="dns">DNS &amp; TLS</TabsTrigger>
+            <TabsTrigger value="routes">Routes</TabsTrigger>
+            <TabsTrigger value="senders">Senders</TabsTrigger>
             <TabsTrigger value="dmarc">DMARC</TabsTrigger>
             <TabsTrigger value="activity">Activity</TabsTrigger>
           </TabsList>
@@ -1683,6 +1646,18 @@ export function DomainDetail() {
             </div>
           </TabsContent>
 
+          <TabsContent value="routes">
+            <div className="space-y-4">
+              <RoutesCard domainId={d.id} domainName={d.name} />
+            </div>
+          </TabsContent>
+
+          <TabsContent value="senders">
+            <div className="space-y-4">
+              <SendersCard domainId={d.id} />
+            </div>
+          </TabsContent>
+
           <TabsContent value="dmarc">
             <div className="space-y-4">
               <DmarcPromotionCard
@@ -1697,7 +1672,8 @@ export function DomainDetail() {
 
           <TabsContent value="activity">
             <div className="space-y-4">
-              <SendersCard domainId={d.id} />
+              <DomainMessagesCard domainId={d.id} domainName={d.name} />
+              <AuditFeedCard domainId={d.id} />
               <TransitionTimelineCard d={d} />
             </div>
           </TabsContent>

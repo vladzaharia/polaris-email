@@ -38,6 +38,7 @@ import { FormField } from '../../components/FormField.js';
 
 interface CfZoneRowLite {
   zone: { id: string; name: string };
+  overall?: 'ok' | 'partial' | 'unconfigured' | 'error';
 }
 
 // CF zone listings are slow (CF inspects every zone). 5min staleTime keeps
@@ -52,6 +53,26 @@ interface DomainRow {
   dkim_selector: string | null;
   inbound_enabled?: number;
   outbound_enabled?: number;
+  cf_zone_id?: string | null;
+}
+
+// Worst-of composite: surface the most severe condition between verification
+// and CF zone health so the operator sees one signal in the list. Operator-
+// explicit terminal states (`disabled`, `failed`) and verification-in-flight
+// (`pending`) take precedence — they describe what Polaris is doing — and
+// only when verification is healthy do we surface CF zone issues.
+function compositeDomainStatus(
+  verification: string,
+  zoneOverall: 'ok' | 'partial' | 'unconfigured' | 'error' | undefined,
+): string {
+  if (verification === 'disabled') return 'disabled';
+  if (verification === 'failed') return 'failed';
+  if (verification === 'pending') return 'pending';
+  if (!zoneOverall) return verification;
+  if (zoneOverall === 'error') return 'error';
+  if (zoneOverall === 'unconfigured') return 'unconfigured';
+  if (zoneOverall === 'partial') return 'partial';
+  return verification;
 }
 
 function AddDomainDialog() {
@@ -230,6 +251,16 @@ function AddDomainDialog() {
 
 export function DomainsList() {
   const q = useAdminQuery<{ data: DomainRow[] }>(domainKeys.list(), '/api/admin/domains');
+  // Bulk CF zone status feeds the composite Status badge below. The same
+  // query is used by the AddDomainDialog above, so React Query will dedupe.
+  // CF inspection is slow per-zone; cached 5 min like the dialog uses it.
+  const zones = useAdminQuery<{ data: CfZoneRowLite[] }>(cfZoneKeys.list(), '/api/admin/cf-zones', {
+    staleTime: CF_ZONE_STALE_MS,
+  });
+  const zoneOverallById = new Map<string, CfZoneRowLite['overall']>();
+  for (const z of zones.data?.data ?? []) {
+    if (z.overall) zoneOverallById.set(z.zone.id, z.overall);
+  }
   const rows = q.data?.data ?? [];
   return (
     <PageCard
@@ -270,7 +301,19 @@ export function DomainsList() {
                 <TableCell>{r.outbound_enabled ? 'on' : 'off'}</TableCell>
                 <TableCell className="font-mono text-xs">{r.dkim_selector ?? '—'}</TableCell>
                 <TableCell>
-                  <StatusBadge kind="domain" value={r.status} />
+                  {(() => {
+                    const zoneOverall = r.cf_zone_id
+                      ? zoneOverallById.get(r.cf_zone_id)
+                      : undefined;
+                    const composite = compositeDomainStatus(r.status, zoneOverall);
+                    return (
+                      <span
+                        title={`verification: ${r.status}${zoneOverall ? ` · zone: ${zoneOverall}` : ''}`}
+                      >
+                        <StatusBadge kind="domain" value={composite} />
+                      </span>
+                    );
+                  })()}
                 </TableCell>
               </TableRow>
             ))}

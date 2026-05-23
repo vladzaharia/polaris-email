@@ -149,14 +149,22 @@ const domainsList = createRoute({
 const domainDetail = createRoute({
   getParentRoute: () => rootRoute,
   path: '/domains/$id',
-  // `?tab=` persists the active tab on the domain detail page (Overview /
-  // DNS & TLS / DMARC / Activity), so runbooks can deep-link to a specific
-  // tab the same way the Abuse Hub does.
+  // `?tab=` persists the active tab on the domain detail page
+  // (Overview / DNS & TLS / Routes / Senders / DMARC / Activity), so
+  // runbooks can deep-link to a specific tab the same way the Abuse Hub
+  // does.
   validateSearch: (
     search: Record<string, unknown>,
-  ): { tab?: 'overview' | 'dns' | 'dmarc' | 'activity' } => {
+  ): { tab?: 'overview' | 'dns' | 'routes' | 'senders' | 'dmarc' | 'activity' } => {
     const t = search.tab;
-    if (t === 'overview' || t === 'dns' || t === 'dmarc' || t === 'activity') {
+    if (
+      t === 'overview' ||
+      t === 'dns' ||
+      t === 'routes' ||
+      t === 'senders' ||
+      t === 'dmarc' ||
+      t === 'activity'
+    ) {
       return { tab: t };
     }
     return {};

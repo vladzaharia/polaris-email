@@ -21,6 +21,8 @@ export const domainKeys = {
   all: ['domains'] as const,
   list: () => [...domainKeys.all, 'list'] as const,
   detail: (id: string) => [...domainKeys.all, 'detail', id] as const,
+  receivers: (id: string) => [...domainKeys.all, 'detail', id, 'receivers'] as const,
+  audit: (id: string) => [...domainKeys.all, 'detail', id, 'audit'] as const,
 };
 
 export const credentialKeys = {
