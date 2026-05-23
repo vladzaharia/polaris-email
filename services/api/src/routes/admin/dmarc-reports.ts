@@ -1,74 +1,18 @@
-// W6 — Admin REST over dmarc_aggregate_reports + per-domain alignment rollup.
+// Admin REST for DMARC reports.
 //
-// Read-only. List + detail + per-domain summary feed the panel's DMARC
-// alignment subsection on the domain detail page AND a fleet-wide
-// /reports/dmarc view.
+// Source of truth is Cloudflare DMARC Management. The per-(domain, day)
+// rollup mirror in D1 backs the summary endpoint so panel pageviews stay
+// snappy and don't hit CF on every render; the list endpoint queries CF
+// GraphQL live.
+
 import { Hono } from 'hono';
+import { CloudflareApiClient, fetchDmarcAggregatesByDay } from '@polaris-mail/cf-api';
 import { requireScope } from '../../auth.js';
 import type { Env } from '../../env.js';
 import { buildError } from '../../errors.js';
 
 export const dmarcReports = new Hono<{ Bindings: Env }>();
 
-interface ReportRow {
-  id: string;
-  domain: string | null;
-  org_name: string | null;
-  org_email: string | null;
-  report_id: string | null;
-  date_range_begin: string | null;
-  date_range_end: string | null;
-  policy_p: string | null;
-  policy_sp: string | null;
-  policy_pct: number | null;
-  policy_adkim: string | null;
-  policy_aspf: string | null;
-  total_count: number;
-  total_dmarc_pass: number;
-  total_dkim_pass: number;
-  total_spf_pass: number;
-  records_json: string;
-  source: string;
-  source_message_id: string | null;
-  created_at: string;
-}
-
-const COLS =
-  'id, domain, org_name, org_email, report_id, date_range_begin, date_range_end, ' +
-  'policy_p, policy_sp, policy_pct, policy_adkim, policy_aspf, ' +
-  'total_count, total_dmarc_pass, total_dkim_pass, total_spf_pass, ' +
-  'records_json, source, source_message_id, created_at';
-
-dmarcReports.get('/v1/admin/dmarc-reports', requireScope('admin:read'), async (c) => {
-  const domain = c.req.query('domain');
-  const limit = Math.min(Math.max(Number(c.req.query('limit') ?? '100'), 1), 500);
-  const where: string[] = [];
-  const binds: unknown[] = [];
-  if (domain) {
-    where.push('domain = ?');
-    binds.push(domain);
-  }
-  const sql =
-    `SELECT ${COLS} FROM dmarc_aggregate_reports` +
-    (where.length ? ' WHERE ' + where.join(' AND ') : '') +
-    ' ORDER BY created_at DESC LIMIT ?';
-  binds.push(limit);
-  const rows = await c.env.DB.prepare(sql)
-    .bind(...binds)
-    .all<ReportRow>();
-  return c.json({ data: rows.results ?? [] });
-});
-
-dmarcReports.get('/v1/admin/dmarc-reports/:id', requireScope('admin:read'), async (c) => {
-  const id = c.req.param('id');
-  const row = await c.env.DB.prepare(`SELECT ${COLS} FROM dmarc_aggregate_reports WHERE id = ?`)
-    .bind(id)
-    .first<ReportRow>();
-  if (!row) return buildError(c, 'not_found', 'dmarc report not found');
-  return c.json(row);
-});
-
-// Per-domain alignment summary the W8 promotion cron + panel both consume.
 dmarcReports.get('/v1/admin/dmarc-reports/summary', requireScope('admin:read'), async (c) => {
   const domain = c.req.query('domain');
   if (!domain) return buildError(c, 'bad_request', 'domain query param required');
@@ -128,4 +72,49 @@ dmarcReports.get('/v1/admin/dmarc-reports/summary', requireScope('admin:read'), 
     last_14d: await aggregate(day14),
     last_30d: await aggregate(day30),
   });
+});
+
+dmarcReports.get('/v1/admin/dmarc-reports', requireScope('admin:read'), async (c) => {
+  const domain = c.req.query('domain');
+  if (!domain) return buildError(c, 'bad_request', 'domain query param required');
+  const days = Math.min(Math.max(Number(c.req.query('days') ?? '7'), 1), 90);
+
+  const row = await c.env.DB.prepare(
+    `SELECT COALESCE(z.cf_zone_id, d.cf_zone_id) AS cf_zone_id
+     FROM mail_domains d LEFT JOIN zones z ON z.id = d.zone_id
+     WHERE d.name = ?`,
+  )
+    .bind(domain)
+    .first<{ cf_zone_id: string | null }>();
+  if (!row?.cf_zone_id) {
+    return buildError(c, 'not_found', 'domain has no associated CF zone');
+  }
+  if (!c.env.CF_API_TOKEN || !c.env.CF_ACCOUNT_ID) {
+    return buildError(c, 'degraded', 'CF credentials missing');
+  }
+
+  const until = new Date();
+  until.setUTCHours(23, 59, 59, 999);
+  const since = new Date(until.getTime() - days * 24 * 3_600_000);
+  since.setUTCHours(0, 0, 0, 0);
+
+  const client = new CloudflareApiClient({
+    apiToken: c.env.CF_API_TOKEN,
+    accountId: c.env.CF_ACCOUNT_ID,
+  });
+
+  try {
+    const rows = await fetchDmarcAggregatesByDay(client, {
+      zoneTag: row.cf_zone_id,
+      since: since.toISOString(),
+      until: until.toISOString(),
+    });
+    return c.json({ data: rows.filter((r) => r.domain === domain) });
+  } catch (err) {
+    return buildError(
+      c,
+      'cf_upstream',
+      `cf graphql: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
 });
