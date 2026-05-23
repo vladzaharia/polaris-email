@@ -173,7 +173,6 @@ interface DmarcPromotionRow {
     | 'reject'
     | 'paused';
   dmarc_promotion_last_at: string | null;
-  dmarc_record_managed_by_polaris: number;
 }
 
 interface DmarcSummaryWindow {
@@ -969,12 +968,9 @@ function DmarcPromotionCard({
     () => ({ path: `/api/admin/dmarc-promotion/${domainId}/resume`, method: 'POST' }),
     { invalidateKeys: [dmarcPromotionKeys.all], successMessage: 'DMARC promotion resumed.' },
   );
-  const claim = useAdminMutation<unknown, undefined>(
-    () => ({
-      path: `/api/admin/dmarc-promotion/${domainId}/claim-management`,
-      method: 'POST',
-    }),
-    { invalidateKeys: [dmarcPromotionKeys.all], successMessage: 'Claimed DNS management.' },
+  const advance = useAdminMutation<unknown, undefined>(
+    () => ({ path: `/api/admin/dmarc-promotion/${domainId}/advance`, method: 'POST' }),
+    { invalidateKeys: [dmarcPromotionKeys.all], successMessage: 'DMARC policy advanced.' },
   );
 
   return (
@@ -986,7 +982,7 @@ function DmarcPromotionCard({
         <EmptyState
           icon={<Flag className="h-5 w-5" />}
           title="No promotion state yet"
-          description="The promotion cron has not seen this domain. It will appear here on the next scheduled run, or when you first claim DNS management."
+          description="The promotion cron has not seen this domain. It will appear here on the next scheduled run."
         />
       ) : (
         <div className="space-y-3">
@@ -1020,11 +1016,6 @@ function DmarcPromotionCard({
                 {promotion.dmarc_promotion_mode}
               </Badge>
             </MetaRow>
-            <MetaRow label="DNS managed">
-              <Badge variant={promotion.dmarc_record_managed_by_polaris ? 'success' : 'outline'}>
-                {promotion.dmarc_record_managed_by_polaris ? 'yes' : 'no'}
-              </Badge>
-            </MetaRow>
             <MetaRow label="Last transition">
               <span className="text-xs text-[var(--color-muted-foreground)]">
                 {promotion.dmarc_promotion_last_at
@@ -1053,17 +1044,18 @@ function DmarcPromotionCard({
                 Resume auto-promotion
               </Button>
             )}
-            {promotion.dmarc_record_managed_by_polaris === 0 ? (
+            {(promotion.dmarc_promotion_state === 'quarantine_ready' ||
+              promotion.dmarc_promotion_state === 'reject_ready') && (
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => claim.mutate(undefined)}
-                disabled={claim.isPending}
-                title="Opt in to letting Polaris write _dmarc DNS records for this domain"
+                onClick={() => advance.mutate(undefined)}
+                disabled={advance.isPending}
+                title="Send a policy-change command to Cloudflare DMARC Management. Effective at the DNS TTL."
               >
-                Claim DNS management
+                Advance now
               </Button>
-            ) : null}
+            )}
           </div>
         </div>
       )}
@@ -1086,13 +1078,13 @@ function DmarcAlignmentCard({ domainName }: { domainName: string }) {
         <Skeleton className="h-24 w-full" />
       ) : q.error || !q.data ? (
         <p className="text-sm text-[var(--color-muted-foreground)]">
-          No DMARC aggregate reports yet. Ensure the domain's <code>_dmarc</code> record's{' '}
-          <code>rua=</code> field includes <code>mailto:dmarc-rua@plrs.im</code>.
+          No DMARC aggregate reports yet. Confirm Cloudflare DMARC Management is enabled on the zone
+          — polaris mirrors aggregates nightly from CF.
         </p>
       ) : q.data.last_30d.reports === 0 ? (
         <p className="text-sm text-[var(--color-muted-foreground)]">
-          No DMARC aggregate reports yet. Ensure the domain's <code>_dmarc</code> record's{' '}
-          <code>rua=</code> field includes <code>mailto:dmarc-rua@plrs.im</code>.
+          No DMARC aggregate reports yet. Confirm Cloudflare DMARC Management is enabled on the zone
+          — polaris mirrors aggregates nightly from CF.
         </p>
       ) : (
         <div className="space-y-3">
