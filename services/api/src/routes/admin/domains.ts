@@ -495,6 +495,15 @@ interface VerifyCheck {
   ok: boolean;
   expected: string;
   actual: string;
+  /**
+   * Whether this check is a hard requirement (MX, CNAME, basic Email
+   * Routing DNS) vs opt-in hardening (MTA-STS, TLS-RPT). Required
+   * failures block the `status='verified'` transition and render
+   * destructive on the panel; optional failures render as warnings —
+   * the operator hasn't enabled the extra layer yet, or it's still
+   * propagating. Default `true` for back-compat.
+   */
+  required?: boolean;
 }
 
 const DNS_CNAME = 5;
@@ -808,6 +817,7 @@ domains.post('/v1/admin/domains/:id/verify', requireScope('admin:rotate'), async
         ok: false,
         expected: `mode=${row.mta_sts_mode}, policy_id=${row.mta_sts_policy_id ?? '(unset)'}`,
         actual: `MTA-STS records require manual re-provisioning. Call POST /v1/admin/domains/${row.id}/mta-sts/enable to publish.`,
+        required: false,
       });
     } else {
       mtaStsRanAndAllPassed = true;
@@ -826,6 +836,7 @@ domains.post('/v1/admin/domains/:id/verify', requireScope('admin:rotate'), async
         ok: false,
         expected: `rua=${row.tlsrpt_rua ?? '(unset)'}`,
         actual: `TLS-RPT records require manual re-provisioning. Call POST /v1/admin/domains/${row.id}/tls-rpt/enable to publish.`,
+        required: false,
       });
     } else {
       tlsRptRanAndAllPassed = true;

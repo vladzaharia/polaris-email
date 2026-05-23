@@ -102,6 +102,12 @@ interface VerifyCheck {
   ok: boolean;
   expected: string;
   actual: string;
+  /**
+   * Whether failure is a hard-fail (default — MX / routing DNS) or a
+   * soft warning (MTA-STS / TLS-RPT — opt-in hardening). The UI uses
+   * this to colour failed rows amber instead of red.
+   */
+  required?: boolean;
 }
 
 interface VerifyResponse {
@@ -668,23 +674,36 @@ function DnsChecklist({
                       pending: enableTlsRptPending,
                     }
                   : null;
+              // Required (default) vs optional split: MX / CNAMEs are
+              // hard requirements and render destructive on fail.
+              // MTA-STS / TLS-RPT / their operator-action prompts are
+              // opt-in hardening and render as warnings — the operator
+              // hasn't enabled the extra layer yet or it's still
+              // propagating. Soft fails still tint the row amber so the
+              // operator can spot them, just not as alarmingly as a
+              // routing-broken red row.
+              const isOptional = ch.required === false || isOperatorAction;
               return (
                 <TableRow
                   key={ch.name}
                   className={
-                    isOperatorAction
+                    !ch.ok && isOptional
                       ? 'bg-[color-mix(in_oklch,var(--color-warning)_15%,transparent)]'
-                      : undefined
+                      : !ch.ok
+                        ? 'bg-[color-mix(in_oklch,var(--color-destructive)_8%,transparent)]'
+                        : undefined
                   }
                 >
                   <TableCell className="break-all font-mono text-xs">{ch.name}</TableCell>
                   <TableCell>
                     {ch.ok ? (
                       <Badge variant="success">ok</Badge>
-                    ) : (
-                      <Badge variant="destructive">
-                        {isOperatorAction ? 'action required' : 'fail'}
+                    ) : isOptional ? (
+                      <Badge variant="warning">
+                        {isOperatorAction ? 'action required' : 'optional'}
                       </Badge>
+                    ) : (
+                      <Badge variant="destructive">fail</Badge>
                     )}
                   </TableCell>
                   {/* `break-all` + `max-w-md` keeps long values (DKIM public

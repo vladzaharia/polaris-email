@@ -204,6 +204,16 @@ export interface VerifyCheck {
   ok: boolean;
   expected: string;
   actual: string;
+  /**
+   * Whether this check is a hard requirement (MX, CNAME, basic Email
+   * Routing DNS) vs opt-in hardening (MTA-STS, TLS-RPT). Required
+   * failures block the `status='verified'` transition; optional
+   * failures render as warnings — the operator hasn't enabled the
+   * extra layer yet, or it's mid-publish. Defaults to `true` when
+   * omitted so legacy / external producers keep their stricter
+   * semantics.
+   */
+  required?: boolean;
 }
 
 export interface VerifyResult {
@@ -290,7 +300,7 @@ export async function verifyMtaSts(
   } else {
     idOk = ids.includes(expectedPolicyId);
   }
-  checks.push({ name: 'TXT _mta-sts id', ok: idOk, expected, actual: idActual });
+  checks.push({ name: 'TXT _mta-sts id', ok: idOk, expected, actual: idActual, required: false });
 
   // --- HTTPS policy fetch ---
   try {
@@ -303,6 +313,7 @@ export async function verifyMtaSts(
       ok: statusOk,
       expected: '200',
       actual: String(r.status),
+      required: false,
     });
 
     const ct = r.headers.get('content-type') ?? '';
@@ -312,6 +323,7 @@ export async function verifyMtaSts(
       ok: ctOk,
       expected: 'text/plain*',
       actual: ct || '<none>',
+      required: false,
     });
 
     if (statusOk && ctOk) {
@@ -324,6 +336,7 @@ export async function verifyMtaSts(
       ok: false,
       expected: '200',
       actual: `fetch error: ${err instanceof Error ? err.message : String(err)}`,
+      required: false,
     });
   }
 
@@ -361,6 +374,7 @@ export async function verifyTlsRpt(
     ok,
     expected: expectedRua ?? '<any non-empty rua>',
     actual: ruas.join(',') || '<none>',
+    required: false,
   });
 
   return { ok: checks.every((c) => c.ok), checks };
