@@ -1,12 +1,16 @@
-// W8 — Admin REST over DMARC promotion state.
+// Admin REST over DMARC promotion state.
 //
-// Endpoints:
-//   GET    /v1/admin/dmarc-promotion           — fleet view
-//   POST   /v1/admin/dmarc-promotion/:id/pause — manual pause (approval-gated)
-//   POST   /v1/admin/dmarc-promotion/:id/resume— back to mode='auto'
-//   POST   /v1/admin/dmarc-promotion/:id/claim-management — opt in to DNS writes
-//   POST   /v1/admin/dmarc-promotion/run       — manual cron trigger (approval-gated)
+// Polaris recommends; the auto-promotion cron and/or operators advance
+// the policy through Cloudflare DMARC Management (via setDmarcPolicy).
+// Polaris does not own the _dmarc TXT record.
+//
+//   GET    /v1/admin/dmarc-promotion              — fleet view
+//   POST   /v1/admin/dmarc-promotion/:id/pause    — manual pause
+//   POST   /v1/admin/dmarc-promotion/:id/resume   — back to mode='auto'
+//   POST   /v1/admin/dmarc-promotion/:id/advance  — operator advance via CF
+//   POST   /v1/admin/dmarc-promotion/run          — manual cron trigger
 import { Hono } from 'hono';
+import { CloudflareApiClient, setDmarcPolicy } from '@polaris-mail/cf-api';
 import { requireScope } from '../../auth.js';
 import { actorOf, audit } from '../../audit.js';
 import { dmarcPromoteRun } from '../../scheduled/dmarc-promote.js';
@@ -18,7 +22,7 @@ export const dmarcPromotion = new Hono<{ Bindings: Env }>();
 dmarcPromotion.get('/v1/admin/dmarc-promotion', requireScope('admin:read'), async (c) => {
   const rows = await c.env.DB.prepare(
     `SELECT id, name, dmarc_policy, dmarc_promotion_mode, dmarc_promotion_state,
-            dmarc_promotion_last_at, dmarc_record_managed_by_polaris
+            dmarc_promotion_last_at
      FROM mail_domains
      WHERE status NOT IN ('disabled')
      ORDER BY name`,
@@ -29,7 +33,6 @@ dmarcPromotion.get('/v1/admin/dmarc-promotion', requireScope('admin:read'), asyn
     dmarc_promotion_mode: string;
     dmarc_promotion_state: string;
     dmarc_promotion_last_at: string | null;
-    dmarc_record_managed_by_polaris: number;
   }>();
   return c.json({ data: rows.results ?? [] });
 });
@@ -77,23 +80,71 @@ dmarcPromotion.post(
 );
 
 dmarcPromotion.post(
-  '/v1/admin/dmarc-promotion/:id/claim-management',
+  '/v1/admin/dmarc-promotion/:id/advance',
   requireScope('admin:rotate'),
   async (c) => {
     const id = c.req.param('id');
-    const r = await c.env.DB.prepare(
-      `UPDATE mail_domains SET dmarc_record_managed_by_polaris = 1, updated_at = ? WHERE id = ?`,
+    const domain = await c.env.DB.prepare(
+      `SELECT d.id, d.name, d.dmarc_promotion_state,
+              COALESCE(z.cf_zone_id, d.cf_zone_id) AS cf_zone_id
+       FROM mail_domains d LEFT JOIN zones z ON z.id = d.zone_id
+       WHERE d.id = ?`,
     )
-      .bind(new Date().toISOString(), id)
+      .bind(id)
+      .first<{
+        id: string;
+        name: string;
+        dmarc_promotion_state: string;
+        cf_zone_id: string | null;
+      }>();
+    if (!domain) return buildError(c, 'not_found', 'domain not found');
+    if (!domain.cf_zone_id) {
+      return buildError(c, 'bad_request', 'domain has no associated CF zone');
+    }
+    const next = nextStateFor(domain.dmarc_promotion_state);
+    if (!next) {
+      return buildError(
+        c,
+        'conflict',
+        `cannot advance from state '${domain.dmarc_promotion_state}'`,
+      );
+    }
+    if (!c.env.CF_API_TOKEN || !c.env.CF_ACCOUNT_ID) {
+      return buildError(c, 'degraded', 'CF credentials missing');
+    }
+
+    const client = new CloudflareApiClient({
+      apiToken: c.env.CF_API_TOKEN,
+      accountId: c.env.CF_ACCOUNT_ID,
+    });
+    try {
+      await setDmarcPolicy(client, domain.cf_zone_id, next.policy);
+    } catch (err) {
+      return buildError(
+        c,
+        'cf_upstream',
+        `cf setDmarcPolicy: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+
+    const nowIso = new Date().toISOString();
+    await c.env.DB.prepare(
+      `UPDATE mail_domains
+         SET dmarc_promotion_state = ?,
+             dmarc_promotion_last_at = ?,
+             dmarc_policy = ?,
+             updated_at = ?
+       WHERE id = ?`,
+    )
+      .bind(next.state, nowIso, next.policy, nowIso, id)
       .run();
-    if (r.meta.changes === 0) return buildError(c, 'not_found', 'domain not found');
     await audit(c.env, {
       actor: actorOf(c),
-      action: 'dmarc.claim_management',
+      action: 'dmarc.promote',
       target: id,
-      meta: { source: 'operator' },
+      meta: { source: 'operator_advance', from: domain.dmarc_promotion_state, to: next.state },
     });
-    return c.json({ id, dmarc_record_managed_by_polaris: 1 });
+    return c.json({ id, dmarc_promotion_state: next.state, dmarc_policy: next.policy });
   },
 );
 
@@ -101,3 +152,9 @@ dmarcPromotion.post('/v1/admin/dmarc-promotion/run', requireScope('admin:rotate'
   const r = await dmarcPromoteRun(c.env);
   return c.json(r);
 });
+
+function nextStateFor(state: string): { state: string; policy: 'quarantine' | 'reject' } | null {
+  if (state === 'quarantine_ready') return { state: 'quarantine', policy: 'quarantine' };
+  if (state === 'reject_ready') return { state: 'reject', policy: 'reject' };
+  return null;
+}
