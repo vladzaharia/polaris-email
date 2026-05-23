@@ -33,11 +33,13 @@ import {
   Cloud,
   Flag,
   Globe2,
+  Inbox,
   Key,
   Lock,
   MailCheck,
   MailX,
   RefreshCw,
+  Send,
   ShieldAlert,
   ShieldCheck,
   Users,
@@ -1390,6 +1392,300 @@ function TransitionTimelineCard({ d }: { d: DomainPayload }) {
   );
 }
 
+// ---------- Overview tab ----------
+//
+// The Overview tab is the operator's "first glance" surface. The
+// HealthHero strip above already covers the four cross-cutting
+// status pills (DNS / DKIM / DMARC / MTA-STS); this body answers the
+// follow-up questions:
+//
+//   * Is the Cloudflare zone configured? (compact summary, drills to DNS)
+//   * How many routes + senders are active? (count tiles, drill to tabs)
+//   * What hardening is on? (MTA-STS, TLS-RPT, DMARC promotion state)
+//   * What's the flow shape? (inbound/outbound + DKIM selector at a glance)
+//   * What lifecycle stage are we in? (TransitionTimelineCard)
+//
+// Metadata-style rows (raw id, dmarc_rua URL, created_at) have moved
+// out — they're informational, not actionable, and operators can dig
+// into the relevant tab if they need them.
+
+interface OverviewReceiverRow {
+  id: string;
+  enabled: number;
+  disabled_at: string | null;
+}
+
+function zoneVariant(
+  overall: CfZoneStatus['overall'] | undefined,
+  loading: boolean,
+): 'success' | 'warning' | 'destructive' | 'secondary' | 'outline' {
+  if (loading) return 'outline';
+  if (overall === 'ok') return 'success';
+  if (overall === 'partial') return 'warning';
+  if (overall === 'unconfigured') return 'warning';
+  if (overall === 'error') return 'destructive';
+  return 'outline';
+}
+
+function OverviewTile({
+  icon,
+  label,
+  variant,
+  value,
+  sub,
+  onClick,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  variant: 'success' | 'warning' | 'destructive' | 'secondary' | 'outline';
+  value: string;
+  sub: string;
+  onClick: () => void;
+}) {
+  const tintMap: Record<typeof variant, string> = {
+    success:
+      'border-[color-mix(in_oklch,var(--color-success)_30%,var(--color-border))] bg-[color-mix(in_oklch,var(--color-success)_8%,transparent)] hover:bg-[color-mix(in_oklch,var(--color-success)_14%,transparent)]',
+    warning:
+      'border-[color-mix(in_oklch,var(--color-warning)_30%,var(--color-border))] bg-[color-mix(in_oklch,var(--color-warning)_8%,transparent)] hover:bg-[color-mix(in_oklch,var(--color-warning)_14%,transparent)]',
+    destructive:
+      'border-[color-mix(in_oklch,var(--color-destructive)_30%,var(--color-border))] bg-[color-mix(in_oklch,var(--color-destructive)_8%,transparent)] hover:bg-[color-mix(in_oklch,var(--color-destructive)_14%,transparent)]',
+    secondary:
+      'border-[var(--color-border)] bg-[var(--color-secondary)] hover:bg-[var(--color-accent)]',
+    outline: 'border-[var(--color-border)] bg-[var(--color-card)] hover:bg-[var(--color-accent)]',
+  };
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        'flex flex-col items-start gap-1 rounded-md border px-3 py-3 text-left transition-colors',
+        tintMap[variant],
+      )}
+    >
+      <div className="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wide text-[var(--color-muted-foreground)]">
+        {icon}
+        <span>{label}</span>
+      </div>
+      <div className="text-base font-semibold text-[var(--color-foreground)]">{value}</div>
+      <div className="text-xs text-[var(--color-muted-foreground)]">{sub}</div>
+    </button>
+  );
+}
+
+function HardeningRow({
+  label,
+  variant,
+  value,
+  hint,
+}: {
+  label: string;
+  variant: 'success' | 'warning' | 'secondary' | 'destructive' | 'outline';
+  value: string;
+  hint?: string;
+}) {
+  return (
+    <div className="flex items-start justify-between gap-3 py-1.5">
+      <div className="min-w-0">
+        <div className="text-sm font-medium text-[var(--color-foreground)]">{label}</div>
+        {hint ? <div className="text-xs text-[var(--color-muted-foreground)]">{hint}</div> : null}
+      </div>
+      <Badge variant={variant} className="shrink-0 font-mono text-[10px]">
+        {value}
+      </Badge>
+    </div>
+  );
+}
+
+function OverviewTab({
+  d,
+  domainId,
+  promotion,
+  onSelectTab,
+}: {
+  d: DomainPayload;
+  domainId: string;
+  promotion?: DmarcPromotionRow;
+  onSelectTab: (tab: DomainTab) => void;
+}) {
+  const receivers = useAdminQuery<{ data: OverviewReceiverRow[] }>(
+    domainKeys.receivers(domainId),
+    `/api/admin/domains/${domainId}/receivers`,
+  );
+  const senders = useAdminQuery<{ data: SenderRow[] }>(
+    [...domainKeys.detail(domainId), 'senders'] as const,
+    `/api/admin/domains/${domainId}/senders`,
+  );
+  const zone = useAdminQuery<{ data: CfZoneStatus }>(
+    cfZoneKeys.detail(d.name),
+    `/api/admin/cf-zones/${encodeURIComponent(d.name)}`,
+  );
+
+  const recRows = receivers.data?.data ?? [];
+  const sndRows = senders.data?.data ?? [];
+  const activeReceivers = recRows.filter((r) => r.enabled === 1 && r.disabled_at === null).length;
+  const totalReceivers = recRows.length;
+  const activeSenders = sndRows.filter((s) => !s.disabled_at).length;
+  const totalSenders = sndRows.length;
+  const z = zone.data?.data;
+  const zoneSub = z
+    ? [
+        z.routing_enabled ? 'routing on' : 'routing off',
+        z.dns_records_locked ? 'MX locked' : 'MX unlocked',
+        z.sender_onboarded ? 'sender on' : 'sender off',
+      ].join(' · ')
+    : zone.isLoading
+      ? 'inspecting…'
+      : zone.error
+        ? 'lookup failed'
+        : 'no zone';
+
+  const dnsVariant = pillVariant({ kind: 'dns', d });
+  const dnsSub = d.verified_at
+    ? `verified ${formatRelative(d.verified_at)}`
+    : d.last_verify_check_at
+      ? `last checked ${formatRelative(d.last_verify_check_at)}`
+      : 'never verified';
+
+  // Hardening summaries — compact, derive from persisted columns only.
+  const dmarcPolicy = promotion?.dmarc_policy ?? d.dmarc_policy ?? 'none';
+  const dmarcVariant = pillVariant({ kind: 'dmarc', d, promotion });
+  const mtaStsVariant = pillVariant({ kind: 'mtasts', d });
+  const mtaStsValue = d.mta_sts_mode ?? 'none';
+  const mtaStsHint =
+    d.mta_sts_mode && d.mta_sts_mode !== 'none'
+      ? d.mta_sts_verified_at
+        ? `verified ${formatRelative(d.mta_sts_verified_at)}`
+        : 'not yet verified'
+      : 'opt in for stricter delivery';
+  const tlsRptOn = d.tlsrpt_enabled === 1;
+  const tlsRptVariant: 'success' | 'secondary' = tlsRptOn ? 'success' : 'secondary';
+  const tlsRptValue = tlsRptOn ? 'enabled' : 'disabled';
+  const tlsRptHint = tlsRptOn
+    ? d.tlsrpt_verified_at
+      ? `verified ${formatRelative(d.tlsrpt_verified_at)}`
+      : 'not yet verified'
+    : 'opt in for failure reports';
+
+  // Inbound / outbound flow.
+  const inboundOn = d.inbound_enabled !== 0;
+  const outboundOn = d.outbound_enabled !== 0;
+  const flowVariant: 'success' | 'warning' | 'destructive' =
+    inboundOn && outboundOn ? 'success' : inboundOn || outboundOn ? 'warning' : 'destructive';
+  const flowValue =
+    inboundOn && outboundOn
+      ? 'in + out'
+      : inboundOn
+        ? 'inbound only'
+        : outboundOn
+          ? 'outbound only'
+          : 'paused';
+
+  return (
+    <div className="space-y-4">
+      {/* Top: four count/status tiles, each drills to a tab. */}
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+        <OverviewTile
+          icon={<Globe2 className="h-4 w-4" aria-hidden />}
+          label="DNS verification"
+          variant={dnsVariant}
+          value={d.status}
+          sub={dnsSub}
+          onClick={() => onSelectTab('dns')}
+        />
+        <OverviewTile
+          icon={<Cloud className="h-4 w-4" aria-hidden />}
+          label="Cloudflare zone"
+          variant={zoneVariant(z?.overall, zone.isLoading)}
+          value={z?.overall ?? (zone.isLoading ? '…' : 'unknown')}
+          sub={zoneSub}
+          onClick={() => onSelectTab('dns')}
+        />
+        <OverviewTile
+          icon={<Inbox className="h-4 w-4" aria-hidden />}
+          label="Routes"
+          variant={activeReceivers > 0 ? 'success' : totalReceivers > 0 ? 'warning' : 'outline'}
+          value={`${activeReceivers} active`}
+          sub={totalReceivers > 0 ? `${totalReceivers} total` : 'no routes yet'}
+          onClick={() => onSelectTab('routes')}
+        />
+        <OverviewTile
+          icon={<Send className="h-4 w-4" aria-hidden />}
+          label="Senders"
+          variant={activeSenders > 0 ? 'success' : totalSenders > 0 ? 'warning' : 'outline'}
+          value={`${activeSenders} active`}
+          sub={totalSenders > 0 ? `${totalSenders} total` : 'no senders yet'}
+          onClick={() => onSelectTab('senders')}
+        />
+      </div>
+
+      {/* Middle: hardening + flow summaries. */}
+      <div className="grid gap-4 md:grid-cols-2">
+        <section className="rounded-md border border-[var(--color-border)] p-4">
+          <SectionTitle icon={<Lock className="h-4 w-4" />} title="Hardening" />
+          <div className="mt-2 divide-y divide-[var(--color-border)]">
+            <HardeningRow
+              label="DMARC"
+              variant={dmarcVariant}
+              value={`p=${dmarcPolicy}`}
+              hint={
+                promotion?.dmarc_promotion_state
+                  ? `promotion: ${promotion.dmarc_promotion_state}`
+                  : 'no promotion state recorded'
+              }
+            />
+            <HardeningRow
+              label="MTA-STS"
+              variant={mtaStsVariant}
+              value={mtaStsValue}
+              hint={mtaStsHint}
+            />
+            <HardeningRow
+              label="TLS-RPT"
+              variant={tlsRptVariant}
+              value={tlsRptValue}
+              hint={tlsRptHint}
+            />
+          </div>
+          <div className="mt-3 flex justify-end">
+            <Button
+              variant="link"
+              size="sm"
+              onClick={() => onSelectTab('dns')}
+              className="h-auto p-0 text-xs"
+            >
+              Manage in DNS &amp; TLS →
+            </Button>
+          </div>
+        </section>
+
+        <section className="rounded-md border border-[var(--color-border)] p-4">
+          <SectionTitle icon={<Activity className="h-4 w-4" />} title="Flow" />
+          <div className="mt-2 divide-y divide-[var(--color-border)]">
+            <HardeningRow label="Direction" variant={flowVariant} value={flowValue} />
+            <HardeningRow
+              label="DKIM selector"
+              variant={d.dkim_selector ? 'success' : 'destructive'}
+              value={d.dkim_selector ?? 'unset'}
+              hint={
+                d.dkim_selector ? 'present on every outbound message' : 'rotate via danger zone'
+              }
+            />
+            <HardeningRow
+              label="Receivers / Senders"
+              variant="outline"
+              value={`${activeReceivers}r · ${activeSenders}s`}
+              hint={`${totalReceivers + totalSenders} total bindings`}
+            />
+          </div>
+        </section>
+      </div>
+
+      {/* Bottom: lifecycle timeline (kept from the old Overview). */}
+      <TransitionTimelineCard d={d} />
+    </div>
+  );
+}
+
 // ---------- Top-level page ----------
 
 export function DomainDetail() {
@@ -1569,51 +1865,18 @@ export function DomainDetail() {
           </TabsList>
 
           <TabsContent value="overview">
-            <div className="grid gap-4 md:grid-cols-2">
-              <section className="rounded-md border border-[var(--color-border)] p-4">
-                <SectionTitle icon={<Globe2 className="h-4 w-4" />} title="Metadata" />
-                <MetaList>
-                  <MetaRow label="Name" valueClassName="font-mono text-xs">
-                    {d.name}
-                  </MetaRow>
-                  <MetaRow label="ID" valueClassName="font-mono text-xs">
-                    {d.id}
-                  </MetaRow>
-                  <MetaRow label="Status">
-                    <Badge variant={d.status === 'verified' ? 'success' : 'secondary'}>
-                      {d.status}
-                    </Badge>
-                  </MetaRow>
-                  <MetaRow label="DKIM selector" valueClassName="font-mono text-xs">
-                    {d.dkim_selector ?? '—'}
-                  </MetaRow>
-                  <MetaRow label="DMARC policy" valueClassName="font-mono text-xs">
-                    p={promotion?.dmarc_policy ?? d.dmarc_policy ?? 'none'}
-                  </MetaRow>
-                  <MetaRow label="DMARC rua" valueClassName="font-mono text-xs break-all">
-                    {d.dmarc_rua ?? '—'}
-                  </MetaRow>
-                  <MetaRow label="Inbound">
-                    <Badge variant={inboundOn ? 'success' : 'destructive'}>
-                      {inboundOn ? 'enabled' : 'disabled'}
-                    </Badge>
-                  </MetaRow>
-                  <MetaRow label="Outbound">
-                    <Badge variant={d.outbound_enabled !== 0 ? 'success' : 'secondary'}>
-                      {d.outbound_enabled !== 0 ? 'enabled' : 'disabled'}
-                    </Badge>
-                  </MetaRow>
-                  <MetaRow label="Created">
-                    <span title={d.created_at ?? undefined}>{formatRelative(d.created_at)}</span>
-                  </MetaRow>
-                  <MetaRow label="Verified">
-                    <span title={d.verified_at ?? undefined}>{formatRelative(d.verified_at)}</span>
-                  </MetaRow>
-                </MetaList>
-              </section>
-
-              <TransitionTimelineCard d={d} />
-            </div>
+            <OverviewTab
+              d={d}
+              domainId={id}
+              promotion={promotion}
+              onSelectTab={(t) =>
+                void navigate({
+                  to: '/domains/$id',
+                  params: { id },
+                  search: { tab: t },
+                })
+              }
+            />
           </TabsContent>
 
           <TabsContent value="dns">
