@@ -120,11 +120,11 @@ function makeApplyEnv(env: Env): ApplyEnv {
       await env.DB.prepare(
         `INSERT INTO mail_domains
            (id, zone_id, name, status, wildcard_subdomains, dmarc_policy,
-            dmarc_rua, inbound_enabled, outbound_enabled, provider, dkim_selector,
+            inbound_enabled, outbound_enabled, provider, dkim_selector,
             created_at, updated_at)
-         VALUES (?, ?, ?, 'pending', 1, 'none', ?, 1, 1, 'cloudflare', 'cf', ?, ?)`,
+         VALUES (?, ?, ?, 'pending', 1, 'none', 1, 1, 'cloudflare', 'cf', ?, ?)`,
       )
-        .bind(id, zoneId, zoneName, `mailto:postmaster@${zoneName}`, nowIso, nowIso)
+        .bind(id, zoneId, zoneName, nowIso, nowIso)
         .run();
     },
   };

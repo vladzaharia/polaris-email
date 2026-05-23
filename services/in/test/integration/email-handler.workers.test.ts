@@ -92,8 +92,8 @@ beforeAll(async () => {
       `INSERT INTO zones (id, cf_zone_id, name, created_at) VALUES ('z1', 'cfz1', 'verified.test', ?)`,
     ).bind(now),
     testEnv.DB.prepare(
-      `INSERT INTO mail_domains (id, zone_id, name, status, wildcard_subdomains, dmarc_policy, dmarc_rua, inbound_enabled, outbound_enabled, provider, dkim_selector, created_at, updated_at, verified_at)
-       VALUES ('d1', 'z1', 'verified.test', 'verified', 1, 'none', 'mailto:postmaster@verified.test', 1, 1, 'cloudflare', 'cf', ?, ?, ?)`,
+      `INSERT INTO mail_domains (id, zone_id, name, status, wildcard_subdomains, dmarc_policy, inbound_enabled, outbound_enabled, provider, dkim_selector, created_at, updated_at, verified_at)
+       VALUES ('d1', 'z1', 'verified.test', 'verified', 1, 'none', 1, 1, 'cloudflare', 'cf', ?, ?, ?)`,
     ).bind(now, now, now),
     testEnv.DB.prepare(
       `INSERT INTO mailboxes (id, name, created_at, updated_at) VALUES ('mb1', 'inbox', ?, ?)`,

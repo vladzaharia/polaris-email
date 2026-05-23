@@ -252,7 +252,6 @@ export const MailDomain = z.object({
   status: MailDomainStatus,
   wildcard_subdomains: z.number().int(),
   dmarc_policy: z.string().nullable(),
-  dmarc_rua: z.string().nullable(),
   inbound_enabled: z.number().int(),
   outbound_enabled: z.number().int(),
   provider: z.string(),
@@ -289,14 +288,12 @@ export const CreateMailDomainRequest = z.object({
   cf_zone_id: z.string().max(64).optional(),
   dkim_selector: z.string().min(1).max(63).optional(),
   dmarc_policy: DmarcPolicy.optional(),
-  dmarc_rua: z.string().max(320).optional(),
 });
 
 export const UpdateMailDomainRequest = z.object({
   cf_zone_id: z.string().max(64).optional(),
   status: MailDomainStatus.optional(),
   dmarc_policy: DmarcPolicy.optional(),
-  dmarc_rua: z.string().max(320).optional(),
   dkim_selector: z.string().min(1).max(63).optional(),
   // MTA-STS + TLS-RPT toggles. `tlsrpt_enabled` is a boolean in
   // the request body but is persisted as INTEGER 0/1 in `mail_domains`; the

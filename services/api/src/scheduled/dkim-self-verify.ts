@@ -77,6 +77,13 @@ async function recordRun(
     detail: Record<string, unknown>;
   },
 ): Promise<void> {
+  // `ok` semantics for the diagnostics widget summary: a skipped run is
+  // not a failure — the cron consciously decided this domain doesn't
+  // need verification (no Email Sending records published, so a missing
+  // DKIM is the expected state). Counting it as a pass keeps the
+  // per-check_kind pass rate honest. The detail JSON still carries
+  // `outcome: 'skipped'` so anyone drilling into individual rows can
+  // distinguish a real pass from a deliberate skip.
   await env.DB.prepare(
     `INSERT INTO synthetic_runs (id, check_kind, target, ok, latency_ms, detail, run_at)
      VALUES (?, 'dkim_self_verify', ?, ?, ?, ?, ?)`,
@@ -84,7 +91,7 @@ async function recordRun(
     .bind(
       ulid(),
       args.target,
-      args.outcome === 'ok' ? 1 : 0,
+      args.outcome === 'failed' ? 0 : 1,
       args.latency_ms,
       JSON.stringify({ outcome: args.outcome, ...args.detail }),
       new Date().toISOString(),

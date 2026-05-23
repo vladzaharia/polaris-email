@@ -93,12 +93,24 @@ import { SendTestDialog } from '../test-send/SendTestDialog.js';
 interface CredentialRow {
   id: string;
   mailbox_id: string;
-  protocol: 'smtps' | 'imap';
-  auth_type: 'password';
-  username: string;
+  type: 'imap' | 'smtp' | 'rest' | 'mcp' | 'cli';
+  prefix: string;
+  receiver_id: string | null;
+  display_name: string | null;
+  status: 'primary' | 'secondary' | 'revoked';
+  rate_limit_per_min: number;
   created_at: string;
   last_used_at: string | null;
+  last_used_ip: string | null;
   disabled_at: string | null;
+  revoked_at: string | null;
+}
+
+// The credential identity an operator types into an IMAP/SMTP client
+// (and what the REST/CLI/MCP variants pass in `X-Polaris-Key-Id`) is
+// `<prefix><id>` — same shape across all types.
+function credentialIdentity(c: CredentialRow): string {
+  return `${c.prefix}${c.id}`;
 }
 
 interface SenderRow {
@@ -738,7 +750,7 @@ export function MailboxDetail() {
   } | null>(null);
   const [confirmDisableCredential, setConfirmDisableCredential] = useState<{
     id: string;
-    username: string;
+    identity: string;
   } | null>(null);
   const [confirmDeleteWebhook, setConfirmDeleteWebhook] = useState<{
     id: string;
@@ -1268,10 +1280,12 @@ export function MailboxDetail() {
                             )}
                           >
                             <TableCell>
-                              <Badge variant="outline">{c.protocol}</Badge>
+                              <Badge variant="outline">{c.type}</Badge>
                             </TableCell>
                             <TableCell>
-                              <code className="font-mono text-xs">{c.username}</code>
+                              <code className="font-mono text-xs" title={credentialIdentity(c)}>
+                                {c.display_name ?? credentialIdentity(c)}
+                              </code>
                             </TableCell>
                             <TableCell>
                               <StatusBadge
@@ -1316,7 +1330,7 @@ export function MailboxDetail() {
                                     onClick={() =>
                                       setConfirmDisableCredential({
                                         id: c.id,
-                                        username: c.username,
+                                        identity: c.display_name ?? credentialIdentity(c),
                                       })
                                     }
                                     disabled={disableCredential.isPending}
@@ -1561,7 +1575,7 @@ export function MailboxDetail() {
           open={confirmDisableCredential != null}
           onOpenChange={(o) => !o && setConfirmDisableCredential(null)}
           action="Disable credential"
-          name={confirmDisableCredential?.username}
+          name={confirmDisableCredential?.identity}
           blastRadius={[
             'Existing logins using this credential will be rejected immediately',
             'In-flight sessions terminate on the next auth check (≤60s)',

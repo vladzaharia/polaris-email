@@ -85,11 +85,14 @@ mailboxes.get('/v1/admin/mailboxes/:id', requireScope('admin:read'), async (c) =
     .all();
   // mailbox_credentials embedded so the panel's MailboxDetail can render the
   // Credentials section inline without a separate fetch (Stage 2 of the
-  // mailbox-as-source-of-truth IA work). bcrypt_hash is stripped here — the
-  // standalone GET endpoint applies the same `publicView`.
+  // mailbox-as-source-of-truth IA work). Column list mirrors the public
+  // shape exposed by the standalone /v1/admin/mailboxes/:id/credentials
+  // endpoint (both hashes stripped — secret_hash + secret_prev_hash never
+  // leave the worker).
   const credentials = await c.env.DB.prepare(
-    `SELECT id, mailbox_id, protocol, auth_type, username, created_at,
-            last_used_at, disabled_at
+    `SELECT id, mailbox_id, type, prefix, receiver_id, display_name, status,
+            rate_limit_per_min, created_at, last_used_at, last_used_ip,
+            disabled_at, revoked_at
      FROM mailbox_credentials WHERE mailbox_id = ?
      ORDER BY created_at ASC`,
   )

@@ -15,15 +15,16 @@
 // from the cron.
 //
 // Side effects, in order:
-//   1. DMARC reconciliation — if dmarc_record_managed_by_polaris=0,
-//      read live `_dmarc.<name>` TXT and UPDATE dmarc_policy /
-//      dmarc_rua / dmarc_promotion_state.
-//   2. CF Email Routing DNS check (MX + CNAMEs).
-//   3. MTA-STS / TLS-RPT layered checks when enabled.
-//   4. On core pass — UPDATE status='verified', verified_at, and any
+//   1. CF Email Routing DNS check (MX + CNAMEs).
+//   2. MTA-STS / TLS-RPT layered checks when enabled.
+//   3. On core pass — UPDATE status='verified', verified_at, and any
 //      sub-layer *_verified_at timestamps; emit `domain.verify` audit.
-//   5. Otherwise — persist any sub-layer that passed; emit
+//   4. Otherwise — persist any sub-layer that passed; emit
 //      `domain.verify_incomplete` audit.
+//
+// DMARC policy + RUA are owned by Cloudflare DMARC Management; polaris
+// does not reconcile them here. The dmarc-promote cron updates the
+// cached `dmarc_policy` column when it issues a setDmarcPolicy call.
 
 import { verifyMtaSts, verifyTlsRpt } from '@polaris-mail/cf-api';
 import { audit } from '../audit.js';
@@ -51,10 +52,6 @@ interface VerifyDomainRow {
   mta_sts_policy_id: string | null;
   tlsrpt_enabled: number;
   tlsrpt_rua: string | null;
-  dmarc_policy: string | null;
-  dmarc_rua: string | null;
-  dmarc_promotion_state: string;
-  dmarc_record_managed_by_polaris: number;
 }
 
 interface RoutingDnsRecord {
@@ -126,40 +123,6 @@ function stripDot(s: string): string {
   return s.endsWith('.') ? s.slice(0, -1) : s;
 }
 
-/**
- * Parse the contents of a `_dmarc.<domain>` TXT record (RFC 7489 §6.3).
- * Returns null when the record doesn't parse as DMARC at all.
- */
-function parseDmarcTxt(raw: string): { policy: string; sp?: string; rua?: string } | null {
-  let s = raw.trim();
-  if (s.startsWith('"') && s.endsWith('"')) {
-    s = s.slice(1, -1).replace(/""/g, '');
-  }
-  const parts = s
-    .split(';')
-    .map((p) => p.trim())
-    .filter(Boolean);
-  if (parts.length === 0 || parts[0]!.toLowerCase() !== 'v=dmarc1') return null;
-  const out: { policy?: string; sp?: string; rua?: string } = {};
-  for (const part of parts.slice(1)) {
-    const eq = part.indexOf('=');
-    if (eq <= 0) continue;
-    const k = part.slice(0, eq).trim().toLowerCase();
-    const v = part.slice(eq + 1).trim();
-    if (k === 'p') out.policy = v.toLowerCase();
-    else if (k === 'sp') out.sp = v.toLowerCase();
-    else if (k === 'rua') out.rua = v;
-  }
-  if (!out.policy) return null;
-  return { policy: out.policy, sp: out.sp, rua: out.rua };
-}
-
-function promotionStateFromPolicy(policy: string): string {
-  if (policy === 'reject') return 'reject';
-  if (policy === 'quarantine') return 'quarantine';
-  return 'none';
-}
-
 async function fetchExpectedRoutingDns(
   accountId: string,
   zoneId: string,
@@ -184,9 +147,7 @@ async function fetchExpectedRoutingDns(
 export async function verifyDomain(env: Env, id: string, actor: string): Promise<VerifyResult> {
   const row = await env.DB.prepare(
     `SELECT id, name, status, cf_zone_id,
-            mta_sts_mode, mta_sts_policy_id, tlsrpt_enabled, tlsrpt_rua,
-            dmarc_policy, dmarc_rua, dmarc_promotion_state,
-            dmarc_record_managed_by_polaris
+            mta_sts_mode, mta_sts_policy_id, tlsrpt_enabled, tlsrpt_rua
      FROM mail_domains WHERE id = ?`,
   )
     .bind(id)
@@ -196,51 +157,6 @@ export async function verifyDomain(env: Env, id: string, actor: string): Promise
       outcome: 'not_found',
       response: { id, status: 'unknown', message: 'mail_domain not found', checks: [] },
     };
-  }
-
-  // ---------- DMARC reconciliation ----------
-  if (row.dmarc_record_managed_by_polaris === 0) {
-    const dmarcTxts = await dohResolve(`_dmarc.${row.name}`, 'TXT').catch(() => []);
-    for (const ans of dmarcTxts) {
-      const parsed = parseDmarcTxt(ans.data);
-      if (!parsed) continue;
-      const newPromotionState = promotionStateFromPolicy(parsed.policy);
-      const policyChanged = parsed.policy !== row.dmarc_policy;
-      const ruaChanged = (parsed.rua ?? null) !== row.dmarc_rua;
-      const promotionChanged = newPromotionState !== row.dmarc_promotion_state;
-      if (policyChanged || ruaChanged || promotionChanged) {
-        const nowIso = new Date().toISOString();
-        await env.DB.prepare(
-          `UPDATE mail_domains
-             SET dmarc_policy = ?, dmarc_rua = ?, dmarc_promotion_state = ?,
-                 dmarc_promotion_last_at = ?, updated_at = ?
-           WHERE id = ?`,
-        )
-          .bind(parsed.policy, parsed.rua ?? null, newPromotionState, nowIso, nowIso, id)
-          .run();
-        row.dmarc_policy = parsed.policy;
-        row.dmarc_rua = parsed.rua ?? null;
-        row.dmarc_promotion_state = newPromotionState;
-        await audit(env, {
-          actor,
-          // Re-using the generic `domain.update` action — adding a
-          // dedicated `domain.dmarc_sync` would require an audit_log
-          // CHECK migration. `meta.via` disambiguates from operator
-          // PATCHes.
-          action: 'domain.update',
-          target: id,
-          meta: {
-            name: row.name,
-            via: 'dmarc_sync',
-            policy: parsed.policy,
-            rua: parsed.rua ?? null,
-            promotion_state: newPromotionState,
-            source: '_dmarc-txt',
-          },
-        });
-      }
-      break; // first valid DMARC TXT wins (RFC 7489 §6.6.3)
-    }
   }
 
   const checks: VerifyCheck[] = [];

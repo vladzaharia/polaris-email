@@ -47,7 +47,6 @@ interface MailDomainRow {
   status: string;
   cf_zone_id: string | null;
   dmarc_policy: string | null;
-  dmarc_rua: string | null;
   verified_at: string | null;
   last_verify_check_at: string | null;
   inbound_enabled: number;
@@ -72,7 +71,7 @@ interface MailDomainRow {
 // Centralising prevents the recurrence of the bug where one SELECT projected
 // a different subset than the others.
 const MAIL_DOMAIN_READ_COLS = `id, zone_id, name, dkim_selector, status, cf_zone_id,
-       dmarc_policy, dmarc_rua, verified_at, last_verify_check_at,
+       dmarc_policy, verified_at, last_verify_check_at,
        inbound_enabled, outbound_enabled,
        mta_sts_mode, mta_sts_policy_id, mta_sts_max_age, mta_sts_verified_at,
        tlsrpt_enabled, tlsrpt_rua, tlsrpt_verified_at,
@@ -173,12 +172,6 @@ domains.post('/v1/admin/domains', requireScope('admin:rotate'), async (c) => {
   const nowIso = new Date().toISOString();
   const selector = body.dkim_selector ?? 'cf';
   const policy = body.dmarc_policy ?? 'none';
-  // W6 — DMARC RUA default. Adds the platform aggregator alongside the
-  // postmaster mailbox so reports land where W6's parser can rollup them
-  // even if the operator hasn't wired their own postmaster routing. DMARC
-  // allows multiple URIs (comma-separated, RFC 7489 §6.3).
-  const platformDmarcRua = c.env.DMARC_RUA_PLATFORM_ALIAS ?? 'mailto:dmarc-rua@plrs.im';
-  const rua = body.dmarc_rua ?? `mailto:postmaster@${body.name},${platformDmarcRua}`;
   // MTA-STS / TLS-RPT intent defaults — see comment block above.
   const mtaStsMode = 'testing';
   const mtaStsPolicyId = generatePolicyId();
@@ -202,11 +195,11 @@ domains.post('/v1/admin/domains', requireScope('admin:rotate'), async (c) => {
     await c.env.DB.prepare(
       `INSERT INTO mail_domains
          (id, zone_id, name, status, wildcard_subdomains, cf_zone_id, dmarc_policy,
-          dmarc_rua, inbound_enabled, outbound_enabled, provider, dkim_selector,
+          inbound_enabled, outbound_enabled, provider, dkim_selector,
           mta_sts_mode, mta_sts_policy_id, mta_sts_max_age,
           tlsrpt_enabled, tlsrpt_rua,
           created_at, updated_at)
-       VALUES (?, ?, ?, 'pending', 1, ?, ?, ?, 0, 1, 'cloudflare', ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, 'pending', 1, ?, ?, 0, 1, 'cloudflare', ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
       .bind(
         id,
@@ -214,7 +207,6 @@ domains.post('/v1/admin/domains', requireScope('admin:rotate'), async (c) => {
         body.name,
         cfZoneId,
         policy,
-        rua,
         selector,
         mtaStsMode,
         mtaStsPolicyId,
@@ -332,24 +324,14 @@ domains.post('/v1/admin/domains/bulk-onboard', requireScope('admin:rotate'), asy
       await c.env.DB.prepare(
         `INSERT INTO mail_domains
            (id, zone_id, name, status, wildcard_subdomains, cf_zone_id, dmarc_policy,
-            dmarc_rua, inbound_enabled, outbound_enabled, provider, dkim_selector,
+            inbound_enabled, outbound_enabled, provider, dkim_selector,
             mta_sts_mode, mta_sts_policy_id, mta_sts_max_age,
             tlsrpt_enabled, tlsrpt_rua,
             created_at, updated_at)
-         VALUES (?, ?, ?, 'pending', 1, ?, 'none', ?, 0, 1, 'cloudflare', 'cf',
+         VALUES (?, ?, ?, 'pending', 1, ?, 'none', 0, 1, 'cloudflare', 'cf',
                  'testing', ?, 86400, 1, ?, ?, ?)`,
       )
-        .bind(
-          id,
-          zoneId,
-          name,
-          cfZoneId,
-          `mailto:postmaster@${name}`,
-          mtaStsPolicyId,
-          tlsrptRuaDefault,
-          nowIso,
-          nowIso,
-        )
+        .bind(id, zoneId, name, cfZoneId, mtaStsPolicyId, tlsrptRuaDefault, nowIso, nowIso)
         .run();
       // W2 — auto-provision RFC 2142 complaint receivers for this domain too.
       try {
@@ -518,10 +500,6 @@ domains.patch('/v1/admin/domains/:id', requireScope('admin:rotate'), async (c) =
   if (body.dmarc_policy !== undefined) {
     sets.push('dmarc_policy = ?');
     binds.push(body.dmarc_policy);
-  }
-  if (body.dmarc_rua !== undefined) {
-    sets.push('dmarc_rua = ?');
-    binds.push(body.dmarc_rua);
   }
   if (body.dkim_selector !== undefined) {
     sets.push('dkim_selector = ?');

@@ -86,7 +86,6 @@ interface DomainPayload {
   inbound_enabled?: number;
   outbound_enabled?: number;
   dmarc_policy?: string | null;
-  dmarc_rua?: string | null;
   verified_at?: string | null;
   last_verify_check_at?: string | null;
   created_at?: string;
@@ -1324,9 +1323,9 @@ function TransitionTimelineCard({ d }: { d: DomainPayload }) {
 //   * What's the flow shape? (inbound/outbound + DKIM selector at a glance)
 //   * What lifecycle stage are we in? (TransitionTimelineCard)
 //
-// Metadata-style rows (raw id, dmarc_rua URL, created_at) have moved
-// out — they're informational, not actionable, and operators can dig
-// into the relevant tab if they need them.
+// Metadata-style rows (raw id, created_at) have moved out — they're
+// informational, not actionable, and operators can dig into the
+// relevant tab if they need them.
 
 interface OverviewReceiverRow {
   id: string;

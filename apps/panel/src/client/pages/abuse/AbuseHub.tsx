@@ -13,6 +13,7 @@ import {
   Play,
   ShieldAlert,
   Tag,
+  Trash2,
   Workflow,
 } from 'lucide-react';
 import { DestructiveActionDialog } from '../../components/DestructiveActionDialog.js';
@@ -537,70 +538,100 @@ function AlertsTab() {
           }
         />
       ) : (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>When</TableHead>
-              <TableHead>Severity</TableHead>
-              <TableHead>Type</TableHead>
-              <TableHead>Target</TableHead>
-              <TableHead>Subject</TableHead>
-              <TableHead>Delivery</TableHead>
-              <TableHead className="w-[8rem] text-right">Action</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {rows.map((r) => {
-              const delivery = (() => {
-                try {
-                  return JSON.parse(r.delivery) as Array<{ channel: string; ok: boolean }>;
-                } catch {
-                  return [];
-                }
-              })();
-              return (
-                <TableRow
-                  key={r.id}
-                  className={r.dismissed_at ? 'text-[var(--color-muted-foreground)]' : undefined}
-                >
-                  <TableCell title={r.created_at}>{formatRelative(r.created_at)}</TableCell>
-                  <TableCell>
-                    <StatusBadge kind="alert-severity" value={r.severity} />
-                  </TableCell>
-                  <TableCell className="font-mono text-xs">{r.alert_type}</TableCell>
-                  <TableCell className="font-mono text-xs">{r.target}</TableCell>
-                  <TableCell className="max-w-md truncate" title={r.subject}>
-                    {r.subject}
-                  </TableCell>
-                  <TableCell className="font-mono text-xs">
-                    {delivery.map((d) => `${d.channel}:${d.ok ? '✓' : '✗'}`).join(' ')}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    {r.dismissed_at ? (
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-[6rem]">When</TableHead>
+                <TableHead className="w-[5.5rem]">Severity</TableHead>
+                <TableHead className="w-[12rem]">Type</TableHead>
+                <TableHead className="w-[12rem]">Target</TableHead>
+                <TableHead>Subject</TableHead>
+                <TableHead className="w-[6.5rem]">Delivery</TableHead>
+                <TableHead className="w-[3rem] text-right" aria-label="Row actions" />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {rows.map((r) => {
+                const delivery = (() => {
+                  try {
+                    return JSON.parse(r.delivery) as Array<{ channel: string; ok: boolean }>;
+                  } catch {
+                    return [];
+                  }
+                })();
+                const deliverySummary = delivery
+                  .map((d) => `${d.channel}:${d.ok ? '✓' : '✗'}`)
+                  .join(' ');
+                const deliveryOk = delivery.length > 0 && delivery.every((d) => d.ok);
+                const deliveryHasFailure = delivery.some((d) => !d.ok);
+                return (
+                  <TableRow
+                    key={r.id}
+                    className={r.dismissed_at ? 'text-[var(--color-muted-foreground)]' : undefined}
+                  >
+                    <TableCell className="whitespace-nowrap" title={r.created_at}>
+                      {formatRelative(r.created_at)}
+                    </TableCell>
+                    <TableCell>
+                      <StatusBadge kind="alert-severity" value={r.severity} />
+                    </TableCell>
+                    <TableCell
+                      className="max-w-[12rem] truncate font-mono text-xs"
+                      title={r.alert_type}
+                    >
+                      {r.alert_type}
+                    </TableCell>
+                    <TableCell
+                      className="max-w-[12rem] truncate font-mono text-xs"
+                      title={r.target}
+                    >
+                      {r.target}
+                    </TableCell>
+                    <TableCell className="max-w-xs truncate" title={r.subject}>
+                      {r.subject}
+                    </TableCell>
+                    <TableCell
+                      className="whitespace-nowrap text-xs"
+                      title={deliverySummary || 'no delivery channels recorded'}
+                    >
                       <Badge
-                        variant="secondary"
-                        title={`Dismissed ${formatRelative(r.dismissed_at)}${
-                          r.dismissed_by ? ` by ${r.dismissed_by}` : ''
-                        }`}
+                        variant={
+                          deliveryHasFailure ? 'destructive' : deliveryOk ? 'success' : 'outline'
+                        }
                       >
-                        dismissed
+                        {delivery.filter((d) => d.ok).length}/{delivery.length || 0}
                       </Badge>
-                    ) : (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => dismissOne.mutate({ id: r.id })}
-                        disabled={dismissOne.isPending}
-                      >
-                        Dismiss
-                      </Button>
-                    )}
-                  </TableCell>
-                </TableRow>
-              );
-            })}
-          </TableBody>
-        </Table>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {r.dismissed_at ? (
+                        <Badge
+                          variant="secondary"
+                          title={`Dismissed ${formatRelative(r.dismissed_at)}${
+                            r.dismissed_by ? ` by ${r.dismissed_by}` : ''
+                          }`}
+                        >
+                          dismissed
+                        </Badge>
+                      ) : (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => dismissOne.mutate({ id: r.id })}
+                          disabled={dismissOne.isPending}
+                          title="Dismiss this alert"
+                          aria-label="Dismiss this alert"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </div>
       )}
       <DestructiveActionDialog
         open={showBulkConfirm}

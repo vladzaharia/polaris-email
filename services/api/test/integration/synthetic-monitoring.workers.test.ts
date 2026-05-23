@@ -90,7 +90,10 @@ describe('W11 — DKIM self-verify cron', () => {
     ).first<{ check_kind: string; target: string; detail: string; ok: number }>();
     expect(row?.check_kind).toBe('dkim_self_verify');
     expect(row?.target).toBe('dkim.test.invalid');
-    expect(row?.ok).toBe(0); // skipped is not "ok"
+    // Skipped runs intentionally record ok=1 so the diagnostics widget's
+    // per-check_kind pass-rate isn't polluted by deliberate skips. The
+    // detail.outcome distinction is preserved for drill-in.
+    expect(row?.ok).toBe(1);
     const detail = JSON.parse(row!.detail) as { outcome: string; reason?: string };
     expect(detail.outcome).toBe('skipped');
     expect(detail.reason).toBe('sender_not_onboarded');
