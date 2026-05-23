@@ -13,11 +13,13 @@ import {
   createRoute,
   lazyRouteComponent,
   redirect,
+  useRouterState,
 } from '@tanstack/react-router';
 import { RootLayout } from './layouts/RootLayout.js';
 import { SidebarLayout } from './layouts/SidebarLayout.js';
 import { RouteError } from './components/RouteError.js';
 import { PageSkeleton } from './components/PageSkeleton.js';
+import { safeNext } from './lib/safe-next.js';
 
 // Probe better-auth for the current session. Returns true if signed in,
 // false if anonymous, true (fail-open) on network/server hiccups so a
@@ -50,25 +52,71 @@ const rootRoute = createRootRoute({
     });
     if (location.pathname === '/login') return;
     if (!(await hasSession())) {
+      // Preserve the operator's destination across the OIDC round-trip.
+      // safeNext() runs again on the Login side before we forward it to
+      // better-auth, so any tampering of `next` is still blocked. We trim
+      // the leading `?` from searchStr to match the validateSearch contract.
+      const next = location.pathname + (location.searchStr || '');
       // eslint-disable-next-line no-console
-      console.log('[panel/router] no session, redirecting to /login');
-      throw redirect({ to: '/login' });
+      console.log('[panel/router] no session, redirecting to /login', { next });
+      throw redirect({ to: '/login', search: { next } });
     }
   },
-  component: () => (
-    <RootLayout>
-      <SidebarLayout>
-        <Outlet />
-      </SidebarLayout>
-    </RootLayout>
-  ),
+  component: AppShell,
   errorComponent: RouteError,
 });
 
+// AppShell — root layout selector. Every route inside the panel gets
+// RootLayout (theme provider, toaster, error boundary). Authenticated
+// routes additionally get SidebarLayout for chrome; /login is the lone
+// unauthenticated surface and renders without chrome so the branded
+// sign-in card is the entire viewport.
+function AppShell() {
+  const isLogin = useRouterState({ select: (s) => s.location.pathname === '/login' });
+  return (
+    <RootLayout>
+      {isLogin ? (
+        <Outlet />
+      ) : (
+        <SidebarLayout>
+          <Outlet />
+        </SidebarLayout>
+      )}
+    </RootLayout>
+  );
+}
+
 // Login lives outside the sidebar layout, so it has its own thin root.
+// Search schema: `error` and `error_description` are forwarded by the panel
+// server's `/api/auth/error` intercept on better-auth callback failures;
+// `next` is the original pre-auth pathname so we can return the operator to
+// their deep link after Polaris ID completes.
 const loginRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/login',
+  validateSearch: (
+    search: Record<string, unknown>,
+  ): { error?: string; error_description?: string; next?: string } => ({
+    error: typeof search.error === 'string' ? search.error : undefined,
+    error_description:
+      typeof search.error_description === 'string' ? search.error_description : undefined,
+    next: typeof search.next === 'string' ? search.next : undefined,
+  }),
+  beforeLoad: async ({ search }) => {
+    // Already-signed-in operators hitting /login (bookmark, sign-out
+    // redirect bug, hand-crafted URL) should bounce straight to their
+    // destination — otherwise auto-submit fires, the IdP re-authorises,
+    // and we land back here, which trips the loop guard on the third
+    // bounce. safeNext() preserves a valid deep link or falls back to /.
+    if (await hasSession()) {
+      const target = safeNext(search.next) ?? '/';
+      // TanStack's `to` is typed against known route literals; we've
+      // already validated `target` starts with '/' via safeNext, so the
+      // runtime navigation is safe even though the type system can't
+      // narrow a dynamic string.
+      throw redirect({ to: target as '/' });
+    }
+  },
   component: lazyRouteComponent(() => import('./pages/Login.js'), 'Login'),
   errorComponent: RouteError,
 });

@@ -78,6 +78,77 @@ app.get('/api/auth/error', (c) => {
   return c.redirect(`/login?${qs}`, 302);
 });
 
+// OIDC callback wrapper. Better-auth happily mints a session for any user
+// the IdP authenticated, even if our role-sync hook decides they don't
+// have the required admin group. Without this intercept, a non-admin would
+// land on / with a valid session cookie and 403-storm every protected API
+// call. We probe the session better-auth just created; if `admin !== true`,
+// we sign the user out and redirect them to /login?error=group_not_allowed
+// with a Set-Cookie that clears the just-minted session cookie.
+//
+// Registered BEFORE the generic /api/auth/* handler so Hono's first-match
+// routing picks this up for callback paths (e.g. /api/auth/callback/oidc).
+app.all('/api/auth/callback/*', async (c) => {
+  const auth = makeAuth(c.env);
+  const response = await auth.handler(c.req.raw);
+
+  // Only post-process successful callback redirects. Better-auth's
+  // failure path is a redirect to /api/auth/error, which the handler
+  // above already intercepts and forwards to /login with the error.
+  if (response.status < 300 || response.status >= 400) {
+    return response;
+  }
+
+  // Rebuild a Cookie request header from the Set-Cookie name=value pairs
+  // better-auth is sending to the browser. This lets us probe getSession
+  // with the same credentials the operator's next request would carry.
+  const setCookieHeader = response.headers.get('set-cookie') ?? '';
+  if (!setCookieHeader.includes('polaris_panel_session=')) {
+    return response;
+  }
+  const cookieHeader = setCookieHeader
+    .split(/,\s*(?=[a-zA-Z0-9!#$%&'*+\-.^_`|~]+=)/) // split on cookie boundaries, not attribute commas
+    .map((sc) => sc.split(';')[0]?.trim())
+    .filter((kv): kv is string => Boolean(kv))
+    .join('; ');
+
+  const probeHeaders = new Headers();
+  probeHeaders.set('cookie', cookieHeader);
+
+  let isAdmin: boolean;
+  try {
+    const session = await auth.api.getSession({ headers: probeHeaders });
+    isAdmin = session?.user?.admin === true;
+  } catch {
+    // Fail-open: if we can't probe the session, let the original
+    // response through. The 403-on-every-call behaviour is recoverable;
+    // a hard 500 here is not.
+    return response;
+  }
+
+  if (isAdmin) return response;
+
+  // Not admin — invalidate the session and redirect to /login. signOut
+  // may throw on edge cases (transport, DB hiccup); we proceed with the
+  // cookie-clear regardless so the operator's browser drops the cookie.
+  try {
+    await auth.api.signOut({ headers: probeHeaders });
+  } catch {
+    // ignored
+  }
+  const origin = new URL(c.req.url).origin;
+  const cookiePath = c.env.COOKIE_PATH || '/';
+  const cookieDomainAttr = c.env.COOKIE_DOMAIN ? `; Domain=${c.env.COOKIE_DOMAIN}` : '';
+  const clearCookie = `polaris_panel_session=; Path=${cookiePath}; HttpOnly; Secure; SameSite=Lax; Max-Age=0${cookieDomainAttr}`;
+  return new Response(null, {
+    status: 302,
+    headers: {
+      location: `${origin}/login?error=group_not_allowed`,
+      'set-cookie': clearCookie,
+    },
+  });
+});
+
 // Better-auth's HTTP handler covers /api/auth/* (sign-in, sign-out, OIDC
 // callback, sessions). Mounted before the session middleware so the auth
 // flow itself doesn't require an existing session.
