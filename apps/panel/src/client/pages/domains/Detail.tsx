@@ -464,6 +464,79 @@ function SectionTitle({
 
 // ---------- CF zone subsection (DNS & TLS tab) ----------
 
+// Op-kinds the inspector can fix via POST /v1/admin/cf-zones/:name/configure.
+// `dns_locked` is intentionally NOT here — "locking" existing operator-managed
+// records would require deleting and re-creating them via CF's Email Routing
+// wizard. Risky, irreversible, and the records themselves resolve correctly
+// without it; flagging this as cosmetic in the UI.
+type ConfigureOpKind =
+  | 'enable_routing'
+  | 'set_catch_all_worker'
+  | 'onboard_sender_domain'
+  | 'create_d1_mail_domain';
+
+interface FixSpec {
+  kind: ConfigureOpKind;
+  title: string;
+  /** Short label for the inline button (verb phrase, no period). */
+  cta: string;
+  /** Blast-radius bullets shown in the confirm dialog. */
+  blast: string[];
+  reversible: boolean;
+}
+
+const FIX_SPECS: Record<ConfigureOpKind, FixSpec> = {
+  enable_routing: {
+    kind: 'enable_routing',
+    title: 'Enable Cloudflare Email Routing',
+    cta: 'Enable routing',
+    blast: [
+      'Cloudflare auto-publishes inbound MX + SPF records and locks them.',
+      'Routing becomes active immediately; mail flow starts the moment DNS propagates.',
+      'Reversible by toggling Email Routing off in the CF dashboard.',
+    ],
+    reversible: true,
+  },
+  set_catch_all_worker: {
+    kind: 'set_catch_all_worker',
+    title: 'Route catch-all to polaris-mail-in',
+    cta: 'Fix catch-all',
+    blast: [
+      'Mail to addresses not matched by any named rule will deliver into Polaris.',
+      'Any current catch-all action (drop / forward / unset) is replaced.',
+      'Named-address rules above the catch-all are unaffected — they still intercept their own addresses.',
+    ],
+    reversible: true,
+  },
+  onboard_sender_domain: {
+    kind: 'onboard_sender_domain',
+    title: 'Onboard sender domain',
+    cta: 'Onboard sender',
+    blast: [
+      'Adds missing DKIM CNAMEs, SPF, DMARC, and the cf-bounce MX to the zone.',
+      'Existing records with conflicting content are left untouched (no clobber).',
+      'New records resolve once CF DNS propagates (usually within a minute).',
+    ],
+    reversible: true,
+  },
+  create_d1_mail_domain: {
+    kind: 'create_d1_mail_domain',
+    title: 'Create the D1 mail_domains row',
+    cta: 'Create D1 row',
+    blast: [
+      "Adds a `mail_domains` row in Polaris's D1 for this zone.",
+      'No DNS effect; this only registers the zone inside Polaris.',
+      'Reversible via Domain Detail → Delete domain.',
+    ],
+    reversible: true,
+  },
+};
+
+interface ConfigureResponse {
+  applied?: { kind: ConfigureOpKind }[];
+  failed?: { op: { kind: ConfigureOpKind }; error: string }[];
+}
+
 function CfZoneCard({ domainName }: { domainName: string }) {
   const q = useAdminQuery<{ data: CfZoneStatus }>(
     cfZoneKeys.detail(domainName),
@@ -471,6 +544,18 @@ function CfZoneCard({ domainName }: { domainName: string }) {
     { staleTime: 60_000 },
   );
   const cfCredsMissing = q.error instanceof ApiError && q.error.code === 'cf_credentials_missing';
+  const configure = useAdminMutation<ConfigureResponse, { kinds: ConfigureOpKind[] }>(
+    ({ kinds }) => ({
+      path: `/api/admin/cf-zones/${encodeURIComponent(domainName)}/configure`,
+      method: 'POST',
+      body: { dry_run: false, op_kinds: kinds },
+    }),
+    {
+      invalidateKeys: [cfZoneKeys.detail(domainName), cfZoneKeys.list()],
+      successMessage: 'Zone configured.',
+    },
+  );
+  const [pendingFix, setPendingFix] = useState<FixSpec | null>(null);
   return (
     <section className="rounded-md border border-[var(--color-border)] p-4">
       <SectionTitle icon={<Cloud className="h-4 w-4" />} title="Cloudflare zone" />
@@ -530,37 +615,68 @@ function CfZoneCard({ domainName }: { domainName: string }) {
           ) : null}
           <MetaList>
             <MetaRow label="Email Routing">
-              <Badge
-                variant={
-                  q.data.data.routing_enabled
-                    ? q.data.data.routing_status_ok
-                      ? 'success'
-                      : 'warning'
-                    : 'destructive'
+              <FixableRowValue
+                badge={
+                  <Badge
+                    variant={
+                      q.data.data.routing_enabled
+                        ? q.data.data.routing_status_ok
+                          ? 'success'
+                          : 'warning'
+                        : 'destructive'
+                    }
+                  >
+                    {q.data.data.routing_status}
+                  </Badge>
                 }
-              >
-                {q.data.data.routing_status}
-              </Badge>
+                fix={!q.data.data.routing_enabled ? FIX_SPECS.enable_routing : null}
+                onFix={setPendingFix}
+                pending={configure.isPending}
+              />
             </MetaRow>
             <MetaRow label="DNS locked">
-              <Badge variant={q.data.data.dns_records_locked ? 'success' : 'destructive'}>
-                {q.data.data.dns_records_locked ? 'yes' : 'no'}
+              {/* Not actionable from here: "locking" existing operator
+                  records requires delete-and-recreate via CF's wizard.
+                  Showing as informational (secondary) rather than red. */}
+              <Badge variant={q.data.data.dns_records_locked ? 'success' : 'secondary'}>
+                {q.data.data.dns_records_locked ? 'yes' : 'operator-managed'}
               </Badge>
             </MetaRow>
             <MetaRow label="Sender onboarded">
-              <Badge variant={q.data.data.sender_onboarded ? 'success' : 'destructive'}>
-                {q.data.data.sender_onboarded ? 'yes' : 'no'}
-              </Badge>
+              <FixableRowValue
+                badge={
+                  <Badge variant={q.data.data.sender_onboarded ? 'success' : 'warning'}>
+                    {q.data.data.sender_onboarded ? 'yes' : 'partial'}
+                  </Badge>
+                }
+                fix={!q.data.data.sender_onboarded ? FIX_SPECS.onboard_sender_domain : null}
+                onFix={setPendingFix}
+                pending={configure.isPending}
+              />
             </MetaRow>
             <MetaRow label="Catch-all">
-              <Badge variant={q.data.data.catch_all_correct ? 'success' : 'destructive'}>
-                {q.data.data.catch_all_target ?? 'unset'}
-              </Badge>
+              <FixableRowValue
+                badge={
+                  <Badge variant={q.data.data.catch_all_correct ? 'success' : 'destructive'}>
+                    {q.data.data.catch_all_target ?? 'unset'}
+                  </Badge>
+                }
+                fix={!q.data.data.catch_all_correct ? FIX_SPECS.set_catch_all_worker : null}
+                onFix={setPendingFix}
+                pending={configure.isPending}
+              />
             </MetaRow>
             <MetaRow label="D1 mailbox row">
-              <Badge variant={q.data.data.d1_mail_domain_exists ? 'success' : 'destructive'}>
-                {q.data.data.d1_mail_domain_exists ? 'present' : 'missing'}
-              </Badge>
+              {!q.data.data.d1_mail_domain_exists ? (
+                <FixableRowValue
+                  badge={<Badge variant="destructive">missing</Badge>}
+                  fix={FIX_SPECS.create_d1_mail_domain}
+                  onFix={setPendingFix}
+                  pending={configure.isPending}
+                />
+              ) : (
+                <Badge variant="success">present</Badge>
+              )}
             </MetaRow>
           </MetaList>
 
@@ -607,9 +723,60 @@ function CfZoneCard({ domainName }: { domainName: string }) {
               </ul>
             </div>
           ) : null}
+
+          {/* Confirmation dialog: the operator clicks "Fix X" inline next
+              to a broken row, which opens this with the op-specific
+              blast-radius bullets. On confirm we POST the configure
+              endpoint with the single op_kind and invalidate the zone
+              query so the row turns green. */}
+          <DestructiveActionDialog
+            open={pendingFix != null}
+            onOpenChange={(o) => !o && setPendingFix(null)}
+            action={pendingFix?.title ?? ''}
+            blastRadius={pendingFix?.blast ?? []}
+            reversible={pendingFix?.reversible ?? true}
+            confirmLabel={pendingFix?.cta ?? 'Apply'}
+            isPending={configure.isPending}
+            onConfirm={async () => {
+              if (!pendingFix) return;
+              await configure.mutateAsync({ kinds: [pendingFix.kind] });
+              setPendingFix(null);
+            }}
+          />
         </div>
       )}
     </section>
+  );
+}
+
+/**
+ * Inline value renderer for CF zone status rows: the badge sits on the
+ * left, an optional "Fix X" button on the right when the row is in a
+ * non-green state and CF supports a one-call remediation. Clicking the
+ * button bubbles the FixSpec up to the parent, which opens a single
+ * shared DestructiveActionDialog (so the dialog state isn't duplicated
+ * across rows).
+ */
+function FixableRowValue({
+  badge,
+  fix,
+  onFix,
+  pending,
+}: {
+  badge: React.ReactNode;
+  fix: FixSpec | null;
+  onFix: (spec: FixSpec) => void;
+  pending: boolean;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      {badge}
+      {fix ? (
+        <Button size="sm" variant="outline" onClick={() => onFix(fix)} disabled={pending}>
+          {fix.cta}
+        </Button>
+      ) : null}
+    </div>
   );
 }
 
