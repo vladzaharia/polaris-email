@@ -162,16 +162,31 @@ export async function inspectZone(
     topErr = errorMessage(err);
   }
 
+  // CF's routing-DNS endpoint returns the records it auto-publishes
+  // (MX × N + DKIM TXT under whatever selector CF chose + SPF). We
+  // store the response so the sender-onboarding heuristic below can
+  // read it too — keeps the two derivations consistent.
+  let routingDnsRecords: import('./types.js').EmailRoutingDnsRecord[] = [];
   if (routingEnabled) {
     try {
       const dnsState = await getEmailRoutingDnsState(client, zone.id);
       if (dnsState) {
         dnsErrors = dnsState.errors ?? [];
-        const records = dnsState.records ?? [];
-        // CF locks the records it auto-published. If every required record
-        // is locked, polaris-mail isn't fighting with operator-managed DNS.
-        const required = records.filter((r) => r.required ?? true);
-        dnsLocked = required.length > 0 && required.every((r) => r.locked === true);
+        routingDnsRecords = dnsState.records ?? [];
+        // Older CF API versions returned an explicit `locked: true` per
+        // record; the current shape omits it entirely. Treat the
+        // *presence* of CF-managed records with no errors as the canonical
+        // "CF is locking these for routing" — matches what CF's own
+        // dashboard renders. Fall back to the legacy `locked === true`
+        // check when at least one record carries the field, so consumers
+        // on older API versions still observe the strict semantics.
+        const someExplicitLockFlag = routingDnsRecords.some((r) => typeof r.locked === 'boolean');
+        if (someExplicitLockFlag) {
+          const required = routingDnsRecords.filter((r) => r.required ?? true);
+          dnsLocked = required.length > 0 && required.every((r) => r.locked === true);
+        } else {
+          dnsLocked = routingDnsRecords.length > 0 && dnsErrors.length === 0;
+        }
       }
     } catch (err) {
       topErr ??= errorMessage(err);
@@ -210,16 +225,45 @@ export async function inspectZone(
     }
   }
 
-  // Sender onboarding check: DoH-resolve the canonical records (DKIM CNAME,
-  // SPF TXT, DMARC TXT, cf-bounce MX). The CF Email Service `/sender-domains`
-  // endpoint doesn't expose a clean is-onboarded query in beta, so the DoH
-  // probe is the trustworthy signal.
+  // Sender onboarding heuristic — two-stage:
+  //
+  //   1. If CF's Email Routing is `ready` AND its routing-DNS state
+  //      response contains the records CF auto-publishes (≥1 MX, a DKIM
+  //      TXT at any `*._domainkey.<domain>` selector, and an SPF TXT),
+  //      the domain IS onboarded from CF's perspective — exactly the
+  //      signal CF's own UI uses for "Email Sending is enabled."
+  //      Honour that as the source of truth.
+  //
+  //   2. Otherwise fall back to verifyOnboarding's DoH-canonical
+  //      comparison so operators with operator-managed DKIM (custom
+  //      selector, no CF auto-publish) still get a deterministic answer.
+  //      `sender_missing_records` is populated from the strict DoH check
+  //      in both cases — it's diagnostic info for the operator to see
+  //      what CF's wizard would have published vs what's there.
+  const cfManagedDkim = routingDnsRecords.some(
+    (r) => r.type.toUpperCase() === 'TXT' && /_domainkey\./i.test(r.name),
+  );
+  const cfManagedSpf = routingDnsRecords.some(
+    (r) =>
+      r.type.toUpperCase() === 'TXT' &&
+      r.name.toLowerCase() === zone.name.toLowerCase() &&
+      /v=spf1/i.test(r.content),
+  );
+  const cfManagedMx = routingDnsRecords.some((r) => r.type.toUpperCase() === 'MX');
+  const cfReportsOnboarded =
+    routingEnabled &&
+    routingStatus === 'ready' &&
+    cfManagedDkim &&
+    cfManagedSpf &&
+    cfManagedMx &&
+    dnsErrors.length === 0;
   try {
     const v = await verifyOnboarding(client, zone.id, zone.name, { dohFetch: env.dohFetch });
-    senderOnboarded = v.verified;
+    senderOnboarded = cfReportsOnboarded || v.verified;
     senderMissing = v.missing;
   } catch (err) {
     topErr ??= errorMessage(err);
+    senderOnboarded = cfReportsOnboarded;
   }
 
   try {
