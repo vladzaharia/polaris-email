@@ -137,7 +137,7 @@ Two new code paths (CF GraphQL client + DMARC Management REST helpers), one new 
 - `dmarc_aggregate_reports` D1 table
 - Platform DMARC mailbox row (`01HXPLATFORMDMARCREPORTS00`) and its `principal` / `mailbox_senders` if any
 - `DMARC_RUA_PLATFORM_ALIAS` env var (services/api, wrangler configs, docs)
-- `dmarc.claim_management` audit action (drop from the CHECK constraint in a follow-up migration, or leave the constraint accepting it for backward compatibility — see Open question O-1)
+- `dmarc.claim_management` audit action — dropped from the CHECK constraint in the same migration (no legacy concepts retained per the operator directive 2026-05-23)
 
 ## 5. Data flow
 
@@ -204,7 +204,7 @@ DELETE FROM mailboxes         WHERE id          = '01HXPLATFORMDMARCREPORTS00';
 
 `dmarc_alignment_rollup` schema unchanged. Existing rows survive — they are still valid aggregates regardless of source.
 
-Audit-action CHECK constraints in 0001_init.sql / 0004_admin_alerts_dismissal.sql still mention `dmarc.claim_management`. Leave the constraint as-is for forward compatibility; new code never writes that action. (See Open question O-1.)
+Audit-action CHECK constraints in 0001_init.sql / 0004_admin_alerts_dismissal.sql still mention `dmarc.claim_management`. **Rebuild the relevant table(s) in this migration to drop that value from the allow-list.** D1/SQLite does not support `ALTER TABLE ... DROP CONSTRAINT`, so the rebuild is the only path. No legacy concepts retained per the operator directive.
 
 ## 7. Error handling
 
@@ -243,10 +243,10 @@ Audit-action CHECK constraints in 0001_init.sql / 0004_admin_alerts_dismissal.sq
 
 These do not affect the architecture, only the function-body details of `packages/cf-api/src/dmarc-management.ts` and `dmarc-graphql.ts`.
 
-## 10. Open questions
+## 10. Resolved questions
 
-- **O-1: Audit-action CHECK constraint** — leave `dmarc.claim_management` in the allow-list, or drop it in a follow-up migration? Leaving it is the conservative call; dropping it costs nothing on D1 and tightens the schema. Default: leave it.
-- **O-2: Operator override on policy advancement** — should the `/advance` route support an operator override that skips the soak predicates (for emergency promote/demote)? Default: no — emergencies should go through CF dashboard directly. Re-evaluate if this comes up post-launch.
+- **Audit-action CHECK constraint** — drop `dmarc.claim_management` from the allow-list in the same migration (table-rebuild approach). No legacy concepts retained.
+- **Operator override on policy advancement** — not in v1. Emergencies route through the Cloudflare dashboard. Re-evaluate post-launch only if it actually comes up.
 
 ## 11. Out of scope
 
