@@ -252,7 +252,7 @@ export function BridgesList() {
   return (
     <PageCard
       title="Bridges"
-      description="On-prem submission/IMAP bridges."
+      description="On-prem SMTP/IMAP bridges"
       decorative
       actions={<AddBridgeDialog onRegistered={setRegistered} />}
     >
