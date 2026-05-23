@@ -136,7 +136,22 @@ interface CfZoneStatus {
   catch_all_correct: boolean;
   catch_all_target: string | null;
   has_conflicting_rules: boolean;
-  named_rules: { name: string; routes_to_polaris: boolean }[];
+  /**
+   * Named-address routing rules CF reports for this zone (catch-all
+   * excluded). The panel surfaces them as "externally managed" — they
+   * route specific addresses operator-side (forwarding personal mail,
+   * for example) and override the catch-all by design. `routes_to_polaris`
+   * flips true when the action targets `polaris-mail-in`, in which case
+   * the rule is part of Polaris's intended config rather than external.
+   */
+  named_rules: {
+    name: string;
+    address_pattern: string | null;
+    action_type: string | null;
+    action_target: string | null;
+    enabled: boolean;
+    routes_to_polaris: boolean;
+  }[];
   d1_mail_domain_exists: boolean;
   overall: 'ok' | 'partial' | 'unconfigured' | 'error';
 }
@@ -542,17 +557,56 @@ function CfZoneCard({ domainName }: { domainName: string }) {
                 {q.data.data.catch_all_target ?? 'unset'}
               </Badge>
             </MetaRow>
-            <MetaRow label="Conflicting rules">
-              <Badge variant={q.data.data.has_conflicting_rules ? 'warning' : 'success'}>
-                {q.data.data.has_conflicting_rules ? 'yes' : 'none'}
-              </Badge>
-            </MetaRow>
             <MetaRow label="D1 mailbox row">
               <Badge variant={q.data.data.d1_mail_domain_exists ? 'success' : 'destructive'}>
                 {q.data.data.d1_mail_domain_exists ? 'present' : 'missing'}
               </Badge>
             </MetaRow>
           </MetaList>
+
+          {/* Externally managed CF Email Routing rules. These are
+              operator-defined catches that intercept specific addresses
+              before the catch-all (e.g. forwarding `vlad@plrs.im` to a
+              personal mailbox). They take priority over polaris-mail-in
+              by design; we surface them so the operator can see what's
+              covered without having to bounce to the CF dashboard. */}
+          {q.data.data.named_rules.length > 0 ? (
+            <div className="rounded-md border border-[var(--color-border)] p-3">
+              <div className="mb-2 flex items-center justify-between text-xs">
+                <span className="font-medium text-[var(--color-foreground)]">
+                  Externally managed routes
+                </span>
+                <span className="text-[var(--color-muted-foreground)]">
+                  {q.data.data.named_rules.length} CF rule
+                  {q.data.data.named_rules.length === 1 ? '' : 's'} — managed in Cloudflare, shown
+                  here for reference
+                </span>
+              </div>
+              <ul className="space-y-1">
+                {q.data.data.named_rules.map((rule) => {
+                  const action =
+                    rule.action_type && rule.action_target
+                      ? `${rule.action_type}:${rule.action_target}`
+                      : (rule.action_type ?? '?');
+                  return (
+                    <li key={rule.name} className="flex flex-wrap items-center gap-2 text-xs">
+                      <Badge variant={rule.enabled ? 'secondary' : 'outline'}>
+                        {rule.enabled ? 'active' : 'disabled'}
+                      </Badge>
+                      {rule.routes_to_polaris ? (
+                        <Badge variant="success">polaris</Badge>
+                      ) : (
+                        <Badge variant="outline">external</Badge>
+                      )}
+                      <span className="font-mono">{rule.address_pattern ?? '(no pattern)'}</span>
+                      <span className="text-[var(--color-muted-foreground)]">→</span>
+                      <span className="font-mono">{action}</span>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          ) : null}
         </div>
       )}
     </section>
