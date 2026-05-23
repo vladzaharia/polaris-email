@@ -15,6 +15,7 @@ import {
   Tag,
   Workflow,
 } from 'lucide-react';
+import { DestructiveActionDialog } from '../../components/DestructiveActionDialog.js';
 import { PageCard } from '../../layouts/PageCard.js';
 import {
   Table,
@@ -401,23 +402,54 @@ interface AdminAlertRow {
   subject: string;
   delivery: string;
   created_at: string;
+  dismissed_at: string | null;
+  dismissed_by: string | null;
 }
+
+type AlertStatusFilter = 'active' | 'dismissed' | 'all';
 
 function AlertsTab() {
   const [type, setType] = useState('');
   const [severity, setSeverity] = useState('');
+  // `status` drives which side of the dismissed_at split the operator
+  // sees. Active is the default — the noisy historical ledger stays out
+  // of view unless explicitly requested.
+  const [status, setStatus] = useState<AlertStatusFilter>('active');
+  const [showBulkConfirm, setShowBulkConfirm] = useState(false);
   const filters = useMemo(() => {
     const f: Record<string, string> = {};
     if (type) f.alert_type = type;
     if (severity) f.severity = severity;
     return f;
   }, [type, severity]);
+  // The server distinguishes "active only" (default) from "include
+  // dismissed" via the include_dismissed flag. For the `dismissed`
+  // view we still send include_dismissed=1 and filter client-side so
+  // the bulk-dismiss call site can reuse the exact same filter shape
+  // for its UPDATE WHERE.
   const path = useMemo(() => {
     const queryStr = new URLSearchParams(filters);
+    if (status !== 'active') queryStr.set('include_dismissed', '1');
     return queryStr.toString() ? `/api/admin/alerts?${queryStr.toString()}` : '/api/admin/alerts';
-  }, [filters]);
-  const q = useAdminQuery<{ data: AdminAlertRow[] }>(adminAlertKeys.list(filters), path);
-  const rows = q.data?.data ?? [];
+  }, [filters, status]);
+  const q = useAdminQuery<{ data: AdminAlertRow[] }>(
+    [...adminAlertKeys.list(filters), status],
+    path,
+  );
+  const allRows = q.data?.data ?? [];
+  const rows = status === 'dismissed' ? allRows.filter((r) => r.dismissed_at) : allRows;
+
+  const dismissOne = useAdminMutation<{ id: string }, { id: string }>(
+    (vars) => ({ path: `/api/admin/alerts/${vars.id}/dismiss`, method: 'POST' }),
+    { invalidateKeys: [adminAlertKeys.all], successMessage: 'Alert dismissed.' },
+  );
+  const dismissBulk = useAdminMutation<
+    { dismissed: number },
+    { alert_type?: string; severity?: string }
+  >((vars) => ({ path: '/api/admin/alerts/dismiss', method: 'POST', body: vars }), {
+    invalidateKeys: [adminAlertKeys.all],
+    successMessage: 'Alerts dismissed.',
+  });
 
   const filterSpecs: FilterSpec[] = [
     {
@@ -452,17 +484,57 @@ function AlertsTab() {
     },
   ];
 
+  // Bulk-dismiss applies to the currently active filter (alert_type +
+  // severity). It deliberately ignores the `status` chip — dismissing
+  // already-dismissed rows would be a no-op anyway, so we always send
+  // active-only on the server side.
+  const canBulkDismiss = status === 'active' && rows.length > 0;
+  const activeRowCount = rows.filter((r) => !r.dismissed_at).length;
+
   return (
     <div className="space-y-4">
       <FilterBar filters={filterSpecs} />
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <SegmentedControl
+          ariaLabel="Alert status filter"
+          options={[
+            { value: 'active', label: 'Active' },
+            { value: 'dismissed', label: 'Dismissed' },
+            { value: 'all', label: 'All' },
+          ]}
+          value={status}
+          onChange={(v) => setStatus(v as AlertStatusFilter)}
+        />
+        {canBulkDismiss ? (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowBulkConfirm(true)}
+            disabled={dismissBulk.isPending}
+            title="Dismiss every active alert matching the current filter"
+          >
+            Dismiss {activeRowCount} filtered
+          </Button>
+        ) : null}
+      </div>
       {q.isLoading ? (
         <Skeleton className="h-32 w-full" />
       ) : q.error ? (
         <ErrorText error={q.error} />
       ) : rows.length === 0 ? (
         <EmptyState
-          title="No alerts yet"
-          description="Alerts surface here when sender suppressions fire, phishing/legal reports come in, or synthetic checks fail. Press 'Send test alert' to verify the pipeline."
+          title={
+            status === 'dismissed'
+              ? 'No dismissed alerts'
+              : status === 'all'
+                ? 'No alerts yet'
+                : 'No active alerts'
+          }
+          description={
+            status === 'active'
+              ? 'Alerts surface here when sender suppressions fire, phishing/legal reports come in, or synthetic checks fail. Press the Test button to verify the pipeline.'
+              : 'Switch to Active to see live alerts.'
+          }
         />
       ) : (
         <Table>
@@ -474,6 +546,7 @@ function AlertsTab() {
               <TableHead>Target</TableHead>
               <TableHead>Subject</TableHead>
               <TableHead>Delivery</TableHead>
+              <TableHead className="w-[8rem] text-right">Action</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -486,7 +559,10 @@ function AlertsTab() {
                 }
               })();
               return (
-                <TableRow key={r.id}>
+                <TableRow
+                  key={r.id}
+                  className={r.dismissed_at ? 'text-[var(--color-muted-foreground)]' : undefined}
+                >
                   <TableCell title={r.created_at}>{formatRelative(r.created_at)}</TableCell>
                   <TableCell>
                     <StatusBadge kind="alert-severity" value={r.severity} />
@@ -499,12 +575,57 @@ function AlertsTab() {
                   <TableCell className="font-mono text-xs">
                     {delivery.map((d) => `${d.channel}:${d.ok ? '✓' : '✗'}`).join(' ')}
                   </TableCell>
+                  <TableCell className="text-right">
+                    {r.dismissed_at ? (
+                      <Badge
+                        variant="secondary"
+                        title={`Dismissed ${formatRelative(r.dismissed_at)}${
+                          r.dismissed_by ? ` by ${r.dismissed_by}` : ''
+                        }`}
+                      >
+                        dismissed
+                      </Badge>
+                    ) : (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => dismissOne.mutate({ id: r.id })}
+                        disabled={dismissOne.isPending}
+                      >
+                        Dismiss
+                      </Button>
+                    )}
+                  </TableCell>
                 </TableRow>
               );
             })}
           </TableBody>
         </Table>
       )}
+      <DestructiveActionDialog
+        open={showBulkConfirm}
+        onOpenChange={setShowBulkConfirm}
+        action="Dismiss filtered alerts"
+        name={
+          type || severity
+            ? `${type || 'all types'} · ${severity || 'all severities'} (${activeRowCount} row${activeRowCount === 1 ? '' : 's'})`
+            : `all active alerts (${activeRowCount} row${activeRowCount === 1 ? '' : 's'})`
+        }
+        blastRadius={[
+          'Hides the matching alerts from the default Active view.',
+          'Rows stay in admin_alerts (immutable history); re-expose them via the Dismissed or All tabs.',
+          'Each dismissal is recorded in audit_log under admin.alert.dismiss_bulk.',
+        ]}
+        reversible
+        isPending={dismissBulk.isPending}
+        onConfirm={() => {
+          dismissBulk.mutate({
+            ...(type ? { alert_type: type } : {}),
+            ...(severity ? { severity } : {}),
+          });
+          setShowBulkConfirm(false);
+        }}
+      />
     </div>
   );
 }
