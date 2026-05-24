@@ -172,12 +172,14 @@ export async function verifyDomain(env: Env, id: string, actor: string): Promise
       expected: 'CF API token + cached zone id',
       actual: 'missing CF_API_TOKEN, CF_ACCOUNT_ID or cf_zone_id',
     });
-    await audit(env, {
-      actor,
-      action: 'domain.verify_incomplete',
-      target: id,
-      meta: { name: row.name, reason: 'no-cf-creds' },
-    });
+    if (row.status === 'verified') {
+      await audit(env, {
+        actor,
+        action: 'domain.verify_incomplete',
+        target: id,
+        meta: { name: row.name, reason: 'no-cf-creds' },
+      });
+    }
     return {
       outcome: 'no_creds',
       response: { id, status: row.status, message: 'verification incomplete', checks },
@@ -308,8 +310,13 @@ export async function verifyDomain(env: Env, id: string, actor: string): Promise
   }
 
   if (coreOk) {
-    const fullSet = ['status = ?', 'verified_at = ?', 'last_verify_check_at = ?', 'updated_at = ?'];
-    const fullBinds: unknown[] = ['verified', nowIso, nowIso, nowIso];
+    const statusChanged = row.status !== 'verified';
+    const fullSet: string[] = ['last_verify_check_at = ?', 'updated_at = ?'];
+    const fullBinds: unknown[] = [nowIso, nowIso];
+    if (statusChanged) {
+      fullSet.unshift('status = ?', 'verified_at = ?');
+      fullBinds.unshift('verified', nowIso);
+    }
     if (subUpdates.length) {
       fullSet.push(...subUpdates);
       fullBinds.push(...subBinds);
@@ -318,16 +325,21 @@ export async function verifyDomain(env: Env, id: string, actor: string): Promise
     await env.DB.prepare(`UPDATE mail_domains SET ${fullSet.join(', ')} WHERE id = ?`)
       .bind(...fullBinds)
       .run();
-    await audit(env, {
-      actor,
-      action: 'domain.verify',
-      target: id,
-      meta: {
-        name: row.name,
-        checks: checks.map((c2) => c2.name),
-        all_layers_ok: allOk,
-      },
-    });
+    // Only audit when verification status actually transitions. Re-verifies
+    // (verified → verified) refresh last_verify_check_at as the cron's
+    // proof-of-life signal but do not deserve an activity-feed row.
+    if (statusChanged) {
+      await audit(env, {
+        actor,
+        action: 'domain.verify',
+        target: id,
+        meta: {
+          name: row.name,
+          checks: checks.map((c2) => c2.name),
+          all_layers_ok: allOk,
+        },
+      });
+    }
     return {
       outcome: 'verified',
       response: { id, status: 'verified', verified_at: Date.now(), checks },
@@ -343,15 +355,20 @@ export async function verifyDomain(env: Env, id: string, actor: string): Promise
       .run();
   }
 
-  await audit(env, {
-    actor,
-    action: 'domain.verify_incomplete',
-    target: id,
-    meta: {
-      name: row.name,
-      failures: checks.filter((ch) => !ch.ok).map((ch) => ch.name),
-    },
-  });
+  // Only audit when this is a transition from 'verified' to a failing
+  // outcome. Domains that are already in a non-verified state (pending,
+  // failed) would otherwise spam an audit row on every cron tick.
+  if (row.status === 'verified') {
+    await audit(env, {
+      actor,
+      action: 'domain.verify_incomplete',
+      target: id,
+      meta: {
+        name: row.name,
+        failures: checks.filter((ch) => !ch.ok).map((ch) => ch.name),
+      },
+    });
+  }
   return {
     outcome: 'incomplete',
     response: { id, status: row.status, message: 'verification incomplete', checks },
