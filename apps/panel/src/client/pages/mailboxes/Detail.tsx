@@ -150,7 +150,6 @@ interface MailboxDetailPayload {
   };
   senders: SenderRow[];
   receivers: ReceiverRow[];
-  principals: Array<{ id: string; kind: string; display_name: string | null }>;
   webhook_subs: WebhookSubRow[];
   credentials: CredentialRow[];
 }
@@ -873,20 +872,6 @@ export function MailboxDetail() {
                 ) : (
                   <span className="text-xs text-[var(--color-muted-foreground)]">
                     None — every send must specify an explicit From.
-                  </span>
-                )}
-              </MetaRow>
-              <MetaRow label="Principals">
-                {d.principals.length > 0 ? (
-                  <span>
-                    {d.principals.length} attached
-                    <span className="ml-1 text-xs text-[var(--color-muted-foreground)]">
-                      ({d.principals.map((p) => p.kind).join(', ')})
-                    </span>
-                  </span>
-                ) : (
-                  <span className="text-xs text-[var(--color-muted-foreground)]">
-                    No principals.
                   </span>
                 )}
               </MetaRow>
