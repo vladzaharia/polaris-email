@@ -232,6 +232,18 @@ const bridgesList = createRoute({
 const bridgeDetail = createRoute({
   getParentRoute: () => rootRoute,
   path: '/bridges/$id',
+  // `?tab=` persists the active tab on the bridge detail page
+  // (Overview / Activity / Connection / Audit) so alerts and runbooks
+  // can deep-link to a specific tab.
+  validateSearch: (
+    search: Record<string, unknown>,
+  ): { tab?: 'overview' | 'activity' | 'connection' | 'audit' } => {
+    const t = search.tab;
+    if (t === 'overview' || t === 'activity' || t === 'connection' || t === 'audit') {
+      return { tab: t };
+    }
+    return {};
+  },
   component: lazyRouteComponent(() => import('./pages/bridges/Detail.js'), 'BridgeDetail'),
   errorComponent: RouteError,
 });

@@ -63,9 +63,13 @@ export interface MessagesListViewProps {
   // this domain (via senders or receivers). The caller is responsible for
   // chrome (PageCard, section card, etc.); this view stays unwrapped.
   scopedDomain?: { id: string; name: string };
+  // Optional implicit bridge scope. When set, every query carries
+  // `?bridge=<id>` so the list shows messages submitted via this
+  // bridge (via `messages.bridge_id`).
+  scopedBridge?: { id: string; name: string };
 }
 
-export function MessagesListView({ scopedDomain }: MessagesListViewProps = {}) {
+export function MessagesListView({ scopedDomain, scopedBridge }: MessagesListViewProps = {}) {
   const navigate = useNavigate();
   const [direction, setDirection] = useState('');
   const [status, setStatus] = useState('');
@@ -85,6 +89,7 @@ export function MessagesListView({ scopedDomain }: MessagesListViewProps = {}) {
   if (until) params.set('until', until);
   if (q) params.set('q', q);
   if (scopedDomain) params.set('domain', scopedDomain.id);
+  if (scopedBridge) params.set('bridge', scopedBridge.id);
   params.set('limit', '50');
   params.set('offset', String(offset));
 

@@ -57,6 +57,9 @@ export const bridgeKeys = {
   all: ['bridges'] as const,
   list: () => [...bridgeKeys.all, 'list'] as const,
   detail: (id: string) => [...bridgeKeys.all, 'detail', id] as const,
+  activity: (id: string) => [...bridgeKeys.all, 'detail', id, 'activity'] as const,
+  audit: (id: string) => [...bridgeKeys.all, 'detail', id, 'audit'] as const,
+  heartbeat: (id: string) => [...bridgeKeys.all, 'detail', id, 'heartbeat'] as const,
 };
 
 export const dlqKeys = {

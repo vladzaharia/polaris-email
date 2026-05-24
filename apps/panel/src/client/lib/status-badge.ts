@@ -76,8 +76,14 @@ export function statusBadge(kind: StatusKind, value: string | number): StatusBad
       return { variant: 'outline', label: raw, icon: 'info' };
     }
     case 'bridge': {
-      if (v === 'registered' || v === 'online' || v === 'active') {
+      // `live`/`stale`/`offline` come from the heartbeat-derived liveness
+      // enum; `registered`/`deregistered` reflect the soft-delete state.
+      // Both vocabularies coexist — list/get returns both fields.
+      if (v === 'live' || v === 'registered' || v === 'online' || v === 'active') {
         return { variant: 'success', label: v, icon: 'check' };
+      }
+      if (v === 'stale') {
+        return { variant: 'warning', label: v, icon: 'clock' };
       }
       if (v === 'offline') {
         return { variant: 'warning', label: v, icon: 'alert-triangle' };
