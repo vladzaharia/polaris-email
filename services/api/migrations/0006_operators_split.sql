@@ -14,11 +14,18 @@
 --     (`01J0000000000000000000ROOT`).
 --
 -- Pre-production: no users to coordinate with. Clean cut, one migration.
-
-PRAGMA foreign_keys = OFF;
+--
+-- IMPORTANT: D1 ignores `PRAGMA foreign_keys = OFF` inside a migration
+-- transaction. The ordering below works with FK enforcement enabled:
+--   * DROP TABLE does not fail due to dangling incoming FKs; SQLite
+--     tolerates them as "phantom" until the target re-exists or a
+--     write attempts to validate.
+--   * SELECT never triggers FK validation; only INSERT/UPDATE/DELETE.
+--   * The rebuild order detaches each FK before its target is dropped.
 
 -- ============================================================================
--- 1. Ensure the bootstrap-admin api_key (pk_admin_) has an operators row.
+-- 1. Backfill the bootstrap-admin api_key as the root operator.
+--    Must happen before the api_keys rebuild (which JOINs through this row).
 -- ============================================================================
 
 INSERT INTO operators (
@@ -41,25 +48,23 @@ WHERE b.admin_key_id IS NOT NULL
     SELECT 1 FROM operators WHERE api_key_id = b.admin_key_id
   );
 
--- ============================================================================
--- 2. Defensive cleanup — any api_keys row not linked to an operator is
---    pre-0003 legacy. Delete first so the NOT NULL FK below holds.
--- ============================================================================
-
+-- Any api_keys row not linked to an operator is pre-0003 legacy.
+-- Delete first so the api_keys rebuild's NOT NULL operator_id holds.
 DELETE FROM api_keys
 WHERE id NOT IN (SELECT api_key_id FROM operators);
 
 -- ============================================================================
--- 3. Drop views that reference `messages` before the rebuild. They are
---    unused in application code (`grep -r v_message_*` returns only
---    migration definitions + test-setup stripping); not recreated.
+-- 2. Drop views that reference `messages` before the messages rebuild.
+--    Unused in application code; not recreated.
 -- ============================================================================
 
 DROP VIEW IF EXISTS v_message_with_latest_attempt;
 DROP VIEW IF EXISTS v_message_delivery_state;
 
 -- ============================================================================
--- 4. Rebuild api_keys — replace principal_id with operator_id.
+-- 3. Rebuild api_keys: replace principal_id with operator_id.
+--    Reads the operator mapping from the existing operators.api_key_id
+--    column before the operators table is itself rebuilt in step 4.
 -- ============================================================================
 
 CREATE TABLE api_keys_new (
@@ -85,19 +90,9 @@ INSERT INTO api_keys_new (
   revoked_at, disabled_at
 )
 SELECT
-  k.id,
-  o.id,
-  k.prefix,
-  k.secret_argon2id,
-  k.scopes,
-  k.rate_limit_per_min,
-  k.status,
-  k.created_at,
-  k.last_used_at,
-  k.last_used_ip,
-  k.last_used_ua,
-  k.revoked_at,
-  k.disabled_at
+  k.id, o.id, k.prefix, k.secret_argon2id, k.scopes, k.rate_limit_per_min,
+  k.status, k.created_at, k.last_used_at, k.last_used_ip, k.last_used_ua,
+  k.revoked_at, k.disabled_at
 FROM api_keys k
 JOIN operators o ON o.api_key_id = k.id;
 
@@ -108,7 +103,53 @@ CREATE INDEX idx_api_keys_operator_id ON api_keys(operator_id);
 CREATE INDEX idx_api_keys_status      ON api_keys(status);
 
 -- ============================================================================
--- 5. Rebuild messages — drop principal_id. The from_addr_normalized
+-- 4. Rebuild operators: drop the api_key_id column. The reverse FK
+--    direction (api_keys.operator_id -> operators.id) is set up in step 3
+--    and points at the new api_keys table.
+-- ============================================================================
+
+CREATE TABLE operators_new (
+  id                   TEXT PRIMARY KEY,
+  name                 TEXT NOT NULL,
+  email                TEXT NOT NULL UNIQUE,
+  ssh_pubkey           TEXT NOT NULL,
+  ssh_pubkey_fp_sha256 TEXT NOT NULL UNIQUE,
+  role                 TEXT NOT NULL DEFAULT 'operator'
+                         CHECK(role IN ('admin','operator','readonly')),
+  disabled_at          TEXT,
+  created_at           TEXT NOT NULL,
+  updated_at           TEXT NOT NULL,
+  last_seen_at         TEXT
+);
+
+INSERT INTO operators_new (
+  id, name, email, ssh_pubkey, ssh_pubkey_fp_sha256, role,
+  disabled_at, created_at, updated_at, last_seen_at
+)
+SELECT
+  id, name, email, ssh_pubkey, ssh_pubkey_fp_sha256, role,
+  disabled_at, created_at, updated_at, last_seen_at
+FROM operators;
+
+DROP TABLE operators;
+ALTER TABLE operators_new RENAME TO operators;
+
+CREATE INDEX        idx_operators_disabled_at ON operators(disabled_at);
+CREATE UNIQUE INDEX uniq_operators_fp_active
+  ON operators(ssh_pubkey_fp_sha256) WHERE disabled_at IS NULL;
+
+CREATE TRIGGER trg_operators_updated_at
+AFTER UPDATE ON operators
+FOR EACH ROW
+WHEN NEW.updated_at = OLD.updated_at
+BEGIN
+  UPDATE operators
+  SET    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+  WHERE  id = NEW.id;
+END;
+
+-- ============================================================================
+-- 5. Rebuild messages: drop principal_id. The from_addr_normalized
 --    generated column is preserved verbatim.
 -- ============================================================================
 
@@ -155,8 +196,6 @@ CREATE TABLE messages_new (
   created_at              TEXT NOT NULL
 );
 
--- The generated column is computed automatically; explicit column list
--- excludes it from the INSERT.
 INSERT INTO messages_new (
   id, mailbox_id, bridge_id, direction, status,
   from_addr, to_addrs, subject, r2_key, content_sha256,
@@ -191,60 +230,13 @@ CREATE INDEX idx_messages_idempotency_key        ON messages(idempotency_key);
 CREATE INDEX idx_messages_mailbox_thread         ON messages(mailbox_id, thread_id, created_at DESC);
 
 -- ============================================================================
--- 6. Rebuild operators — drop api_key_id (current key is derived).
+-- 6. Drop principals + sentinel mailbox. After the rebuilds in steps 3 + 5,
+--    no remaining table references principals — DROP is safe with FK on.
 -- ============================================================================
 
-CREATE TABLE operators_new (
-  id                   TEXT PRIMARY KEY,
-  name                 TEXT NOT NULL,
-  email                TEXT NOT NULL UNIQUE,
-  ssh_pubkey           TEXT NOT NULL,
-  ssh_pubkey_fp_sha256 TEXT NOT NULL UNIQUE,
-  role                 TEXT NOT NULL DEFAULT 'operator'
-                         CHECK(role IN ('admin','operator','readonly')),
-  disabled_at          TEXT,
-  created_at           TEXT NOT NULL,
-  updated_at           TEXT NOT NULL,
-  last_seen_at         TEXT
-);
-
-INSERT INTO operators_new (
-  id, name, email, ssh_pubkey, ssh_pubkey_fp_sha256, role,
-  disabled_at, created_at, updated_at, last_seen_at
-)
-SELECT
-  id, name, email, ssh_pubkey, ssh_pubkey_fp_sha256, role,
-  disabled_at, created_at, updated_at, last_seen_at
-FROM operators;
-
-DROP TABLE operators;
-ALTER TABLE operators_new RENAME TO operators;
-
-CREATE INDEX        idx_operators_disabled_at ON operators(disabled_at);
-CREATE UNIQUE INDEX uniq_operators_fp_active
-  ON operators(ssh_pubkey_fp_sha256) WHERE disabled_at IS NULL;
-
--- The updated_at trigger from 0001 references the operators table by name;
--- the rebuild replaced the underlying object, so reattach the trigger.
-CREATE TRIGGER trg_operators_updated_at
-AFTER UPDATE ON operators
-FOR EACH ROW
-WHEN NEW.updated_at = OLD.updated_at
-BEGIN
-  UPDATE operators
-  SET    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-  WHERE  id = NEW.id;
-END;
-
--- ============================================================================
--- 7. Drop principals + sentinel mailbox.
--- ============================================================================
-
-DROP TABLE IF EXISTS principals;
+DROP TABLE principals;
 
 DELETE FROM mailboxes WHERE id = '01J0000000000000000000PLRS';
-
-PRAGMA foreign_keys = ON;
 
 -- ============================================================================
 -- Version stamp
