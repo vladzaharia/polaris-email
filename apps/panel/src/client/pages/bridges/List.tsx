@@ -15,7 +15,7 @@ import { ErrorText } from '../../components/ErrorText.js';
 import { useAdminQuery } from '../../hooks/useAdminApi.js';
 import { bridgeKeys } from '../../queryKeys.js';
 import { formatDate, formatRelative } from '../../lib/format.js';
-import { RegistrationWizard } from './RegistrationWizard.js';
+import { AddBridgeDialog } from './RegistrationWizard.js';
 
 interface BridgeRow {
   id: string;
@@ -55,7 +55,7 @@ export function BridgesList() {
       title="Bridges"
       description="On-prem SMTP/IMAP bridges"
       decorative
-      actions={<RegistrationWizard />}
+      actions={<AddBridgeDialog />}
     >
       {q.error ? (
         <ErrorText error={q.error} />

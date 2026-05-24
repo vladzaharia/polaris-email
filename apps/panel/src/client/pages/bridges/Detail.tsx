@@ -23,9 +23,9 @@
  * Auto-refresh: the heartbeat query polls every 30s so the liveness
  * badge updates without a manual reload.
  */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate, useParams, useSearch } from '@tanstack/react-router';
-import { Activity as ActivityIcon, History, Settings } from 'lucide-react';
+import { Activity as ActivityIcon, History, KeyRound, Settings } from 'lucide-react';
 import { PageCard } from '../../layouts/PageCard.js';
 import { Button } from '../../components/ui/button.js';
 import { Skeleton } from '../../components/ui/skeleton.js';
@@ -33,6 +33,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../components/ui/ta
 import { StatusBadge } from '../../components/StatusBadge.js';
 import { StatTile } from '../../components/StatTile.js';
 import { MetaList, MetaRow } from '../../components/MetaList.js';
+import { CodeBlock } from '../../components/CodeBlock.js';
 import { DestructiveActionDialog } from '../../components/DestructiveActionDialog.js';
 import { ErrorText } from '../../components/ErrorText.js';
 import { useAdminMutation, useAdminQuery } from '../../hooks/useAdminApi.js';
@@ -42,6 +43,7 @@ import { cn } from '../../lib/cn.js';
 import { MessagesListView } from '../messages/MessagesListView.js';
 import { BridgeAuditCard } from './BridgeAuditCard.js';
 import { BridgeConnectionCard } from './BridgeConnectionCard.js';
+import { clearFreshBridgeKey, readFreshBridgeKey } from './freshBridgeKey.js';
 
 type TabValue = 'overview' | 'activity' | 'connection' | 'audit';
 
@@ -102,15 +104,6 @@ export function BridgeDetail() {
   const { id } = useParams({ from: '/bridges/$id' });
   const navigate = useNavigate();
   const search = useSearch({ strict: false }) as { tab?: string };
-  const activeTab: TabValue = isTab(search.tab) ? search.tab : 'overview';
-  const setTab = (next: TabValue) => {
-    void navigate({
-      to: '/bridges/$id',
-      params: { id },
-      search: { tab: next === 'overview' ? undefined : next },
-      replace: true,
-    });
-  };
 
   const detail = useAdminQuery<BridgeDetail>(bridgeKeys.detail(id), `/api/admin/bridges/${id}`, {
     refetchInterval: HEARTBEAT_REFETCH_MS,
@@ -125,10 +118,49 @@ export function BridgeDetail() {
     `/api/admin/bridges/${id}/activity`,
   );
 
+  // Read the just-minted HMAC key (if the operator arrived here via the
+  // Add-bridge dialog). It lives in sessionStorage; clearing it is the
+  // Detail page's job — see the `clearFreshBridgeKey` calls below.
+  const [freshKey, setFreshKey] = useState<string | null>(() => readFreshBridgeKey(id));
+
+  // Default tab: if the bridge has never connected, drop the operator on
+  // the Connection tab so the snippets are the first thing they see.
+  // Otherwise default to Overview. Explicit `?tab=` always wins.
+  const hasEverConnected = detail.data?.last_seen_at != null;
+  const defaultTab: TabValue = hasEverConnected ? 'overview' : 'connection';
+  const activeTab: TabValue = isTab(search.tab) ? search.tab : defaultTab;
+  const setTab = (next: TabValue) => {
+    void navigate({
+      to: '/bridges/$id',
+      params: { id },
+      search: { tab: next === defaultTab ? undefined : next },
+      replace: true,
+    });
+  };
+
+  // Auto-clear the fresh key once the bridge has phoned home — at that
+  // point the snippets in the Connection tab no longer need to display
+  // the plaintext, and we want to keep its lifetime as short as we can.
+  useEffect(() => {
+    if (freshKey && hasEverConnected) {
+      clearFreshBridgeKey(id);
+      setFreshKey(null);
+    }
+  }, [freshKey, hasEverConnected, id]);
+
   const [confirmDereg, setConfirmDereg] = useState(false);
+  const [confirmHardDelete, setConfirmHardDelete] = useState(false);
   const dereg = useAdminMutation<unknown, undefined>(
     () => ({ path: `/api/admin/bridges/${id}`, method: 'DELETE' }),
     { invalidateKeys: [bridgeKeys.all], successMessage: 'Bridge deregistered.' },
+  );
+  const hardDelete = useAdminMutation<{ id: string; deleted: boolean }, undefined>(
+    () => ({ path: `/api/admin/bridges/${id}?hard=true`, method: 'DELETE' }),
+    {
+      invalidateKeys: [bridgeKeys.all],
+      successMessage: 'Bridge permanently deleted.',
+      silent: true,
+    },
   );
 
   const breadcrumbs = [{ label: 'Bridges', to: '/bridges' }, { label: detail.data?.name ?? id }];
@@ -173,14 +205,61 @@ export function BridgeDetail() {
           : 'Never connected — start the bridge to receive its first heartbeat.'
       }
       actions={
-        !disabled ? (
+        disabled ? (
+          <Button size="sm" variant="destructive" onClick={() => setConfirmHardDelete(true)}>
+            Delete permanently
+          </Button>
+        ) : (
           <Button size="sm" variant="destructive" onClick={() => setConfirmDereg(true)}>
             Deregister
           </Button>
-        ) : null
+        )
       }
     >
       <div className="space-y-6">
+        {/* ---------- freshly-registered banner ----------
+            Shown only when the operator arrived here from the Add-bridge
+            dialog and the bridge hasn't checked in yet. Surfaces the
+            one-time HMAC key + a brief checklist. Disappears as soon as
+            the bridge phones home (the useEffect above clears
+            freshKey). */}
+        {freshKey && !hasEverConnected ? (
+          <section
+            className="rounded-md border border-[var(--color-border)] p-4"
+            style={{
+              background: 'color-mix(in oklch, var(--color-card) 88%, var(--color-success) 12%)',
+            }}
+          >
+            <div className="flex items-start gap-3">
+              <KeyRound className="h-5 w-5 text-[var(--color-success)]" aria-hidden />
+              <div className="min-w-0 flex-1 space-y-2">
+                <div className="font-semibold">Bridge registered — copy the HMAC key now</div>
+                <p className="text-xs text-[var(--color-muted-foreground)]">
+                  Polaris stores only the hash. This is the only time you'll see the plaintext — it
+                  disappears as soon as the bridge phones home, or as soon as you dismiss this
+                  banner. If you lose it, rotate the bridge from this page to mint a new one.
+                </p>
+                <CodeBlock code={freshKey} />
+                <div className="flex flex-wrap items-center gap-2 pt-1">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      clearFreshBridgeKey(id);
+                      setFreshKey(null);
+                    }}
+                  >
+                    I've saved it
+                  </Button>
+                  <span className="text-xs text-[var(--color-muted-foreground)]">
+                    The setup snippets in the Connection tab below carry this key already.
+                  </span>
+                </div>
+              </div>
+            </div>
+          </section>
+        ) : null}
+
         {/* ---------- identity + stats strip ----------
             Two-column layout mirrors mailbox/domain detail: definition
             list on the left, telemetry tiles on the right. Tiles render
@@ -262,6 +341,10 @@ export function BridgeDetail() {
               bridge={d}
               hb={hb}
               totals={totals}
+              // Suppress the offline callout when the freshly-registered
+              // banner is up — duplicate noise; the banner already tells
+              // the operator what to do.
+              suppressOfflineCallout={freshKey != null && !hasEverConnected}
               onOpenActivity={() => setTab('activity')}
               onOpenConnection={() => setTab('connection')}
               onOpenAudit={() => setTab('audit')}
@@ -273,7 +356,11 @@ export function BridgeDetail() {
           </TabsContent>
 
           <TabsContent value="connection">
-            <BridgeConnectionCard bridgeId={d.id} bridgeName={d.name} />
+            <BridgeConnectionCard
+              bridgeId={d.id}
+              bridgeName={d.name}
+              initialHmacKey={freshKey ?? undefined}
+            />
           </TabsContent>
 
           <TabsContent value="audit">
@@ -300,6 +387,35 @@ export function BridgeDetail() {
         }}
         isPending={dereg.isPending}
       />
+
+      <DestructiveActionDialog
+        open={confirmHardDelete}
+        onOpenChange={setConfirmHardDelete}
+        action="Permanently delete bridge"
+        name={d.name}
+        // Type-the-name gate — hard delete is irreversible and removes
+        // the bridge row entirely. Past messages submitted via this
+        // bridge keep their content but lose their bridge attribution
+        // (messages.bridge_id is set to NULL). The audit log keeps
+        // the bridge-id reference forever (target column is text,
+        // unconstrained).
+        typedConfirmation={d.name}
+        blastRadius={[
+          'The bridge row is removed from the database',
+          'Historical messages keep their content but lose bridge attribution',
+          'The bridge id can be reused by registering a new bridge with the same name',
+          'The audit log entry for this bridge remains and references the now-deleted id',
+        ]}
+        reversible={false}
+        confirmLabel="Delete permanently"
+        onConfirm={async () => {
+          await hardDelete.mutateAsync(undefined);
+          setConfirmHardDelete(false);
+          // Navigate back to the list — the detail page is about to 404.
+          void navigate({ to: '/bridges' });
+        }}
+        isPending={hardDelete.isPending}
+      />
     </PageCard>
   );
 }
@@ -308,6 +424,7 @@ function OverviewTab({
   bridge,
   hb,
   totals,
+  suppressOfflineCallout = false,
   onOpenActivity,
   onOpenConnection,
   onOpenAudit,
@@ -315,6 +432,7 @@ function OverviewTab({
   bridge: BridgeDetail;
   hb: HeartbeatSnapshot['payload'];
   totals: ActivityRollup['totals'] | undefined;
+  suppressOfflineCallout?: boolean;
   onOpenActivity: () => void;
   onOpenConnection: () => void;
   onOpenAudit: () => void;
@@ -322,7 +440,7 @@ function OverviewTab({
   const offline = bridge.liveness === 'offline' && !bridge.disabled_at;
   return (
     <div className="space-y-6">
-      {offline ? (
+      {offline && !suppressOfflineCallout ? (
         <section
           className="flex items-start gap-3 rounded-md border border-[var(--color-border)] p-4"
           style={{
