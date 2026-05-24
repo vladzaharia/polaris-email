@@ -25,6 +25,14 @@ export const domainKeys = {
   audit: (id: string) => [...domainKeys.all, 'detail', id, 'audit'] as const,
 };
 
+// Operators — humans who hold a polaris CLI / admin API token.
+export const operatorKeys = {
+  all: ['operators'] as const,
+  list: () => [...operatorKeys.all, 'list'] as const,
+  detail: (id: string) => [...operatorKeys.all, 'detail', id] as const,
+  audit: (id: string) => [...operatorKeys.all, 'detail', id, 'audit'] as const,
+};
+
 export const credentialKeys = {
   all: ['credentials'] as const,
   list: (mailboxId?: string) =>
