@@ -1,8 +1,9 @@
-// /v1/admin/bootstrap: one-time seed of the operator mailbox + first admin key.
+// /v1/admin/bootstrap: one-time seed of the root operator + first admin key.
 // Protected by POLARIS_SECRET_A (control-plane HMAC); idempotent (subsequent calls 409).
 //
-// Bootstrap creates the canonical `operator` mailbox, a principal bound to
-// it, and the admin api_key. The `bootstrap` table's single row acts as the
+// Bootstrap creates the canonical "root" operator row (id
+// `01J0000000000000000000ROOT`) and the admin api_key tied to it via
+// `api_keys.operator_id`. The `bootstrap` table's single row acts as the
 // gate (`consumed_at IS NULL`).
 //
 // PR 7 adds:
@@ -112,43 +113,49 @@ bootstrap.post('/v1/admin/bootstrap', async (c) => {
 
   const now = Date.now();
   const nowIso = new Date(now).toISOString();
-  const mailboxId = ulid();
-  const principalId = ulid();
+  // The bootstrap admin is the canonical "root" operator. A fixed id makes
+  // it discoverable after the fact (e.g., the panel's operators detail page
+  // surfaces the root badge for this id) and avoids spurious new operators
+  // on re-bootstrap of a wiped dev environment.
+  const operatorId = '01J0000000000000000000ROOT';
   const keyId = ulid();
   const secret = generateSecret();
   const hashed = await hashSecret(secret, c.env.ARGON2_PEPPER);
 
-  // 1) Insert (or reuse) the canonical operator mailbox. The bootstrap mailbox
-  //    is a real, usable mailbox per A11 — not a placeholder.
-  const existingMb = await c.env.DB.prepare(`SELECT id FROM mailboxes WHERE name = ?`)
-    .bind('operator')
+  // 1) Create (or reuse) the root operator. The bootstrap key now ships
+  //    with admin:impersonate in its default scopes — Wish/SSH requires
+  //    this to attribute SSH-fronted actions to the connecting operator.
+  const existingOp = await c.env.DB.prepare(`SELECT id FROM operators WHERE id = ?`)
+    .bind(operatorId)
     .first<{ id: string }>();
-  const effectiveMailboxId = existingMb?.id ?? mailboxId;
-  if (!existingMb) {
+  if (!existingOp) {
     await c.env.DB.prepare(
-      `INSERT INTO mailboxes (id, name, description, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?)`,
+      `INSERT INTO operators
+         (id, name, email, ssh_pubkey, ssh_pubkey_fp_sha256, role,
+          created_at, updated_at)
+       VALUES (?, 'root', 'root@polaris-mail.invalid', '',
+               'sha256:bootstrap-admin-no-pubkey', 'admin', ?, ?)`,
     )
-      .bind(mailboxId, 'operator', 'Bootstrap mailbox for the operator admin key', nowIso, nowIso)
+      .bind(operatorId, nowIso, nowIso)
       .run();
   }
 
-  // 2) Principal for the admin api_key.
-  await c.env.DB.prepare(
-    `INSERT INTO principals (id, mailbox_id, kind, display_name, created_at)
-     VALUES (?, ?, 'api_key', 'bootstrap-admin', ?)`,
-  )
-    .bind(principalId, effectiveMailboxId, nowIso)
-    .run();
-  // 3) The api_key itself. No sender_scopes JSON column — junction stays empty
-  //    (unrestricted) for the bootstrap admin key.
+  // 2) The api_key itself, tied to the root operator.
   await c.env.DB.prepare(
     `INSERT INTO api_keys
-       (id, principal_id, prefix, secret_argon2id, scopes,
+       (id, operator_id, prefix, secret_argon2id, scopes,
         rate_limit_per_min, status, created_at)
      VALUES (?, ?, ?, ?, ?, ?, 'primary', ?)`,
   )
-    .bind(keyId, principalId, 'pk_admin_', hashed, '["admin:rotate","admin:read"]', 60, nowIso)
+    .bind(
+      keyId,
+      operatorId,
+      'pk_admin_',
+      hashed,
+      '["admin:rotate","admin:read","admin:impersonate"]',
+      60,
+      nowIso,
+    )
     .run();
   await c.env.KV_KEY_CACHE.put(`plain:${keyId}`, secret, {
     expirationTtl: 60 * 60 * 24 * 365,
@@ -166,7 +173,7 @@ bootstrap.post('/v1/admin/bootstrap', async (c) => {
     actor: 'bootstrap',
     action: 'bootstrap.consume',
     target: keyId,
-    meta: { issued_at: now, mailbox_id: effectiveMailboxId },
+    meta: { issued_at: now, operator_id: operatorId },
   });
 
   // Mint a one-time setup code so the CLI can poll for WebAuthn
@@ -194,7 +201,7 @@ bootstrap.post('/v1/admin/bootstrap', async (c) => {
   const responseBody = {
     admin_key_id: keyId,
     admin_key_secret: secret,
-    mailbox_id: effectiveMailboxId,
+    operator_id: operatorId,
     setup_code: setupCode,
     webauthn_enrol_url: webauthnEnrolURL,
   };
