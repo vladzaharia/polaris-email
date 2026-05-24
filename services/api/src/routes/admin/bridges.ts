@@ -198,25 +198,71 @@ bridges.post('/v1/admin/bridges/:id/rotate', requireScope('admin:rotate'), async
   return c.json({ id, hmac_key: secret });
 });
 
+// DELETE has two modes:
+//   * Default (soft) — sets `disabled_at`. The row stays for audit /
+//     message-attribution purposes; the HMAC key is rejected on
+//     subsequent requests.
+//   * `?hard=true`   — physically removes the row. Requires the bridge
+//     to already be deregistered (soft-disabled). Any messages still
+//     attributed to the bridge get `bridge_id = NULL` so historical
+//     activity is preserved without the FK reference. Submission
+//     credentials with a stale `bridge_id` get the same NULL
+//     treatment. Audit_log rows that name the bridge as `target` stay
+//     forever — that table is append-only by design.
 bridges.delete('/v1/admin/bridges/:id', requireScope('admin:rotate'), async (c) => {
   const id = c.req.param('id');
-  const nowIso = new Date().toISOString();
-  const r = await c.env.DB.prepare(
-    `UPDATE bridges SET disabled_at = ? WHERE id = ? AND disabled_at IS NULL`,
-  )
-    .bind(nowIso, id)
-    .run();
-  if (r.meta.changes === 0) return buildError(c, 'not_found', 'not found or already disabled');
-  // Drop the plaintext cache so any further verify with this id 401s
-  // immediately rather than waiting on the TTL.
+  const hard = c.req.query('hard') === 'true';
+
+  if (!hard) {
+    const nowIso = new Date().toISOString();
+    const r = await c.env.DB.prepare(
+      `UPDATE bridges SET disabled_at = ? WHERE id = ? AND disabled_at IS NULL`,
+    )
+      .bind(nowIso, id)
+      .run();
+    if (r.meta.changes === 0) return buildError(c, 'not_found', 'not found or already disabled');
+    // Drop the plaintext cache so any further verify with this id 401s
+    // immediately rather than waiting on the TTL.
+    await c.env.KV_KEY_CACHE.delete(bridgePlainKvKey(id));
+    await audit(c.env, {
+      actor: actorOf(c),
+      action: 'bridge.deregister',
+      target: id,
+      meta: {},
+    });
+    return c.json({ id, disabled_at: Date.now() });
+  }
+
+  // Hard delete path.
+  const existing = await c.env.DB.prepare(`SELECT id, name, disabled_at FROM bridges WHERE id = ?`)
+    .bind(id)
+    .first<{ id: string; name: string; disabled_at: string | null }>();
+  if (!existing) return buildError(c, 'not_found', 'bridge not found');
+  if (existing.disabled_at == null) {
+    return buildError(
+      c,
+      'conflict',
+      'bridge must be deregistered before it can be permanently deleted',
+    );
+  }
+
+  // D1 batches run under one implicit transaction, so the NULL-out +
+  // DELETE on the FK-bearing column commit together. `messages.bridge_id`
+  // is the only live FK to bridges; `submission_credentials` was dropped
+  // in migration 0003.
+  await c.env.DB.batch([
+    c.env.DB.prepare(`UPDATE messages SET bridge_id = NULL WHERE bridge_id = ?`).bind(id),
+    c.env.DB.prepare(`DELETE FROM bridges WHERE id = ?`).bind(id),
+  ]);
+
   await c.env.KV_KEY_CACHE.delete(bridgePlainKvKey(id));
   await audit(c.env, {
     actor: actorOf(c),
-    action: 'bridge.deregister',
+    action: 'bridge.delete',
     target: id,
-    meta: {},
+    meta: { name: existing.name },
   });
-  return c.json({ id, disabled_at: Date.now() });
+  return c.json({ id, deleted: true });
 });
 
 // ---------- per-bridge telemetry endpoints ----------

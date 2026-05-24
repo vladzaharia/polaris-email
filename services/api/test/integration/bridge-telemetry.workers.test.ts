@@ -413,6 +413,123 @@ describe('bridge telemetry', () => {
     expect(body.data[0]?.target).toBe(bridge.id);
   });
 
+  it('DELETE :id?hard=true rejects if bridge is still active; succeeds after deregister', async () => {
+    const admin = sharedAdmin;
+    const bridge = await registerBridge(admin, 'tel-hard');
+
+    // Active bridge — hard delete refused with conflict.
+    const tooEarly = await callWorker(
+      await signedRequest(
+        `https://x/v1/admin/bridges/${bridge.id}?hard=true`,
+        '',
+        'DELETE',
+        admin.admin_key_secret,
+        admin.admin_key_id,
+      ),
+    );
+    expect(tooEarly.status).toBe(409);
+
+    // Soft-deregister first.
+    const dereg = await callWorker(
+      await signedRequest(
+        `https://x/v1/admin/bridges/${bridge.id}`,
+        '',
+        'DELETE',
+        admin.admin_key_secret,
+        admin.admin_key_id,
+      ),
+    );
+    expect(dereg.status).toBe(200);
+
+    // Hard delete now allowed.
+    const hard = await callWorker(
+      await signedRequest(
+        `https://x/v1/admin/bridges/${bridge.id}?hard=true`,
+        '',
+        'DELETE',
+        admin.admin_key_secret,
+        admin.admin_key_id,
+      ),
+    );
+    expect(hard.status).toBe(200);
+    const body = (await hard.json()) as { id: string; deleted: boolean };
+    expect(body.deleted).toBe(true);
+
+    // GET 404 confirms the row is gone.
+    const getAfter = await callWorker(
+      await signedRequest(
+        `https://x/v1/admin/bridges/${bridge.id}`,
+        '',
+        'GET',
+        admin.admin_key_secret,
+        admin.admin_key_id,
+      ),
+    );
+    expect(getAfter.status).toBe(404);
+  });
+
+  it('DELETE :id?hard=true nulls out messages.bridge_id (preserves messages, drops attribution)', async () => {
+    const admin = sharedAdmin;
+    const bridge = await registerBridge(admin, 'tel-msg-null');
+
+    const mailboxId = ulid();
+    const nowIso = new Date().toISOString();
+    await testEnv.DB.prepare(
+      `INSERT INTO mailboxes (id, name, description, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?)`,
+    )
+      .bind(mailboxId, 'tel-msg-null-box', null, nowIso, nowIso)
+      .run();
+
+    const msgId = ulid();
+    await testEnv.DB.prepare(
+      `INSERT INTO messages
+         (id, mailbox_id, bridge_id, direction, status,
+          r2_key, content_sha256, from_addr, to_addrs, subject, created_at)
+       VALUES (?, ?, ?, 'out', 'delivered', ?, ?, ?, ?, ?, ?)`,
+    )
+      .bind(
+        msgId,
+        mailboxId,
+        bridge.id,
+        `r2/${msgId}`,
+        'sha256-test',
+        'a@example.com',
+        'b@example.com',
+        'subj',
+        new Date().toISOString(),
+      )
+      .run();
+
+    // Deregister then hard-delete.
+    await callWorker(
+      await signedRequest(
+        `https://x/v1/admin/bridges/${bridge.id}`,
+        '',
+        'DELETE',
+        admin.admin_key_secret,
+        admin.admin_key_id,
+      ),
+    );
+    const hard = await callWorker(
+      await signedRequest(
+        `https://x/v1/admin/bridges/${bridge.id}?hard=true`,
+        '',
+        'DELETE',
+        admin.admin_key_secret,
+        admin.admin_key_id,
+      ),
+    );
+    expect(hard.status).toBe(200);
+
+    // Message still exists; bridge_id is now NULL.
+    const msgRow = await testEnv.DB.prepare(`SELECT id, bridge_id FROM messages WHERE id = ?`)
+      .bind(msgId)
+      .first<{ id: string; bridge_id: string | null }>();
+    expect(msgRow?.id).toBe(msgId);
+    expect(msgRow?.bridge_id).toBeNull();
+  });
+
   it('GET /v1/admin/bridges/:id/heartbeat for a bridge that never phoned home returns null payload', async () => {
     const admin = sharedAdmin;
     const bridge = await registerBridge(admin, 'tel-null');

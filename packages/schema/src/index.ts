@@ -876,10 +876,13 @@ export const AuditAction = z.enum([
   'mailbox_credential.rotate',
   'mailbox_credential.disable',
   'dry_run_rotate',
-  // bridge lifecycle (renamed from daemon.* in B4)
+  // bridge lifecycle (renamed from daemon.* in B4). `bridge.delete` is
+  // the hard-delete that follows a deregister and physically removes
+  // the row (added in migration 0008).
   'bridge.register',
   'bridge.rotate',
   'bridge.deregister',
+  'bridge.delete',
   // domain + DKIM
   'domain.create',
   'domain.update',
