@@ -208,7 +208,7 @@ export function SendTestDialog({
           ) : null}
         </div>
         <DialogFooter>
-          <Button onClick={submit} disabled={submitting || !from || !to}>
+          <Button size="sm" onClick={submit} disabled={submitting || !from || !to}>
             {submitting ? 'Sending…' : 'Send test'}
           </Button>
         </DialogFooter>

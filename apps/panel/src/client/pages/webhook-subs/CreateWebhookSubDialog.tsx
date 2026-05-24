@@ -155,6 +155,7 @@ export function CreateWebhookSubDialog({ mailboxId }: { mailboxId: string }) {
           </div>
           <DialogFooter>
             <Button
+              size="sm"
               onClick={async () => {
                 const r = await create.mutateAsync({
                   mailbox_id: mailboxId,

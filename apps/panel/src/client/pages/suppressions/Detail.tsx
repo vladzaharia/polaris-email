@@ -142,7 +142,7 @@ export function SuppressionDetail() {
 
         {!r.disabled_at && (
           <>
-            <Button variant="outline" onClick={() => setRemoveOpen(true)}>
+            <Button size="sm" variant="outline" onClick={() => setRemoveOpen(true)}>
               Remove suppression
             </Button>
             <DestructiveActionDialog

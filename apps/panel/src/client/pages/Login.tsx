@@ -238,18 +238,25 @@ export function Login() {
                   <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
                   <span>Redirecting to Polaris ID…</span>
                 </div>
-                <Button key="cancel" variant="ghost" autoFocus onClick={cancel} className="w-full">
+                <Button
+                  size="sm"
+                  key="cancel"
+                  variant="ghost"
+                  autoFocus
+                  onClick={cancel}
+                  className="w-full"
+                >
                   Cancel
                 </Button>
               </div>
             ) : (
-              <Button key="primary" autoFocus onClick={go} className="w-full">
+              <Button size="sm" key="primary" autoFocus onClick={go} className="w-full">
                 {error ? 'Try again' : 'Continue with Polaris ID'}
               </Button>
             )}
 
             {error?.showClearAndReload ? (
-              <Button variant="outline" onClick={clearAndReload} className="w-full">
+              <Button size="sm" variant="outline" onClick={clearAndReload} className="w-full">
                 Clear and reload
               </Button>
             ) : null}

@@ -141,10 +141,16 @@ export function DestructiveActionDialog({
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isPending}>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => onOpenChange(false)}
+            disabled={isPending}
+          >
             Cancel
           </Button>
           <Button
+            size="sm"
             variant="destructive"
             onClick={() => {
               if (!canConfirm) return;

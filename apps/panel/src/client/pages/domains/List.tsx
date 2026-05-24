@@ -211,6 +211,7 @@ function AddDomainDialog() {
         </div>
         <DialogFooter>
           <Button
+            size="sm"
             disabled={!composedDomain || create.isPending}
             onClick={async () => {
               const r = await create.mutateAsync({

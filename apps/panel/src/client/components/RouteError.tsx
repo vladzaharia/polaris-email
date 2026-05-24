@@ -38,7 +38,9 @@ export function RouteError({ error }: { error: unknown }) {
             </p>
           ) : null}
           <div className="mt-4">
-            <Button onClick={() => window.location.reload()}>Reload</Button>
+            <Button size="sm" onClick={() => window.location.reload()}>
+              Reload
+            </Button>
           </div>
         </div>
       </div>

@@ -541,7 +541,7 @@ function CreateMailboxWizard() {
             <ErrorText error={formError} />
           </div>
           <DialogFooter>
-            <Button onClick={submit} disabled={!canSubmit}>
+            <Button size="sm" onClick={submit} disabled={!canSubmit}>
               {isPending ? 'Creating…' : 'Create mailbox'}
             </Button>
           </DialogFooter>

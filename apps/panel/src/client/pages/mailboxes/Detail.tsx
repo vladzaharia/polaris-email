@@ -290,6 +290,7 @@ function AddSenderDialog({ mailboxId }: { mailboxId: string }) {
         </div>
         <DialogFooter>
           <Button
+            size="sm"
             onClick={async () => {
               await create.mutateAsync({
                 domain_id: domainId,
@@ -469,6 +470,7 @@ function AddReceiverDialog({ mailboxId }: { mailboxId: string }) {
         </div>
         <DialogFooter>
           <Button
+            size="sm"
             disabled={!domainId || !pattern || create.isPending}
             onClick={async () => {
               await create.mutateAsync({

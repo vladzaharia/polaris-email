@@ -294,6 +294,7 @@ export function CreateSuppressionDialog({ entityType }: { entityType: 'recipient
         </div>
         <DialogFooter>
           <Button
+            size="sm"
             onClick={async () => {
               await create.mutateAsync({
                 entity_type: entityType,

@@ -199,6 +199,7 @@ export function IssueCredentialDialog({ mailboxId }: { mailboxId: string }) {
           </div>
           <DialogFooter>
             <Button
+              size="sm"
               onClick={async () => {
                 const body: IssueRequest = { type };
                 if (displayName.trim()) body.display_name = displayName.trim();

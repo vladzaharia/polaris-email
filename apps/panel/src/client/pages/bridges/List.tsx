@@ -154,6 +154,7 @@ function AddBridgeDialog({ onRegistered }: { onRegistered: (b: RegisteredBridge)
         </div>
         <DialogFooter>
           <Button
+            size="sm"
             disabled={!name.trim() || register.isPending}
             onClick={async () => {
               const r = await register.mutateAsync({ name: name.trim() });
@@ -231,7 +232,7 @@ function BridgeInstructionsDialog({
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
+          <Button size="sm" variant="outline" onClick={() => onOpenChange(false)}>
             Done
           </Button>
         </DialogFooter>

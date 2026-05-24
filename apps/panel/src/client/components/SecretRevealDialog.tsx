@@ -83,7 +83,7 @@ export function SecretRevealDialog({
             </div>
           ) : null}
 
-          <Button type="button" variant="outline" onClick={copy} disabled={!secret}>
+          <Button size="sm" type="button" variant="outline" onClick={copy} disabled={!secret}>
             {copied ? 'Copied' : 'Copy'}
           </Button>
 
@@ -91,7 +91,9 @@ export function SecretRevealDialog({
         </div>
 
         <DialogFooter>
-          <Button onClick={() => onOpenChange(false)}>I&apos;ve saved it</Button>
+          <Button size="sm" onClick={() => onOpenChange(false)}>
+            I&apos;ve saved it
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

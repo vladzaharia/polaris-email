@@ -308,6 +308,7 @@ export function WebhookSubDetail() {
             </div>
             <div className="flex flex-wrap gap-2">
               <Button
+                size="sm"
                 onClick={() =>
                   patch.mutate({
                     url,
@@ -320,6 +321,7 @@ export function WebhookSubDetail() {
                 {patch.isPending ? 'Saving…' : 'Save'}
               </Button>
               <Button
+                size="sm"
                 variant="outline"
                 onClick={() => test.mutate(undefined)}
                 disabled={test.isPending}
@@ -327,6 +329,7 @@ export function WebhookSubDetail() {
                 {test.isPending ? 'Testing…' : 'Send test event'}
               </Button>
               <Button
+                size="sm"
                 variant="destructive"
                 onClick={() => setConfirmDelete(true)}
                 disabled={remove.isPending}
