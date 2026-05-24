@@ -48,6 +48,7 @@ const CONFIGURATION: NavItem[] = [
   { to: '/mailboxes', label: 'Mailboxes', icon: Inbox },
   { to: '/domains', label: 'Domains', icon: Globe2 },
   { to: '/bridges', label: 'Bridges', icon: Cable },
+  { to: '/operators', label: 'Operators', icon: UserCog },
 ];
 
 const TOOLS: NavItem[] = [

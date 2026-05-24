@@ -5,6 +5,7 @@
 // bootstrap path) cannot be disabled via this page — it's the last-resort
 // admin key. Rotation is still allowed.
 import { useState } from 'react';
+import { useParams } from '@tanstack/react-router';
 import { KeyRound, RotateCw, ShieldAlert, UserCog } from 'lucide-react';
 import { PageCard } from '../../layouts/PageCard.js';
 import { Badge } from '../../components/ui/badge.js';
@@ -52,7 +53,8 @@ interface RotateKeyResponse {
   login_token: string;
 }
 
-export function OperatorDetail({ id }: { id: string }) {
+export function OperatorDetail() {
+  const { id } = useParams({ from: '/operators/$id' });
   const q = useAdminQuery<OperatorPayload>(operatorKeys.detail(id), `/api/admin/operators/${id}`);
   const [rotatedToken, setRotatedToken] = useState<string | null>(null);
 

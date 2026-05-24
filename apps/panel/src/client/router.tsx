@@ -172,6 +172,18 @@ const domainDetail = createRoute({
   component: lazyRouteComponent(() => import('./pages/domains/Detail.js'), 'DomainDetail'),
   errorComponent: RouteError,
 });
+const operatorsList = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/operators',
+  component: lazyRouteComponent(() => import('./pages/operators/List.js'), 'OperatorsList'),
+  errorComponent: RouteError,
+});
+const operatorDetail = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/operators/$id',
+  component: lazyRouteComponent(() => import('./pages/operators/Detail.js'), 'OperatorDetail'),
+  errorComponent: RouteError,
+});
 // /credentials standalone list removed (Stage 4 consolidation); the page was
 // a mailbox picker funnel whose data now lives inline on /mailboxes/$id.
 // /credentials/$id stays — it's the rotate/revoke + stats surface, reached
@@ -299,6 +311,8 @@ const routeTree = rootRoute.addChildren([
   mailboxDetail,
   domainsList,
   domainDetail,
+  operatorsList,
+  operatorDetail,
   credentialDetail,
   messagesList,
   messageDetail,
