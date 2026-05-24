@@ -151,8 +151,8 @@ function AddDomainDialog() {
       }}
     >
       <DialogTrigger asChild>
-        <Button size="icon" title="Add domain" aria-label="Add domain">
-          <Plus className="h-4 w-4" />
+        <Button size="sm">
+          <Plus className="h-4 w-4" /> Add domain
         </Button>
       </DialogTrigger>
       <DialogContent>

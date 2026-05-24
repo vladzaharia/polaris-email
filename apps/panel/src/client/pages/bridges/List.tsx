@@ -117,8 +117,8 @@ function AddBridgeDialog({ onRegistered }: { onRegistered: (b: RegisteredBridge)
       }}
     >
       <DialogTrigger asChild>
-        <Button size="icon" title="Add bridge" aria-label="Add bridge">
-          <Plus className="h-4 w-4" />
+        <Button size="sm">
+          <Plus className="h-4 w-4" /> Add bridge
         </Button>
       </DialogTrigger>
       <DialogContent>

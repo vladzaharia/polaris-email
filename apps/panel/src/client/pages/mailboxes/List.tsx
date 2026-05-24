@@ -331,8 +331,8 @@ function CreateMailboxWizard() {
         }}
       >
         <DialogTrigger asChild>
-          <Button size="icon" title="Add mailbox" aria-label="Add mailbox">
-            <Plus className="h-4 w-4" />
+          <Button size="sm">
+            <Plus className="h-4 w-4" /> Add mailbox
           </Button>
         </DialogTrigger>
         <DialogContent className="max-h-[85vh] overflow-y-auto">

@@ -5,7 +5,7 @@
 // Mint via CLI for now (`polaris-mail operator add`); the panel form is
 // a follow-up because the response includes a one-time login token that
 // needs careful read-once handling.
-import { Plus, UserCog } from 'lucide-react';
+import { UserCog } from 'lucide-react';
 import { PageCard } from '../../layouts/PageCard.js';
 import {
   Table,
@@ -16,13 +16,13 @@ import {
   TableRow,
 } from '../../components/ui/table.js';
 import { Badge } from '../../components/ui/badge.js';
-import { Button } from '../../components/ui/button.js';
 import { Skeleton } from '../../components/ui/skeleton.js';
 import { EmptyState } from '../../components/EmptyState.js';
 import { ErrorText } from '../../components/ErrorText.js';
 import { useAdminQuery } from '../../hooks/useAdminApi.js';
 import { operatorKeys } from '../../queryKeys.js';
 import { formatRelative } from '../../lib/format.js';
+import { CreateOperatorDialog } from './CreateOperatorDialog.js';
 
 interface OperatorRow {
   id: string;
@@ -49,15 +49,7 @@ export function OperatorsList() {
         </span>
       }
       description="Humans (and service principals) who hold a polaris CLI / admin API token. Each operator owns one primary api_key; rotate via the detail page."
-      actions={
-        <Button
-          size="sm"
-          disabled
-          title="Use `polaris-mail operator add` until the panel form ships"
-        >
-          <Plus className="h-4 w-4" /> Add operator
-        </Button>
-      }
+      actions={<CreateOperatorDialog />}
     >
       {q.isLoading ? (
         <Skeleton className="h-24 w-full" />

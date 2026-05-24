@@ -181,8 +181,8 @@ export function CreateSuppressionDialog({ entityType }: { entityType: 'recipient
       }}
     >
       <DialogTrigger asChild>
-        <Button size="icon" title="Add suppression" aria-label="Add suppression">
-          <Plus className="h-4 w-4" />
+        <Button size="sm">
+          <Plus className="h-4 w-4" /> Add suppression
         </Button>
       </DialogTrigger>
       <DialogContent>
