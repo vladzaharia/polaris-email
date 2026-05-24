@@ -83,10 +83,10 @@ async function seedDomain(): Promise<void> {
   const now = new Date().toISOString();
   await testEnv.DB.prepare(
     `INSERT INTO mail_domains (id, zone_id, name, status, wildcard_subdomains,
-       dmarc_policy, dmarc_rua, inbound_enabled, outbound_enabled, provider,
+       dmarc_policy, inbound_enabled, outbound_enabled, provider,
        dkim_selector, created_at, updated_at, verified_at)
      VALUES ('d1', 'z1', 'verified.test', 'verified', 1, 'none',
-       'mailto:postmaster@verified.test', 1, 1, 'cloudflare', 'cf', ?, ?, ?)`,
+       1, 1, 'cloudflare', 'cf', ?, ?, ?)`,
   )
     .bind(now, now, now)
     .run();

@@ -73,14 +73,14 @@ Two new code paths (CF GraphQL client + DMARC Management REST helpers), one new 
 
 ### Architectural decisions (and the alternatives considered)
 
-| Decision | Chosen | Alternatives | Why |
-|---|---|---|---|
-| Where reports live | Mirror per-(domain, day) into D1 | Query CF GraphQL on every panel request; hybrid (rollup mirror + live detail) | Promotion cron is the load-bearing reader and must not depend on a live external API. Panel detail view tolerates live GraphQL fine. |
-| Per-source-IP detail | Live CF GraphQL on the detail route | Mirror to a new `dmarc_report_sources` table | Detail view is operator-curiosity; not worth doubling the schema. |
-| Non-CF-DNS operators | Drop the path. polaris-managed outbound domains require a CF zone for DMARC. | Keep ARF inbox as a documented fallback; CF-DNS-only with a stubbed promotion state | Pre-production; cleaner cut over gradual cutover. |
-| DMARC Management enablement | Auto during `POST /v1/admin/domains` | Operator-initiated CLI/panel step (mirror MTA-STS) | DMARC Management is one idempotent API call. MTA-STS analogy doesn't apply (no Worker provisioning). |
-| Polaris and DMARC policy | Recommendation + opt-in command path | Pure read-only; recommendation-only without command path | Keeps the value of the existing soak state machine; "at best, issue commands" interpretation. |
-| Policy-change mechanism | Call into CF (Email Service or DMARC Management endpoint) | Direct `_dmarc` TXT edit via DNS API | "Let CF manage the records entirely." Polaris does not own the record. |
+| Decision                    | Chosen                                                                       | Alternatives                                                                        | Why                                                                                                                                  |
+| --------------------------- | ---------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| Where reports live          | Mirror per-(domain, day) into D1                                             | Query CF GraphQL on every panel request; hybrid (rollup mirror + live detail)       | Promotion cron is the load-bearing reader and must not depend on a live external API. Panel detail view tolerates live GraphQL fine. |
+| Per-source-IP detail        | Live CF GraphQL on the detail route                                          | Mirror to a new `dmarc_report_sources` table                                        | Detail view is operator-curiosity; not worth doubling the schema.                                                                    |
+| Non-CF-DNS operators        | Drop the path. polaris-managed outbound domains require a CF zone for DMARC. | Keep ARF inbox as a documented fallback; CF-DNS-only with a stubbed promotion state | Pre-production; cleaner cut over gradual cutover.                                                                                    |
+| DMARC Management enablement | Auto during `POST /v1/admin/domains`                                         | Operator-initiated CLI/panel step (mirror MTA-STS)                                  | DMARC Management is one idempotent API call. MTA-STS analogy doesn't apply (no Worker provisioning).                                 |
+| Polaris and DMARC policy    | Recommendation + opt-in command path                                         | Pure read-only; recommendation-only without command path                            | Keeps the value of the existing soak state machine; "at best, issue commands" interpretation.                                        |
+| Policy-change mechanism     | Call into CF (Email Service or DMARC Management endpoint)                    | Direct `_dmarc` TXT edit via DNS API                                                | "Let CF manage the records entirely." Polaris does not own the record.                                                               |
 
 ## 4. Component-level changes
 
@@ -208,15 +208,15 @@ Audit-action CHECK constraints in 0001_init.sql / 0004_admin_alerts_dismissal.sq
 
 ## 7. Error handling
 
-| Failure | Behaviour |
-|---|---|
-| `enableDmarcManagement` errors during onboarding | Log + record `dmarc_mgmt_provisioning_hint` on response; do not fail onboard. Operator can retry via a new `polaris-mail domain enable-dmarc-mgmt <domain>` CLI command (added to `apps/polaris-cli`). |
-| CF GraphQL request fails during mirror cron | Log; emit `dmarc_mirror_failure` admin alert (severity `warn`); skip the zone; continue. Rollup stays at last-mirrored values. |
-| CF GraphQL returns shape we don't recognize | Type-check at parse boundary; skip the row; log a structured `dmarc_mirror_shape_drift` warning. Do not write malformed data. |
-| `setDmarcPolicy` fails (auto cron) | Do not advance `dmarc_promotion_state`. Audit-log with `dns_published=false`. Emit `dmarc_policy_publish_failed` admin alert. Next cron run retries. |
-| `setDmarcPolicy` fails (operator `/advance`) | Return 502 with the CF error body; state is unchanged. |
-| Zone not found / `mail_domains.cf_zone_id` is NULL | Skip the domain in the mirror cron; surface a `dmarc_mirror_zone_missing` warning. The panel summary card shows "no data yet". |
-| 14-day rolling window is sparse (new domain or low volume) | State machine already requires `daysCovered >= 14` and `dailyAvg >= 100`; stays in `none` until the window fills. No change. |
+| Failure                                                    | Behaviour                                                                                                                                                                                              |
+| ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `enableDmarcManagement` errors during onboarding           | Log + record `dmarc_mgmt_provisioning_hint` on response; do not fail onboard. Operator can retry via a new `polaris-mail domain enable-dmarc-mgmt <domain>` CLI command (added to `apps/polaris-cli`). |
+| CF GraphQL request fails during mirror cron                | Log; emit `dmarc_mirror_failure` admin alert (severity `warn`); skip the zone; continue. Rollup stays at last-mirrored values.                                                                         |
+| CF GraphQL returns shape we don't recognize                | Type-check at parse boundary; skip the row; log a structured `dmarc_mirror_shape_drift` warning. Do not write malformed data.                                                                          |
+| `setDmarcPolicy` fails (auto cron)                         | Do not advance `dmarc_promotion_state`. Audit-log with `dns_published=false`. Emit `dmarc_policy_publish_failed` admin alert. Next cron run retries.                                                   |
+| `setDmarcPolicy` fails (operator `/advance`)               | Return 502 with the CF error body; state is unchanged.                                                                                                                                                 |
+| Zone not found / `mail_domains.cf_zone_id` is NULL         | Skip the domain in the mirror cron; surface a `dmarc_mirror_zone_missing` warning. The panel summary card shows "no data yet".                                                                         |
+| 14-day rolling window is sparse (new domain or low volume) | State machine already requires `daysCovered >= 14` and `dailyAvg >= 100`; stays in `none` until the window fills. No change.                                                                           |
 
 ## 8. Testing strategy
 

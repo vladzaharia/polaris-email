@@ -15,6 +15,7 @@
 ### Task 1: D1 migration — drop legacy schema
 
 **Files:**
+
 - Create: `services/api/migrations/0005_cf_dmarc_management.sql`
 
 - [ ] **Step 1: Inspect the existing audit_log CHECK constraint**
@@ -147,6 +148,7 @@ Expected: migration 0005 applies cleanly. If the audit-log rebuild errors out on
 - [ ] **Step 5: Verify the schema**
 
 Run:
+
 ```sh
 pnpm --filter @polaris-mail/api exec wrangler d1 execute polaris-mail --local --command "SELECT name FROM sqlite_master WHERE type='table' AND name='dmarc_aggregate_reports';"
 pnpm --filter @polaris-mail/api exec wrangler d1 execute polaris-mail --local --command "SELECT id FROM mailboxes WHERE id='01HXPLATFORMDMARCREPORTS00';"
@@ -167,6 +169,7 @@ git commit -m "feat(api/migrations): drop ARF-inbox DMARC schema for CF DMARC Ma
 ### Task 2: cf-api — GraphQL client primitive
 
 **Files:**
+
 - Create: `packages/cf-api/src/graphql.ts`
 - Create: `packages/cf-api/test/graphql.test.ts`
 
@@ -211,16 +214,17 @@ describe('graphqlQuery', () => {
   });
 
   it('throws on a GraphQL errors[] response', async () => {
-    const fetchMock = vi.fn(async () =>
-      new Response(JSON.stringify({ errors: [{ message: 'bad zone' }] }), {
-        status: 200,
-        headers: { 'content-type': 'application/json' },
-      }),
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ errors: [{ message: 'bad zone' }] }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
     );
     const client = clientWithFetch(fetchMock as unknown as typeof fetch);
-    await expect(
-      graphqlQuery(client, { query: '{ foo }', variables: {} }),
-    ).rejects.toThrow(/bad zone/);
+    await expect(graphqlQuery(client, { query: '{ foo }', variables: {} })).rejects.toThrow(
+      /bad zone/,
+    );
   });
 });
 ```
@@ -296,6 +300,7 @@ git commit -m "feat(cf-api): GraphQL POST client for /client/v4/graphql"
 ### Task 3: cf-api — DMARC Analytics GraphQL query
 
 **Files:**
+
 - Create: `packages/cf-api/src/dmarc-graphql.ts`
 - Create: `packages/cf-api/test/dmarc-graphql.test.ts`
 
@@ -380,8 +385,8 @@ import type { CloudflareApiClient } from './client.js';
 import { graphqlQuery } from './graphql.js';
 
 export interface DmarcAggregateRow {
-  day: string;       // YYYY-MM-DD
-  domain: string;    // header-from domain
+  day: string; // YYYY-MM-DD
+  domain: string; // header-from domain
   totalCount: number;
   dmarcPass: number;
   dkimPass: number;
@@ -475,6 +480,7 @@ git commit -m "feat(cf-api): dmarcReportsAdaptive aggregate-by-day query helper"
 ### Task 4: cf-api — DMARC Management REST helpers
 
 **Files:**
+
 - Create: `packages/cf-api/src/dmarc-management.ts`
 - Create: `packages/cf-api/test/dmarc-management.test.ts`
 
@@ -503,23 +509,33 @@ describe('enableDmarcManagement', () => {
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
       expect(url).toContain('/zones/zone_x/dmarc_management');
       expect(init?.method).toBe('POST');
-      return new Response(
-        JSON.stringify({ success: true, result: { enabled: true } }),
-        { status: 200, headers: { 'content-type': 'application/json' } },
-      );
+      return new Response(JSON.stringify({ success: true, result: { enabled: true } }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
     });
-    const r = await enableDmarcManagement(clientWithFetch(fetchMock as unknown as typeof fetch), 'zone_x');
+    const r = await enableDmarcManagement(
+      clientWithFetch(fetchMock as unknown as typeof fetch),
+      'zone_x',
+    );
     expect(r.enabled).toBe(true);
   });
 
   it('treats "already enabled" (409 or specific error code) as success', async () => {
-    const fetchMock = vi.fn(async () =>
-      new Response(
-        JSON.stringify({ success: false, errors: [{ code: 'already_enabled', message: 'already enabled' }] }),
-        { status: 409, headers: { 'content-type': 'application/json' } },
-      ),
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            success: false,
+            errors: [{ code: 'already_enabled', message: 'already enabled' }],
+          }),
+          { status: 409, headers: { 'content-type': 'application/json' } },
+        ),
     );
-    const r = await enableDmarcManagement(clientWithFetch(fetchMock as unknown as typeof fetch), 'zone_x');
+    const r = await enableDmarcManagement(
+      clientWithFetch(fetchMock as unknown as typeof fetch),
+      'zone_x',
+    );
     expect(r.enabled).toBe(true);
   });
 });
@@ -547,9 +563,7 @@ describe('setDmarcPolicy', () => {
 
 describe('getDmarcManagementStatus', () => {
   it('returns null when DMARC Management is not enabled (404)', async () => {
-    const fetchMock = vi.fn(async () =>
-      new Response('{}', { status: 404 }),
-    );
+    const fetchMock = vi.fn(async () => new Response('{}', { status: 404 }));
     const r = await getDmarcManagementStatus(
       clientWithFetch(fetchMock as unknown as typeof fetch),
       'zone_x',
@@ -558,11 +572,12 @@ describe('getDmarcManagementStatus', () => {
   });
 
   it('returns the policy + enabled flag on 200', async () => {
-    const fetchMock = vi.fn(async () =>
-      new Response(
-        JSON.stringify({ success: true, result: { enabled: true, policy: 'none' } }),
-        { status: 200, headers: { 'content-type': 'application/json' } },
-      ),
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ success: true, result: { enabled: true, policy: 'none' } }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
     );
     const r = await getDmarcManagementStatus(
       clientWithFetch(fetchMock as unknown as typeof fetch),
@@ -684,6 +699,7 @@ git commit -m "feat(cf-api): DMARC Management REST helpers (enable, setPolicy, g
 ### Task 5: cf-api — drop `_dmarc` TXT from `expectedRecordsFor()` + auto-enable DMARC Management during onboarding
 
 **Files:**
+
 - Modify: `packages/cf-api/src/email-service.ts`
 - Modify: `packages/cf-api/test/discovery.test.ts` (and any other tests asserting the `_dmarc` record)
 
@@ -705,17 +721,17 @@ In `packages/cf-api/src/email-service.ts`, remove the entire TXT block at lines 
 After the existing Email Service onboarding `try { … } catch` block (around line 96 in `email-service.ts`), before the manual-publish loop, add:
 
 ```typescript
-  if (cfManaged) {
-    try {
-      await enableDmarcManagement(client, opts.zoneId);
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.warn(
-        'email-service: DMARC Management enable failed; onboarding continues, operator can retry',
-        { domain: opts.domain, error: err instanceof Error ? err.message : String(err) },
-      );
-    }
+if (cfManaged) {
+  try {
+    await enableDmarcManagement(client, opts.zoneId);
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.warn(
+      'email-service: DMARC Management enable failed; onboarding continues, operator can retry',
+      { domain: opts.domain, error: err instanceof Error ? err.message : String(err) },
+    );
   }
+}
 ```
 
 Add the import at the top:
@@ -754,6 +770,7 @@ git commit -m "feat(cf-api): auto-enable DMARC Management on onboard; drop _dmar
 ### Task 6: services/api — new `dmarc-mirror` cron
 
 **Files:**
+
 - Create: `services/api/src/scheduled/dmarc-mirror.ts`
 - Create: `services/api/test/integration/dmarc-mirror.workers.test.ts`
 
@@ -1020,7 +1037,11 @@ Note on imports: the workspace alias `@polaris-mail/cf-api/dmarc-graphql` depend
 // packages/cf-api/src/index.ts — add:
 export { fetchDmarcAggregatesByDay } from './dmarc-graphql.js';
 export type { DmarcAggregateRow, FetchDmarcAggregatesOpts } from './dmarc-graphql.js';
-export { enableDmarcManagement, setDmarcPolicy, getDmarcManagementStatus } from './dmarc-management.js';
+export {
+  enableDmarcManagement,
+  setDmarcPolicy,
+  getDmarcManagementStatus,
+} from './dmarc-management.js';
 export type { DmarcManagementStatus, DmarcPolicy } from './dmarc-management.js';
 ```
 
@@ -1044,6 +1065,7 @@ git commit -m "feat(api): dmarc-mirror cron — mirror CF GraphQL aggregates int
 ### Task 7: services/api — wire `dmarc-mirror` into scheduled dispatch + cron triggers
 
 **Files:**
+
 - Modify: `services/api/src/scheduled/index.ts`
 - Modify: `services/api/wrangler.jsonc`
 
@@ -1102,6 +1124,7 @@ git commit -m "feat(api/scheduled): register dmarc-mirror cron at 02:00 UTC"
 ### Task 8: services/api — rewire `dmarc-promote` to call `setDmarcPolicy`
 
 **Files:**
+
 - Modify: `services/api/src/scheduled/dmarc-promote.ts`
 - Modify: `services/api/test/integration/dmarc-promote.workers.test.ts` (fixtures only; assertions still apply)
 
@@ -1114,25 +1137,25 @@ Remove the existing `publishDmarcRecord` function (lines 97–108) and the `dmar
 Replace the call site in `transition()` (lines 121–129) with:
 
 ```typescript
-  let dnsPublished = false;
-  let publishNote = '';
-  if (newPolicy && (newState === 'quarantine' || newState === 'reject')) {
-    try {
-      const zoneId = await resolveCfZoneId(env, domain.id);
-      if (!zoneId) {
-        publishNote = 'mail_domains.cf_zone_id is NULL';
-      } else {
-        const client = new CloudflareApiClient({
-          apiToken: env.CF_API_TOKEN,
-          accountId: env.CF_ACCOUNT_ID,
-        });
-        await setDmarcPolicy(client, zoneId, newPolicy as 'quarantine' | 'reject');
-        dnsPublished = true;
-      }
-    } catch (err) {
-      publishNote = err instanceof Error ? err.message : String(err);
+let dnsPublished = false;
+let publishNote = '';
+if (newPolicy && (newState === 'quarantine' || newState === 'reject')) {
+  try {
+    const zoneId = await resolveCfZoneId(env, domain.id);
+    if (!zoneId) {
+      publishNote = 'mail_domains.cf_zone_id is NULL';
+    } else {
+      const client = new CloudflareApiClient({
+        apiToken: env.CF_API_TOKEN,
+        accountId: env.CF_ACCOUNT_ID,
+      });
+      await setDmarcPolicy(client, zoneId, newPolicy as 'quarantine' | 'reject');
+      dnsPublished = true;
     }
+  } catch (err) {
+    publishNote = err instanceof Error ? err.message : String(err);
   }
+}
 ```
 
 At the top of the file, add imports:
@@ -1160,6 +1183,7 @@ async function resolveCfZoneId(env: Env, domainId: string): Promise<string | nul
 - [ ] **Step 2: Drop the `dmarc_record_managed_by_polaris` column usage**
 
 In `dmarc-promote.ts`, update:
+
 - The `DomainRow` interface — remove `dmarc_record_managed_by_polaris`.
 - The `SELECT` SQL in `dmarcPromoteRun` — remove `dmarc_record_managed_by_polaris` from the column list.
 - Anywhere else that referenced the field.
@@ -1167,6 +1191,7 @@ In `dmarc-promote.ts`, update:
 - [ ] **Step 3: Update the integration test fixtures**
 
 In `services/api/test/integration/dmarc-promote.workers.test.ts`:
+
 - The `seedDomain` helper's INSERT must no longer set `dmarc_record_managed_by_polaris` (the column doesn't exist). Confirm by re-reading the file; the current INSERT does not set it, so this should be a no-op.
 - No assertion changes needed — existing tests only check `dmarc_promotion_state`, which still works.
 
@@ -1190,10 +1215,10 @@ it('calls CF setDmarcPolicy when auto-mode advances into quarantine', async () =
     expect(url).toContain('/zones/');
     expect(url).toContain('/dmarc_management');
     expect(init?.method).toBe('PATCH');
-    return new Response(
-      JSON.stringify({ success: true, result: { policy: 'quarantine' } }),
-      { status: 200, headers: { 'content-type': 'application/json' } },
-    );
+    return new Response(JSON.stringify({ success: true, result: { policy: 'quarantine' } }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
   });
 
   // wire the mock onto env (the cron uses globalThis.fetch in production; in
@@ -1233,6 +1258,7 @@ git commit -m "refactor(api/dmarc-promote): wire setDmarcPolicy; drop dmarc_reco
 ### Task 9: services/api — drop platform-RUA injection + `DMARC_RUA_PLATFORM_ALIAS` env var
 
 **Files:**
+
 - Modify: `services/api/src/routes/admin/domains.ts`
 - Modify: `services/api/src/env.ts`
 
@@ -1241,8 +1267,8 @@ git commit -m "refactor(api/dmarc-promote): wire setDmarcPolicy; drop dmarc_reco
 In `services/api/src/routes/admin/domains.ts:178-182`, delete:
 
 ```typescript
-  const platformDmarcRua = c.env.DMARC_RUA_PLATFORM_ALIAS ?? 'mailto:dmarc-rua@plrs.im';
-  const rua = body.dmarc_rua ?? `mailto:postmaster@${body.name},${platformDmarcRua}`;
+const platformDmarcRua = c.env.DMARC_RUA_PLATFORM_ALIAS ?? 'mailto:dmarc-rua@plrs.im';
+const rua = body.dmarc_rua ?? `mailto:postmaster@${body.name},${platformDmarcRua}`;
 ```
 
 Remove anywhere `rua` was passed downstream. Since the `dmarc_rua` column was dropped in Task 1, also remove the `dmarc_rua` field from the INSERT into `mail_domains` (and the field from `body` type if it's listed there).
@@ -1287,6 +1313,7 @@ git commit -m "refactor(api/admin/domains): drop platform DMARC RUA injection an
 ### Task 10: services/api — `dmarc-reports` routes → live CF GraphQL
 
 **Files:**
+
 - Modify: `services/api/src/routes/admin/dmarc-reports.ts`
 
 - [ ] **Step 1: Replace the list + detail SQL with GraphQL calls**
@@ -1445,6 +1472,7 @@ git commit -m "refactor(api/admin/dmarc-reports): live CF GraphQL list; drop per
 ### Task 11: services/api — `dmarc-promotion` routes (drop claim-management, add `/advance`)
 
 **Files:**
+
 - Modify: `services/api/src/routes/admin/dmarc-promotion.ts`
 
 - [ ] **Step 1: Rewrite the file**
@@ -1557,7 +1585,11 @@ dmarcPromotion.post(
 
     const next = nextStateFor(domain.dmarc_promotion_state);
     if (!next) {
-      return buildError(c, 'conflict', `cannot advance from state '${domain.dmarc_promotion_state}'`);
+      return buildError(
+        c,
+        'conflict',
+        `cannot advance from state '${domain.dmarc_promotion_state}'`,
+      );
     }
 
     const client = new CloudflareApiClient({
@@ -1659,10 +1691,10 @@ describe('POST /v1/admin/dmarc-promotion/:id/advance', () => {
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
       expect(url).toContain('/zones/cfz/dmarc_management');
       expect(init?.method).toBe('PATCH');
-      return new Response(
-        JSON.stringify({ success: true, result: { policy: 'quarantine' } }),
-        { status: 200, headers: { 'content-type': 'application/json' } },
-      );
+      return new Response(JSON.stringify({ success: true, result: { policy: 'quarantine' } }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
     });
     const originalFetch = globalThis.fetch;
     globalThis.fetch = fetchMock as unknown as typeof fetch;
@@ -1670,10 +1702,14 @@ describe('POST /v1/admin/dmarc-promotion/:id/advance', () => {
     try {
       // Direct fetch through the app or the Hono client; adapt to whatever
       // test harness this repo uses elsewhere.
-      const res = await app.request('/v1/admin/dmarc-promotion/d/advance', {
-        method: 'POST',
-        headers: { authorization: 'Bearer testkey' }, // adapt to local test auth
-      }, testEnv);
+      const res = await app.request(
+        '/v1/admin/dmarc-promotion/d/advance',
+        {
+          method: 'POST',
+          headers: { authorization: 'Bearer testkey' }, // adapt to local test auth
+        },
+        testEnv,
+      );
       expect(res.status).toBe(200);
       expect(fetchMock).toHaveBeenCalled();
     } finally {
@@ -1703,6 +1739,7 @@ git commit -m "feat(api/admin/dmarc-promotion): /advance route; drop claim-manag
 ### Task 12: services/in — delete the ARF-inbox dispatch + ingest module
 
 **Files:**
+
 - Modify: `services/in/src/index.ts`
 - Delete: `services/in/src/dmarc-ingest.ts`
 - Delete: `services/in/test/integration/dmarc-ingest.workers.test.ts`
@@ -1710,6 +1747,7 @@ git commit -m "feat(api/admin/dmarc-promotion): /advance route; drop claim-manag
 - [ ] **Step 1: Remove the import and dispatch**
 
 In `services/in/src/index.ts`:
+
 - Delete the import `handleDmarcReport` and `PLATFORM_DMARC_REPORTS_MAILBOX_ID` from `./dmarc-ingest.js`.
 - Delete the `if (match.mailbox_id === PLATFORM_DMARC_REPORTS_MAILBOX_ID) { … }` branch around line 233.
 
@@ -1722,6 +1760,7 @@ git rm services/in/src/dmarc-ingest.ts services/in/test/integration/dmarc-ingest
 - [ ] **Step 3: Run typecheck + tests**
 
 Run:
+
 ```sh
 pnpm --filter @polaris-mail/in typecheck
 pnpm --filter @polaris-mail/in exec vitest run
@@ -1741,6 +1780,7 @@ git commit -m "refactor(in): drop ARF-inbox DMARC dispatch + ingest module"
 ### Task 13: Delete `packages/dmarc-parser` entirely
 
 **Files:**
+
 - Delete: `packages/dmarc-parser/` (whole directory)
 - Modify: `pnpm-workspace.yaml` (if it lists the package explicitly)
 - Modify: any `package.json` that depends on `@polaris-mail/dmarc-parser`
@@ -1783,6 +1823,7 @@ git commit -m "chore: delete packages/dmarc-parser (replaced by CF DMARC Managem
 ### Task 14: Update `packages/schema` test references
 
 **Files:**
+
 - Modify: `packages/schema/test/schema.test.ts`
 - Modify: `packages/schema/src/index.ts` (if it exports a `dmarc_aggregate_reports` schema shape)
 
@@ -1812,6 +1853,7 @@ git commit -m "refactor(schema): drop dmarc_aggregate_reports + legacy columns"
 ### Task 15: Panel — drop claim-management, add `/advance`
 
 **Files:**
+
 - Modify: `apps/panel/src/client/pages/domains/Detail.tsx`
 - Modify: `apps/panel/src/client/queryKeys.ts` (if needed)
 
@@ -1842,15 +1884,17 @@ const advanceMutation = useApiMutation(
 );
 
 // in the JSX, alongside Pause/Resume:
-{(promotion.dmarc_promotion_state === 'quarantine_ready' ||
-  promotion.dmarc_promotion_state === 'reject_ready') && (
-  <DestructiveActionDialog
-    label="Advance now"
-    confirmValue={d.name}
-    description="This sends a policy-change command to Cloudflare DMARC Management. The new policy takes effect at the DNS TTL."
-    onConfirm={() => advanceMutation.mutate({})}
-  />
-)}
+{
+  (promotion.dmarc_promotion_state === 'quarantine_ready' ||
+    promotion.dmarc_promotion_state === 'reject_ready') && (
+    <DestructiveActionDialog
+      label="Advance now"
+      confirmValue={d.name}
+      description="This sends a policy-change command to Cloudflare DMARC Management. The new policy takes effect at the DNS TTL."
+      onConfirm={() => advanceMutation.mutate({})}
+    />
+  );
+}
 ```
 
 - [ ] **Step 3: Drop the `DmarcPromotionRow.dmarc_record_managed_by_polaris` field from the interface**
@@ -1881,6 +1925,7 @@ git commit -m "feat(panel/domains): replace claim-management with Advance button
 ### Task 16: Docs — rewrite the DMARC reference + operator triage pages
 
 **Files:**
+
 - Modify: `apps/docs/content/security/dkim-dmarc-spf.md`
 - Modify: `apps/docs/content/operators/day-2/domain-management.md`
 - Modify: `apps/docs/content/operators/troubleshooting/decision-matrix.md`
@@ -1957,6 +2002,7 @@ Expected: all workspaces green.
 - [ ] **Step 3: SQL + OpenAPI validation**
 
 Run:
+
 ```sh
 pnpm -r run sql:validate 2>/dev/null || true
 pnpm -r run openapi:validate 2>/dev/null || true

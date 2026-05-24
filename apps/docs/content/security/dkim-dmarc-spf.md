@@ -62,8 +62,8 @@ Cloudflare DMARC Management is enabled per-zone during domain
 onboarding (`packages/cf-api/src/dmarc-management.ts:enableDmarcManagement`,
 called automatically by `onboardSenderDomain`), and Cloudflare
 publishes the `_dmarc` record, ingests aggregate reports on its side,
-and surfaces the data via GraphQL Analytics (`dmarcReportsAdaptive`
-+ `dmarcReportsSourcesAdaptiveGroups`).
+and surfaces the data via GraphQL Analytics
+(`dmarcReportsAdaptive` and `dmarcReportsSourcesAdaptiveGroups`).
 
 polaris-mail mirrors per-(domain, day) aggregates from CF into the
 `dmarc_alignment_rollup` D1 table nightly
