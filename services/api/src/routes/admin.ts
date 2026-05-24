@@ -94,62 +94,55 @@ admin.post('/v1/admin/api-keys', requireScope('admin:rotate'), async (c) => {
   } catch (e) {
     return buildError(c, 'bad_request', e instanceof Error ? e.message : 'invalid body');
   }
-  const mailboxId = body.mailbox_id;
-  if (!mailboxId) {
-    return buildError(c, 'bad_request', 'mailbox_id required');
-  }
-  // Verify the mailbox exists.
-  const mbRow = await c.env.DB.prepare(`SELECT id FROM mailboxes WHERE id = ?`)
-    .bind(mailboxId)
-    .first<{ id: string }>();
-  if (!mbRow) return buildError(c, 'not_found', 'mailbox not found');
-
+  // After the operators-split refactor, every api_key belongs to an
+  // operator. This endpoint mints a synthetic service operator + its key
+  // in one shot — kept for test-setup callers and one-off non-human
+  // integrations. For human operators, prefer POST /v1/admin/operators
+  // (which carries ssh_pubkey + email + role).
   const id = ulid();
-  const principalId = ulid();
+  const operatorId = ulid();
   const secret = generateSecret();
   const hashed = await hashSecret(secret, c.env.ARGON2_PEPPER);
   const now = Date.now();
   const nowIso = new Date(now).toISOString();
-  // Operator-class api_keys only. The pk_live_ mailbox-scoped REST flow
-  // moved to `mailbox_credentials` (type='rest'); this endpoint now
-  // exists solely to mint operator-tier keys for non-operator-tied
-  // capabilities (e.g. the SSH server's `admin:impersonate` key —
-  // apps/polaris-cli/internal/setup/cmd/infra_ssh_bootstrap.go).
+  const displayName = body.display_name ?? `service-key-${id.slice(-8)}`;
   const auditInsert = await buildAuditInsert(c.env, {
     actor: actorOf(c),
     action: 'api_key.issue',
     target: id,
     meta: {
-      mailbox_id: mailboxId,
-      principal_id: principalId,
+      operator_id: operatorId,
       scopes: body.scopes,
     },
   });
   await c.env.DB.batch([
     c.env.DB.prepare(
-      `INSERT INTO principals (id, mailbox_id, kind, display_name, created_at)
-       VALUES (?, ?, 'api_key', ?, ?)`,
-    ).bind(principalId, mailboxId, body.display_name ?? null, nowIso),
+      `INSERT INTO operators
+         (id, name, email, ssh_pubkey, ssh_pubkey_fp_sha256, role,
+          created_at, updated_at)
+       VALUES (?, ?, ?, '', ?, 'operator', ?, ?)`,
+    ).bind(
+      operatorId,
+      displayName,
+      `${operatorId}@service.invalid`,
+      `sha256:service-${operatorId}`,
+      nowIso,
+      nowIso,
+    ),
     c.env.DB.prepare(
       `INSERT INTO api_keys
-         (id, principal_id, prefix, secret_argon2id, scopes,
+         (id, operator_id, prefix, secret_argon2id, scopes,
           rate_limit_per_min, status, created_at)
        VALUES (?, ?, 'pk_op_', ?, ?, ?, 'primary', ?)`,
-    ).bind(id, principalId, hashed, JSON.stringify(body.scopes), body.rate_limit_per_min, nowIso),
+    ).bind(id, operatorId, hashed, JSON.stringify(body.scopes), body.rate_limit_per_min, nowIso),
     auditInsert.statement,
   ]);
-  // Plaintext cache window matches the existing operator/bridge plain
-  // cache convention (15min — long enough to absorb client-side
-  // propagation hiccups, short enough that a leaked KV snapshot doesn't
-  // grant indefinite key-recovery).
   await c.env.KV_KEY_CACHE.put(`plain:${id}`, secret, { expirationTtl: 15 * 60 });
-  // Cache the row for warm lookups too.
   await c.env.KV_KEY_CACHE.put(
     `key:${id}`,
     JSON.stringify({
       id,
-      mailbox_id: mailboxId,
-      principal_id: principalId,
+      operator_id: operatorId,
       secret_argon2id: hashed,
       scopes: JSON.stringify(body.scopes),
       rate_limit_per_min: body.rate_limit_per_min,
@@ -162,27 +155,8 @@ admin.post('/v1/admin/api-keys', requireScope('admin:rotate'), async (c) => {
 });
 
 admin.get('/v1/admin/api-keys', requireScope('admin:read'), async (c) => {
-  const mailbox = c.req.query('mailbox') ?? c.req.query('mailbox_id');
-  if (mailbox) {
-    // Two-step lookup: principals → api_keys (mock D1 doesn't parse joins).
-    const principals = await c.env.DB.prepare(`SELECT id FROM principals WHERE mailbox_id = ?`)
-      .bind(mailbox)
-      .all<{ id: string }>();
-    const out: unknown[] = [];
-    for (const p of principals.results) {
-      const rows = await c.env.DB.prepare(
-        `SELECT id, principal_id, prefix, scopes, status, created_at,
-                revoked_at, last_used_at, last_used_ip
-         FROM api_keys WHERE principal_id = ? ORDER BY created_at DESC`,
-      )
-        .bind(p.id)
-        .all();
-      for (const r of rows.results) out.push(r);
-    }
-    return c.json({ data: out });
-  }
   const rows = await c.env.DB.prepare(
-    `SELECT id, principal_id, prefix, scopes, status, created_at,
+    `SELECT id, operator_id, prefix, scopes, status, created_at,
             revoked_at, last_used_at, last_used_ip
      FROM api_keys ORDER BY created_at DESC LIMIT 500`,
   ).all();
@@ -236,11 +210,11 @@ admin.post('/v1/admin/api-keys/:id/rotate', requireScope('admin:rotate'), async 
   const nowIso = new Date(now).toISOString();
   // Copy the old row's scopes etc. to the new secondary row.
   const fullOld = await c.env.DB.prepare(
-    `SELECT principal_id, scopes, rate_limit_per_min, prefix FROM api_keys WHERE id = ?`,
+    `SELECT operator_id, scopes, rate_limit_per_min, prefix FROM api_keys WHERE id = ?`,
   )
     .bind(id)
     .first<{
-      principal_id: string | null;
+      operator_id: string;
       scopes: string;
       rate_limit_per_min: number;
       prefix: string;
@@ -264,12 +238,12 @@ admin.post('/v1/admin/api-keys/:id/rotate', requireScope('admin:rotate'), async 
   const stmts = [
     c.env.DB.prepare(
       `INSERT INTO api_keys
-         (id, principal_id, prefix, secret_argon2id, scopes,
+         (id, operator_id, prefix, secret_argon2id, scopes,
           rate_limit_per_min, status, created_at)
        VALUES (?, ?, ?, ?, ?, ?, 'primary', ?)`,
     ).bind(
       newId,
-      fullOld.principal_id,
+      fullOld.operator_id,
       fullOld.prefix,
       newHashed,
       fullOld.scopes,
@@ -324,10 +298,10 @@ admin.post('/v1/admin/api-keys/:id/revoke', requireScope('admin:rotate'), async 
   }
   const now = Date.now();
   const nowIso = new Date(now).toISOString();
-  // Look up the principal_id so we can stamp the revocation Durable Object.
-  const keyRow = await c.env.DB.prepare(`SELECT principal_id FROM api_keys WHERE id = ?`)
+  // Look up the operator_id so we can stamp KV_REVOCATIONS.
+  const keyRow = await c.env.DB.prepare(`SELECT operator_id FROM api_keys WHERE id = ?`)
     .bind(id)
-    .first<{ principal_id: string }>();
+    .first<{ operator_id: string }>();
   // Pre-flight: confirm the key isn't already revoked. The CAS in the batch
   // below also enforces this (`status <> 'revoked'` ⇒ changes=0 on replay),
   // but we surface the 404 separately since the audit row should not be
@@ -344,7 +318,7 @@ admin.post('/v1/admin/api-keys/:id/revoke', requireScope('admin:rotate'), async 
     actor: actorOf(c),
     action: body.mode === 'emergency' ? 'api_key.revoke.emergency' : 'api_key.revoke',
     target: id,
-    meta: { reason: body.reason ?? null, principal_id: keyRow?.principal_id ?? null },
+    meta: { reason: body.reason ?? null, operator_id: keyRow?.operator_id ?? null },
   });
   await c.env.DB.batch([
     c.env.DB.prepare(
@@ -352,16 +326,17 @@ admin.post('/v1/admin/api-keys/:id/revoke', requireScope('admin:rotate'), async 
     ).bind(nowIso, id),
     auditInsert.statement,
   ]);
-  if (keyRow?.principal_id) {
-    // Phase 3g — KV_KEY_CACHE busting is now bundled into `revoke()` so
-    // these two writes can't drift out of sync (forgetting either side
-    // leaves a 60s window where a "revoked" key still authenticates).
-    // Stamps KV_REVOCATIONS so generic HMAC auth (auth.ts) and the
-    // RFC822 send path both see the revocation immediately, even if
-    // KV_KEY_CACHE entries linger in another colo.
-    await revoke(c.env, keyRow.principal_id, [`plain:${id}`, `key:${id}`]);
+  if (keyRow?.operator_id) {
+    // KV_KEY_CACHE busting is bundled into `revoke()` so the two writes
+    // can't drift out of sync (forgetting either side leaves a 60s
+    // window where a revoked key still authenticates). Stamps
+    // KV_REVOCATIONS keyed by operator_id so auth.ts sees the
+    // revocation immediately, even if KV_KEY_CACHE entries linger in
+    // another colo.
+    await revoke(c.env, keyRow.operator_id, [`plain:${id}`, `key:${id}`]);
   } else {
-    // No principal — fall back to deleting the cache entries directly.
+    // No operator — should not happen post-migration; fall back to
+    // deleting the cache entries directly.
     await c.env.KV_KEY_CACHE.delete(`plain:${id}`);
     await c.env.KV_KEY_CACHE.delete(`key:${id}`);
   }
