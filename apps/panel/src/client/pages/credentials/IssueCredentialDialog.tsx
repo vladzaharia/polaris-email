@@ -122,7 +122,7 @@ export function IssueCredentialDialog({ mailboxId }: { mailboxId: string }) {
         }}
       >
         <DialogTrigger asChild>
-          <Button>Add credential</Button>
+          <Button size="sm">Add credential</Button>
         </DialogTrigger>
         <DialogContent>
           <DialogHeader>

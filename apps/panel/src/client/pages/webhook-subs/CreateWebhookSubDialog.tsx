@@ -73,7 +73,7 @@ export function CreateWebhookSubDialog({ mailboxId }: { mailboxId: string }) {
         }}
       >
         <DialogTrigger asChild>
-          <Button>Add webhook</Button>
+          <Button size="sm">Add webhook</Button>
         </DialogTrigger>
         <DialogContent>
           <DialogHeader>
