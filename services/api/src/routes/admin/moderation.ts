@@ -283,7 +283,7 @@ moderation.post('/v1/admin/policy/held/:id/release', requireScope('admin:write')
   if (!decision) return buildError(c, 'not_found', 'decision missing for held message');
 
   const apiKey = c.get('apiKey');
-  const adminId = apiKey?.principal_id ?? 'unknown';
+  const adminId = apiKey?.operator_id ?? 'unknown';
 
   // For outbound held → flip the message row back to queued and re-enqueue.
   // For inbound held → we don't have the original receiver mailbox in the
@@ -362,7 +362,7 @@ moderation.post('/v1/admin/policy/held/:id/drop', requireScope('admin:write'), a
   if (!decision) return buildError(c, 'not_found', 'decision missing for held message');
 
   const apiKey = c.get('apiKey');
-  const adminId = apiKey?.principal_id ?? 'unknown';
+  const adminId = apiKey?.operator_id ?? 'unknown';
 
   // For outbound the message row stays at status='held' since we never
   // want to send it. For inbound there's no message row anyway. Either
@@ -390,7 +390,7 @@ moderation.post('/v1/admin/policy/held/:id/reclassify', requireScope('admin:writ
   if (!decision) return buildError(c, 'not_found', 'decision missing for held message');
 
   const apiKey = c.get('apiKey');
-  const adminId = apiKey?.principal_id ?? 'unknown';
+  const adminId = apiKey?.operator_id ?? 'unknown';
   await recordFeedback(
     c.env,
     held,
