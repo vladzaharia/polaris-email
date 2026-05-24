@@ -550,25 +550,24 @@ export async function processMessage(
 
   await env.DB.prepare(
     `INSERT INTO messages
-       (id, mailbox_id, principal_id, bridge_id, direction, status,
+       (id, mailbox_id, bridge_id, direction, status,
         from_addr, to_addrs, subject, r2_key, content_sha256,
         body_bytes, attachments_total_bytes,
         idempotency_key, header_message_id, message_id_header, thread_id,
         received_at_bridge, received_at_api,
         auth_spf, auth_dkim, auth_dmarc, auth_remote_ip,
         created_at)
-     VALUES (?1, ?2, ?3, ?4, ?5, 'received',
-             ?6, ?7, ?8, ?9, ?10,
-             ?11, ?12,
-             ?13, ?14, ?14, ?15,
-             ?16, ?17,
-             ?18, ?19, ?20, ?21,
-             ?22)`,
+     VALUES (?1, ?2, ?3, ?4, 'received',
+             ?5, ?6, ?7, ?8, ?9,
+             ?10, ?11,
+             ?12, ?13, ?13, ?14,
+             ?15, ?16,
+             ?17, ?18, ?19, ?20,
+             ?21)`,
   )
     .bind(
       messageId,
       args.mailboxId,
-      args.principalId ?? null,
       args.bridgeId ?? null,
       args.direction,
       fromAddr,

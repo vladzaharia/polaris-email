@@ -111,25 +111,27 @@ class FakeStmt {
   }
   async run() {
     if (/INSERT INTO messages/i.test(this.sql)) {
-      // Bind position layout (see packages/pipeline/src/process-message.ts):
-      //   0 id, 1 mailbox_id, 2 principal_id, 3 bridge_id, 4 direction,
-      //   5 from_addr, 6 to_addrs, 7 subject, 8 r2_key, 9 content_sha256,
-      //   10 body_bytes, 11 attachments_total_bytes,
-      //   12 idempotency_key, 13 header_message_id, 14 thread_id,
-      //   15 received_at_bridge, 16 received_at_api,
-      //   17 auth_spf, 18 auth_dkim, 19 auth_dmarc, 20 auth_remote_ip,
-      //   21 created_at
+      // Bind position layout (see packages/pipeline/src/process-message.ts).
+      // Post operators-split (migration 0006) `principal_id` is dropped,
+      // so every index is offset by 1 from the prior layout:
+      //   0 id, 1 mailbox_id, 2 bridge_id, 3 direction,
+      //   4 from_addr, 5 to_addrs, 6 subject, 7 r2_key, 8 content_sha256,
+      //   9 body_bytes, 10 attachments_total_bytes,
+      //   11 idempotency_key, 12 header_message_id, 13 thread_id,
+      //   14 received_at_bridge, 15 received_at_api,
+      //   16 auth_spf, 17 auth_dkim, 18 auth_dmarc, 19 auth_remote_ip,
+      //   20 created_at
       const row: Row = {
         id: this.params[0],
         mailbox_id: this.params[1],
-        from_addr: this.params[5],
-        r2_key: this.params[8],
-        header_message_id: this.params[13],
-        thread_id: this.params[14],
-        auth_spf: this.params[17],
-        auth_dkim: this.params[18],
-        auth_dmarc: this.params[19],
-        auth_remote_ip: this.params[20],
+        from_addr: this.params[4],
+        r2_key: this.params[7],
+        header_message_id: this.params[12],
+        thread_id: this.params[13],
+        auth_spf: this.params[16],
+        auth_dkim: this.params[17],
+        auth_dmarc: this.params[18],
+        auth_remote_ip: this.params[19],
       };
       this.db.messages.push(row);
     }

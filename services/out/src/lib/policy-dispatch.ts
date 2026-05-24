@@ -31,7 +31,6 @@ import type { Env, OutboundQueueMessage } from '../env.js';
 
 interface MessageRow {
   stream_type: string;
-  principal_id: string | null;
   mailbox_id: string;
 }
 
@@ -80,7 +79,7 @@ function isSoakActive(env: Env): boolean {
 
 async function loadMessageRow(env: Env, messageId: string): Promise<MessageRow | null> {
   const stmt = env.DB.prepare(
-    `SELECT stream_type, principal_id, mailbox_id FROM messages WHERE id = ? LIMIT 1`,
+    `SELECT stream_type, mailbox_id FROM messages WHERE id = ? LIMIT 1`,
   ).bind(messageId);
   return (await stmt.first()) as MessageRow | null;
 }
@@ -237,7 +236,6 @@ export async function evaluateOutboundPolicy(
       address: msg.fromAddress,
       mailbox_id: msg.mailboxId,
       domain_id: domainId ?? undefined,
-      principal_id: messageRow?.principal_id ?? undefined,
       abuse_tier: abuseTier,
       dmarc_promotion_state: asPromotionState(domain?.dmarc_promotion_state ?? null),
     },

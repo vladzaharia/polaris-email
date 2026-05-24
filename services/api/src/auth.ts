@@ -94,15 +94,14 @@ export function hmacAuth(direction: 'polaris-api'): MiddlewareHandler<{ Bindings
     if (cached && isRowShape(cached)) {
       row = cached;
     } else {
-      // After the principals split, api_keys is operator-owned; a single
-      // JOIN gives us the operator's disabled flag for the inline check.
+      // Two-query lookup so the in-memory mock D1 (which doesn't parse
+      // JOINs or table-aliased WHERE clauses) can satisfy this path.
+      // Production D1 sees the queries against single-region SQLite, so
+      // the cost is one extra round-trip on cold KV cache only.
       const keyRow = await env.DB.prepare(
-        `SELECT k.id, k.operator_id, k.secret_argon2id, k.scopes,
-                k.rate_limit_per_min, k.status, k.revoked_at,
-                o.disabled_at AS operator_disabled_at
-         FROM api_keys k
-         JOIN operators o ON o.id = k.operator_id
-         WHERE k.id = ?`,
+        `SELECT id, operator_id, secret_argon2id, scopes,
+                rate_limit_per_min, status, revoked_at
+         FROM api_keys WHERE id = ?`,
       )
         .bind(keyId)
         .first<{
@@ -113,10 +112,12 @@ export function hmacAuth(direction: 'polaris-api'): MiddlewareHandler<{ Bindings
           rate_limit_per_min: number;
           status: 'primary' | 'secondary' | 'revoked';
           revoked_at: number | null;
-          operator_disabled_at: string | null;
         }>();
       if (keyRow) {
-        if (keyRow.operator_disabled_at) {
+        const opRow = await env.DB.prepare(`SELECT disabled_at FROM operators WHERE id = ?`)
+          .bind(keyRow.operator_id)
+          .first<{ disabled_at: string | null }>();
+        if (!opRow || opRow.disabled_at) {
           return buildError(c, 'key_revoked', 'operator disabled');
         }
         row = {
@@ -257,38 +258,35 @@ export function hmacAuth(direction: 'polaris-api'): MiddlewareHandler<{ Bindings
       if (!bootstrapScopes.includes('admin:impersonate')) {
         return buildError(c, 'scope_violation', 'missing scope admin:impersonate');
       }
-      const opRow = await env.DB.prepare(
-        `SELECT o.id, o.disabled_at,
-                k.id AS api_key_id, k.operator_id, k.scopes,
-                k.status, k.revoked_at
-         FROM operators o
-         JOIN api_keys k ON k.operator_id = o.id AND k.status = 'primary'
-         WHERE o.id = ?`,
-      )
+      const opRow = await env.DB.prepare(`SELECT id, disabled_at FROM operators WHERE id = ?`)
         .bind(opId)
-        .first<{
-          id: string;
-          disabled_at: string | null;
-          api_key_id: string;
-          operator_id: string;
-          scopes: string;
-          status: 'primary' | 'secondary' | 'revoked';
-          revoked_at: number | null;
-        }>();
+        .first<{ id: string; disabled_at: string | null }>();
       if (!opRow) {
         return buildError(c, 'not_found', 'operator not found');
       }
       if (opRow.disabled_at) {
         return buildError(c, 'key_revoked', 'operator disabled');
       }
-      if (opRow.status === 'revoked' || opRow.revoked_at != null) {
+      const opKey = await env.DB.prepare(
+        `SELECT id, operator_id, scopes, status, revoked_at FROM api_keys
+         WHERE operator_id = ? AND status = 'primary' LIMIT 1`,
+      )
+        .bind(opId)
+        .first<{
+          id: string;
+          operator_id: string;
+          scopes: string;
+          status: 'primary' | 'secondary' | 'revoked';
+          revoked_at: number | null;
+        }>();
+      if (!opKey || opKey.status === 'revoked' || opKey.revoked_at != null) {
         return buildError(c, 'key_revoked', 'operator key revoked');
       }
-      const revokedOp = await revocationCheck(env, opRow.operator_id).catch(() => false);
+      const revokedOp = await revocationCheck(env, opKey.operator_id).catch(() => false);
       if (revokedOp) {
         return buildError(c, 'key_revoked', 'operator revoked');
       }
-      effectiveScopesRaw = opRow.scopes;
+      effectiveScopesRaw = opKey.scopes;
       effectiveOperatorId = opId;
       c.executionCtx.waitUntil(
         env.DB.prepare(`UPDATE operators SET last_seen_at = ? WHERE id = ?`)

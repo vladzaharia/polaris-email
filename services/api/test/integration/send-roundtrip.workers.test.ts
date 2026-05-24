@@ -161,6 +161,31 @@ async function issueApiKey(
   if (res.status !== 201) {
     throw new Error(`issueApiKey failed: ${res.status} ${await res.text()}`);
   }
+  // Post-operators-split: api_keys are operator-owned, not mailbox-bound.
+  // The REST submit path looks up the target mailbox by `mailbox_senders`
+  // matching `req.from`, so register a default sender for every verified
+  // domain on this mailbox.
+  const domains = await testEnv.DB.prepare(
+    `SELECT id, name FROM mail_domains WHERE status = 'verified'`,
+  ).all<{ id: string; name: string }>();
+  const nowIso = new Date().toISOString();
+  for (const d of domains.results) {
+    await testEnv.DB.prepare(
+      `INSERT INTO mailbox_senders
+         (id, mailbox_id, domain_id, address, local_part, default_for_mailbox, created_at)
+       VALUES (?, ?, ?, ?, ?, 1, ?)`,
+    )
+      .bind(
+        '01HX00SND' + Math.random().toString(36).slice(2, 16).toUpperCase().padEnd(17, 'A'),
+        mailboxId,
+        d.id,
+        `noreply@${d.name}`,
+        'noreply',
+        nowIso,
+      )
+      .run()
+      .catch(() => undefined);
+  }
   return (await res.json()) as { key_id: string; key_secret: string };
 }
 

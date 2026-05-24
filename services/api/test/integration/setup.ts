@@ -89,7 +89,7 @@ export async function signedRequest(
 /** Boot a fresh env + run /v1/admin/bootstrap; return the issued admin key. */
 export async function bootstrapEnv(overrides: Partial<Env> = {}): Promise<{
   env: IntegrationEnv;
-  admin: { admin_key_id: string; admin_key_secret: string; mailbox_id: string };
+  admin: { admin_key_id: string; admin_key_secret: string; operator_id: string };
 }> {
   resetIsolateState();
   const env = mkEnv(overrides);
@@ -117,9 +117,38 @@ export async function bootstrapEnv(overrides: Partial<Env> = {}): Promise<{
   const admin = (await res.json()) as {
     admin_key_id: string;
     admin_key_secret: string;
-    mailbox_id: string;
+    operator_id: string;
   };
   return { env, admin };
+}
+
+/**
+ * Test helper — register a mailbox_senders row so REST submissions with
+ * `from = address` resolve to `mailboxId` via the from→mailbox lookup in
+ * routes/messages.ts. Operator keys are not mailbox-bound after the
+ * operators-split refactor; tests that want to submit messages from a
+ * specific address must register the address with a mailbox first.
+ */
+export async function createSender(
+  env: IntegrationEnv,
+  opts: { mailboxId: string; domainId: string; address: string },
+): Promise<void> {
+  const nowIso = new Date().toISOString();
+  const localPart = opts.address.split('@')[0] ?? opts.address;
+  await env.DB.prepare(
+    `INSERT INTO mailbox_senders
+       (id, mailbox_id, domain_id, address, local_part, default_for_mailbox, created_at)
+     VALUES (?, ?, ?, ?, ?, 1, ?)`,
+  )
+    .bind(
+      '01HX00SND' + Math.random().toString(36).slice(2, 16).toUpperCase().padEnd(17, 'A'),
+      opts.mailboxId,
+      opts.domainId,
+      opts.address,
+      localPart,
+      nowIso,
+    )
+    .run();
 }
 
 export async function createMailbox(
@@ -163,6 +192,22 @@ export async function issueApiKey(
   );
   if (res.status !== 201) {
     throw new Error('issueApiKey failed: ' + res.status + ' ' + (await res.text()));
+  }
+  // Post-operators-split, the api_key is owned by a synthetic operator and
+  // is not mailbox-bound. The REST submission path resolves the target
+  // mailbox by looking up `mailbox_senders` for `req.from`, so test setup
+  // needs at least one registered sender on the given mailbox. Register a
+  // `noreply@<domain>` row for every verified domain to keep existing test
+  // fixtures (which conventionally send from that address) working.
+  const domains = await env.DB.prepare(
+    `SELECT id, name FROM mail_domains WHERE status = 'verified'`,
+  ).all<{ id: string; name: string }>();
+  for (const d of domains.results) {
+    await createSender(env, {
+      mailboxId,
+      domainId: d.id,
+      address: `noreply@${d.name}`,
+    }).catch(() => undefined);
   }
   return (await res.json()) as { key_id: string; key_secret: string };
 }

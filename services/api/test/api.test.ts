@@ -73,7 +73,7 @@ async function bootstrapEnv() {
   const j = (await res.json()) as {
     admin_key_id: string;
     admin_key_secret: string;
-    mailbox_id: string;
+    operator_id: string;
   };
   return { env, admin: j };
 }
@@ -87,16 +87,18 @@ describe('healthz', () => {
 });
 
 describe('bootstrap', () => {
-  it('issues an admin key + operator mailbox once', async () => {
+  it('issues an admin key + root operator once', async () => {
     const { env, admin } = await bootstrapEnv();
     expect(admin.admin_key_id).toMatch(/^[0-9A-HJKMNP-TV-Z]{26}$/);
     expect(admin.admin_key_secret).toMatch(/^[0-9A-Z]+$/);
-    expect(admin.mailbox_id).toMatch(/^[0-9A-HJKMNP-TV-Z]{26}$/);
+    expect(admin.operator_id).toBe('01J0000000000000000000ROOT');
 
-    // operator mailbox exists in the DB
+    // root operator exists in the DB
     const mockDb = env.DB as unknown as { tables: Map<string, Record<string, unknown>[]> };
-    const mb = (mockDb.tables.get('mailboxes') ?? []).find((r) => r['name'] === 'operator');
-    expect(mb?.['id']).toBe(admin.mailbox_id);
+    const op = (mockDb.tables.get('operators') ?? []).find(
+      (r) => r['id'] === '01J0000000000000000000ROOT',
+    );
+    expect(op?.['name']).toBe('root');
 
     // Second call should 409
     const req = await signedRequest(
@@ -174,11 +176,10 @@ describe('admin mailboxes', () => {
     expect(listRes.status).toBe(200);
     const list = (await listRes.json()) as { data: { name: string }[] };
     const names = list.data.map((r) => r.name);
-    expect(names).toContain('operator');
     expect(names).toContain('expresscharge');
   });
 
-  it('returns mailbox detail with senders + receivers + principals', async () => {
+  it('returns mailbox detail with senders + receivers', async () => {
     const { env, admin } = await bootstrapEnv();
     const mbId = await createMailbox(env, admin, 'detail-mb');
     const res = await app.fetch(
@@ -197,7 +198,6 @@ describe('admin mailboxes', () => {
       mailbox: { id: string };
       senders: unknown[];
       receivers: unknown[];
-      principals: unknown[];
       webhook_subs: unknown[];
     };
     expect(body.mailbox.id).toBe(mbId);

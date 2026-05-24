@@ -40,7 +40,7 @@ export class MockD1 {
     this.tables.set('mail_domains', []);
     this.tables.set('mailbox_senders', []);
     this.tables.set('mailbox_receivers', []);
-    this.tables.set('principals', []);
+    this.tables.set('operators', []);
     this.tables.set('api_keys', []);
     this.tables.set('dkim_keys', []);
     this.tables.set('bridges', []);

@@ -130,11 +130,8 @@ async function authenticateApiKey(
     return buildError(c, 'unauthorized', 'X-Polaris-Key-Id format');
 
   const keyRow = await env.DB.prepare(
-    `SELECT k.id, k.operator_id, k.scopes, k.rate_limit_per_min,
-            k.status, k.revoked_at, o.disabled_at AS operator_disabled_at
-       FROM api_keys k
-       JOIN operators o ON o.id = k.operator_id
-       WHERE k.id = ?`,
+    `SELECT id, operator_id, scopes, rate_limit_per_min, status, revoked_at
+       FROM api_keys WHERE id = ?`,
   )
     .bind(keyId)
     .first<{
@@ -144,7 +141,6 @@ async function authenticateApiKey(
       rate_limit_per_min: number;
       status: 'primary' | 'secondary' | 'revoked';
       revoked_at: number | null;
-      operator_disabled_at: string | null;
     }>();
   if (!keyRow) {
     return buildError(c, 'key_propagating', 'unknown key id', { 'retry-after': '2' });
@@ -152,7 +148,10 @@ async function authenticateApiKey(
   if (keyRow.status === 'revoked' || keyRow.revoked_at != null) {
     return buildError(c, 'key_revoked', 'key has been revoked');
   }
-  if (keyRow.operator_disabled_at) {
+  const opRow = await env.DB.prepare(`SELECT disabled_at FROM operators WHERE id = ?`)
+    .bind(keyRow.operator_id)
+    .first<{ disabled_at: string | null }>();
+  if (!opRow || opRow.disabled_at) {
     return buildError(c, 'key_revoked', 'operator disabled');
   }
 
@@ -609,9 +608,6 @@ messages.get('/v1/messages/:id', async (c) => {
     .bind(id)
     .first<MessageRow>();
   if (!row) return buildError(c, 'not_found', 'message not found');
-  if (row.mailbox_id !== apiKey.mailbox_id && !apiKey.scopes.includes('admin:read')) {
-    return buildError(c, 'not_found', 'message not found');
-  }
 
   const raw = await loadR2Bytes(c.env, row.r2_key);
   if (!raw) return buildError(c, 'degraded', 'message body missing from R2');
@@ -642,11 +638,14 @@ messages.get('/v1/messages', async (c) => {
   const url = new URL(c.req.url);
   const params = url.searchParams;
   const isAdmin = apiKey.scopes.includes('admin:read');
+  // Operator keys are not mailbox-bound; the caller picks the mailbox via
+  // the query param. No param + non-admin = no filter would leak across
+  // mailboxes, so require an explicit param for non-admin callers.
   const mailboxIdParam = params.get('mailbox_id');
-  const mailboxId = mailboxIdParam ?? (isAdmin ? null : apiKey.mailbox_id);
-  if (!isAdmin && mailboxIdParam && mailboxIdParam !== apiKey.mailbox_id) {
-    return buildError(c, 'scope_violation', 'cross-mailbox query requires admin:read');
+  if (!isAdmin && !mailboxIdParam) {
+    return buildError(c, 'bad_request', 'mailbox_id query param required');
   }
+  const mailboxId = mailboxIdParam ?? null;
   const direction = params.get('direction');
   const status = params.get('status');
   const fromAddr = params.get('from');
@@ -812,9 +811,6 @@ async function threadByMessageId(c: Ctx, messageId: string): Promise<Response> {
     .bind(messageId)
     .first<{ mailbox_id: string; thread_id: string | null }>();
   if (!seed) return buildError(c, 'not_found', 'message not found');
-  if (seed.mailbox_id !== apiKey.mailbox_id && !apiKey.scopes.includes('admin:read')) {
-    return buildError(c, 'not_found', 'message not found');
-  }
   if (!seed.thread_id) {
     return c.json({ thread_id: null, data: [] });
   }
@@ -858,14 +854,11 @@ messages.get('/v1/threads/:thread_id', async (c) => {
   const scopeErr = ensureReadScope(apiKey, { allowAdmin: true });
   if (scopeErr !== true) return buildError(c, 'scope_violation', scopeErr);
   const threadId = c.req.param('thread_id');
-  // For non-admin callers, scope to their mailbox. Admin callers can pass
-  // ?mailbox_id=… to disambiguate (thread_ids are mailbox-local).
+  // thread_ids are mailbox-local; the caller must specify which mailbox.
   const url = new URL(c.req.url);
-  const mailboxIdParam = url.searchParams.get('mailbox_id');
-  const mailboxId =
-    mailboxIdParam ?? (apiKey.scopes.includes('admin:read') ? null : apiKey.mailbox_id);
+  const mailboxId = url.searchParams.get('mailbox_id');
   if (!mailboxId) {
-    return buildError(c, 'bad_request', 'mailbox_id query param required for admin reads');
+    return buildError(c, 'bad_request', 'mailbox_id query param required');
   }
   return threadByThreadId(c, threadId, mailboxId, apiKey);
 });

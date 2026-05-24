@@ -110,11 +110,8 @@ async function authenticateCaller(
     return buildError(c, 'unauthorized', 'X-Polaris-Key-Id format');
   }
   const keyRow = await env.DB.prepare(
-    `SELECT k.id, k.operator_id, k.scopes, k.rate_limit_per_min,
-            k.status, k.revoked_at, o.disabled_at AS operator_disabled_at
-       FROM api_keys k
-       JOIN operators o ON o.id = k.operator_id
-       WHERE k.id = ?`,
+    `SELECT id, operator_id, scopes, rate_limit_per_min, status, revoked_at
+       FROM api_keys WHERE id = ?`,
   )
     .bind(keyId)
     .first<{
@@ -124,13 +121,15 @@ async function authenticateCaller(
       rate_limit_per_min: number;
       status: 'primary' | 'secondary' | 'revoked';
       revoked_at: number | null;
-      operator_disabled_at: string | null;
     }>();
   if (!keyRow) return buildError(c, 'key_propagating', 'unknown key id', { 'retry-after': '2' });
   if (keyRow.status === 'revoked' || keyRow.revoked_at != null) {
     return buildError(c, 'key_revoked', 'key has been revoked');
   }
-  if (keyRow.operator_disabled_at) {
+  const opRow = await env.DB.prepare(`SELECT disabled_at FROM operators WHERE id = ?`)
+    .bind(keyRow.operator_id)
+    .first<{ disabled_at: string | null }>();
+  if (!opRow || opRow.disabled_at) {
     return buildError(c, 'key_revoked', 'operator disabled');
   }
   // Per-operator revocation check BEFORE HMAC verify. KV_REVOCATIONS is

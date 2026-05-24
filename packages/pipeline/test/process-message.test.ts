@@ -94,16 +94,19 @@ class FakeStmt {
   }
   async run() {
     if (/INSERT INTO messages/i.test(this.sql)) {
-      // Bind layout: see packages/pipeline/src/process-message.ts.
-      const fromAddr = this.params[5] as string;
+      // Bind layout: see packages/pipeline/src/process-message.ts. Post
+      // operators-split (migration 0006) the messages table dropped
+      // `principal_id`, so every index here is offset by 1 from the prior
+      // layout.
+      const fromAddr = this.params[4] as string;
       const row: Row = {
         id: this.params[0],
         mailbox_id: this.params[1],
         from_addr: fromAddr,
         // mimic the SQLite generated column LOWER(from_addr).
         from_addr_normalized: fromAddr.toLowerCase(),
-        r2_key: this.params[8],
-        thread_id: this.params[14],
+        r2_key: this.params[7],
+        thread_id: this.params[13],
       };
       this.db.messages.push(row);
     }

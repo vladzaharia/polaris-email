@@ -186,23 +186,14 @@ mailboxCredentials.post(
     const prefix = PREFIX_FOR_TYPE[type];
     const createdAt = new Date().toISOString();
 
-    // Each credential gets a matching `principals` row sharing its id
-    // so downstream surfaces that still key on principal_id
-    // (idempotency_keys, messages.principal_id FK, audit actor) continue
-    // to work. The principals.kind enum accepts 'api_key'; we use that
-    // uniformly across all five credential types.
-    await c.env.DB.batch([
-      c.env.DB.prepare(
-        `INSERT INTO principals (id, mailbox_id, kind, display_name, created_at)
-         VALUES (?1, ?2, 'api_key', ?3, ?4)`,
-      ).bind(id, mailboxId, display_name, createdAt),
-      c.env.DB.prepare(
-        `INSERT INTO mailbox_credentials
-           (id, mailbox_id, type, prefix, secret_hash, receiver_id,
-            display_name, status, rate_limit_per_min, created_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'primary', 60, ?8)`,
-      ).bind(id, mailboxId, type, prefix, secretHash, receiver_id, display_name, createdAt),
-    ]);
+    await c.env.DB.prepare(
+      `INSERT INTO mailbox_credentials
+         (id, mailbox_id, type, prefix, secret_hash, receiver_id,
+          display_name, status, rate_limit_per_min, created_at)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'primary', 60, ?8)`,
+    )
+      .bind(id, mailboxId, type, prefix, secretHash, receiver_id, display_name, createdAt)
+      .run();
 
     // KV cache — `mc:` prefix namespaces these away from operator
     // (`plain:`/`key:`) + bridge (`bridge_plain:`) entries. Plaintext

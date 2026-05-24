@@ -1,7 +1,7 @@
 // Admin mailbox CRUD endpoints.
 //
 // Mailbox is the first-class organizing entity in the mailbox-centric schema:
-// senders, receivers, principals, and webhook_subs all hang off a mailbox.
+// senders, receivers, and webhook_subs all hang off a mailbox.
 // This file covers mailbox lifecycle plus the nested sender / receiver CRUD.
 import { Hono } from 'hono';
 import {
@@ -19,9 +19,6 @@ import { ulid } from '@polaris-mail/ids';
 export const mailboxes = new Hono<{ Bindings: Env }>();
 
 // ---------- list (uses v_mailbox_summary view) ----------
-// Sentinel mailboxes (name prefix `_polaris_`) are operator-system
-// internals (created by migration 0024 to anchor operator principals);
-// they have no user-facing meaning and are filtered out of list responses.
 mailboxes.get('/v1/admin/mailboxes', requireScope('admin:read'), async (c) => {
   // Production hits the `v_mailbox_summary` view (active sender/receiver
   // counts); degraded environments (in-memory mock D1) fall back to the raw
