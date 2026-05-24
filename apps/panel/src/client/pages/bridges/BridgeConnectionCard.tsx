@@ -1,23 +1,24 @@
 // BridgeConnectionCard — the persistent "how to run this bridge" surface.
 //
-// Renders five copy-pasteable setup templates with the bridge's name
-// pre-filled. The HMAC key is NOT included in any snippet (the schema
-// only stores the hash; the plaintext can't be recovered). A
-// `<paste-HMAC-key-here>` sentinel + an explicit "Rotate to get a new
-// key" affordance is the recovery path.
+// Three first-class deployments, each pre-filled with the bridge's name
+// (and therefore its `<name>.mail.plrs.im` FQDN — the polaris-mail
+// convention is one bridge per host under the mail.plrs.im zone with
+// DNS managed in Cloudflare). All three use Lego with Cloudflare
+// DNS-01 for TLS; the bridge binary itself only knows
+// `BRIDGE_TLS_MODE=local` (mounted PEMs), so Lego writes the cert into
+// a shared volume and the bridge loads it from disk.
 //
-// Variants:
-//   * `compose-local`   — docker-compose with `network_mode: host`.
-//   * `compose-tailscale` — docker-compose Tailscale sidecar.
-//   * `systemd`         — bare-metal unit file referencing /etc/polaris-bridge/bridge.env.
-//   * `env`             — full env-file template the systemd unit reads.
-//   * `bridge.toml`     — config-file equivalent for bare-metal installs.
+// Each tab renders a docker-compose.yml + companion `.env` so the
+// operator can `mkdir polaris-bridge && cd polaris-bridge && curl…
+// docker compose --profile lego up -d lego && docker compose up -d`
+// without juggling N files. Secrets that vary per bridge (id, HMAC
+// key) live as file mounts under `./secrets/` — the snippet text
+// notes the shell to create them.
 //
-// The env-var reference table at the bottom is sourced manually from
-// `apps/mail-bridge/internal/config/config.go`. Keeping it in sync is on
-// the operator-docs cadence; the table is a quick-reference, not a
-// generated artifact (the bridge's surface is small enough that drift
-// shows up immediately in the wizard QA pass).
+// The HMAC key is never embedded in the compose. The fresh
+// registration flow shows it once in the Detail-page banner; the
+// secret-file shell snippet below is operator-facing and uses a
+// `<paste-HMAC-key-here>` placeholder unless a fresh key was passed in.
 import { useState } from 'react';
 import { KeyRound } from 'lucide-react';
 import { CodeBlock } from '../../components/CodeBlock.js';
@@ -31,63 +32,218 @@ import { bridgeKeys } from '../../queryKeys.js';
 interface BridgeConnectionCardProps {
   bridgeId: string;
   bridgeName: string;
-  // Optional initial key — set by the registration wizard so the freshly-
-  // minted plaintext is shown inline once. Detail-page consumers omit it
-  // and the snippets display `<paste-HMAC-key-here>` instead.
+  // Optional: the just-minted plaintext HMAC key. Set by the Detail
+  // page's fresh-registration banner; omitted afterwards.
   initialHmacKey?: string;
   // Whether to expose the "Rotate HMAC key" affordance. False inside the
-  // registration wizard (rotation pre-first-deploy is pointless and
-  // confusing); true on the persistent Detail-page tab.
+  // registration wizard (rotation pre-first-deploy is pointless); true
+  // on the persistent Detail-page tab.
   showRotate?: boolean;
 }
 
 const HMAC_PLACEHOLDER = '<paste-HMAC-key-here>';
+const API_URL = 'https://api.mail.plrs.im';
+const IMAGE = 'ghcr.io/vladzaharia/polaris-mail-bridge:latest';
 
-function composeLocal(bridgeName: string, hmacKey: string): string {
-  return `# docker-compose.yml
+function fqdnFor(bridgeName: string): string {
+  return `${bridgeName}.mail.plrs.im`;
+}
+
+function tailnetHostnameFor(bridgeName: string): string {
+  // Tailscale MagicDNS doesn't allow dots; the convention is
+  // `<bridge>-mail`, with `<bridge>.mail.plrs.im` as the public CNAME
+  // resolving to the same tailnet node.
+  return `${bridgeName}-mail`;
+}
+
+// ---------- snippet templates ----------
+
+// Public-host compose: bridge binds 465/993/8080 on the host network;
+// Lego mints an LE cert for the public FQDN via CF DNS-01 and writes
+// it into a shared volume the bridge mounts read-only.
+function composePublicLego(bridgeName: string): string {
+  return `# docker-compose.yml — public bridge with Let's Encrypt (CF DNS-01)
+#
+#   docker compose --profile lego run --rm lego   # first-time + renewals
+#   docker compose up -d                          # start the bridge
+#
+# DNS prerequisite (Cloudflare): an A/AAAA record for
+#   ${fqdnFor(bridgeName)}
+# pointing at this host's public IP. CF DNS-01 only needs CF API access,
+# not the A record — but the A record is what makes the bridge reachable
+# at the LE-issued name.
 services:
-  polaris-mail-bridge:
-    image: ghcr.io/vladzaharia/polaris-mail-bridge:latest
-    container_name: polaris-mail-bridge
-    network_mode: host
-    restart: unless-stopped
+  lego:
+    image: goacme/lego:v4.14
+    container_name: polaris-mail-lego
     environment:
-      POLARIS_BRIDGE_NAME: "${bridgeName}"
-      POLARIS_API_HOSTNAME: "api.mail.plrs.im"
-      POLARIS_BRIDGE_HMAC_KEY: "${hmacKey}"
+      CF_DNS_API_TOKEN: \${CF_DNS_API_TOKEN}
     volumes:
-      - /etc/polaris-bridge/tls:/etc/polaris-bridge/tls:ro
-      - polaris-bridge-data:/var/lib/polaris-bridge
+      - ./tls:/.lego
+    command: >
+      run --accept-tos --email \${ACME_EMAIL}
+          --domains ${fqdnFor(bridgeName)}
+          --dns cloudflare
+          --path /.lego
+    profiles: [lego]
+
+  bridge:
+    image: ${IMAGE}
+    container_name: polaris-mail-bridge
+    restart: unless-stopped
+    ports:
+      - '465:465'
+      - '993:993'
+      - '8080:8080'
+    environment:
+      BRIDGE_NAME: ${bridgeName}
+      BRIDGE_POLARIS_API_URL: ${API_URL}
+      BRIDGE_POLARIS_BRIDGE_ID_FILE: /run/secrets/bridge_id
+      BRIDGE_POLARIS_HMAC_KEY_FILE: /run/secrets/hmac_key
+      BRIDGE_ACCESS_CLIENT_ID: \${ACCESS_CLIENT_ID}
+      BRIDGE_ACCESS_CLIENT_SECRET: \${ACCESS_CLIENT_SECRET}
+      BRIDGE_PUBLIC_URL: https://${fqdnFor(bridgeName)}:8080
+      BRIDGE_TLS_MODE: local
+      BRIDGE_TLS_CERT_PATH: /etc/polaris-bridge/tls/certificates/${fqdnFor(bridgeName)}.crt
+      BRIDGE_TLS_KEY_PATH: /etc/polaris-bridge/tls/certificates/${fqdnFor(bridgeName)}.key
+      BRIDGE_CREDSTORE_PATH: /var/lib/polaris-bridge/credstore.db
+      BRIDGE_MIRROR_PATH: /var/lib/polaris-bridge/mirror.db
+      BRIDGE_LOGGING_FILE: /var/log/polaris-bridge/audit.jsonl
+    volumes:
+      - ./tls:/etc/polaris-bridge/tls:ro
+      - ./secrets:/run/secrets:ro
+      - bridge-data:/var/lib/polaris-bridge
+      - bridge-logs:/var/log/polaris-bridge
+
 volumes:
-  polaris-bridge-data:
+  bridge-data:
+  bridge-logs:
 `;
 }
 
-function composeTailscale(bridgeName: string, hmacKey: string): string {
-  return `# docker-compose.yml
+// Tailnet compose: bridge runs in the tailscale sidecar's network
+// namespace. No host ports; access is tailnet-only. Lego still issues
+// an LE cert for the public FQDN (via CF DNS-01) so the same cert is
+// valid whether the client reaches the bridge via
+//   - the tailnet MagicDNS name (<bridge>-mail), or
+//   - the public CNAME (<bridge>.mail.plrs.im → tailnet IP)
+function composeTailnetLego(bridgeName: string): string {
+  const fqdn = fqdnFor(bridgeName);
+  const tsHost = tailnetHostnameFor(bridgeName);
+  return `# docker-compose.yml — tailnet bridge with Let's Encrypt (CF DNS-01)
+#
+#   docker compose up -d tailscale               # bring up the tailnet node
+#   docker compose --profile lego run --rm lego  # first-time + renewals
+#   docker compose up -d                         # start the bridge
+#
+# DNS prerequisite (Cloudflare): a CNAME record
+#   ${fqdn}  →  ${tsHost}.<your-tailnet>.ts.net
+# so tailnet members resolve either name to the same node, and the LE
+# cert SAN matches both reachability paths.
 services:
-  polaris-mail-bridge:
-    image: ghcr.io/vladzaharia/polaris-mail-bridge:latest
+  tailscale:
+    image: tailscale/tailscale:stable
+    container_name: polaris-mail-tailscale
+    hostname: ${tsHost}
+    environment:
+      TS_AUTHKEY: \${TS_AUTHKEY}
+      TS_STATE_DIR: /var/lib/tailscale
+      TS_USERSPACE: 'false'
+      TS_EXTRA_ARGS: --advertise-tags=tag:polaris-mail
+    volumes:
+      - tailscale-state:/var/lib/tailscale
+      - /dev/net/tun:/dev/net/tun
+    cap_add: [NET_ADMIN, NET_RAW]
+    restart: unless-stopped
+
+  lego:
+    image: goacme/lego:v4.14
+    container_name: polaris-mail-lego
+    environment:
+      CF_DNS_API_TOKEN: \${CF_DNS_API_TOKEN}
+    volumes:
+      - lego-certs:/.lego
+    command: >
+      run --accept-tos --email \${ACME_EMAIL}
+          --domains ${fqdn}
+          --dns cloudflare
+          --path /.lego
+    profiles: [lego]
+
+  bridge:
+    image: ${IMAGE}
     container_name: polaris-mail-bridge
     restart: unless-stopped
+    network_mode: 'service:tailscale'
+    depends_on:
+      - tailscale
     environment:
-      POLARIS_BRIDGE_NAME: "${bridgeName}"
-      POLARIS_API_HOSTNAME: "api.mail.plrs.im"
-      POLARIS_BRIDGE_HMAC_KEY: "${hmacKey}"
-      TS_AUTHKEY: "<tailscale-auth-key>"
-      TS_HOSTNAME: "${bridgeName}"
+      BRIDGE_NAME: ${bridgeName}
+      BRIDGE_POLARIS_API_URL: ${API_URL}
+      BRIDGE_POLARIS_BRIDGE_ID_FILE: /run/secrets/bridge_id
+      BRIDGE_POLARIS_HMAC_KEY_FILE: /run/secrets/hmac_key
+      BRIDGE_ACCESS_CLIENT_ID: \${ACCESS_CLIENT_ID}
+      BRIDGE_ACCESS_CLIENT_SECRET: \${ACCESS_CLIENT_SECRET}
+      BRIDGE_PUBLIC_URL: https://${fqdn}:8080
+      BRIDGE_TLS_MODE: local
+      BRIDGE_TLS_CERT_PATH: /etc/polaris-bridge/tls/certificates/${fqdn}.crt
+      BRIDGE_TLS_KEY_PATH: /etc/polaris-bridge/tls/certificates/${fqdn}.key
+      BRIDGE_CREDSTORE_PATH: /var/lib/polaris-bridge/credstore.db
+      BRIDGE_MIRROR_PATH: /var/lib/polaris-bridge/mirror.db
+      BRIDGE_LOGGING_FILE: /var/log/polaris-bridge/audit.jsonl
     volumes:
-      - polaris-bridge-state:/var/lib/tailscale
-      - polaris-bridge-data:/var/lib/polaris-bridge
+      - lego-certs:/etc/polaris-bridge/tls:ro
+      - ./secrets:/run/secrets:ro
+      - bridge-data:/var/lib/polaris-bridge
+      - bridge-logs:/var/log/polaris-bridge
+
 volumes:
-  polaris-bridge-state:
-  polaris-bridge-data:
+  tailscale-state:
+  lego-certs:
+  bridge-data:
+  bridge-logs:
+`;
+}
+
+function envCompanion(bridgeName: string, withTailscale: boolean): string {
+  const tsLine = withTailscale
+    ? `TS_AUTHKEY=tskey-auth-...                 # one-shot key minted in the Tailscale admin
+`
+    : '';
+  return `# .env — alongside docker-compose.yml
+#
+# Don't commit this file. \`chmod 600 .env\` once the values are in.
+
+# Lego DNS-01 (Cloudflare). The token needs Zone:DNS:Edit on mail.plrs.im.
+CF_DNS_API_TOKEN=...
+ACME_EMAIL=ops@plrs.im
+
+# Cloudflare Access service token fronting the polaris control plane.
+# Create one at: https://one.dash.cloudflare.com → Access → Service Auth.
+ACCESS_CLIENT_ID=...
+ACCESS_CLIENT_SECRET=...
+
+${tsLine}# Bridge identity (pre-filled).
+BRIDGE_NAME=${bridgeName}
+`;
+}
+
+function secretsShell(bridgeId: string, hmacKey: string): string {
+  return `# One-time: drop the bridge id + HMAC key into ./secrets as files so the
+# compose can mount them at /run/secrets/{bridge_id,hmac_key}. The bridge
+# reads them via the *_FILE env vars — the secrets never enter the env
+# table.
+mkdir -p secrets
+echo -n '${bridgeId}' > secrets/bridge_id
+echo -n '${hmacKey}' > secrets/hmac_key
+chmod 600 secrets/*
 `;
 }
 
 function systemdUnit(bridgeName: string): string {
   return `# /etc/systemd/system/polaris-mail-bridge.service
-# Bare-metal bridge install. Pair with the env-file below.
+# Bare-metal bridge install. Pair with /etc/polaris-bridge/bridge.env.
+# TLS is operator-managed PEMs at /etc/polaris-bridge/tls/{fullchain,privkey}.pem.
 [Unit]
 Description=Polaris Mail Bridge (${bridgeName})
 Documentation=https://docs.mail.plrs.im/operators/bridges
@@ -105,65 +261,43 @@ RestartSec=5s
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/var/lib/polaris-bridge
+ReadWritePaths=/var/lib/polaris-bridge /var/log/polaris-bridge
 
 [Install]
 WantedBy=multi-user.target
 `;
 }
 
-function envFile(bridgeName: string, hmacKey: string): string {
-  return `# /etc/polaris-bridge/bridge.env
-# Loaded by the systemd unit above (or sourced by any wrapper script).
-# Mode 0600, owned by polaris-bridge:polaris-bridge — contains the HMAC key.
+function bareMetalEnv(bridgeName: string, hmacKey: string): string {
+  return `# /etc/polaris-bridge/bridge.env  (mode 0600, owned by polaris-bridge)
+# Loaded by the systemd unit; contains the HMAC key — treat as a secret.
 
-POLARIS_BRIDGE_NAME=${bridgeName}
-POLARIS_API_HOSTNAME=api.mail.plrs.im
-POLARIS_BRIDGE_HMAC_KEY=${hmacKey}
+BRIDGE_NAME=${bridgeName}
+BRIDGE_POLARIS_API_URL=${API_URL}
+BRIDGE_POLARIS_BRIDGE_ID=01H...              # the bridge ULID from registration
+BRIDGE_POLARIS_HMAC_KEY=${hmacKey}
 
-# TLS — point at PEM files mounted on the host. Alternative: configure Lego
-# env vars for ACME-DNS-01 issuance.
+# Cloudflare Access service token fronting the polaris API.
+BRIDGE_ACCESS_CLIENT_ID=...
+BRIDGE_ACCESS_CLIENT_SECRET=...
+
+# Public reachability (used by the inbound webhook bootstrap).
+BRIDGE_PUBLIC_URL=https://${fqdnFor(bridgeName)}:8080
+
+# Operator-managed TLS pair (renew however you like; cert paths can be
+# repointed at a Lego or Caddy output directory).
 BRIDGE_TLS_MODE=local
-BRIDGE_TLS_CERT=/etc/polaris-bridge/tls/fullchain.pem
-BRIDGE_TLS_KEY=/etc/polaris-bridge/tls/privkey.pem
+BRIDGE_TLS_CERT_PATH=/etc/polaris-bridge/tls/fullchain.pem
+BRIDGE_TLS_KEY_PATH=/etc/polaris-bridge/tls/privkey.pem
 
-# Listener overrides (defaults shown).
-BRIDGE_SMTPS_LISTEN_ADDR=:465
-BRIDGE_IMAP_LISTEN_ADDR=:993
-BRIDGE_WEBHOOK_LISTEN_ADDR=:8080
-
-# Required when the inbound webhook receiver is enabled — must be
-# routable from polaris (set to your bridge's externally-resolvable URL).
-BRIDGE_PUBLIC_URL=https://${bridgeName}.example.com
+# Local state.
+BRIDGE_CREDSTORE_PATH=/var/lib/polaris-bridge/credstore.db
+BRIDGE_MIRROR_PATH=/var/lib/polaris-bridge/mirror.db
+BRIDGE_LOGGING_FILE=/var/log/polaris-bridge/audit.jsonl
 `;
 }
 
-function bridgeToml(bridgeName: string, hmacKey: string): string {
-  return `# /etc/polaris-bridge/bridge.toml
-# Alternative to bridge.env for operators who prefer config files.
-# Same keys, same semantics; env vars override TOML when both are present.
-
-[bridge]
-name = "${bridgeName}"
-hmac_key = "${hmacKey}"
-
-[api]
-hostname = "api.mail.plrs.im"
-
-[tls]
-mode = "local"
-cert = "/etc/polaris-bridge/tls/fullchain.pem"
-key = "/etc/polaris-bridge/tls/privkey.pem"
-
-[listeners]
-smtps_addr = ":465"
-imap_addr  = ":993"
-webhook_addr = ":8080"
-
-[webhook]
-public_url = "https://${bridgeName}.example.com"
-`;
-}
+// ---------- env-var reference table ----------
 
 interface EnvVarReference {
   name: string;
@@ -173,35 +307,46 @@ interface EnvVarReference {
 
 const ENV_VARS: readonly EnvVarReference[] = [
   {
-    name: 'POLARIS_BRIDGE_NAME',
+    name: 'BRIDGE_NAME',
     required: true,
     description: 'Bridge identifier registered with the control plane.',
   },
   {
-    name: 'POLARIS_BRIDGE_HMAC_KEY',
+    name: 'BRIDGE_POLARIS_API_URL',
+    required: true,
+    description: `Control-plane API URL — \`${API_URL}\` in production.`,
+  },
+  {
+    name: 'BRIDGE_POLARIS_BRIDGE_ID(_FILE)',
+    required: true,
+    description:
+      'Bridge ULID minted at registration. The `_FILE` form reads from a mounted secret.',
+  },
+  {
+    name: 'BRIDGE_POLARIS_HMAC_KEY(_FILE)',
     required: true,
     description: 'Per-bridge HMAC secret minted at registration.',
   },
   {
-    name: 'POLARIS_API_HOSTNAME',
+    name: 'BRIDGE_ACCESS_CLIENT_ID / _SECRET',
     required: true,
-    description: 'API hostname — typically `api.mail.plrs.im`.',
-  },
-  {
-    name: 'BRIDGE_TLS_MODE',
-    required: false,
-    description: '`local` (mount PEM) or `lego` (ACME-DNS-01). Defaults to `local`.',
-  },
-  {
-    name: 'BRIDGE_TLS_CERT / BRIDGE_TLS_KEY',
-    required: false,
-    description: 'PEM paths when `BRIDGE_TLS_MODE=local`.',
+    description: 'Cloudflare Access service token fronting the polaris API.',
   },
   {
     name: 'BRIDGE_PUBLIC_URL',
     required: false,
     description:
-      'Externally-routable webhook URL. Required when BRIDGE_WEBHOOK_ENABLED=true (default).',
+      'Externally-routable webhook URL. Required when `BRIDGE_WEBHOOK_ENABLED=true` (default).',
+  },
+  {
+    name: 'BRIDGE_TLS_MODE',
+    required: true,
+    description: 'Always `local` in supported builds. The Lego sidecar handles ACME.',
+  },
+  {
+    name: 'BRIDGE_TLS_CERT_PATH / _KEY_PATH',
+    required: true,
+    description: 'Paths to the PEM pair. The Lego sidecar writes them under `certificates/`.',
   },
   {
     name: 'BRIDGE_SMTPS_LISTEN_ADDR',
@@ -213,11 +358,6 @@ const ENV_VARS: readonly EnvVarReference[] = [
     required: false,
     description: 'IMAP listen address. Defaults to `:993`.',
   },
-  {
-    name: 'BRIDGE_WEBHOOK_LISTEN_ADDR',
-    required: false,
-    description: 'Inbound webhook listen address. Defaults to `:8080`.',
-  },
 ] as const;
 
 export function BridgeConnectionCard({
@@ -226,7 +366,7 @@ export function BridgeConnectionCard({
   initialHmacKey,
   showRotate = true,
 }: BridgeConnectionCardProps) {
-  const [hmacKey] = useState(initialHmacKey ?? HMAC_PLACEHOLDER);
+  const hmacKey = initialHmacKey ?? HMAC_PLACEHOLDER;
   const [rotated, setRotated] = useState<string | null>(null);
   const [confirmRotate, setConfirmRotate] = useState(false);
 
@@ -253,56 +393,94 @@ export function BridgeConnectionCard({
           ) : null}
         </div>
         <p className="mb-3 text-xs text-[var(--color-muted-foreground)]">
-          Polaris stores only the hash of the bridge HMAC key. Snippets contain{' '}
-          <span className="font-mono">{HMAC_PLACEHOLDER}</span> as a placeholder unless you have
-          just rotated. Use the rotate action above to mint a new key when you need one.
+          All three deployments expect the bridge to live at{' '}
+          <span className="font-mono">{fqdnFor(bridgeName)}</span>. The HMAC key (
+          <span className="font-mono">{HMAC_PLACEHOLDER}</span> below unless you just rotated) goes
+          in <span className="font-mono">./secrets/hmac_key</span> — never the compose or env file.
         </p>
-        <Tabs defaultValue="compose-local">
+
+        <Tabs defaultValue="public-lego">
           <TabsList>
-            <TabsTrigger value="compose-local">Docker (local)</TabsTrigger>
-            <TabsTrigger value="compose-tailscale">Docker (Tailscale)</TabsTrigger>
-            <TabsTrigger value="systemd">systemd unit</TabsTrigger>
-            <TabsTrigger value="env">bridge.env</TabsTrigger>
-            <TabsTrigger value="toml">bridge.toml</TabsTrigger>
+            <TabsTrigger value="public-lego">Docker + Let's Encrypt</TabsTrigger>
+            <TabsTrigger value="tailnet-lego">Tailscale + Let's Encrypt</TabsTrigger>
+            <TabsTrigger value="bare-metal">Bare metal (systemd)</TabsTrigger>
           </TabsList>
-          <TabsContent value="compose-local">
-            <CodeBlock code={composeLocal(bridgeName, hmacKey)} language="yaml" />
-            <p className="mt-2 text-xs text-[var(--color-muted-foreground)]">
-              Host-network mode. Operator owns firewall + TLS termination at the host (mount PEM at{' '}
-              <span className="font-mono">/etc/polaris-bridge/tls/</span>).
+
+          <TabsContent value="public-lego" className="space-y-3">
+            <p className="text-xs text-[var(--color-muted-foreground)]">
+              Bridge binds <span className="font-mono">:465 / :993 / :8080</span> on the host
+              network. Lego mints an LE cert for{' '}
+              <span className="font-mono">{fqdnFor(bridgeName)}</span> via Cloudflare DNS-01 and
+              writes it into a shared volume. Operator owns the firewall.
             </p>
+            <div>
+              <div className="mb-1 text-xs font-medium uppercase tracking-wide text-[var(--color-muted-foreground)]">
+                docker-compose.yml
+              </div>
+              <CodeBlock code={composePublicLego(bridgeName)} language="yaml" />
+            </div>
+            <div>
+              <div className="mb-1 text-xs font-medium uppercase tracking-wide text-[var(--color-muted-foreground)]">
+                .env
+              </div>
+              <CodeBlock code={envCompanion(bridgeName, false)} language="bash" />
+            </div>
+            <div>
+              <div className="mb-1 text-xs font-medium uppercase tracking-wide text-[var(--color-muted-foreground)]">
+                Secrets bootstrap
+              </div>
+              <CodeBlock code={secretsShell(bridgeId, hmacKey)} language="bash" />
+            </div>
           </TabsContent>
-          <TabsContent value="compose-tailscale">
-            <CodeBlock code={composeTailscale(bridgeName, hmacKey)} language="yaml" />
-            <p className="mt-2 text-xs text-[var(--color-muted-foreground)]">
-              Tailnet-fronted. MagicDNS hostname; TLS via tsnet.ListenTLS with Lego ACME-DNS-01
-              fallback. Requires a tailnet auth key.
+
+          <TabsContent value="tailnet-lego" className="space-y-3">
+            <p className="text-xs text-[var(--color-muted-foreground)]">
+              Bridge runs inside the Tailscale sidecar's network namespace — no public ports.
+              Tailnet members reach it at{' '}
+              <span className="font-mono">{tailnetHostnameFor(bridgeName)}</span> (MagicDNS) or
+              <span className="font-mono"> {fqdnFor(bridgeName)}</span> (CNAME to the same node).
+              Lego still issues the cert against the public FQDN via CF DNS-01 so both names
+              validate with one certificate.
             </p>
+            <div>
+              <div className="mb-1 text-xs font-medium uppercase tracking-wide text-[var(--color-muted-foreground)]">
+                docker-compose.yml
+              </div>
+              <CodeBlock code={composeTailnetLego(bridgeName)} language="yaml" />
+            </div>
+            <div>
+              <div className="mb-1 text-xs font-medium uppercase tracking-wide text-[var(--color-muted-foreground)]">
+                .env
+              </div>
+              <CodeBlock code={envCompanion(bridgeName, true)} language="bash" />
+            </div>
+            <div>
+              <div className="mb-1 text-xs font-medium uppercase tracking-wide text-[var(--color-muted-foreground)]">
+                Secrets bootstrap
+              </div>
+              <CodeBlock code={secretsShell(bridgeId, hmacKey)} language="bash" />
+            </div>
           </TabsContent>
-          <TabsContent value="systemd">
-            <CodeBlock code={systemdUnit(bridgeName)} language="ini" />
-            <p className="mt-2 text-xs text-[var(--color-muted-foreground)]">
-              Drop into <span className="font-mono">/etc/systemd/system/</span>, then
-              <span className="font-mono">
-                {' '}
-                systemctl daemon-reload && systemctl enable --now polaris-mail-bridge
-              </span>
-              . Pair with the env-file in the next tab.
+
+          <TabsContent value="bare-metal" className="space-y-3">
+            <p className="text-xs text-[var(--color-muted-foreground)]">
+              Non-Docker install. The unit file expects{' '}
+              <span className="font-mono">/etc/polaris-bridge/bridge.env</span> and a PEM pair at{' '}
+              <span className="font-mono">/etc/polaris-bridge/tls/</span> — renew with whatever you
+              already use (certbot, lego, caddy).
             </p>
-          </TabsContent>
-          <TabsContent value="env">
-            <CodeBlock code={envFile(bridgeName, hmacKey)} language="bash" />
-            <p className="mt-2 text-xs text-[var(--color-muted-foreground)]">
-              Mode 0600, owned by <span className="font-mono">polaris-bridge:polaris-bridge</span>.
-              Contains the HMAC key — treat it like any other secret.
-            </p>
-          </TabsContent>
-          <TabsContent value="toml">
-            <CodeBlock code={bridgeToml(bridgeName, hmacKey)} language="toml" />
-            <p className="mt-2 text-xs text-[var(--color-muted-foreground)]">
-              Equivalent to <span className="font-mono">bridge.env</span> above. Either form works;
-              env vars take precedence over TOML when both are set.
-            </p>
+            <div>
+              <div className="mb-1 text-xs font-medium uppercase tracking-wide text-[var(--color-muted-foreground)]">
+                /etc/systemd/system/polaris-mail-bridge.service
+              </div>
+              <CodeBlock code={systemdUnit(bridgeName)} language="ini" />
+            </div>
+            <div>
+              <div className="mb-1 text-xs font-medium uppercase tracking-wide text-[var(--color-muted-foreground)]">
+                /etc/polaris-bridge/bridge.env
+              </div>
+              <CodeBlock code={bareMetalEnv(bridgeName, hmacKey)} language="bash" />
+            </div>
           </TabsContent>
         </Tabs>
       </div>
@@ -343,7 +521,7 @@ export function BridgeConnectionCard({
         title="New HMAC key"
         secretLabel="HMAC key"
         secret={rotated}
-        note="Re-configure the bridge with this key. Polaris stores only the hash — there is no way to retrieve this value again."
+        note="Re-write ./secrets/hmac_key on the bridge host with this value, then restart the bridge. Polaris stores only the hash — there is no way to retrieve this value again."
       />
 
       <DestructiveActionDialog
