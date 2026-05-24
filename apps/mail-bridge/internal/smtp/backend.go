@@ -29,6 +29,17 @@ type Deps struct {
 	// Lockout is the per-credential auth-failure throttle. Optional in
 	// tests; nil disables the throttle.
 	Lockout *credstore.Lockout
+	// Metrics carries the in-process counters fed into the heartbeat.
+	// Optional in tests; nil disables counter writes.
+	Metrics *MetricsHooks
+}
+
+// MetricsHooks is a narrow surface over the metrics.Registry — only the
+// two counters SMTP needs to bump. Decoupling the import keeps this
+// package free of the heartbeat dependency tree.
+type MetricsHooks struct {
+	Submissions interface{ Inc() }
+	Errors      interface{ Inc() }
 }
 
 // Backend implements gosmtp.Backend. The RootContext is the bridge's main

@@ -92,6 +92,18 @@ type Backend struct {
 	// host suffix prevents a misconfigured server from steering the bridge
 	// into fetching arbitrary endpoints. Empty value disables the check.
 	R2PublicHost string
+	// SessionGauge is incremented on NewSession and decremented on
+	// Session.Close. Read by the heartbeat ticker to surface the live
+	// IMAP connection count. Optional in tests.
+	SessionGauge SessionGauge
+}
+
+// SessionGauge is the narrow surface this package needs from a counter.
+// Decoupling the import keeps the IMAP backend free of the metrics
+// dependency tree. Both Inc and Dec must be safe to call concurrently.
+type SessionGauge interface {
+	Inc()
+	Dec()
 }
 
 // defaultHTTPClient is a 30-second-timeout client used when Backend.HTTP is
@@ -149,6 +161,9 @@ func (b *Backend) validateBodyURL(raw string) error {
 // NewSession is the imapserver.Backend constructor. The greeting carries
 // PreAuth=false (clients must LOGIN).
 func (b *Backend) NewSession(_ *imapserver.Conn) (imapserver.Session, *imapserver.GreetingData, error) {
+	if b.SessionGauge != nil {
+		b.SessionGauge.Inc()
+	}
 	return &bridgeSession{backend: b}, &imapserver.GreetingData{}, nil
 }
 
@@ -175,8 +190,14 @@ func (s *bridgeSession) snapshot() (mailboxID, username string, selected bool) {
 // ---------- Not-authenticated state ----------
 
 // Close releases per-connection resources. The library calls this once per
-// session, even if the client never authenticated.
-func (s *bridgeSession) Close() error { return nil }
+// session, even if the client never authenticated. We also decrement the
+// session gauge here so the heartbeat read stays balanced with NewSession.
+func (s *bridgeSession) Close() error {
+	if s.backend != nil && s.backend.SessionGauge != nil {
+		s.backend.SessionGauge.Dec()
+	}
+	return nil
+}
 
 // Login implements the IMAP LOGIN command. Bridge auth is bcrypt against the
 // mailbox_credentials row resolved by (protocol="imap", username). Auth

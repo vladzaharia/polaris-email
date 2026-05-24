@@ -211,12 +211,21 @@ func (s *Session) Data(r io.Reader) error {
 	switch res.Category {
 	case "ok":
 		s.writeAudit(true, res.StatusCode, len(canonical), "")
+		if s.deps.Metrics != nil && s.deps.Metrics.Submissions != nil {
+			s.deps.Metrics.Submissions.Inc()
+		}
 		return nil
 	case "transient":
 		s.writeAudit(false, res.StatusCode, len(canonical), string(res.Body))
+		if s.deps.Metrics != nil && s.deps.Metrics.Errors != nil {
+			s.deps.Metrics.Errors.Inc()
+		}
 		return &gosmtp.SMTPError{Code: 451, Message: fmt.Sprintf("4.5.0 upstream transient (%d)", res.StatusCode)}
 	default:
 		s.writeAudit(false, res.StatusCode, len(canonical), string(res.Body))
+		if s.deps.Metrics != nil && s.deps.Metrics.Errors != nil {
+			s.deps.Metrics.Errors.Inc()
+		}
 		return &gosmtp.SMTPError{Code: 554, Message: fmt.Sprintf("5.5.0 upstream rejected (%d)", res.StatusCode)}
 	}
 }

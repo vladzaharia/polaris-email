@@ -31,7 +31,9 @@ import (
 	"github.com/vladzaharia/polaris-email/apps/mail-bridge/internal/config"
 	"github.com/vladzaharia/polaris-email/apps/mail-bridge/internal/credstore"
 	"github.com/vladzaharia/polaris-email/apps/mail-bridge/internal/forwarder"
+	"github.com/vladzaharia/polaris-email/apps/mail-bridge/internal/heartbeat"
 	bridgeimap "github.com/vladzaharia/polaris-email/apps/mail-bridge/internal/imap"
+	"github.com/vladzaharia/polaris-email/apps/mail-bridge/internal/metrics"
 	"github.com/vladzaharia/polaris-email/apps/mail-bridge/internal/push"
 	dsmtp "github.com/vladzaharia/polaris-email/apps/mail-bridge/internal/smtp"
 	mirrorstore "github.com/vladzaharia/polaris-email/apps/mail-bridge/internal/store"
@@ -92,6 +94,10 @@ func main() {
 	defer mirrorDB.Close()
 
 	pushMgr := push.New()
+
+	// In-process counters fed into the heartbeat ticker. IMAP/SMTP
+	// backends bump them inline; the ticker just reads.
+	metricsReg := metrics.New()
 
 	// Webhook subscription bootstrap. Auto-registers a sub on polaris that
 	// posts to this bridge's /internal/webhook/message-received path.
@@ -204,6 +210,10 @@ func main() {
 				Audit:          auditLog,
 				MaxMessageSize: cfg.MaxMessageSize,
 				Lockout:        authLockout,
+				Metrics: &dsmtp.MetricsHooks{
+					Submissions: metricsReg.Submissions,
+					Errors:      metricsReg.Errors,
+				},
 			},
 			RootContext: ctx,
 		}
@@ -236,9 +246,10 @@ func main() {
 	// backend's Session methods.
 	if enabled("BRIDGE_IMAP_ENABLED", true) {
 		imapBackend := &bridgeimap.Backend{
-			Client:        sdkClient,
-			Mirror:        mirrorDB,
-			Push:          pushMgr,
+			Client:       sdkClient,
+			Mirror:       mirrorDB,
+			Push:         pushMgr,
+			SessionGauge: metricsReg.IMAP,
 			MaxBodyBytes:  cfg.R2BodyMaxBytes,
 		}
 		imapTLSCfg := tlsConfigFor(tlsSrc)
@@ -307,6 +318,17 @@ func main() {
 			_ = webhookSrv.Shutdown(shutCtx)
 		}()
 	}
+
+	// Heartbeat ticker — POST /v1/bridge/heartbeat every 60s with version
+	// + counter snapshot. Best-effort; failures log and we move on. The
+	// ticker also implicitly bumps `bridges.last_seen_at` on the API side
+	// since the heartbeat goes through bridgeHmacAuth.
+	heartbeat.Start(ctx, heartbeat.Deps{
+		Client:    sdkClient,
+		Metrics:   metricsReg,
+		Mirror:    mirrorDB,
+		StartedAt: time.Now(),
+	})
 
 	// Readiness log.
 	go func() {

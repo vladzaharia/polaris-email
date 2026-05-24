@@ -421,6 +421,18 @@ func (m *Mirror) LastState(ctx context.Context, mailboxID string) (int64, error)
 	return s, err
 }
 
+// MessageCount returns the total number of rows in the local mirror's
+// `messages` table. Used by the heartbeat ticker to surface how much
+// state this bridge is caching. Errors fall back to 0 (the heartbeat is
+// best-effort telemetry and shouldn't fail on a transient SQLite hiccup).
+func (m *Mirror) MessageCount() int64 {
+	var n int64
+	if err := m.DB.QueryRow(`SELECT COUNT(*) FROM messages`).Scan(&n); err != nil {
+		return 0
+	}
+	return n
+}
+
 func nullable(s sql.NullString) any {
 	if !s.Valid {
 		return nil
