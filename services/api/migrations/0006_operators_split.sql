@@ -15,17 +15,20 @@
 --
 -- Pre-production: no users to coordinate with. Clean cut, one migration.
 --
--- IMPORTANT: D1 ignores `PRAGMA foreign_keys = OFF` inside a migration
--- transaction. The ordering below works with FK enforcement enabled:
---   * DROP TABLE does not fail due to dangling incoming FKs; SQLite
---     tolerates them as "phantom" until the target re-exists or a
---     write attempts to validate.
---   * SELECT never triggers FK validation; only INSERT/UPDATE/DELETE.
---   * The rebuild order detaches each FK before its target is dropped.
+-- D1 honors `PRAGMA defer_foreign_keys = ON` inside the migration's
+-- implicit transaction. The ordering below avoids fixed-point FK
+-- violations at commit:
+--   1. Capture the operator↔api_key mapping in a scratch table.
+--   2. Rebuild operators FIRST to drop api_key_id (eliminates the FK
+--      from operators -> api_keys before api_keys is rebuilt).
+--   3. Rebuild api_keys using the scratch mapping.
+--   4. Rebuild messages to drop principal_id.
+--   5. Drop principals + sentinel mailbox.
+
+PRAGMA defer_foreign_keys = ON;
 
 -- ============================================================================
 -- 1. Backfill the bootstrap-admin api_key as the root operator.
---    Must happen before the api_keys rebuild (which JOINs through this row).
 -- ============================================================================
 
 INSERT INTO operators (
@@ -49,64 +52,33 @@ WHERE b.admin_key_id IS NOT NULL
   );
 
 -- Any api_keys row not linked to an operator is pre-0003 legacy.
--- Delete first so the api_keys rebuild's NOT NULL operator_id holds.
 DELETE FROM api_keys
 WHERE id NOT IN (SELECT api_key_id FROM operators);
 
 -- ============================================================================
--- 2. Drop views that reference `messages` before the messages rebuild.
---    Unused in application code; not recreated.
+-- 2. Capture the operator↔api_key mapping in a scratch table so the
+--    operators rebuild (step 4) can drop api_key_id without losing it.
+-- ============================================================================
+
+CREATE TABLE _op_keys_tmp (
+  key_id      TEXT PRIMARY KEY,
+  operator_id TEXT NOT NULL
+);
+INSERT INTO _op_keys_tmp (key_id, operator_id)
+SELECT api_key_id, id FROM operators;
+
+-- ============================================================================
+-- 3. Drop views that reference `messages` before the messages rebuild.
 -- ============================================================================
 
 DROP VIEW IF EXISTS v_message_with_latest_attempt;
 DROP VIEW IF EXISTS v_message_delivery_state;
 
 -- ============================================================================
--- 3. Rebuild api_keys: replace principal_id with operator_id.
---    Reads the operator mapping from the existing operators.api_key_id
---    column before the operators table is itself rebuilt in step 4.
+-- 4. Rebuild operators: drop api_key_id column. No incoming FKs.
 -- ============================================================================
 
-CREATE TABLE api_keys_new (
-  id                 TEXT PRIMARY KEY,
-  operator_id        TEXT NOT NULL REFERENCES operators(id) ON DELETE CASCADE,
-  prefix             TEXT NOT NULL,
-  secret_argon2id    TEXT NOT NULL,
-  scopes             TEXT NOT NULL,
-  rate_limit_per_min INTEGER NOT NULL DEFAULT 60,
-  status             TEXT NOT NULL DEFAULT 'primary'
-                       CHECK(status IN ('primary','secondary','revoked')),
-  created_at         TEXT NOT NULL,
-  last_used_at       TEXT,
-  last_used_ip       TEXT,
-  last_used_ua       TEXT,
-  revoked_at         TEXT,
-  disabled_at        TEXT
-);
-
-INSERT INTO api_keys_new (
-  id, operator_id, prefix, secret_argon2id, scopes, rate_limit_per_min,
-  status, created_at, last_used_at, last_used_ip, last_used_ua,
-  revoked_at, disabled_at
-)
-SELECT
-  k.id, o.id, k.prefix, k.secret_argon2id, k.scopes, k.rate_limit_per_min,
-  k.status, k.created_at, k.last_used_at, k.last_used_ip, k.last_used_ua,
-  k.revoked_at, k.disabled_at
-FROM api_keys k
-JOIN operators o ON o.api_key_id = k.id;
-
-DROP TABLE api_keys;
-ALTER TABLE api_keys_new RENAME TO api_keys;
-
-CREATE INDEX idx_api_keys_operator_id ON api_keys(operator_id);
-CREATE INDEX idx_api_keys_status      ON api_keys(status);
-
--- ============================================================================
--- 4. Rebuild operators: drop the api_key_id column. The reverse FK
---    direction (api_keys.operator_id -> operators.id) is set up in step 3
---    and points at the new api_keys table.
--- ============================================================================
+DROP TRIGGER IF EXISTS trg_operators_updated_at;
 
 CREATE TABLE operators_new (
   id                   TEXT PRIMARY KEY,
@@ -149,7 +121,48 @@ BEGIN
 END;
 
 -- ============================================================================
--- 5. Rebuild messages: drop principal_id. The from_addr_normalized
+-- 5. Rebuild api_keys: drop principal_id, add operator_id (NOT NULL FK).
+--    operators has no FK to api_keys anymore; this rebuild has no
+--    incoming-FK constraints to worry about.
+-- ============================================================================
+
+CREATE TABLE api_keys_new (
+  id                 TEXT PRIMARY KEY,
+  operator_id        TEXT NOT NULL REFERENCES operators(id) ON DELETE CASCADE,
+  prefix             TEXT NOT NULL,
+  secret_argon2id    TEXT NOT NULL,
+  scopes             TEXT NOT NULL,
+  rate_limit_per_min INTEGER NOT NULL DEFAULT 60,
+  status             TEXT NOT NULL DEFAULT 'primary'
+                       CHECK(status IN ('primary','secondary','revoked')),
+  created_at         TEXT NOT NULL,
+  last_used_at       TEXT,
+  last_used_ip       TEXT,
+  last_used_ua       TEXT,
+  revoked_at         TEXT,
+  disabled_at        TEXT
+);
+
+INSERT INTO api_keys_new (
+  id, operator_id, prefix, secret_argon2id, scopes, rate_limit_per_min,
+  status, created_at, last_used_at, last_used_ip, last_used_ua,
+  revoked_at, disabled_at
+)
+SELECT
+  k.id, t.operator_id, k.prefix, k.secret_argon2id, k.scopes,
+  k.rate_limit_per_min, k.status, k.created_at, k.last_used_at,
+  k.last_used_ip, k.last_used_ua, k.revoked_at, k.disabled_at
+FROM api_keys k
+JOIN _op_keys_tmp t ON t.key_id = k.id;
+
+DROP TABLE api_keys;
+ALTER TABLE api_keys_new RENAME TO api_keys;
+
+CREATE INDEX idx_api_keys_operator_id ON api_keys(operator_id);
+CREATE INDEX idx_api_keys_status      ON api_keys(status);
+
+-- ============================================================================
+-- 6. Rebuild messages: drop principal_id. The from_addr_normalized
 --    generated column is preserved verbatim.
 -- ============================================================================
 
@@ -230,13 +243,12 @@ CREATE INDEX idx_messages_idempotency_key        ON messages(idempotency_key);
 CREATE INDEX idx_messages_mailbox_thread         ON messages(mailbox_id, thread_id, created_at DESC);
 
 -- ============================================================================
--- 6. Drop principals + sentinel mailbox. After the rebuilds in steps 3 + 5,
---    no remaining table references principals — DROP is safe with FK on.
+-- 7. Drop principals, sentinel mailbox, and the scratch table.
 -- ============================================================================
 
 DROP TABLE principals;
-
 DELETE FROM mailboxes WHERE id = '01J0000000000000000000PLRS';
+DROP TABLE _op_keys_tmp;
 
 -- ============================================================================
 -- Version stamp
