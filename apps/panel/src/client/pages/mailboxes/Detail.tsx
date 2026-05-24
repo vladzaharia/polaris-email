@@ -17,7 +17,7 @@
  * What this design optimises for:
  *   - A persistent header that answers "what is this mailbox" — name,
  *     status, default sender, created — plus the three high-value actions
- *     (Send test, Add credential, Disable mailbox) the audiences above all
+ *     (Send test, Disable mailbox) the audiences above all
  *     reach for first.
  *   - A 24h stats strip derived from the last 50 messages so the "is this
  *     thing flowing?" answer is one glance, never a click.
@@ -821,7 +821,6 @@ export function MailboxDetail() {
   const headerActions = (
     <>
       <SendTestDialog mailboxId={id} senders={activeSenders} />
-      <IssueCredentialDialog mailboxId={id} />
       <Button
         size="sm"
         variant={disabled ? 'outline' : 'outline'}
