@@ -23,7 +23,7 @@
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.16.0",
     "@types/node": "^25.8.0",
-    "lefthook": "^2.1.6",
+    "lefthook": "^2.1.8",
     "oxfmt": "^0.49.0",
     "oxlint": "^1.65.0",
     "typescript": "^6.0.3",
