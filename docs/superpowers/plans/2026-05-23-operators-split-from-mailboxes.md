@@ -15,11 +15,13 @@
 ### Task 1: D1 migration — drop principals, rewire api_keys + messages to operators
 
 **Files:**
+
 - Create: `services/api/migrations/0006_operators_split.sql`
 
 - [ ] **Step 1: Inspect the api_keys + messages CREATE TABLE shapes so the rebuild is byte-accurate**
 
 Run:
+
 ```sh
 grep -nA 25 "CREATE TABLE api_keys\b" services/api/migrations/0001_init.sql
 grep -nA 50 "CREATE TABLE messages\b"  services/api/migrations/0001_init.sql | head -55
@@ -242,6 +244,7 @@ VALUES (6, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), '0006_operators_split');
 - [ ] **Step 3: Apply the full migration chain to a scratch sqlite DB and verify the target state**
 
 Run:
+
 ```sh
 cat services/api/migrations/0001_init.sql \
     services/api/migrations/0002_unified_credentials.sql \
@@ -274,6 +277,7 @@ git commit -m "feat(api/migrations): split operators from mailboxes (drop princi
 ### Task 2: Refactor `services/api/src/auth.ts` — drop principals join, rename field to operator_id
 
 **Files:**
+
 - Modify: `services/api/src/auth.ts`
 
 - [ ] **Step 1: Rename the AuthenticatedKey field**
@@ -295,14 +299,52 @@ export interface AuthenticatedKey {
 }
 ```
 
-(The old `mailbox_id` and `principal_id` fields are gone. The old `operator_id` field — which meant *impersonated* operator — is renamed `impersonated_operator_id` so the new `operator_id` can mean the key's *owning* operator. This is the one semantic split worth preserving.)
+(The old `mailbox_id` and `principal_id` fields are gone. The old `operator_id` field — which meant _impersonated_ operator — is renamed `impersonated_operator_id` so the new `operator_id` can mean the key's _owning_ operator. This is the one semantic split worth preserving.)
 
 - [ ] **Step 2: Rewrite the cold-path D1 lookup**
 
 In `services/api/src/auth.ts`, replace lines 70–150 (the `RowShape` type, the cached-validation function, and the cold-path block) with:
 
 ```typescript
-    type RowShape = {
+type RowShape = {
+  id: string;
+  operator_id: string;
+  secret_argon2id: string;
+  scopes: string;
+  rate_limit_per_min: number;
+  status: 'primary' | 'secondary' | 'revoked';
+  revoked_at: number | null;
+};
+function isRowShape(v: unknown): v is RowShape {
+  if (typeof v !== 'object' || v === null) return false;
+  const r = v as Record<string, unknown>;
+  if (typeof r.id !== 'string') return false;
+  if (typeof r.operator_id !== 'string') return false;
+  if (typeof r.secret_argon2id !== 'string') return false;
+  if (typeof r.scopes !== 'string') return false;
+  if (typeof r.rate_limit_per_min !== 'number') return false;
+  if (r.status !== 'primary' && r.status !== 'secondary' && r.status !== 'revoked') {
+    return false;
+  }
+  return true;
+}
+let row: RowShape | null = null;
+if (cached && isRowShape(cached)) {
+  row = cached;
+} else {
+  // Single-query lookup against api_keys (joined to operators for the
+  // disabled-check). After the principals split, api_keys is operator-
+  // owned; there is no separate mailbox lookup to do here.
+  const keyRow = await env.DB.prepare(
+    `SELECT k.id, k.operator_id, k.secret_argon2id, k.scopes,
+                k.rate_limit_per_min, k.status, k.revoked_at,
+                o.disabled_at AS operator_disabled_at
+         FROM api_keys k
+         JOIN operators o ON o.id = k.operator_id
+         WHERE k.id = ?`,
+  )
+    .bind(keyId)
+    .first<{
       id: string;
       operator_id: string;
       secret_argon2id: string;
@@ -310,74 +352,36 @@ In `services/api/src/auth.ts`, replace lines 70–150 (the `RowShape` type, the 
       rate_limit_per_min: number;
       status: 'primary' | 'secondary' | 'revoked';
       revoked_at: number | null;
+      operator_disabled_at: string | null;
+    }>();
+  if (keyRow) {
+    if (keyRow.operator_disabled_at) {
+      return buildError(c, 'key_revoked', 'operator disabled');
+    }
+    row = {
+      id: keyRow.id,
+      operator_id: keyRow.operator_id,
+      secret_argon2id: keyRow.secret_argon2id,
+      scopes: keyRow.scopes,
+      rate_limit_per_min: keyRow.rate_limit_per_min,
+      status: keyRow.status,
+      revoked_at: keyRow.revoked_at,
     };
-    function isRowShape(v: unknown): v is RowShape {
-      if (typeof v !== 'object' || v === null) return false;
-      const r = v as Record<string, unknown>;
-      if (typeof r.id !== 'string') return false;
-      if (typeof r.operator_id !== 'string') return false;
-      if (typeof r.secret_argon2id !== 'string') return false;
-      if (typeof r.scopes !== 'string') return false;
-      if (typeof r.rate_limit_per_min !== 'number') return false;
-      if (r.status !== 'primary' && r.status !== 'secondary' && r.status !== 'revoked') {
-        return false;
-      }
-      return true;
-    }
-    let row: RowShape | null = null;
-    if (cached && isRowShape(cached)) {
-      row = cached;
-    } else {
-      // Single-query lookup against api_keys (joined to operators for the
-      // disabled-check). After the principals split, api_keys is operator-
-      // owned; there is no separate mailbox lookup to do here.
-      const keyRow = await env.DB.prepare(
-        `SELECT k.id, k.operator_id, k.secret_argon2id, k.scopes,
-                k.rate_limit_per_min, k.status, k.revoked_at,
-                o.disabled_at AS operator_disabled_at
-         FROM api_keys k
-         JOIN operators o ON o.id = k.operator_id
-         WHERE k.id = ?`,
-      )
-        .bind(keyId)
-        .first<{
-          id: string;
-          operator_id: string;
-          secret_argon2id: string;
-          scopes: string;
-          rate_limit_per_min: number;
-          status: 'primary' | 'secondary' | 'revoked';
-          revoked_at: number | null;
-          operator_disabled_at: string | null;
-        }>();
-      if (keyRow) {
-        if (keyRow.operator_disabled_at) {
-          return buildError(c, 'key_revoked', 'operator disabled');
-        }
-        row = {
-          id: keyRow.id,
-          operator_id: keyRow.operator_id,
-          secret_argon2id: keyRow.secret_argon2id,
-          scopes: keyRow.scopes,
-          rate_limit_per_min: keyRow.rate_limit_per_min,
-          status: keyRow.status,
-          revoked_at: keyRow.revoked_at,
-        };
-      } else {
-        row = null;
-      }
-      if (row) {
-        c.executionCtx.waitUntil(
-          env.KV_KEY_CACHE.put(cacheKey, JSON.stringify(row), { expirationTtl: 60 }),
-        );
-      }
-    }
-    if (!row) {
-      return buildError(c, 'key_propagating', 'unknown key id', { 'retry-after': '2' });
-    }
-    if (row.status === 'revoked' || row.revoked_at != null) {
-      return buildError(c, 'key_revoked', 'key has been revoked');
-    }
+  } else {
+    row = null;
+  }
+  if (row) {
+    c.executionCtx.waitUntil(
+      env.KV_KEY_CACHE.put(cacheKey, JSON.stringify(row), { expirationTtl: 60 }),
+    );
+  }
+}
+if (!row) {
+  return buildError(c, 'key_propagating', 'unknown key id', { 'retry-after': '2' });
+}
+if (row.status === 'revoked' || row.revoked_at != null) {
+  return buildError(c, 'key_revoked', 'key has been revoked');
+}
 ```
 
 - [ ] **Step 3: Switch the revocation check to operator_id**
@@ -385,14 +389,14 @@ In `services/api/src/auth.ts`, replace lines 70–150 (the `RowShape` type, the 
 In `services/api/src/auth.ts`, replace lines 160–170 (the `principal_id` revocation block) with:
 
 ```typescript
-    // Per-operator revocation check (KV_REVOCATIONS, 60s in-memory cache).
-    // The api_keys row may still read `primary` from a stale KV_KEY_CACHE
-    // entry right after an admin revoke, but KV_REVOCATIONS keyed by
-    // operator_id is invalidated synchronously by the revoke handler.
-    const revoked = await revocationCheck(env, row.operator_id).catch(() => false);
-    if (revoked) {
-      return buildError(c, 'key_revoked', 'operator revoked');
-    }
+// Per-operator revocation check (KV_REVOCATIONS, 60s in-memory cache).
+// The api_keys row may still read `primary` from a stale KV_KEY_CACHE
+// entry right after an admin revoke, but KV_REVOCATIONS keyed by
+// operator_id is invalidated synchronously by the revoke handler.
+const revoked = await revocationCheck(env, row.operator_id).catch(() => false);
+if (revoked) {
+  return buildError(c, 'key_revoked', 'operator revoked');
+}
 ```
 
 - [ ] **Step 4: Switch the impersonation lookup to a single join**
@@ -400,39 +404,39 @@ In `services/api/src/auth.ts`, replace lines 160–170 (the `principal_id` revoc
 In `services/api/src/auth.ts`, replace the lines 274–306 (the operator + opKey lookups in the OBO block) with:
 
 ```typescript
-      const opRow = await env.DB.prepare(
-        `SELECT o.id, o.disabled_at,
+const opRow = await env.DB.prepare(
+  `SELECT o.id, o.disabled_at,
                 k.id AS api_key_id, k.operator_id, k.scopes,
                 k.status, k.revoked_at
          FROM operators o
          JOIN api_keys k ON k.operator_id = o.id AND k.status = 'primary'
          WHERE o.id = ?`,
-      )
-        .bind(opId)
-        .first<{
-          id: string;
-          disabled_at: string | null;
-          api_key_id: string;
-          operator_id: string;
-          scopes: string;
-          status: 'primary' | 'secondary' | 'revoked';
-          revoked_at: number | null;
-        }>();
-      if (!opRow) {
-        return buildError(c, 'not_found', 'operator not found');
-      }
-      if (opRow.disabled_at) {
-        return buildError(c, 'key_revoked', 'operator disabled');
-      }
-      if (opRow.status === 'revoked' || opRow.revoked_at != null) {
-        return buildError(c, 'key_revoked', 'operator key revoked');
-      }
-      const revokedOp = await revocationCheck(env, opRow.operator_id).catch(() => false);
-      if (revokedOp) {
-        return buildError(c, 'key_revoked', 'operator revoked');
-      }
-      effectiveScopesRaw = opRow.scopes;
-      effectiveOperatorId = opId;
+)
+  .bind(opId)
+  .first<{
+    id: string;
+    disabled_at: string | null;
+    api_key_id: string;
+    operator_id: string;
+    scopes: string;
+    status: 'primary' | 'secondary' | 'revoked';
+    revoked_at: number | null;
+  }>();
+if (!opRow) {
+  return buildError(c, 'not_found', 'operator not found');
+}
+if (opRow.disabled_at) {
+  return buildError(c, 'key_revoked', 'operator disabled');
+}
+if (opRow.status === 'revoked' || opRow.revoked_at != null) {
+  return buildError(c, 'key_revoked', 'operator key revoked');
+}
+const revokedOp = await revocationCheck(env, opRow.operator_id).catch(() => false);
+if (revokedOp) {
+  return buildError(c, 'key_revoked', 'operator revoked');
+}
+effectiveScopesRaw = opRow.scopes;
+effectiveOperatorId = opId;
 ```
 
 - [ ] **Step 5: Update the `c.set('apiKey', …)` block at lines 315–328**
@@ -440,16 +444,19 @@ In `services/api/src/auth.ts`, replace the lines 274–306 (the operator + opKey
 Replace with:
 
 ```typescript
-    c.set('apiKey', {
-      key_id: row.id,
-      operator_id: row.operator_id,
-      impersonated_operator_id: effectiveOperatorId,
-      scopes_raw: effectiveScopesRaw,
-      rate_limit_per_min: row.rate_limit_per_min,
-      status: row.status,
-      revoked_at: row.revoked_at,
-    });
-    c.set('actor', effectiveOperatorId ? `operator:${effectiveOperatorId}` : `operator:${row.operator_id}`);
+c.set('apiKey', {
+  key_id: row.id,
+  operator_id: row.operator_id,
+  impersonated_operator_id: effectiveOperatorId,
+  scopes_raw: effectiveScopesRaw,
+  rate_limit_per_min: row.rate_limit_per_min,
+  status: row.status,
+  revoked_at: row.revoked_at,
+});
+c.set(
+  'actor',
+  effectiveOperatorId ? `operator:${effectiveOperatorId}` : `operator:${row.operator_id}`,
+);
 ```
 
 (Note the actor string change: even non-impersonating requests now attribute to the OPERATOR, not the key. This matches the existing `actorOf(c)` convention and is what the audit log was already trying to record — see the audit-actor comment block at lines 30–42.)
@@ -472,6 +479,7 @@ git commit -m "refactor(api/auth): drop principals join, rename field to operato
 ### Task 3: Update `routes/messages.ts` + `routes/messages-state.ts` consumers
 
 **Files:**
+
 - Modify: `services/api/src/routes/messages.ts`
 - Modify: `services/api/src/routes/messages-state.ts`
 
@@ -480,11 +488,13 @@ git commit -m "refactor(api/auth): drop principals join, rename field to operato
 Run: `grep -n "principal_id\|\.mailbox_id" services/api/src/routes/messages.ts`
 
 For each match:
+
 - `keyRow.principal_id` → `keyRow.operator_id` (the key owner)
 - `apiKey.principal_id` → `apiKey.operator_id`
 - `apiKey.mailbox_id` → drop. Anywhere it was used to scope a query, fall back to the explicit `mailbox_id` from the request body / URL param. (The old behavior of "the api_key tells me which mailbox" was operator-scope; operator keys are not bound to a mailbox.)
 
 Notable specific edits:
+
 - Lines 146–166: drop the `if (!keyRow.principal_id)` guard and the principals SELECT that followed it. The new key row always has a non-null operator_id, and the operator's "mailbox" concept is gone. The route already takes the target mailbox from the request body — read that, not the auth context.
 - Line 208: `principal_id: keyRow.principal_id` in the INSERT INTO messages → drop the column entirely from the INSERT (it no longer exists).
 - Line 336, 349, 426: audit `actor` / payload `principalId` → use `apiKey.operator_id`.
@@ -495,6 +505,7 @@ Notable specific edits:
 Run: `grep -n "principal_id\|\.mailbox_id" services/api/src/routes/messages-state.ts`
 
 Apply the same transformations. Specifically:
+
 - Lines 120–133: drop the `principal_id` null-guard + principals SELECT. Use `apiKey.operator_id` directly.
 - Line 173: `principal_id: keyRow.principal_id` → drop entirely (column gone).
 - Lines 320, 366: `auth.principal_id ?? auth.key_id` → `auth.operator_id ?? auth.key_id`.
@@ -517,6 +528,7 @@ git commit -m "refactor(api/messages): rename principal_id to operator_id; drop 
 ### Task 4: Update `routes/admin.ts` + `scheduled/sender-abuse-threshold.ts`
 
 **Files:**
+
 - Modify: `services/api/src/routes/admin.ts`
 - Modify: `services/api/src/scheduled/sender-abuse-threshold.ts`
 
@@ -525,6 +537,7 @@ git commit -m "refactor(api/messages): rename principal_id to operator_id; drop 
 Run: `grep -n "principal_id" services/api/src/routes/admin.ts`
 
 For each match:
+
 - Line 272 (`fullOld.principal_id`): if it's reading from an api_keys row, rename to `operator_id`.
 - Line 347 (`meta: { reason: …, principal_id: keyRow?.principal_id ?? null }`): rename the meta key to `operator_id` and pull from `keyRow?.operator_id`.
 - Line 355 (`if (keyRow?.principal_id)`) and Line 362 (`revoke(c.env, keyRow.principal_id, …)`): switch to `keyRow?.operator_id`. The `revoke` helper's signature is unchanged — it takes a string identifier and writes the KV revocation entry under that key. After this change the KV entries are keyed by operator_id everywhere.
@@ -559,6 +572,7 @@ git commit -m "refactor(api/admin): rename principal_id to operator_id in revoke
 ### Task 5: Refactor `routes/admin/operators.ts` — drop the principals insert, drop the api_key_id update
 
 **Files:**
+
 - Modify: `services/api/src/routes/admin/operators.ts`
 
 - [ ] **Step 1: Drop the OPERATOR_SENTINEL_MAILBOX_ID constant and its uses**
@@ -573,37 +587,37 @@ In `services/api/src/routes/admin/operators.ts`:
 In `services/api/src/routes/admin/operators.ts`, replace the `c.env.DB.batch([...])` block at lines 176–216 with:
 
 ```typescript
-  await c.env.DB.batch([
-    c.env.DB.prepare(
-      `INSERT INTO operators
+await c.env.DB.batch([
+  c.env.DB.prepare(
+    `INSERT INTO operators
          (id, name, email, ssh_pubkey, ssh_pubkey_fp_sha256, role,
           created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    ).bind(
-      operatorId,
-      body.name,
-      body.email,
-      body.ssh_pubkey,
-      body.ssh_pubkey_fp_sha256,
-      body.role,
-      nowIso,
-      nowIso,
-    ),
-    c.env.DB.prepare(
-      `INSERT INTO api_keys
+  ).bind(
+    operatorId,
+    body.name,
+    body.email,
+    body.ssh_pubkey,
+    body.ssh_pubkey_fp_sha256,
+    body.role,
+    nowIso,
+    nowIso,
+  ),
+  c.env.DB.prepare(
+    `INSERT INTO api_keys
          (id, operator_id, prefix, secret_argon2id, scopes,
           rate_limit_per_min, status, created_at)
        VALUES (?, ?, 'pk_op_', ?, ?, ?, 'primary', ?)`,
-    ).bind(
-      apiKeyId,
-      operatorId,
-      hashed,
-      JSON.stringify(body.scopes),
-      body.rate_limit_per_min,
-      nowIso,
-    ),
-    auditInsert.statement,
-  ]);
+  ).bind(
+    apiKeyId,
+    operatorId,
+    hashed,
+    JSON.stringify(body.scopes),
+    body.rate_limit_per_min,
+    nowIso,
+  ),
+  auditInsert.statement,
+]);
 ```
 
 Note: `principals` insert is gone. `operators.api_key_id` is gone from the schema; the operator + api_key reference each other via `api_keys.operator_id`.
@@ -613,20 +627,20 @@ Note: `principals` insert is gone. `operators.api_key_id` is gone from the schem
 In `services/api/src/routes/admin/operators.ts`, find the `KV_KEY_CACHE.put` block (around lines 219–232) and replace with:
 
 ```typescript
-  await c.env.KV_KEY_CACHE.put(`plain:${apiKeyId}`, secret, { expirationTtl: 15 * 60 });
-  await c.env.KV_KEY_CACHE.put(
-    `key:${apiKeyId}`,
-    JSON.stringify({
-      id: apiKeyId,
-      operator_id: operatorId,
-      secret_argon2id: hashed,
-      scopes: JSON.stringify(body.scopes),
-      rate_limit_per_min: body.rate_limit_per_min,
-      status: 'primary',
-      revoked_at: null,
-    }),
-    { expirationTtl: 60 },
-  );
+await c.env.KV_KEY_CACHE.put(`plain:${apiKeyId}`, secret, { expirationTtl: 15 * 60 });
+await c.env.KV_KEY_CACHE.put(
+  `key:${apiKeyId}`,
+  JSON.stringify({
+    id: apiKeyId,
+    operator_id: operatorId,
+    secret_argon2id: hashed,
+    scopes: JSON.stringify(body.scopes),
+    rate_limit_per_min: body.rate_limit_per_min,
+    status: 'primary',
+    revoked_at: null,
+  }),
+  { expirationTtl: 60 },
+);
 ```
 
 - [ ] **Step 4: Drop the `principal_id` field from the create response**
@@ -636,6 +650,7 @@ The response object at lines 234–257 still works minus `api_key_id` resolution
 - [ ] **Step 5: Fix the rotate-key handler at line 375**
 
 In `services/api/src/routes/admin/operators.ts`, search for `rotate-key`. The current flow:
+
 1. Mints a new api_key.
 2. UPDATEs `operators.api_key_id` to point at it.
 3. Marks the old api_key as 'revoked' (or 'secondary').
@@ -643,12 +658,12 @@ In `services/api/src/routes/admin/operators.ts`, search for `rotate-key`. The cu
 After this change, step 2 disappears. The "current" api_key is whichever one has `status='primary'` and `operator_id = ?`. Specifically:
 
 ```typescript
-  // OLD:
-  //   c.env.DB.prepare(`UPDATE operators SET api_key_id = ?, updated_at = ? WHERE id = ?`).bind(...)
-  //
-  // NEW: no operators-table update needed. The new api_key was inserted
-  // with status='primary' and operator_id = opId; the old one was just
-  // marked status='secondary' or 'revoked' in the same batch.
+// OLD:
+//   c.env.DB.prepare(`UPDATE operators SET api_key_id = ?, updated_at = ? WHERE id = ?`).bind(...)
+//
+// NEW: no operators-table update needed. The new api_key was inserted
+// with status='primary' and operator_id = opId; the old one was just
+// marked status='secondary' or 'revoked' in the same batch.
 ```
 
 Find the existing `UPDATE operators SET api_key_id` call (was at line 424 in the original); delete it. Confirm the surrounding logic still flips the old key's status correctly.
@@ -671,6 +686,7 @@ WHERE o.id = ?
 The LEFT JOIN tolerates the brief mid-rotation window when no key is primary (shouldn't happen with the rotation flow's batched transition, but defensive).
 
 Apply to:
+
 - `GET /v1/admin/operators` (list) — line ~96
 - `GET /v1/admin/operators/:id` — line ~127
 - `GET /v1/admin/operators/lookup` — line ~105 (this is the Wish hot path)
@@ -693,6 +709,7 @@ git commit -m "refactor(api/admin/operators): drop principals + sentinel; derive
 ### Task 6: Refactor `routes/bootstrap.ts` — create operator row instead of principal+mailbox
 
 **Files:**
+
 - Modify: `services/api/src/routes/bootstrap.ts`
 
 - [ ] **Step 1: Drop the mailbox insert + principal insert; insert an operators row instead**
@@ -700,40 +717,48 @@ git commit -m "refactor(api/admin/operators): drop principals + sentinel; derive
 In `services/api/src/routes/bootstrap.ts`, replace lines 115–152 (mailbox lookup/insert, principals insert, api_keys insert) with:
 
 ```typescript
-  const now = Date.now();
-  const nowIso = new Date(now).toISOString();
-  const operatorId = '01J0000000000000000000ROOT';
-  const keyId = ulid();
-  const secret = generateSecret();
-  const hashed = await hashSecret(secret, c.env.ARGON2_PEPPER);
+const now = Date.now();
+const nowIso = new Date(now).toISOString();
+const operatorId = '01J0000000000000000000ROOT';
+const keyId = ulid();
+const secret = generateSecret();
+const hashed = await hashSecret(secret, c.env.ARGON2_PEPPER);
 
-  // Bootstrap creates a single 'root' operator. Subsequent operator rows
-  // are minted via POST /v1/admin/operators (each gets a unique id).
-  await c.env.DB.prepare(
-    `INSERT INTO operators
+// Bootstrap creates a single 'root' operator. Subsequent operator rows
+// are minted via POST /v1/admin/operators (each gets a unique id).
+await c.env.DB.prepare(
+  `INSERT INTO operators
        (id, name, email, ssh_pubkey, ssh_pubkey_fp_sha256, role,
         created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, 'admin', ?, ?)`,
+)
+  .bind(
+    operatorId,
+    'root',
+    'root@polaris-mail.invalid',
+    '',
+    'sha256:bootstrap-admin-no-pubkey',
+    nowIso,
+    nowIso,
   )
-    .bind(
-      operatorId,
-      'root',
-      'root@polaris-mail.invalid',
-      '',
-      'sha256:bootstrap-admin-no-pubkey',
-      nowIso,
-      nowIso,
-    )
-    .run();
+  .run();
 
-  await c.env.DB.prepare(
-    `INSERT INTO api_keys
+await c.env.DB.prepare(
+  `INSERT INTO api_keys
        (id, operator_id, prefix, secret_argon2id, scopes,
         rate_limit_per_min, status, created_at)
      VALUES (?, ?, ?, ?, ?, ?, 'primary', ?)`,
+)
+  .bind(
+    keyId,
+    operatorId,
+    'pk_admin_',
+    hashed,
+    '["admin:rotate","admin:read","admin:impersonate"]',
+    60,
+    nowIso,
   )
-    .bind(keyId, operatorId, 'pk_admin_', hashed, '["admin:rotate","admin:read","admin:impersonate"]', 60, nowIso)
-    .run();
+  .run();
 ```
 
 Note: the bootstrap key now carries `admin:impersonate` in its scopes by default. This was the de facto behavior (Wish needs it, the bootstrap doc says so) — making it explicit here removes the "you have to manually grant impersonate after bootstrap" footgun.
@@ -743,12 +768,12 @@ Note: the bootstrap key now carries `admin:impersonate` in its scopes by default
 The audit emission at lines 165–170 references `mailbox_id: effectiveMailboxId`. Replace with:
 
 ```typescript
-  await audit(c.env, {
-    actor: 'bootstrap',
-    action: 'bootstrap.consume',
-    target: keyId,
-    meta: { issued_at: now, operator_id: operatorId },
-  });
+await audit(c.env, {
+  actor: 'bootstrap',
+  action: 'bootstrap.consume',
+  target: keyId,
+  meta: { issued_at: now, operator_id: operatorId },
+});
 ```
 
 - [ ] **Step 3: Drop the now-unused mailbox imports/helpers**
@@ -775,6 +800,7 @@ git commit -m "refactor(api/bootstrap): create operators row directly, no princi
 ### Task 7: Drop sentinel filters in `mailboxes.ts` + `stats.ts`; drop principals payload from mailbox detail
 
 **Files:**
+
 - Modify: `services/api/src/routes/admin/mailboxes.ts`
 - Modify: `services/api/src/routes/admin/stats.ts`
 
@@ -811,16 +837,19 @@ git commit -m "refactor(api/admin/mailboxes): drop sentinel filters + principals
 ### Task 8: Update existing integration tests that seed principals or sentinel rows
 
 **Files:**
+
 - Modify: any test that does `INSERT INTO principals` or seeds `OPERATOR_SENTINEL_MAILBOX_ID`. Discover them.
 
 - [ ] **Step 1: Find every test consumer**
 
 Run:
+
 ```sh
 grep -rn "INSERT INTO principals\|principal_id\|01J0000000000000000000PLRS" services/api/test/ services/in/test/ services/out/test/ 2>&1 | grep -v node_modules
 ```
 
 Each match is one of:
+
 - A test seeding the legacy `principals` table for auth coverage.
 - A test that referenced `principal_id` on api_keys (FK has been renamed).
 - A test referencing the sentinel mailbox.
@@ -831,22 +860,39 @@ The pattern transformation:
 
 ```typescript
 // OLD:
-await db.prepare(`INSERT INTO principals (id, mailbox_id, kind, display_name, created_at)
-                  VALUES (?, ?, 'api_key', ?, ?)`).bind(principalId, mailboxId, 'test', now).run();
-await db.prepare(`INSERT INTO api_keys (id, principal_id, prefix, secret_argon2id, scopes,
+await db
+  .prepare(
+    `INSERT INTO principals (id, mailbox_id, kind, display_name, created_at)
+                  VALUES (?, ?, 'api_key', ?, ?)`,
+  )
+  .bind(principalId, mailboxId, 'test', now)
+  .run();
+await db
+  .prepare(
+    `INSERT INTO api_keys (id, principal_id, prefix, secret_argon2id, scopes,
                                          rate_limit_per_min, status, created_at)
-                  VALUES (?, ?, 'pk_op_', ?, ?, ?, 'primary', ?)`)
-        .bind(keyId, principalId, hash, '["admin:read"]', 60, now).run();
+                  VALUES (?, ?, 'pk_op_', ?, ?, ?, 'primary', ?)`,
+  )
+  .bind(keyId, principalId, hash, '["admin:read"]', 60, now)
+  .run();
 
 // NEW:
-await db.prepare(`INSERT INTO operators (id, name, email, ssh_pubkey, ssh_pubkey_fp_sha256,
+await db
+  .prepare(
+    `INSERT INTO operators (id, name, email, ssh_pubkey, ssh_pubkey_fp_sha256,
                                           role, created_at, updated_at)
-                  VALUES (?, ?, ?, ?, ?, 'admin', ?, ?)`)
-        .bind(opId, 'test op', `op-${opId}@test.invalid`, '', `fp-${opId}`, now, now).run();
-await db.prepare(`INSERT INTO api_keys (id, operator_id, prefix, secret_argon2id, scopes,
+                  VALUES (?, ?, ?, ?, ?, 'admin', ?, ?)`,
+  )
+  .bind(opId, 'test op', `op-${opId}@test.invalid`, '', `fp-${opId}`, now, now)
+  .run();
+await db
+  .prepare(
+    `INSERT INTO api_keys (id, operator_id, prefix, secret_argon2id, scopes,
                                          rate_limit_per_min, status, created_at)
-                  VALUES (?, ?, 'pk_op_', ?, ?, ?, 'primary', ?)`)
-        .bind(keyId, opId, hash, '["admin:read"]', 60, now).run();
+                  VALUES (?, ?, 'pk_op_', ?, ?, ?, 'primary', ?)`,
+  )
+  .bind(keyId, opId, hash, '["admin:read"]', 60, now)
+  .run();
 ```
 
 Apply to every seed block found in Step 1.
@@ -869,6 +915,7 @@ git commit -m "test: rewire principals fixtures to direct operator inserts"
 ### Task 9: Add an integration test for the new operator auth path
 
 **Files:**
+
 - Create: `services/api/test/integration/operator-auth.workers.test.ts`
 
 - [ ] **Step 1: Write the test**
@@ -971,9 +1018,7 @@ describe('operator auth path (post-principals split)', () => {
       .bind(now)
       .run();
     await testEnv.DB.prepare(`DELETE FROM operators WHERE id = ?`).bind('op3').run();
-    const remaining = await testEnv.DB.prepare(
-      `SELECT COUNT(*) AS n FROM api_keys WHERE id = ?`,
-    )
+    const remaining = await testEnv.DB.prepare(`SELECT COUNT(*) AS n FROM api_keys WHERE id = ?`)
       .bind('01HXKEY00000000000000000C3')
       .first<{ n: number }>();
     expect(remaining?.n).toBe(0);
@@ -999,6 +1044,7 @@ git commit -m "test(api): operator auth path covers join + disabled + cascade"
 ### Task 10: Drop principals UI from the mailbox detail page
 
 **Files:**
+
 - Modify: `apps/panel/src/client/pages/mailboxes/Detail.tsx`
 
 - [ ] **Step 1: Drop the interface field**
@@ -1034,6 +1080,7 @@ git commit -m "refactor(panel/mailboxes): drop principals MetaRow (concept gone)
 ### Task 11: Panel — operators List page
 
 **Files:**
+
 - Create: `apps/panel/src/client/pages/operators/List.tsx`
 - Modify: `apps/panel/src/client/queryKeys.ts`
 
@@ -1097,11 +1144,15 @@ export function OperatorsList(): JSX.Element {
             <UserCog className="h-5 w-5" /> Operators
           </h1>
           <p className="text-sm text-[var(--color-muted-foreground)]">
-            Humans who hold a polaris CLI / admin API token. Each operator owns one primary
-            api_key; rotate it without disabling the operator.
+            Humans who hold a polaris CLI / admin API token. Each operator owns one primary api_key;
+            rotate it without disabling the operator.
           </p>
         </div>
-        <Button size="sm" disabled title="Use the polaris-mail CLI to mint a new operator until the panel form ships">
+        <Button
+          size="sm"
+          disabled
+          title="Use the polaris-mail CLI to mint a new operator until the panel form ships"
+        >
           <Plus className="h-4 w-4" /> Add operator (CLI only)
         </Button>
       </header>
@@ -1132,7 +1183,11 @@ export function OperatorsList(): JSX.Element {
               {rows.map((r) => (
                 <TableRow key={r.id}>
                   <TableCell>
-                    <Link to="/operators/$id" params={{ id: r.id }} className="font-medium underline">
+                    <Link
+                      to="/operators/$id"
+                      params={{ id: r.id }}
+                      className="font-medium underline"
+                    >
                       {r.name}
                     </Link>
                   </TableCell>
@@ -1182,6 +1237,7 @@ git commit -m "feat(panel/operators): list page"
 ### Task 12: Panel — operators Detail page
 
 **Files:**
+
 - Create: `apps/panel/src/client/pages/operators/Detail.tsx`
 
 - [ ] **Step 1: Write the Detail page**
@@ -1278,15 +1334,15 @@ export function OperatorDetail(): JSX.Element {
         <h2 className="mb-2 text-base font-semibold">Identity</h2>
         <dl className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
           <dt className="text-[var(--color-muted-foreground)]">Role</dt>
-          <dd><Badge variant={op.role === 'admin' ? 'success' : 'outline'}>{op.role}</Badge></dd>
+          <dd>
+            <Badge variant={op.role === 'admin' ? 'success' : 'outline'}>{op.role}</Badge>
+          </dd>
           <dt className="text-[var(--color-muted-foreground)]">SSH fingerprint</dt>
           <dd className="font-mono text-xs">{op.ssh_pubkey_fp_sha256}</dd>
           <dt className="text-[var(--color-muted-foreground)]">Created</dt>
           <dd className="text-xs">{formatDate(op.created_at)}</dd>
           <dt className="text-[var(--color-muted-foreground)]">Last seen</dt>
-          <dd className="text-xs">
-            {op.last_seen_at ? formatRelative(op.last_seen_at) : 'never'}
-          </dd>
+          <dd className="text-xs">{op.last_seen_at ? formatRelative(op.last_seen_at) : 'never'}</dd>
         </dl>
       </section>
 
@@ -1298,8 +1354,8 @@ export function OperatorDetail(): JSX.Element {
               <KeyRound className="h-4 w-4" /> Credentials
             </h2>
             <p className="text-xs text-[var(--color-muted-foreground)]">
-              CLI / admin API token for this operator. Rotate to replace; the new token is
-              shown once.
+              CLI / admin API token for this operator. Rotate to replace; the new token is shown
+              once.
             </p>
           </div>
           <Button
@@ -1325,10 +1381,13 @@ export function OperatorDetail(): JSX.Element {
               </TableHeader>
               <TableBody>
                 <TableRow>
-                  <TableCell><Badge variant="outline">cli</Badge></TableCell>
+                  <TableCell>
+                    <Badge variant="outline">cli</Badge>
+                  </TableCell>
                   <TableCell>
                     <code className="font-mono text-xs">
-                      {op.api_key_prefix}{op.api_key_id}
+                      {op.api_key_prefix}
+                      {op.api_key_id}
                     </code>
                   </TableCell>
                   <TableCell>
@@ -1457,12 +1516,14 @@ git commit -m "feat(panel/operators): detail page (identity + credentials + rota
 ### Task 13: Panel — router + nav entry
 
 **Files:**
+
 - Modify: `apps/panel/src/client/router.tsx`
 - Modify: wherever the side-nav is defined (likely a sibling component in `apps/panel/src/client/components/` — discover during the task)
 
 - [ ] **Step 1: Discover the existing route + nav definition patterns**
 
 Run:
+
 ```sh
 grep -n 'mailboxes/List\|/mailboxes' apps/panel/src/client/router.tsx | head -10
 grep -rn 'mailboxes' apps/panel/src/client/components/ apps/panel/src/client/app/ 2>&1 | grep -v node_modules | head -10
@@ -1569,7 +1630,7 @@ Expected: `healthz` + `admin-status` pass. The pre-existing `synthetic-outbound`
 
 - [ ] **Step 3: Verify the operators page**
 
-Open the panel in a browser, navigate to `/operators`. Expect to see at least the root operator row. Click it; the detail page shows the bootstrap-admin's pk_admin_ key as a CLI credential row, the root badge, and no danger zone.
+Open the panel in a browser, navigate to `/operators`. Expect to see at least the root operator row. Click it; the detail page shows the bootstrap-admin's pk*admin* key as a CLI credential row, the root badge, and no danger zone.
 
 ---
 

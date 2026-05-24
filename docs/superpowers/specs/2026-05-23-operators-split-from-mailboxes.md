@@ -6,7 +6,7 @@
 
 ## 1. Motivation
 
-The `principals` table is the original abstraction layer between mailboxes and credentials, with `mailbox_id NOT NULL REFERENCES mailboxes(id)`. When operators were grafted onto the same machinery (because `api_keys.principal_id REFERENCES principals(id)`), the only way to satisfy the FK without inventing a real mailbox was the `OPERATOR_SENTINEL_MAILBOX_ID` sentinel row. The code comment at `services/api/src/routes/admin/operators.ts:181` admits this directly: *"the sentinel mailbox anchor; no schema-level distinction is needed"*.
+The `principals` table is the original abstraction layer between mailboxes and credentials, with `mailbox_id NOT NULL REFERENCES mailboxes(id)`. When operators were grafted onto the same machinery (because `api_keys.principal_id REFERENCES principals(id)`), the only way to satisfy the FK without inventing a real mailbox was the `OPERATOR_SENTINEL_MAILBOX_ID` sentinel row. The code comment at `services/api/src/routes/admin/operators.ts:181` admits this directly: _"the sentinel mailbox anchor; no schema-level distinction is needed"_.
 
 Since migration 0003 already moved every mailbox-scope credential into `mailbox_credentials` (deleting `pk_live_` rows from `api_keys` and dropping `submission_credentials`), the only remaining users of `principals` are operators. The table now exists solely to host one row per operator with a fake FK pointing at a sentinel.
 
@@ -46,7 +46,7 @@ There is also no operators surface in the panel. `services/api/src/routes/admin/
 
 **Backfill (one-shot in migration 0006):**
 
-- `UPDATE api_keys SET operator_id = (SELECT id FROM operators WHERE operators.api_key_id = api_keys.id) WHERE operator_id IS NULL` — every existing pk_op_ key resolves to exactly one operator.
+- `UPDATE api_keys SET operator_id = (SELECT id FROM operators WHERE operators.api_key_id = api_keys.id) WHERE operator_id IS NULL` — every existing pk*op* key resolves to exactly one operator.
 - Pre-production sanity: any `api_keys` row without a matching operator (orphan from earlier shape) is deleted before the `NOT NULL` constraint lands.
 
 **Migration shape:**
