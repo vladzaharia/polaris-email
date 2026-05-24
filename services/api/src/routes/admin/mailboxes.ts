@@ -26,13 +26,10 @@ mailboxes.get('/v1/admin/mailboxes', requireScope('admin:read'), async (c) => {
   // Production hits the `v_mailbox_summary` view (active sender/receiver
   // counts); degraded environments (in-memory mock D1) fall back to the raw
   // mailboxes table when the view returns no rows.
-  // Excludes the operator-sentinel mailbox by id (migration 0024). Filtering
-  // by id (not by `name LIKE '\_polaris\_%' ESCAPE '\'`) keeps compatibility
-  // with the in-memory mock D1 used in vitest, which doesn't parse ESCAPE.
   let rows = await c.env.DB.prepare(
     `SELECT id, name, description, default_sender_id, created_at, updated_at,
             disabled_at, active_sender_count, active_receiver_count
-     FROM v_mailbox_summary WHERE id <> '01J0000000000000000000PLRS'
+     FROM v_mailbox_summary
      ORDER BY name ASC`,
   )
     .all()
@@ -40,7 +37,7 @@ mailboxes.get('/v1/admin/mailboxes', requireScope('admin:read'), async (c) => {
   if (!rows.results || rows.results.length === 0) {
     rows = await c.env.DB.prepare(
       `SELECT id, name, description, default_sender_id, created_at, updated_at, disabled_at
-       FROM mailboxes WHERE id <> '01J0000000000000000000PLRS'
+       FROM mailboxes
        ORDER BY name ASC`,
     ).all();
   }
@@ -71,12 +68,6 @@ mailboxes.get('/v1/admin/mailboxes/:id', requireScope('admin:read'), async (c) =
   )
     .bind(id)
     .all();
-  const principals = await c.env.DB.prepare(
-    `SELECT id, mailbox_id, kind, display_name, created_at, disabled_at
-     FROM principals WHERE mailbox_id = ?`,
-  )
-    .bind(id)
-    .all();
   const webhookSubs = await c.env.DB.prepare(
     `SELECT id, mailbox_id, url, kind, events, paused_at, created_at, disabled_at
      FROM webhook_subs WHERE mailbox_id = ?`,
@@ -102,7 +93,6 @@ mailboxes.get('/v1/admin/mailboxes/:id', requireScope('admin:read'), async (c) =
     mailbox: row,
     senders: senders.results,
     receivers: receivers.results,
-    principals: principals.results,
     webhook_subs: webhookSubs.results,
     credentials: credentials.results,
   });
