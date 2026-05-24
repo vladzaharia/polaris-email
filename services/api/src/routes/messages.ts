@@ -39,7 +39,7 @@ import { processMessage, ProcessMessageError } from '../process-message.js';
 import { rateLimit } from '../rate-limit.js';
 import { r2PublicUrl, attachmentR2Key } from '../lib/r2-public-url.js';
 import { autoMarkRead } from './messages-state.js';
-import { lookupBridgeSecret } from '../bridge-auth.js';
+import { lookupBridgeSecret, touchBridgeLastSeen } from '../bridge-auth.js';
 import { NONCE_TTL_SECONDS } from '../auth.js';
 import { MessageRow, rowMeta } from '../lib/message-row.js';
 import { loadR2Bytes } from '../lib/r2-helpers.js';
@@ -253,6 +253,7 @@ async function authenticateBridge(
   if (!result.ok) {
     return buildError(c, 'unauthorized', `bridge HMAC: ${result.code}`);
   }
+  touchBridgeLastSeen(c.env, c.executionCtx, bridgeId);
   return { bridgeId, submissionId };
 }
 
@@ -657,6 +658,10 @@ messages.get('/v1/messages', async (c) => {
   if (domainId && !isAdmin) {
     return buildError(c, 'scope_violation', 'domain-scoped query requires admin:read');
   }
+  const bridgeId = params.get('bridge');
+  if (bridgeId && !isAdmin) {
+    return buildError(c, 'scope_violation', 'bridge-scoped query requires admin:read');
+  }
   const limitRaw = Number(params.get('limit') ?? '50');
   const limit = Math.min(200, Math.max(1, Number.isFinite(limitRaw) ? limitRaw : 50));
   const offsetRaw = Number(params.get('offset') ?? '0');
@@ -709,6 +714,13 @@ messages.get('/v1/messages', async (c) => {
        )`,
     );
     binds.push(domainId, domainId);
+  }
+  if (bridgeId) {
+    // Direct equality — `messages.bridge_id` is populated by the unified
+    // pipeline for every submission that came through bridge HMAC auth.
+    // Covered by `idx_messages_bridge_created` (migration 0007).
+    where.push(`bridge_id = ?`);
+    binds.push(bridgeId);
   }
   const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
   // limit/offset are integer-validated above; inline them to keep the SQL

@@ -6,6 +6,7 @@
 //   * POST /v1/admin/bridges/:id/rotate returns the new key ONCE.
 //   * GET responses omit the stored hash column entirely.
 import { Hono } from 'hono';
+import { BridgeHeartbeatBody, type BridgeLiveness } from '@polaris-mail/schema';
 import { actorOf, audit } from '../../audit.js';
 import { bodyText, requireScope } from '../../auth.js';
 import type { Env } from '../../env.js';
@@ -14,6 +15,23 @@ import { ulid } from '@polaris-mail/ids';
 import { generateSecret } from '@polaris-mail/hmac';
 import { hashSecret } from '../../hashing.js';
 import { bridgePlainKvKey, BRIDGE_PLAIN_KV_TTL_SECONDS } from '../../bridge-auth.js';
+
+// Liveness thresholds (ms). Anything inside `LIVE_MS` is "live"; inside
+// `STALE_MS` is "stale" (concerning but not gone); beyond is "offline".
+// 90s gives a 60s heartbeat interval one full skipped beat of slack
+// before we start raising eyebrows.
+const LIVE_MS = 90 * 1000;
+const STALE_MS = 10 * 60 * 1000;
+
+function livenessFromLastSeen(lastSeenAt: string | null, nowMs: number): BridgeLiveness {
+  if (!lastSeenAt) return 'offline';
+  const t = Date.parse(lastSeenAt);
+  if (!Number.isFinite(t)) return 'offline';
+  const ageMs = nowMs - t;
+  if (ageMs <= LIVE_MS) return 'live';
+  if (ageMs <= STALE_MS) return 'stale';
+  return 'offline';
+}
 
 export const bridges = new Hono<{ Bindings: Env }>();
 
@@ -29,13 +47,34 @@ interface BridgeRow {
 
 bridges.get('/v1/admin/bridges', requireScope('admin:read'), async (c) => {
   // Note: `hmac_key_secret_name` (the stored argon2id hash of the HMAC key)
-  // is deliberately omitted from GET responses per A11.
+  // is deliberately omitted from GET responses per A11. We do surface the
+  // telemetry columns (last_heartbeat_at, bridge_version) so the list
+  // page can render a liveness pill without a per-row follow-up fetch.
+  // `serves_mailboxes` is global today (every bridge serves every active
+  // mailbox via webhook fan-out) so it's the same value on every row —
+  // computed once below and stamped onto each row for the panel to read.
   const rows = await c.env.DB.prepare(
     `SELECT id, name, access_token_id,
-            last_seen_at, created_at, disabled_at
+            last_seen_at, created_at, disabled_at,
+            last_heartbeat_at, bridge_version
      FROM bridges ORDER BY name ASC`,
-  ).all<Omit<BridgeRow, 'hmac_key_secret_name'>>();
-  return c.json({ data: rows.results });
+  ).all<
+    Omit<BridgeRow, 'hmac_key_secret_name'> & {
+      last_heartbeat_at: string | null;
+      bridge_version: string | null;
+    }
+  >();
+  const serves = await c.env.DB.prepare(
+    `SELECT COUNT(*) AS n FROM mailboxes WHERE disabled_at IS NULL`,
+  ).first<{ n: number }>();
+  const servesMailboxes = serves?.n ?? 0;
+  const nowMs = Date.now();
+  const data = rows.results.map((r) => ({
+    ...r,
+    liveness: livenessFromLastSeen(r.last_seen_at, nowMs),
+    serves_mailboxes: servesMailboxes,
+  }));
+  return c.json({ data });
 });
 
 bridges.post('/v1/admin/bridges', requireScope('admin:rotate'), async (c) => {
@@ -80,30 +119,58 @@ bridges.post('/v1/admin/bridges', requireScope('admin:rotate'), async (c) => {
 bridges.get('/v1/admin/bridges/lookup', requireScope('admin:read'), async (c) => {
   const name = c.req.query('name');
   if (!name) return buildError(c, 'bad_request', 'name required');
-  // Hash column omitted from GET responses.
+  // Hash column omitted from GET responses. Telemetry columns included
+  // for parity with the by-id GET — same shape; same panel consumers.
   const row = await c.env.DB.prepare(
     `SELECT id, name, access_token_id,
-            last_seen_at, created_at, disabled_at
+            last_seen_at, created_at, disabled_at,
+            last_heartbeat_at, bridge_version
      FROM bridges WHERE name = ?`,
   )
     .bind(name)
-    .first<Omit<BridgeRow, 'hmac_key_secret_name'>>();
+    .first<
+      Omit<BridgeRow, 'hmac_key_secret_name'> & {
+        last_heartbeat_at: string | null;
+        bridge_version: string | null;
+      }
+    >();
   if (!row) return buildError(c, 'not_found', 'bridge not found');
-  return c.json(row);
+  const serves = await c.env.DB.prepare(
+    `SELECT COUNT(*) AS n FROM mailboxes WHERE disabled_at IS NULL`,
+  ).first<{ n: number }>();
+  return c.json({
+    ...row,
+    liveness: livenessFromLastSeen(row.last_seen_at, Date.now()),
+    serves_mailboxes: serves?.n ?? 0,
+  });
 });
 
 bridges.get('/v1/admin/bridges/:id', requireScope('admin:read'), async (c) => {
   const id = c.req.param('id');
-  // Hash column omitted from GET responses.
+  // Hash column omitted from GET responses. Telemetry columns included
+  // so the detail page header can render without a follow-up fetch.
   const row = await c.env.DB.prepare(
     `SELECT id, name, access_token_id,
-            last_seen_at, created_at, disabled_at
+            last_seen_at, created_at, disabled_at,
+            last_heartbeat_at, bridge_version
      FROM bridges WHERE id = ?`,
   )
     .bind(id)
-    .first<Omit<BridgeRow, 'hmac_key_secret_name'>>();
+    .first<
+      Omit<BridgeRow, 'hmac_key_secret_name'> & {
+        last_heartbeat_at: string | null;
+        bridge_version: string | null;
+      }
+    >();
   if (!row) return buildError(c, 'not_found', 'bridge not found');
-  return c.json(row);
+  const serves = await c.env.DB.prepare(
+    `SELECT COUNT(*) AS n FROM mailboxes WHERE disabled_at IS NULL`,
+  ).first<{ n: number }>();
+  return c.json({
+    ...row,
+    liveness: livenessFromLastSeen(row.last_seen_at, Date.now()),
+    serves_mailboxes: serves?.n ?? 0,
+  });
 });
 
 bridges.post('/v1/admin/bridges/:id/rotate', requireScope('admin:rotate'), async (c) => {
@@ -150,4 +217,137 @@ bridges.delete('/v1/admin/bridges/:id', requireScope('admin:rotate'), async (c) 
     meta: {},
   });
   return c.json({ id, disabled_at: Date.now() });
+});
+
+// ---------- per-bridge telemetry endpoints ----------
+//
+// All three are admin:read. They surface what the new panel detail page
+// needs without forcing the panel to assemble it from generic endpoints.
+
+// Latest heartbeat snapshot. `payload` is the parsed BridgeHeartbeatBody
+// (or null if the bridge has never phoned home). Server-side `liveness`
+// is computed from `last_seen_at`, NOT from `last_heartbeat_at` — a
+// bridge that's submitting messages but hasn't sent a heartbeat yet
+// (older binary, partition during boot) should still read as `live`.
+bridges.get('/v1/admin/bridges/:id/heartbeat', requireScope('admin:read'), async (c) => {
+  const id = c.req.param('id');
+  const row = await c.env.DB.prepare(
+    `SELECT id, last_seen_at, last_heartbeat_at, last_heartbeat_json, bridge_version
+       FROM bridges WHERE id = ?`,
+  )
+    .bind(id)
+    .first<{
+      id: string;
+      last_seen_at: string | null;
+      last_heartbeat_at: string | null;
+      last_heartbeat_json: string | null;
+      bridge_version: string | null;
+    }>();
+  if (!row) return buildError(c, 'not_found', 'bridge not found');
+  let payload: unknown = null;
+  if (row.last_heartbeat_json) {
+    try {
+      const parsed = BridgeHeartbeatBody.safeParse(JSON.parse(row.last_heartbeat_json));
+      // If the stored payload no longer parses (schema bumped, manual
+      // tampering), surface null rather than half-parsed garbage. The
+      // raw bytes stay on disk; just don't show them to the panel.
+      if (parsed.success) payload = parsed.data;
+    } catch {
+      payload = null;
+    }
+  }
+  return c.json({
+    bridge_id: row.id,
+    liveness: livenessFromLastSeen(row.last_seen_at, Date.now()),
+    last_seen_at: row.last_seen_at,
+    last_heartbeat_at: row.last_heartbeat_at,
+    bridge_version: row.bridge_version,
+    payload,
+  });
+});
+
+// 24h message activity rollup keyed by `messages.bridge_id`. The
+// covering index added in migration 0007 (`idx_messages_bridge_created`)
+// keeps this index-driven. Status buckets follow the same vocabulary
+// the panel already uses for mailbox rollups (sent/delivered/failed/
+// bounced/inflight) — the panel can render either page with the same
+// component if we ever want to.
+bridges.get('/v1/admin/bridges/:id/activity', requireScope('admin:read'), async (c) => {
+  const id = c.req.param('id');
+  const exists = await c.env.DB.prepare(`SELECT 1 FROM bridges WHERE id = ?`)
+    .bind(id)
+    .first<{ 1: number }>();
+  if (!exists) return buildError(c, 'not_found', 'bridge not found');
+  const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  const totalsRow = await c.env.DB.prepare(
+    `SELECT
+       COUNT(*)                                                       AS submitted,
+       SUM(CASE WHEN status IN ('delivered','sent')           THEN 1 ELSE 0 END) AS delivered,
+       SUM(CASE WHEN status IN ('failed','rejected')          THEN 1 ELSE 0 END) AS failed,
+       SUM(CASE WHEN status = 'bounced'                       THEN 1 ELSE 0 END) AS bounced,
+       SUM(CASE WHEN status IN ('queued','sending','pending') THEN 1 ELSE 0 END) AS inflight
+     FROM messages
+     WHERE bridge_id = ? AND created_at >= ?`,
+  )
+    .bind(id, since)
+    .first<{
+      submitted: number | null;
+      delivered: number | null;
+      failed: number | null;
+      bounced: number | null;
+      inflight: number | null;
+    }>();
+  const latest = await c.env.DB.prepare(
+    `SELECT id, subject, status, created_at
+       FROM messages
+       WHERE bridge_id = ?
+       ORDER BY created_at DESC
+       LIMIT 1`,
+  )
+    .bind(id)
+    .first<{ id: string; subject: string | null; status: string; created_at: string }>();
+  return c.json({
+    bridge_id: id,
+    window: '24h' as const,
+    totals: {
+      submitted: totalsRow?.submitted ?? 0,
+      delivered: totalsRow?.delivered ?? 0,
+      failed: totalsRow?.failed ?? 0,
+      bounced: totalsRow?.bounced ?? 0,
+      inflight: totalsRow?.inflight ?? 0,
+    },
+    latest_message: latest ?? null,
+  });
+});
+
+// Bridge-scoped audit feed. Same shape as the domain-scoped feed in
+// `domains.ts:443+`. Three audit actions already write `target: id`
+// from this same file (register, rotate, deregister) so no extra work
+// is needed in the mutation handlers above.
+bridges.get('/v1/admin/bridges/:id/audit', requireScope('admin:read'), async (c) => {
+  const id = c.req.param('id');
+  const limitRaw = Number.parseInt(c.req.query('limit') ?? '25', 10);
+  const limit = Math.min(200, Math.max(1, Number.isFinite(limitRaw) ? limitRaw : 25));
+  const beforeId = Number.parseInt(c.req.query('before_id') ?? '0', 10);
+  let rows;
+  if (beforeId > 0) {
+    rows = await c.env.DB.prepare(
+      `SELECT id, actor, action, target, at, prev_hash, row_hash, meta
+         FROM audit_log
+        WHERE target = ? AND id < ?
+        ORDER BY id DESC LIMIT ?`,
+    )
+      .bind(id, beforeId, limit)
+      .all();
+  } else {
+    rows = await c.env.DB.prepare(
+      `SELECT id, actor, action, target, at, prev_hash, row_hash, meta
+         FROM audit_log
+        WHERE target = ?
+        ORDER BY id DESC LIMIT ?`,
+    )
+      .bind(id, limit)
+      .all();
+  }
+  return c.json({ data: rows.results });
 });

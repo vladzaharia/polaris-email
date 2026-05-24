@@ -22,7 +22,7 @@ import { buildError } from '../errors.js';
 import { audit } from '../audit.js';
 import { allocChangeId, ensureMailboxState, purgeMessageRow } from '../lib/state.js';
 import { r2PublicUrl, attachmentR2Key } from '../lib/r2-public-url.js';
-import { lookupBridgeSecret } from '../bridge-auth.js';
+import { lookupBridgeSecret, touchBridgeLastSeen } from '../bridge-auth.js';
 import { revocationCheck } from '@polaris-mail/revocation';
 import { NONCE_TTL_SECONDS } from '../auth.js';
 import { MessageRow, rowMeta } from '../lib/message-row.js';
@@ -94,6 +94,7 @@ async function authenticateCaller(
       secret: lookup.secret,
     });
     if (!result.ok) return buildError(c, 'unauthorized', `bridge HMAC: ${result.code}`);
+    touchBridgeLastSeen(c.env, c.executionCtx, bridgeId);
     return {
       kind: 'bridge',
       key_id: bridgeId,

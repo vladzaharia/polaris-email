@@ -1235,3 +1235,72 @@ export const UpdateSuppressionRequest = z.object({
   expires_at: z.string().datetime().nullable().optional(),
 });
 export type UpdateSuppressionRequest = z.infer<typeof UpdateSuppressionRequest>;
+
+// ---------- Bridge telemetry ----------
+//
+// Inputs:
+//   * `BridgeHeartbeatBody` — the body the on-prem mail-bridge POSTs to
+//     /v1/bridge/heartbeat every ~60s. Signed with the bridge HMAC key
+//     (see `bridge-auth.ts`); identity is in X-Polaris-Bridge-Id, not the
+//     body. `schema_version` is mandatory and bumped on any breaking
+//     payload change so the handler can branch on it instead of inferring
+//     from field presence.
+//
+// Outputs:
+//   * `BridgeLiveness` — coarse "is it alive" enum computed by the server
+//     from `last_seen_at`. The panel's badge reads this enum verbatim.
+//   * `BridgeHeartbeatSnapshot` — what GET /v1/admin/bridges/:id/heartbeat
+//     returns. Carries the parsed heartbeat payload plus server-stamped
+//     `last_heartbeat_at` (we trust the server clock over the bridge's).
+//   * `BridgeActivityRollup` — what GET /v1/admin/bridges/:id/activity
+//     returns: 24h message counts plus the most recent message envelope.
+
+export const BridgeLiveness = z.enum(['live', 'stale', 'offline']);
+export type BridgeLiveness = z.infer<typeof BridgeLiveness>;
+
+export const BridgeHeartbeatBody = z.object({
+  schema_version: z.literal(1),
+  bridge_version: z.string().min(1).max(64),
+  uptime_seconds: z.number().int().nonnegative(),
+  imap_sessions_active: z.number().int().nonnegative(),
+  smtp_submissions_24h: z.number().int().nonnegative(),
+  errors_24h: z.number().int().nonnegative(),
+  mirror_message_count: z.number().int().nonnegative(),
+  reported_at: z.string().datetime(),
+});
+export type BridgeHeartbeatBody = z.infer<typeof BridgeHeartbeatBody>;
+
+export const BridgeHeartbeatSnapshot = z.object({
+  bridge_id: Ulid,
+  liveness: BridgeLiveness,
+  last_seen_at: z.string().nullable(),
+  last_heartbeat_at: z.string().nullable(),
+  bridge_version: z.string().nullable(),
+  payload: BridgeHeartbeatBody.nullable(),
+});
+export type BridgeHeartbeatSnapshot = z.infer<typeof BridgeHeartbeatSnapshot>;
+
+export const BridgeActivityTotals = z.object({
+  submitted: z.number().int().nonnegative(),
+  delivered: z.number().int().nonnegative(),
+  failed: z.number().int().nonnegative(),
+  bounced: z.number().int().nonnegative(),
+  inflight: z.number().int().nonnegative(),
+});
+export type BridgeActivityTotals = z.infer<typeof BridgeActivityTotals>;
+
+export const BridgeLatestMessage = z.object({
+  id: Ulid,
+  subject: z.string().nullable(),
+  status: z.string(),
+  created_at: z.string(),
+});
+export type BridgeLatestMessage = z.infer<typeof BridgeLatestMessage>;
+
+export const BridgeActivityRollup = z.object({
+  bridge_id: Ulid,
+  window: z.literal('24h'),
+  totals: BridgeActivityTotals,
+  latest_message: BridgeLatestMessage.nullable(),
+});
+export type BridgeActivityRollup = z.infer<typeof BridgeActivityRollup>;

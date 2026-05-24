@@ -121,8 +121,36 @@ export function bridgeHmacAuth(): MiddlewareHandler<{ Bindings: Env }> {
       return buildError(c, 'unauthorized', `bridge HMAC: ${result.code}`);
     }
 
+    // Best-effort liveness ping. Every authenticated bridge call —
+    // submission, state sync, heartbeat — drops a fresh timestamp here
+    // so `bridges.last_seen_at` stops being silently always-null. The
+    // catch swallow is deliberate: a transient D1 hiccup must not fail
+    // the actual request (telemetry-only data path).
+    c.executionCtx.waitUntil(
+      env.DB.prepare(`UPDATE bridges SET last_seen_at = ? WHERE id = ?`)
+        .bind(new Date().toISOString(), bridgeId)
+        .run()
+        .then(() => undefined)
+        .catch(() => undefined),
+    );
+
     c.set('bridgeId', bridgeId);
     c.set('submissionId', submissionId);
     await next();
   };
+}
+
+// Same liveness ping as `bridgeHmacAuth()`, exported separately for the
+// two non-middleware bridge auth paths (POST /v1/messages with
+// content-type message/rfc822, POST /v1/messages-state) that inline
+// `authenticateBridge` instead of going through middleware. Keeps the
+// `last_seen_at` write site colocated with the secret it just verified.
+export function touchBridgeLastSeen(env: Env, ctx: ExecutionContext, bridgeId: string): void {
+  ctx.waitUntil(
+    env.DB.prepare(`UPDATE bridges SET last_seen_at = ? WHERE id = ?`)
+      .bind(new Date().toISOString(), bridgeId)
+      .run()
+      .then(() => undefined)
+      .catch(() => undefined),
+  );
 }

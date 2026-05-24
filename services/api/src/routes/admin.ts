@@ -55,7 +55,16 @@ admin.use('/v1/admin/*', async (c, next) => {
   return adminHmac(c, next);
 });
 // /v1/bridge/* uses the same api-key HMAC.
-admin.use('/v1/bridge/*', adminHmac);
+//
+// Exception: /v1/bridge/heartbeat authenticates with the per-bridge HMAC
+// key (NOT an admin api key) so liveness can't be spoofed by anything
+// that happens to hold `imap_bridge:read`. Handled by `bridgeHeartbeat`
+// sub-router mounted in `services/api/src/index.ts`; we just need to
+// step out of the way here.
+admin.use('/v1/bridge/*', async (c, next) => {
+  if (c.req.path === '/v1/bridge/heartbeat') return next();
+  return adminHmac(c, next);
+});
 
 // Sub-routers. All rely on the admin middleware above.
 admin.route('/', mailboxesRoutes);
