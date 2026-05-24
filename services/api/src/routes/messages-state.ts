@@ -42,8 +42,17 @@ function inlineBodyMax(env: Env): number {
 interface AuthenticatedCaller {
   kind: 'api_key' | 'bridge';
   key_id: string;
+  /**
+   * Operator keys are not mailbox-bound; this stays null for api_key
+   * callers. The bridge path also returns null since the bridge speaks
+   * for the IMAP store as a whole, not any one mailbox.
+   */
   mailbox_id: string | null;
-  principal_id: string | null;
+  /**
+   * Operator id for api_key callers; null for bridge callers. Bridge
+   * callers attribute audit/idempotency rows to the bridge id directly.
+   */
+  operator_id: string | null;
   scopes: string[];
   isBridge: boolean;
 }
@@ -89,7 +98,7 @@ async function authenticateCaller(
       kind: 'bridge',
       key_id: bridgeId,
       mailbox_id: null,
-      principal_id: null,
+      operator_id: null,
       scopes: ['imap_bridge:read', 'messages:read'],
       isBridge: true,
     };
@@ -101,37 +110,34 @@ async function authenticateCaller(
     return buildError(c, 'unauthorized', 'X-Polaris-Key-Id format');
   }
   const keyRow = await env.DB.prepare(
-    `SELECT id, principal_id, scopes, rate_limit_per_min, status, revoked_at
-       FROM api_keys WHERE id = ?`,
+    `SELECT k.id, k.operator_id, k.scopes, k.rate_limit_per_min,
+            k.status, k.revoked_at, o.disabled_at AS operator_disabled_at
+       FROM api_keys k
+       JOIN operators o ON o.id = k.operator_id
+       WHERE k.id = ?`,
   )
     .bind(keyId)
     .first<{
       id: string;
-      principal_id: string | null;
+      operator_id: string;
       scopes: string;
       rate_limit_per_min: number;
       status: 'primary' | 'secondary' | 'revoked';
       revoked_at: number | null;
+      operator_disabled_at: string | null;
     }>();
   if (!keyRow) return buildError(c, 'key_propagating', 'unknown key id', { 'retry-after': '2' });
   if (keyRow.status === 'revoked' || keyRow.revoked_at != null) {
     return buildError(c, 'key_revoked', 'key has been revoked');
   }
-  if (!keyRow.principal_id) return buildError(c, 'forbidden', 'api key has no principal');
-  const principal = await env.DB.prepare(
-    `SELECT mailbox_id, disabled_at FROM principals WHERE id = ?`,
-  )
-    .bind(keyRow.principal_id)
-    .first<{ mailbox_id: string; disabled_at: string | null }>();
-  if (!principal || principal.disabled_at) {
-    return buildError(c, 'key_revoked', 'principal disabled');
+  if (keyRow.operator_disabled_at) {
+    return buildError(c, 'key_revoked', 'operator disabled');
   }
-  // Per-principal revocation check BEFORE HMAC verify. Phase 3b.1 — see
-  // the matching block in `auth.ts` and `routes/messages.ts` for rationale.
-  // KV_REVOCATIONS is the authoritative signal; KV_KEY_CACHE may still
-  // surface a stale `primary` row for a few seconds after revoke.
-  if (await revocationCheck(env, keyRow.principal_id).catch(() => false)) {
-    return buildError(c, 'key_revoked', 'principal revoked');
+  // Per-operator revocation check BEFORE HMAC verify. KV_REVOCATIONS is
+  // the authoritative signal; KV_KEY_CACHE may still surface a stale
+  // `primary` row for a few seconds after revoke.
+  if (await revocationCheck(env, keyRow.operator_id).catch(() => false)) {
+    return buildError(c, 'key_revoked', 'operator revoked');
   }
   const plaintext = await env.KV_KEY_CACHE.get(`plain:${keyId}`);
   if (!plaintext) {
@@ -169,8 +175,8 @@ async function authenticateCaller(
   return {
     kind: 'api_key',
     key_id: keyRow.id,
-    mailbox_id: principal.mailbox_id,
-    principal_id: keyRow.principal_id,
+    mailbox_id: null,
+    operator_id: keyRow.operator_id,
     scopes: parsedScopes,
     isBridge: parsedScopes.includes('imap_bridge:read'),
   };
@@ -317,7 +323,7 @@ messagesState.patch('/v1/messages/:id', async (c) => {
 
   if (!seenWasSet && seenNowSet) {
     await audit(c.env, {
-      actor: auth.principal_id ?? auth.key_id,
+      actor: auth.operator_id ?? auth.key_id,
       action: 'message.marked_read',
       target: id,
       meta: { mailbox_id: row.mailbox_id },
@@ -363,7 +369,7 @@ messagesState.delete('/v1/messages/:id', async (c) => {
     .bind(now, changeId, row.mailbox_id, id)
     .run();
   await audit(c.env, {
-    actor: auth.principal_id ?? auth.key_id,
+    actor: auth.operator_id ?? auth.key_id,
     action: 'message.expunged',
     target: id,
     meta: { mailbox_id: row.mailbox_id, soft: true },
@@ -416,7 +422,7 @@ messagesState.post('/v1/mailboxes/:id/expunge', async (c) => {
   }
 
   await audit(c.env, {
-    actor: auth.principal_id ?? auth.key_id,
+    actor: auth.operator_id ?? auth.key_id,
     action: 'mailbox.expunge',
     target: mailboxId,
     meta: { removed, r2_freed: r2Freed },

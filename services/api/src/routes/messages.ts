@@ -106,8 +106,13 @@ function inlineAttachmentsMax(env: Env): number {
 
 interface AuthenticatedApiKey {
   key_id: string;
-  mailbox_id: string;
-  principal_id: string;
+  /**
+   * Operator keys are not mailbox-bound; this stays null. Downstream
+   * scope checks (`apiKey.scopes.includes('admin:read')` etc.) gate
+   * cross-mailbox access.
+   */
+  mailbox_id: string | null;
+  operator_id: string;
   scopes: string[];
   rate_limit_per_min: number;
 }
@@ -125,17 +130,21 @@ async function authenticateApiKey(
     return buildError(c, 'unauthorized', 'X-Polaris-Key-Id format');
 
   const keyRow = await env.DB.prepare(
-    `SELECT id, principal_id, scopes, rate_limit_per_min, status, revoked_at
-       FROM api_keys WHERE id = ?`,
+    `SELECT k.id, k.operator_id, k.scopes, k.rate_limit_per_min,
+            k.status, k.revoked_at, o.disabled_at AS operator_disabled_at
+       FROM api_keys k
+       JOIN operators o ON o.id = k.operator_id
+       WHERE k.id = ?`,
   )
     .bind(keyId)
     .first<{
       id: string;
-      principal_id: string | null;
+      operator_id: string;
       scopes: string;
       rate_limit_per_min: number;
       status: 'primary' | 'secondary' | 'revoked';
       revoked_at: number | null;
+      operator_disabled_at: string | null;
     }>();
   if (!keyRow) {
     return buildError(c, 'key_propagating', 'unknown key id', { 'retry-after': '2' });
@@ -143,27 +152,17 @@ async function authenticateApiKey(
   if (keyRow.status === 'revoked' || keyRow.revoked_at != null) {
     return buildError(c, 'key_revoked', 'key has been revoked');
   }
-  if (!keyRow.principal_id) {
-    return buildError(c, 'forbidden', 'api key has no principal');
-  }
-  const principal = await env.DB.prepare(
-    `SELECT mailbox_id, disabled_at FROM principals WHERE id = ?`,
-  )
-    .bind(keyRow.principal_id)
-    .first<{ mailbox_id: string; disabled_at: string | null }>();
-  if (!principal || principal.disabled_at) {
-    return buildError(c, 'key_revoked', 'principal disabled');
+  if (keyRow.operator_disabled_at) {
+    return buildError(c, 'key_revoked', 'operator disabled');
   }
 
-  // Per-principal revocation check BEFORE HMAC verify. Mirrors the order
+  // Per-operator revocation check BEFORE HMAC verify. Mirrors the order
   // used by the shared `hmacAuth` middleware in `auth.ts`: KV_REVOCATIONS
   // is the authoritative revocation signal because the api_keys row may
   // still read `primary` from a stale KV_KEY_CACHE entry immediately after
-  // an admin revoke. Phase 3b.1 — previously this check ran AFTER HMAC
-  // verification, which let a revoked-but-still-cached key burn through a
-  // verify cycle.
-  if (await revocationCheck(env, keyRow.principal_id).catch(() => false)) {
-    return buildError(c, 'key_revoked', 'principal revoked');
+  // an admin revoke.
+  if (await revocationCheck(env, keyRow.operator_id).catch(() => false)) {
+    return buildError(c, 'key_revoked', 'operator revoked');
   }
 
   const plaintext = await env.KV_KEY_CACHE.get(`plain:${keyId}`);
@@ -204,8 +203,8 @@ async function authenticateApiKey(
 
   return {
     key_id: keyRow.id,
-    mailbox_id: principal.mailbox_id,
-    principal_id: keyRow.principal_id,
+    mailbox_id: null,
+    operator_id: keyRow.operator_id,
     scopes: parsedScopes,
     rate_limit_per_min: keyRow.rate_limit_per_min,
   };
@@ -333,7 +332,7 @@ messages.post('/v1/messages', async (c) => {
     const rl = await rateLimit(env, apiKey.key_id, apiKey.rate_limit_per_min);
     if (!rl.ok) {
       await audit(env, {
-        actor: apiKey.principal_id,
+        actor: `operator:${apiKey.operator_id}`,
         action: 'rate_limit.exceeded',
         target: apiKey.key_id,
         meta: {
@@ -346,8 +345,8 @@ messages.post('/v1/messages', async (c) => {
       });
     }
 
-    if (await revocationCheck(env, apiKey.principal_id)) {
-      return buildError(c, 'key_revoked', 'principal revoked');
+    if (await revocationCheck(env, apiKey.operator_id)) {
+      return buildError(c, 'key_revoked', 'operator revoked');
     }
 
     // parse + validate in two steps so we can distinguish JSON
@@ -417,13 +416,28 @@ messages.post('/v1/messages', async (c) => {
       );
     }
 
+    // Operator keys are not mailbox-bound; resolve the mailbox from the
+    // `from` address by matching an enabled `mailbox_senders` row. The
+    // pipeline re-validates the address against `mailbox_senders` on the
+    // resolved mailbox, so a stale row here surfaces as a clean rejection
+    // downstream rather than a misroute.
+    const senderRow = await env.DB.prepare(
+      `SELECT mailbox_id FROM mailbox_senders
+       WHERE address = ? AND disabled_at IS NULL LIMIT 1`,
+    )
+      .bind(req.from)
+      .first<{ mailbox_id: string }>();
+    if (!senderRow) {
+      return buildError(c, 'forbidden', `sender ${req.from} not registered with any mailbox`);
+    }
+
     try {
       const envelopeTo = [...req.to, ...(req.cc ?? []), ...(req.bcc ?? [])];
       const result = await processMessage(env, {
         direction: 'out',
         source: 'rest',
-        mailboxId: apiKey.mailbox_id,
-        principalId: apiKey.principal_id,
+        mailboxId: senderRow.mailbox_id,
+        principalId: apiKey.operator_id,
         rawMime,
         idempotencyKey,
         envelopeTo,
@@ -500,20 +514,11 @@ messages.post('/v1/messages', async (c) => {
     )
       .bind(kid)
       .first<{ id: string; mailbox_id: string }>();
-    if (!credRow) return buildError(c, 'unauthorized', 'unknown principal for SMTP username');
-    // The credential id doubles as the principal_id (matching principals
-    // row inserted alongside on issuance). This keeps idempotency_keys
-    // + messages.principal_id FK + audit actor on a single identifier.
-    const principalRow = await env.DB.prepare(
-      `SELECT id, mailbox_id, disabled_at FROM principals WHERE id = ?1 LIMIT 1`,
-    )
-      .bind(credRow.id)
-      .first<{ id: string; mailbox_id: string; disabled_at: string | null }>();
-    if (!principalRow || principalRow.disabled_at) {
-      return buildError(c, 'unauthorized', 'unknown principal for SMTP username');
-    }
-    if (await revocationCheck(env, principalRow.id)) {
-      return buildError(c, 'key_revoked', 'principal revoked');
+    if (!credRow) return buildError(c, 'unauthorized', 'unknown credential for SMTP username');
+    // Revocation is keyed by the credential id (mailbox_credentials.id);
+    // the disabled/revoked flags above already filtered the inert states.
+    if (await revocationCheck(env, credRow.id)) {
+      return buildError(c, 'key_revoked', 'credential revoked');
     }
 
     // MAIL FROM allow-list = every enabled mailbox_senders address on
@@ -542,8 +547,8 @@ messages.post('/v1/messages', async (c) => {
       const result = await processMessage(env, {
         direction: 'out',
         source: 'smtp',
-        mailboxId: principalRow.mailbox_id,
-        principalId: principalRow.id,
+        mailboxId: credRow.mailbox_id,
+        principalId: credRow.id,
         bridgeId,
         rawMime: bodyBytes,
         idempotencyKey,
