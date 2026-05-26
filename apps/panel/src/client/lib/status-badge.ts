@@ -77,8 +77,9 @@ export function statusBadge(kind: StatusKind, value: string | number): StatusBad
     }
     case 'bridge': {
       // `live`/`stale`/`offline` come from the heartbeat-derived liveness
-      // enum; `registered`/`deregistered` reflect the soft-delete state.
-      // Both vocabularies coexist — list/get returns both fields.
+      // enum; `disabled` reflects the soft-delete state (`disabled_at`
+      // non-null on the row). Both vocabularies coexist — list/get
+      // returns both fields.
       if (v === 'live' || v === 'registered' || v === 'online' || v === 'active') {
         return { variant: 'success', label: v, icon: 'check' };
       }
@@ -88,8 +89,8 @@ export function statusBadge(kind: StatusKind, value: string | number): StatusBad
       if (v === 'offline') {
         return { variant: 'warning', label: v, icon: 'alert-triangle' };
       }
-      if (v === 'deregistered' || v === 'disabled') {
-        return { variant: 'secondary', label: v, icon: 'x' };
+      if (v === 'disabled') {
+        return { variant: 'secondary', label: 'disabled', icon: 'x' };
       }
       return { variant: 'outline', label: raw, icon: 'info' };
     }

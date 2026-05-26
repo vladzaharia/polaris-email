@@ -291,7 +291,7 @@ bridges.get('/v1/admin/bridges/:id', requireScope('admin:read'), async (c) => {
 bridges.post('/v1/admin/bridges/:id/rotate', requireScope('admin:rotate'), async (c) => {
   const id = c.req.param('id');
   const existing = await c.env.DB.prepare(
-    `SELECT id, name, cf_dns_token_id, ts_authkey_id FROM bridges WHERE id = ?`,
+    `SELECT id, name, cf_dns_token_id, ts_authkey_id, disabled_at FROM bridges WHERE id = ?`,
   )
     .bind(id)
     .first<{
@@ -299,8 +299,10 @@ bridges.post('/v1/admin/bridges/:id/rotate', requireScope('admin:rotate'), async
       name: string;
       cf_dns_token_id: string | null;
       ts_authkey_id: string | null;
+      disabled_at: string | null;
     }>();
   if (!existing) return buildError(c, 'not_found', 'bridge not found');
+  const wasDisabled = existing.disabled_at != null;
   const secret = generateSecret();
   const hashed = await hashSecret(secret, c.env.ARGON2_PEPPER);
   // Same atomicity discipline as register: mint both upstream tokens
@@ -327,9 +329,12 @@ bridges.post('/v1/admin/bridges/:id/rotate', requireScope('admin:rotate'), async
       `ts auth-key mint failed: ${e instanceof Error ? e.message : String(e)}`,
     );
   }
+  // Rolling the HMAC also re-enables a previously-disabled bridge:
+  // the operator can't have meant to roll credentials on a bridge
+  // they didn't intend to bring back online.
   await c.env.DB.prepare(
     `UPDATE bridges
-       SET hmac_key_secret_name = ?, cf_dns_token_id = ?, ts_authkey_id = ?
+       SET hmac_key_secret_name = ?, cf_dns_token_id = ?, ts_authkey_id = ?, disabled_at = NULL
      WHERE id = ?`,
   )
     .bind(hashed, cfMinted.tokenId, tsMinted.key?.id ?? null, id)
@@ -378,6 +383,14 @@ bridges.post('/v1/admin/bridges/:id/rotate', requireScope('admin:rotate'), async
     target: id,
     meta: { name: existing.name },
   });
+  if (wasDisabled) {
+    await audit(c.env, {
+      actor: actorOf(c),
+      action: 'bridge.enable',
+      target: id,
+      meta: { name: existing.name, reason: 'rotate' },
+    });
+  }
   if (cfMinted.tokenId) {
     await audit(c.env, {
       actor: actorOf(c),
@@ -406,12 +419,38 @@ bridges.post('/v1/admin/bridges/:id/rotate', requireScope('admin:rotate'), async
   });
 });
 
+// Re-enable a disabled bridge without rotating the HMAC. The previous
+// HMAC plaintext is gone from KV (we wipe it on disable), so the bridge
+// itself can't reconnect until either:
+//   * its existing on-disk HMAC re-populates KV via the existing
+//     verify-then-cache path on first request, or
+//   * the operator rolls the HMAC (which mints a fresh pair and
+//     re-enables atomically via the rotate endpoint above).
+// In practice operators reach for Enable when they disabled by
+// mistake; Roll HMAC Secret remains the "clean restart" path.
+bridges.post('/v1/admin/bridges/:id/enable', requireScope('admin:rotate'), async (c) => {
+  const id = c.req.param('id');
+  const row = await c.env.DB.prepare(`SELECT id, name, disabled_at FROM bridges WHERE id = ?`)
+    .bind(id)
+    .first<{ id: string; name: string; disabled_at: string | null }>();
+  if (!row) return buildError(c, 'not_found', 'bridge not found');
+  if (row.disabled_at == null) return c.json({ id, disabled_at: null });
+  await c.env.DB.prepare(`UPDATE bridges SET disabled_at = NULL WHERE id = ?`).bind(id).run();
+  await audit(c.env, {
+    actor: actorOf(c),
+    action: 'bridge.enable',
+    target: id,
+    meta: { name: row.name, reason: 'manual' },
+  });
+  return c.json({ id, disabled_at: null });
+});
+
 // DELETE has two modes:
 //   * Default (soft) — sets `disabled_at`. The row stays for audit /
 //     message-attribution purposes; the HMAC key is rejected on
 //     subsequent requests.
 //   * `?hard=true`   — physically removes the row. Requires the bridge
-//     to already be deregistered (soft-disabled). Any messages still
+//     to already be soft-disabled. Any messages still
 //     attributed to the bridge get `bridge_id = NULL` so historical
 //     activity is preserved without the FK reference. Submission
 //     credentials with a stale `bridge_id` get the same NULL
@@ -434,7 +473,7 @@ bridges.delete('/v1/admin/bridges/:id', requireScope('admin:rotate'), async (c) 
     await c.env.KV_KEY_CACHE.delete(bridgePlainKvKey(id));
     await audit(c.env, {
       actor: actorOf(c),
-      action: 'bridge.deregister',
+      action: 'bridge.disable',
       target: id,
       meta: {},
     });
@@ -458,7 +497,7 @@ bridges.delete('/v1/admin/bridges/:id', requireScope('admin:rotate'), async (c) 
     return buildError(
       c,
       'conflict',
-      'bridge must be deregistered before it can be permanently deleted',
+      'bridge must be disabled before it can be permanently deleted',
     );
   }
 

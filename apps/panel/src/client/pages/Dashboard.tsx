@@ -734,7 +734,7 @@ function buildActivityFeed(input: {
         tone: 'critical',
         icon: ServerCrash,
         ts: b.disabled_at,
-        primary: `Bridge ${b.name} deregistered`,
+        primary: `Bridge ${b.name} disabled`,
         to: `/bridges/${b.id}`,
       });
     } else if (b.last_seen_at && ageMs(b.last_seen_at) > TEN_MIN_MS) {

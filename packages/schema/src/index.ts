@@ -883,7 +883,13 @@ export const AuditAction = z.enum([
   // the embedded-ACME flow).
   'bridge.register',
   'bridge.rotate',
-  'bridge.deregister',
+  // `bridge.disable` sets `disabled_at`; `bridge.enable` clears it
+  // again (added in migration 0011 — replaces the legacy
+  // `bridge.deregister` action, which 0011 also renames in-place on
+  // existing rows). `bridge.enable` is emitted by both the explicit
+  // Enable action and a rotate that finds the bridge disabled.
+  'bridge.disable',
+  'bridge.enable',
   'bridge.delete',
   'bridge.cf_token.mint',
   'bridge.cf_token.revoke',

@@ -334,10 +334,8 @@ export function BridgeConnectionCard({
           <div className="space-y-1">
             <CodeBlock code={`curl -fsSL ${installerUrl} | sh`} />
             <p className="text-xs text-[var(--color-muted-foreground)]">
-              Run on the bridge host. The URL embeds this bridge's current HMAC, so it stays valid
-              until the next HMAC roll. The script auto-installs Docker (set{' '}
-              <span className="font-mono">POLARIS_AUTO_INSTALL=1</span> for unattended), writes
-              compose + secrets, and brings the bridge up.
+              Run on the bridge host — auto-installs Docker, writes compose + secrets, brings the
+              bridge up.
             </p>
           </div>
         </div>

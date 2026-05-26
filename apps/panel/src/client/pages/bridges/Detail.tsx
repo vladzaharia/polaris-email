@@ -18,7 +18,7 @@
  *     variants. HMAC key is `<paste-HMAC-key-here>` unless the operator
  *     rotates from this tab.
  *   - Audit     → BridgeAuditCard pulling `bridge.register/rotate/
- *     deregister` rows from the chained audit_log.
+ *     disable/enable` rows from the chained audit_log.
  *
  * Auto-refresh: the heartbeat query polls every 30s so the liveness
  * badge updates without a manual reload.
@@ -164,12 +164,15 @@ export function BridgeDetail() {
     }
   }, [freshSecrets, lastHeartbeatMs, id]);
 
-  const [confirmDereg, setConfirmDereg] = useState(false);
+  const [confirmDisable, setConfirmDisable] = useState(false);
   const [confirmHardDelete, setConfirmHardDelete] = useState(false);
   const [confirmRoll, setConfirmRoll] = useState(false);
-  const dereg = useAdminMutation<unknown, undefined>(
+  const disable = useAdminMutation<unknown, undefined>(
     () => ({ path: `/api/admin/bridges/${id}`, method: 'DELETE' }),
-    { invalidateKeys: [bridgeKeys.all], successMessage: 'Bridge deregistered.' },
+    {
+      invalidateKeys: [bridgeKeys.all],
+      successMessage: 'Bridge disabled.',
+    },
   );
   const hardDelete = useAdminMutation<{ id: string; deleted: boolean }, undefined>(
     () => ({ path: `/api/admin/bridges/${id}?hard=true`, method: 'DELETE' }),
@@ -178,6 +181,13 @@ export function BridgeDetail() {
       successMessage: 'Bridge permanently deleted.',
       silent: true,
     },
+  );
+  // POST /v1/admin/bridges/:id/enable — clears disabled_at. The
+  // bridge's existing on-disk HMAC works again immediately; rolling
+  // is only needed if the credential was lost or compromised.
+  const enable = useAdminMutation<{ id: string; disabled_at: string | null }, undefined>(
+    () => ({ path: `/api/admin/bridges/${id}/enable`, method: 'POST' }),
+    { invalidateKeys: [bridgeKeys.all], successMessage: 'Bridge re-enabled.' },
   );
   // POST /v1/admin/bridges/:id/rotate — mints a fresh HMAC + install URL.
   // The fresh banner + Connection-tab snippets re-render with the new
@@ -217,7 +227,7 @@ export function BridgeDetail() {
         <span className="inline-flex items-center gap-2">
           {d.name}
           {disabled ? (
-            <StatusBadge kind="bridge" value="deregistered" />
+            <StatusBadge kind="bridge" value="disabled" />
           ) : (
             <StatusBadge kind="bridge" value={d.liveness} />
           )}
@@ -230,9 +240,29 @@ export function BridgeDetail() {
       }
       actions={
         disabled ? (
-          <Button size="sm" variant="destructive" onClick={() => setConfirmHardDelete(true)}>
-            Delete permanently
-          </Button>
+          <>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={async () => {
+                await enable.mutateAsync(undefined);
+              }}
+              disabled={enable.isPending}
+            >
+              {enable.isPending ? 'Enabling…' : 'Enable'}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setConfirmRoll(true)}
+              disabled={rotate.isPending}
+            >
+              {rotate.isPending ? 'Rolling…' : 'Roll HMAC Secret'}
+            </Button>
+            <Button size="sm" variant="destructive" onClick={() => setConfirmHardDelete(true)}>
+              Delete permanently
+            </Button>
+          </>
         ) : (
           <>
             <Button
@@ -243,8 +273,8 @@ export function BridgeDetail() {
             >
               {rotate.isPending ? 'Rolling…' : 'Roll HMAC Secret'}
             </Button>
-            <Button size="sm" variant="destructive" onClick={() => setConfirmDereg(true)}>
-              Deregister
+            <Button size="sm" variant="destructive" onClick={() => setConfirmDisable(true)}>
+              Disable
             </Button>
           </>
         )
@@ -273,25 +303,15 @@ export function BridgeDetail() {
                     ? 'HMAC rolled — reinstall on the host'
                     : 'Bridge registered — install on the host'}
                 </div>
-                <p className="text-xs text-[var(--color-muted-foreground)]">
-                  The curl line below is the fast path: it writes the compose file, the env file,
-                  and the bridge id + HMAC key into <span className="font-mono">./secrets/</span>,
-                  then brings everything up. The Cloudflare DNS-01 token, ACME state, and (in
-                  Tailscale mode) the per-bridge tailnet auth key all flow server-to-bridge over the
-                  wire — no other secrets for you to copy.
-                </p>
-
                 {freshSecrets.installerUrl ? (
                   <div className="space-y-1">
                     <div className="text-[10px] uppercase tracking-wide text-[var(--color-muted-foreground)]">
-                      One-click install (curl | sh)
+                      One-click install
                     </div>
                     <CodeBlock code={`curl -fsSL ${freshSecrets.installerUrl} | sh`} />
                     <p className="text-xs text-[var(--color-muted-foreground)]">
-                      Run on the bridge host. The URL embeds this bridge's current HMAC, so it stays
-                      valid until the next roll. The script auto-installs Docker (or set{' '}
-                      <span className="font-mono">POLARIS_AUTO_INSTALL=1</span> for unattended),
-                      writes compose + secrets, and brings the bridge up.
+                      Run on the bridge host — auto-installs Docker, writes compose + secrets,
+                      brings the bridge up.
                     </p>
                   </div>
                 ) : null}
@@ -362,7 +382,7 @@ export function BridgeDetail() {
                 {d.serves_mailboxes} mailbox{d.serves_mailboxes === 1 ? '' : 'es'}
               </MetaRow>
               {disabled ? (
-                <MetaRow label="Deregistered">
+                <MetaRow label="Disabled">
                   <When iso={d.disabled_at} />
                 </MetaRow>
               ) : null}
@@ -485,22 +505,23 @@ export function BridgeDetail() {
       />
 
       <DestructiveActionDialog
-        open={confirmDereg}
-        onOpenChange={setConfirmDereg}
-        action="Deregister bridge"
+        open={confirmDisable}
+        onOpenChange={setConfirmDisable}
+        action="Disable bridge"
         name={d.name}
         blastRadius={[
-          'The bridge is soft-disabled; the HMAC key is rejected on subsequent requests',
+          "The bridge's HMAC key is rejected on subsequent requests",
           'Active SMTP/IMAP sessions on the bridge will fail their next authenticated call',
-          'Inbound webhooks targeting this bridge will return 401 until reregistered',
+          'Inbound webhooks targeting this bridge will return 401 until re-enabled',
+          'Reversible — re-enable from this page (the HMAC stays valid) or roll the HMAC to mint a fresh credential',
         ]}
-        reversible={false}
-        confirmLabel="Deregister"
+        reversible
+        confirmLabel="Disable"
         onConfirm={async () => {
-          await dereg.mutateAsync(undefined);
-          setConfirmDereg(false);
+          await disable.mutateAsync(undefined);
+          setConfirmDisable(false);
         }}
-        isPending={dereg.isPending}
+        isPending={disable.isPending}
       />
 
       <DestructiveActionDialog
@@ -612,7 +633,7 @@ function OverviewTab({
           icon={<History className="h-4 w-4" aria-hidden />}
           label="Audit"
           primary="Recent operator changes"
-          secondary="Register, rotate, deregister"
+          secondary="Register, roll, disable, enable"
           onOpen={onOpenAudit}
         />
       </section>

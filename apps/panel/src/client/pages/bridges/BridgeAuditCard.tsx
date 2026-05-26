@@ -41,9 +41,11 @@ function summarizeBridgeAction(action: string, meta: Record<string, unknown> | n
     case 'bridge.register':
       return `Registered bridge${meta?.name ? ` ${String(meta.name)}` : ''}`;
     case 'bridge.rotate':
-      return 'Rotated HMAC key';
-    case 'bridge.deregister':
-      return 'Deregistered bridge';
+      return 'Rolled HMAC secret';
+    case 'bridge.disable':
+      return 'Disabled bridge';
+    case 'bridge.enable':
+      return meta?.reason === 'rotate' ? 'Re-enabled bridge (via roll)' : 'Re-enabled bridge';
     default:
       return action;
   }
@@ -132,7 +134,7 @@ export function BridgeAuditCard({ bridgeId }: { bridgeId: string }) {
         <EmptyState
           icon={<History className="h-5 w-5" />}
           title="No recorded changes yet for this bridge"
-          description="Operator actions on this bridge (register, rotate HMAC key, deregister) will appear here."
+          description="Operator actions on this bridge (register, roll HMAC, disable, re-enable) will appear here."
         />
       ) : (
         <>

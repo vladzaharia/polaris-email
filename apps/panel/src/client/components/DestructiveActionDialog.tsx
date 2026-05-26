@@ -6,7 +6,7 @@
 // types the exact name of the thing they're about to destroy.
 //
 // Used across every destructive action in the panel: credential revoke, DKIM
-// rotate, domain delete, bridge HMAC rotate, bridge deregister, DLQ drop,
+// rotate, domain delete, bridge HMAC roll, bridge disable, DLQ drop,
 // mailbox sender/receiver/inbound disable, webhook subscription delete.
 import { useEffect, useRef, useState } from 'react';
 import { AlertTriangle } from 'lucide-react';

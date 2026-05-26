@@ -30,7 +30,7 @@ interface BridgeRow {
 
 function sortRows(rows: readonly BridgeRow[]): BridgeRow[] {
   // Live > stale > offline; within a bucket, most-recently-seen first.
-  // Deregistered bridges always sink to the bottom regardless of liveness.
+  // Disabled bridges always sink to the bottom regardless of liveness.
   const rank = (r: BridgeRow): number => {
     if (r.disabled_at) return 3;
     if (r.liveness === 'live') return 0;
@@ -81,7 +81,7 @@ export function BridgesList() {
               header: 'Liveness',
               cell: (d) =>
                 d.disabled_at ? (
-                  <StatusBadge kind="bridge" value="deregistered" />
+                  <StatusBadge kind="bridge" value="disabled" />
                 ) : (
                   <StatusBadge kind="bridge" value={d.liveness} />
                 ),

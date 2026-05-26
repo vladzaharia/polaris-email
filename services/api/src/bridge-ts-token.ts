@@ -61,7 +61,7 @@ export async function mintTsAuthKeyForBridge(
     return { key: null };
   }
   const access = await fetchTsAccessToken(env.TS_API_CLIENT_ID, env.TS_API_CLIENT_SECRET);
-  // Capabilities: ephemeral so a deregistered bridge's tailnet node
+  // Capabilities: ephemeral so a disabled bridge's tailnet node
   // ages out automatically; reusable=false because each bridge gets a
   // unique key; tagged so ACLs can target `tag:mail-bridge`.
   const body = {
