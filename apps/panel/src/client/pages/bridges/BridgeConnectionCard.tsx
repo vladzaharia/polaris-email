@@ -37,7 +37,7 @@
 //   * `BRIDGE_ACCESS_CLIENT_ID/SECRET`. The polaris API isn't behind
 //     CF Access (see project memory); HMAC is the only auth surface.
 import { useState } from 'react';
-import { KeyRound } from 'lucide-react';
+import { KeyRound, Download, RefreshCw } from 'lucide-react';
 import { CodeBlock } from '../../components/CodeBlock.js';
 import { Button } from '../../components/ui/button.js';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../components/ui/tabs.js';
@@ -52,6 +52,11 @@ interface BridgeConnectionCardProps {
   // Optional: the just-minted plaintext HMAC key. Set by the Detail
   // page's fresh-registration banner; omitted afterwards.
   initialHmacKey?: string;
+  // Optional: the just-minted one-shot installer URL (e.g. from the
+  // post-registration fresh-secrets bundle). Seeds the quick-install
+  // panel so the operator sees it without a click; the same panel also
+  // lets them mint a fresh URL on demand within the HMAC-cache window.
+  initialInstallerUrl?: string;
   // Whether to expose the "Rotate HMAC key" affordance. False inside the
   // registration wizard (rotation pre-first-deploy is pointless); true
   // on the persistent Detail-page tab.
@@ -325,19 +330,99 @@ export function BridgeConnectionCard({
   bridgeId,
   bridgeName,
   initialHmacKey,
+  initialInstallerUrl,
   showRotate = true,
 }: BridgeConnectionCardProps) {
   const hmacKey = initialHmacKey ?? HMAC_PLACEHOLDER;
   const [rotated, setRotated] = useState<string | null>(null);
   const [confirmRotate, setConfirmRotate] = useState(false);
+  const [installerUrl, setInstallerUrl] = useState<string | null>(initialInstallerUrl ?? null);
+  const [installerError, setInstallerError] = useState<string | null>(null);
 
   const rotate = useAdminMutation<{ hmac_key: string }, undefined>(
     () => ({ path: `/api/admin/bridges/${bridgeId}/rotate`, method: 'POST' }),
     { invalidateKeys: [bridgeKeys.detail(bridgeId)], silent: true },
   );
 
+  // POST /v1/admin/bridges/:id/installer-link — mints a fresh one-shot
+  // installer URL using the HMAC plaintext cached in KV. 409 when the
+  // cache has expired (operator must rotate to re-mint).
+  const mintInstaller = useAdminMutation<
+    { installer_token: string; installer_url: string },
+    undefined
+  >(() => ({ path: `/api/admin/bridges/${bridgeId}/installer-link`, method: 'POST' }), {
+    silent: true,
+  });
+
+  const generateInstallerUrl = async () => {
+    setInstallerError(null);
+    try {
+      const r = await mintInstaller.mutateAsync(undefined);
+      setInstallerUrl(r.installer_url);
+    } catch (err) {
+      setInstallerError(err instanceof Error ? err.message : 'mint failed');
+    }
+  };
+
   return (
     <section className="space-y-6">
+      <div className="rounded-md border border-[var(--color-border)] p-4">
+        <div className="mb-3 flex items-center justify-between gap-2">
+          <h2 className="text-base font-semibold">One-click install</h2>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={generateInstallerUrl}
+            disabled={mintInstaller.isPending}
+          >
+            {installerUrl ? (
+              <RefreshCw className="h-3.5 w-3.5" aria-hidden />
+            ) : (
+              <Download className="h-3.5 w-3.5" aria-hidden />
+            )}
+            {mintInstaller.isPending
+              ? 'Minting…'
+              : installerUrl
+                ? 'Regenerate install URL'
+                : 'Generate install URL'}
+          </Button>
+        </div>
+        {installerUrl ? (
+          <div className="space-y-1">
+            <CodeBlock code={`curl -fsSL ${installerUrl} | sh`} />
+            <p className="text-xs text-[var(--color-muted-foreground)]">
+              Run on the bridge host. The URL is one-shot — consumed on first fetch and valid for 1
+              hour. The script auto-installs Docker if needed (or set{' '}
+              <span className="font-mono">POLARIS_AUTO_INSTALL=1</span> for unattended), then writes
+              compose + secrets and brings the bridge up. Click <em>Regenerate</em> to mint a new
+              URL if this one's been used.
+            </p>
+          </div>
+        ) : (
+          <p className="text-xs text-[var(--color-muted-foreground)]">
+            Mint a one-shot{' '}
+            <span className="font-mono">curl -fsSL dl.mail.plrs.im/bridge/&lt;token&gt; | sh</span>{' '}
+            link that bootstraps Docker, writes compose + secrets, and brings the bridge up on the
+            host. Manual instructions are below if you prefer to do it by hand.
+          </p>
+        )}
+        {installerError ? (
+          <p className="mt-2 text-xs text-[var(--color-destructive)]">
+            {installerError.includes('hmac plaintext cache expired') ? (
+              <>
+                The HMAC plaintext cache has expired (1 hour after register/rotate).{' '}
+                <button type="button" className="underline" onClick={() => setConfirmRotate(true)}>
+                  Rotate credentials
+                </button>{' '}
+                to mint a fresh HMAC + install URL.
+              </>
+            ) : (
+              installerError
+            )}
+          </p>
+        ) : null}
+      </div>
+
       <div className="rounded-md border border-[var(--color-border)] p-4">
         <div className="mb-3 flex items-center justify-between gap-2">
           <h2 className="text-base font-semibold">Run the bridge</h2>

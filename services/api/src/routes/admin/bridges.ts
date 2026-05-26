@@ -37,13 +37,37 @@ import {
 /**
  * Build the installer URL for a freshly minted token. Prefers
  * `BRIDGE_INSTALLER_BASE_URL` (e.g. `https://dl.mail.plrs.im`) and emits
- * the short form `<base>/<token>`; falls back to the canonical long
- * form on the api hostname when the var is unset.
+ * the short form `<base>/bridge/<token>`; falls back to the canonical
+ * long form on the api hostname when the var is unset.
  */
 function installerUrlFor(env: Env, token: string): string {
   const base = env.BRIDGE_INSTALLER_BASE_URL;
-  if (base) return `${base.replace(/\/$/, '')}/${token}`;
+  if (base) return `${base.replace(/\/$/, '')}/bridge/${token}`;
   return `${env.API_BASE_URL}/v1/installer/bridge/${token}`;
+}
+
+/**
+ * Mint a one-shot installer token and KV-stash its payload. Returns the
+ * token (caller turns it into a URL via `installerUrlFor`). Shared
+ * between register, rotate, and the on-demand `installer-link` endpoint.
+ */
+async function stashInstallerToken(
+  env: Env,
+  args: { bridgeId: string; bridgeName: string; hmacKey: string; mode: 'tailscale' | 'public' },
+): Promise<string> {
+  const token = generateNonce();
+  const payload: BridgeInstallerPayload = {
+    bridge_id: args.bridgeId,
+    bridge_name: args.bridgeName,
+    hmac_key: args.hmacKey,
+    mode: args.mode,
+    api_url: env.API_BASE_URL,
+    image: 'ghcr.io/vladzaharia/polaris-mail-bridge:latest',
+  };
+  await env.KV_KEY_CACHE.put(bridgeInstallerKvKey(token), JSON.stringify(payload), {
+    expirationTtl: BRIDGE_INSTALLER_KV_TTL_SECONDS,
+  });
+  return token;
 }
 
 // Liveness thresholds (ms). Anything inside `LIVE_MS` is "live"; inside
@@ -211,20 +235,12 @@ bridges.post('/v1/admin/bridges', requireScope('admin:rotate'), async (c) => {
   // One-shot installer token. The panel renders `curl <url> | sh` and
   // the operator pipes it on the bridge host. KV TTL is 1h; the
   // installer endpoint deletes the entry after first GET.
-  const installerToken = generateNonce();
-  const installerPayload: BridgeInstallerPayload = {
-    bridge_id: id,
-    bridge_name: body.name,
-    hmac_key: secret,
+  const installerToken = await stashInstallerToken(c.env, {
+    bridgeId: id,
+    bridgeName: body.name,
+    hmacKey: secret,
     mode,
-    api_url: c.env.API_BASE_URL,
-    image: 'ghcr.io/vladzaharia/polaris-mail-bridge:latest',
-  };
-  await c.env.KV_KEY_CACHE.put(
-    bridgeInstallerKvKey(installerToken),
-    JSON.stringify(installerPayload),
-    { expirationTtl: BRIDGE_INSTALLER_KV_TTL_SECONDS },
-  );
+  });
 
   return c.json(
     {
@@ -414,27 +430,71 @@ bridges.post('/v1/admin/bridges/:id/rotate', requireScope('admin:rotate'), async
   // re-run the bash installer on the bridge host. Mode is inferred
   // from whether TS was minted — best signal we have without a
   // schema-side mode column.
-  const installerToken = generateNonce();
   const rotateMode: 'tailscale' | 'public' = tsMinted.key != null ? 'tailscale' : 'public';
-  const installerPayload: BridgeInstallerPayload = {
-    bridge_id: id,
-    bridge_name: existing.name,
-    hmac_key: secret,
+  const installerToken = await stashInstallerToken(c.env, {
+    bridgeId: id,
+    bridgeName: existing.name,
+    hmacKey: secret,
     mode: rotateMode,
-    api_url: c.env.API_BASE_URL,
-    image: 'ghcr.io/vladzaharia/polaris-mail-bridge:latest',
-  };
-  await c.env.KV_KEY_CACHE.put(
-    bridgeInstallerKvKey(installerToken),
-    JSON.stringify(installerPayload),
-    { expirationTtl: BRIDGE_INSTALLER_KV_TTL_SECONDS },
-  );
+  });
 
   return c.json({
     id,
     hmac_key: secret,
     installer_token: installerToken,
     installer_url: installerUrlFor(c.env, installerToken),
+  });
+});
+
+// Mint a fresh one-shot installer URL for an existing bridge without
+// rotating its HMAC. Useful when the operator dismissed the post-
+// registration banner (or closed the tab) and needs to re-run curl|sh
+// on the bridge host — within the 1h HMAC-plaintext KV window. Beyond
+// that window the plaintext is gone and `rotate` is the recovery path
+// (since the HMAC must end up baked into the installer payload).
+bridges.post('/v1/admin/bridges/:id/installer-link', requireScope('admin:rotate'), async (c) => {
+  const id = c.req.param('id');
+  const row = await c.env.DB.prepare(
+    `SELECT id, name, ts_authkey_id, disabled_at FROM bridges WHERE id = ?`,
+  )
+    .bind(id)
+    .first<{
+      id: string;
+      name: string;
+      ts_authkey_id: string | null;
+      disabled_at: string | null;
+    }>();
+  if (!row) return buildError(c, 'not_found', 'no such bridge');
+  if (row.disabled_at) {
+    return buildError(c, 'conflict', 'bridge is deregistered; rotate or re-register first');
+  }
+  // The HMAC plaintext lives in KV for BRIDGE_PLAIN_KV_TTL_SECONDS
+  // after register/rotate. Beyond that we can't reconstruct an
+  // installer payload — the operator has to rotate to mint fresh
+  // material. We bubble that up as a 409 with a clear instruction;
+  // the panel turns it into a "Rotate credentials" CTA.
+  const hmac = await c.env.KV_KEY_CACHE.get(bridgePlainKvKey(id));
+  if (!hmac) {
+    return buildError(
+      c,
+      'conflict',
+      'hmac plaintext cache expired — rotate credentials to mint a fresh installer URL',
+    );
+  }
+  // ts_authkey_id presence is our mode signal — same heuristic as
+  // rotate. If the bridge was registered in public mode but later
+  // grew a TS key, that's a desired upgrade and the installer
+  // reflects it.
+  const mode: 'tailscale' | 'public' = row.ts_authkey_id != null ? 'tailscale' : 'public';
+  const token = await stashInstallerToken(c.env, {
+    bridgeId: row.id,
+    bridgeName: row.name,
+    hmacKey: hmac,
+    mode,
+  });
+  return c.json({
+    installer_token: token,
+    installer_url: installerUrlFor(c.env, token),
   });
 });
 

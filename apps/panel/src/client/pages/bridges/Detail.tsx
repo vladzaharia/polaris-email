@@ -401,6 +401,7 @@ export function BridgeDetail() {
               bridgeId={d.id}
               bridgeName={d.name}
               initialHmacKey={freshKey ?? undefined}
+              initialInstallerUrl={freshSecrets?.installerUrl ?? undefined}
             />
           </TabsContent>
 

@@ -2,11 +2,13 @@
 //
 // Two routes, one handler:
 //   * `GET /v1/installer/bridge/:token`  (api.mail.plrs.im — canonical)
-//   * `GET /:token`                       (dl.mail.plrs.im  — short form)
+//   * `GET /bridge/:token`                (dl.mail.plrs.im — short form)
 //
-// The short form lights up only when BRIDGE_INSTALLER_BASE_URL is set and
-// the request's Host header matches that URL's hostname. Both paths route
-// to the same handler; the only difference is the URL the operator types.
+// Both paths route to the same handler; the short-form is what the panel
+// shows the operator (`curl -fsSL dl.mail.plrs.im/bridge/<token> | sh`).
+// The dl.mail.plrs.im hostname is set up as a second Workers Custom
+// Domain on the same api worker via wrangler routes (gated on
+// POLARIS_BRIDGE_INSTALLER_HOSTNAME in .env.deploy).
 //
 // KV-stash per-token bundle (bridge_id, name, hmac, deployment mode) under
 // `bridge_installer:<token>` with a 1h TTL at registration time, then
@@ -89,25 +91,12 @@ async function handleInstaller(c: Context<{ Bindings: Env }>, token: string): Pr
 
 bridgeInstaller.get('/v1/installer/bridge/:token', (c) => handleInstaller(c, c.req.param('token')));
 
-// Short-form: dl.mail.plrs.im/<token>. Mounted at the root so the URL is
-// `dl.mail.plrs.im/<token>` with no path prefix. Host check filters this
-// out on api.mail.plrs.im (where bare `/<token>` would otherwise shadow
-// unrelated 404s but never returns a 200 because the host gate fails).
-bridgeInstaller.get('/:token', (c) => {
-  const base = c.env.BRIDGE_INSTALLER_BASE_URL;
-  if (!base) return buildError(c, 'not_found', 'short-form installer route disabled');
-  let expectedHost: string;
-  try {
-    expectedHost = new URL(base).hostname;
-  } catch {
-    return buildError(c, 'degraded', 'BRIDGE_INSTALLER_BASE_URL is not a valid URL');
-  }
-  const host = new URL(c.req.url).hostname;
-  if (host !== expectedHost) {
-    return buildError(c, 'not_found', 'use /v1/installer/bridge/<token> on this host');
-  }
-  return handleInstaller(c, c.req.param('token'));
-});
+// Short-form: dl.mail.plrs.im/bridge/<token>. Same handler. The /bridge
+// path prefix is namespaced enough that we don't bother with a host gate
+// — colliding only with a hypothetical /bridge/<token> on api.mail.plrs.im,
+// which isn't a route on that surface (admin bridge endpoints all live
+// under /v1/admin/bridges/...).
+bridgeInstaller.get('/bridge/:token', (c) => handleInstaller(c, c.req.param('token')));
 
 function renderInstaller(p: BridgeInstallerPayload): string {
   const composeYml = p.mode === 'tailscale' ? composeTailscale(p) : composePublic(p);
