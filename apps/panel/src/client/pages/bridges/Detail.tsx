@@ -43,7 +43,11 @@ import { cn } from '../../lib/cn.js';
 import { MessagesListView } from '../messages/MessagesListView.js';
 import { BridgeAuditCard } from './BridgeAuditCard.js';
 import { BridgeConnectionCard } from './BridgeConnectionCard.js';
-import { clearFreshBridgeKey, readFreshBridgeKey } from './freshBridgeKey.js';
+import {
+  clearFreshBridgeSecrets,
+  readFreshBridgeSecrets,
+  type FreshBridgeSecrets,
+} from './freshBridgeKey.js';
 
 type TabValue = 'overview' | 'activity' | 'connection' | 'audit';
 
@@ -118,10 +122,14 @@ export function BridgeDetail() {
     `/api/admin/bridges/${id}/activity`,
   );
 
-  // Read the just-minted HMAC key (if the operator arrived here via the
-  // Add-bridge dialog). It lives in sessionStorage; clearing it is the
-  // Detail page's job — see the `clearFreshBridgeKey` calls below.
-  const [freshKey, setFreshKey] = useState<string | null>(() => readFreshBridgeKey(id));
+  // Read the just-minted secret bundle (HMAC key + optional TS auth
+  // key + one-shot installer URL) if the operator arrived here via
+  // the Add-bridge dialog. Cleared once the bridge phones home OR
+  // when the operator dismisses the banner.
+  const [freshSecrets, setFreshSecrets] = useState<FreshBridgeSecrets | null>(() =>
+    readFreshBridgeSecrets(id),
+  );
+  const freshKey = freshSecrets?.hmacKey ?? null;
 
   // Default tab: if the bridge has never connected, drop the operator on
   // the Connection tab so the snippets are the first thing they see.
@@ -142,11 +150,11 @@ export function BridgeDetail() {
   // point the snippets in the Connection tab no longer need to display
   // the plaintext, and we want to keep its lifetime as short as we can.
   useEffect(() => {
-    if (freshKey && hasEverConnected) {
-      clearFreshBridgeKey(id);
-      setFreshKey(null);
+    if (freshSecrets && hasEverConnected) {
+      clearFreshBridgeSecrets(id);
+      setFreshSecrets(null);
     }
-  }, [freshKey, hasEverConnected, id]);
+  }, [freshSecrets, hasEverConnected, id]);
 
   const [confirmDereg, setConfirmDereg] = useState(false);
   const [confirmHardDelete, setConfirmHardDelete] = useState(false);
@@ -223,7 +231,7 @@ export function BridgeDetail() {
             one-time HMAC key + a brief checklist. Disappears as soon as
             the bridge phones home (the useEffect above clears
             freshKey). */}
-        {freshKey && !hasEverConnected ? (
+        {freshSecrets && !hasEverConnected ? (
           <section
             className="rounded-md border border-[var(--color-border)] p-4"
             style={{
@@ -232,27 +240,59 @@ export function BridgeDetail() {
           >
             <div className="flex items-start gap-3">
               <KeyRound className="h-5 w-5 text-[var(--color-success)]" aria-hidden />
-              <div className="min-w-0 flex-1 space-y-2">
-                <div className="font-semibold">Bridge registered — copy the HMAC key now</div>
+              <div className="min-w-0 flex-1 space-y-3">
+                <div className="font-semibold">Bridge registered — one-shot credentials below</div>
                 <p className="text-xs text-[var(--color-muted-foreground)]">
-                  Polaris stores only the hash. This is the only time you'll see the plaintext — it
-                  disappears as soon as the bridge phones home, or as soon as you dismiss this
-                  banner. If you lose it, rotate the bridge from this page to mint a new one.
+                  These values are shown ONCE. They disappear as soon as the bridge phones home, or
+                  as soon as you dismiss this banner. If you lose them, rotate the bridge from this
+                  page to mint a new set.
                 </p>
-                <CodeBlock code={freshKey} />
+
+                {freshSecrets.installerUrl ? (
+                  <div className="space-y-1">
+                    <div className="text-[10px] uppercase tracking-wide text-[var(--color-muted-foreground)]">
+                      One-shot install (curl | sh)
+                    </div>
+                    <CodeBlock code={`curl -fsSL ${freshSecrets.installerUrl} | sh`} />
+                    <p className="text-xs text-[var(--color-muted-foreground)]">
+                      Run on the bridge host. The URL is good for 1 hour and consumed on first
+                      fetch. The script writes <span className="font-mono">docker-compose.yml</span>
+                      , <span className="font-mono">docker-compose.env</span>, and{' '}
+                      <span className="font-mono">./secrets/*</span>, then{' '}
+                      <span className="font-mono">docker compose up -d</span> and tails the logs.
+                    </p>
+                  </div>
+                ) : null}
+
+                <div className="space-y-1">
+                  <div className="text-[10px] uppercase tracking-wide text-[var(--color-muted-foreground)]">
+                    HMAC key
+                  </div>
+                  <CodeBlock code={freshSecrets.hmacKey} />
+                </div>
+
+                {freshSecrets.tsAuthkey ? (
+                  <div className="space-y-1">
+                    <div className="text-[10px] uppercase tracking-wide text-[var(--color-muted-foreground)]">
+                      Tailscale auth key
+                    </div>
+                    <CodeBlock code={freshSecrets.tsAuthkey} />
+                  </div>
+                ) : null}
+
                 <div className="flex flex-wrap items-center gap-2 pt-1">
                   <Button
                     size="sm"
                     variant="outline"
                     onClick={() => {
-                      clearFreshBridgeKey(id);
-                      setFreshKey(null);
+                      clearFreshBridgeSecrets(id);
+                      setFreshSecrets(null);
                     }}
                   >
-                    I've saved it
+                    I've saved them
                   </Button>
                   <span className="text-xs text-[var(--color-muted-foreground)]">
-                    The setup snippets in the Connection tab below carry this key already.
+                    The Connection tab below also carries these values for the manual flow.
                   </span>
                 </div>
               </div>

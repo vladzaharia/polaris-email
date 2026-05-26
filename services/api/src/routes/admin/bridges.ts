@@ -22,6 +22,12 @@ import {
   revokeCfDnsTokenBestEffort,
 } from '../../bridge-cf-token.js';
 import { mintTsAuthKeyForBridge, revokeTsAuthKeyBestEffort } from '../../bridge-ts-token.js';
+import { generateNonce } from '@polaris-mail/hmac';
+import {
+  bridgeInstallerKvKey,
+  BRIDGE_INSTALLER_KV_TTL_SECONDS,
+  type BridgeInstallerPayload,
+} from '../installer/bridge.js';
 
 // Liveness thresholds (ms). Anything inside `LIVE_MS` is "live"; inside
 // `STALE_MS` is "stale" (concerning but not gone); beyond is "offline".
@@ -85,15 +91,16 @@ bridges.get('/v1/admin/bridges', requireScope('admin:read'), async (c) => {
 });
 
 bridges.post('/v1/admin/bridges', requireScope('admin:rotate'), async (c) => {
-  let body: { name?: string };
+  let body: { name?: string; mode?: 'tailscale' | 'public' };
   try {
-    body = JSON.parse(bodyText(c) || '{}') as { name?: string };
+    body = JSON.parse(bodyText(c) || '{}') as { name?: string; mode?: 'tailscale' | 'public' };
   } catch {
     return buildError(c, 'bad_request', 'invalid json');
   }
   if (!body.name || typeof body.name !== 'string' || body.name.length < 1) {
     return buildError(c, 'bad_request', 'name required');
   }
+  const mode: 'tailscale' | 'public' = body.mode === 'public' ? 'public' : 'tailscale';
   const id = ulid();
   const secret = generateSecret();
   const hashed = await hashSecret(secret, c.env.ARGON2_PEPPER);
@@ -175,6 +182,26 @@ bridges.post('/v1/admin/bridges', requireScope('admin:rotate'), async (c) => {
       meta: { key_id: tsMinted.key.id, name: body.name },
     });
   }
+  // One-shot installer token. The panel renders `curl
+  // <api>/v1/installer/bridge/<token> | sh` and the operator pipes
+  // it on the bridge host. KV TTL is 1h; the installer endpoint
+  // deletes the entry after first GET.
+  const installerToken = generateNonce();
+  const installerPayload: BridgeInstallerPayload = {
+    bridge_id: id,
+    bridge_name: body.name,
+    hmac_key: secret,
+    ts_authkey: tsMinted.key?.value ?? null,
+    mode,
+    api_url: c.env.API_BASE_URL,
+    image: 'ghcr.io/vladzaharia/polaris-mail-bridge:latest',
+  };
+  await c.env.KV_KEY_CACHE.put(
+    bridgeInstallerKvKey(installerToken),
+    JSON.stringify(installerPayload),
+    { expirationTtl: BRIDGE_INSTALLER_KV_TTL_SECONDS },
+  );
+
   return c.json(
     {
       id,
@@ -183,6 +210,11 @@ bridges.post('/v1/admin/bridges', requireScope('admin:rotate'), async (c) => {
       // One-shot reveal for the operator's `./secrets/ts_authkey` file.
       // Null when TS minting isn't configured server-side.
       ts_authkey: tsMinted.key?.value ?? null,
+      // One-shot bash-installer URL. Token is valid for 1h, consumed
+      // on first GET. Operator runs:
+      //   curl <api>/v1/installer/bridge/<token> | sh
+      installer_token: installerToken,
+      installer_url: `${c.env.API_BASE_URL}/v1/installer/bridge/${installerToken}`,
     },
     201,
   );
@@ -344,7 +376,34 @@ bridges.post('/v1/admin/bridges/:id/rotate', requireScope('admin:rotate'), async
       meta: { key_id: tsMinted.key.id, name: existing.name, reason: 'rotate' },
     });
   }
-  return c.json({ id, hmac_key: secret, ts_authkey: tsMinted.key?.value ?? null });
+  // Rotate also refreshes the installer URL so the operator can
+  // re-run the bash installer on the bridge host. Mode is inferred
+  // from whether TS was minted — best signal we have without a
+  // schema-side mode column.
+  const installerToken = generateNonce();
+  const rotateMode: 'tailscale' | 'public' = tsMinted.key != null ? 'tailscale' : 'public';
+  const installerPayload: BridgeInstallerPayload = {
+    bridge_id: id,
+    bridge_name: existing.name,
+    hmac_key: secret,
+    ts_authkey: tsMinted.key?.value ?? null,
+    mode: rotateMode,
+    api_url: c.env.API_BASE_URL,
+    image: 'ghcr.io/vladzaharia/polaris-mail-bridge:latest',
+  };
+  await c.env.KV_KEY_CACHE.put(
+    bridgeInstallerKvKey(installerToken),
+    JSON.stringify(installerPayload),
+    { expirationTtl: BRIDGE_INSTALLER_KV_TTL_SECONDS },
+  );
+
+  return c.json({
+    id,
+    hmac_key: secret,
+    ts_authkey: tsMinted.key?.value ?? null,
+    installer_token: installerToken,
+    installer_url: `${c.env.API_BASE_URL}/v1/installer/bridge/${installerToken}`,
+  });
 });
 
 // DELETE has two modes:

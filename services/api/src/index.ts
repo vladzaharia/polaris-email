@@ -23,6 +23,7 @@ import { mtaStsPolicy } from './routes/mta-sts.js';
 import { unsub } from './routes/unsub.js';
 import { bridgeHeartbeat } from './routes/bridge/heartbeat.js';
 import { bridgeConfig } from './routes/bridge/config.js';
+import { bridgeInstaller } from './routes/installer/bridge.js';
 import { requestId } from '@polaris-mail/ids';
 import { buildError } from './errors.js';
 import { scheduled } from './scheduled/index.js';
@@ -61,6 +62,9 @@ app.route('/', unsub);
 // rest of `/v1/bridge/*` (credential lookup) under admin-api-key auth.
 app.route('/', bridgeHeartbeat);
 app.route('/', bridgeConfig);
+// /v1/installer/bridge/<token> — public, one-shot bash installer.
+// Token unguessability is the auth boundary.
+app.route('/', bridgeInstaller);
 app.route('/', admin);
 app.route('/', auth);
 app.route('/', bootstrap);

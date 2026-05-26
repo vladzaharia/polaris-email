@@ -32,17 +32,29 @@ import { Label } from '../../components/ui/label.js';
 import { ErrorText } from '../../components/ErrorText.js';
 import { useAdminMutation } from '../../hooks/useAdminApi.js';
 import { bridgeKeys } from '../../queryKeys.js';
-import { stashFreshBridgeKey } from './freshBridgeKey.js';
+import { stashFreshBridgeSecrets } from './freshBridgeKey.js';
 
 export function AddBridgeDialog() {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [name, setName] = useState('');
 
-  const register = useAdminMutation<{ id: string; hmac_key: string }, { name: string }>(
-    (vars) => ({ path: '/api/admin/bridges', method: 'POST', body: vars }),
-    { invalidateKeys: [bridgeKeys.all], silent: true },
-  );
+  // Response also carries `ts_authkey` (null when TS minting isn't
+  // configured server-side) and `installer_url` (one-shot bash
+  // installer link, 1h TTL). All three values flow through
+  // sessionStorage into the Detail-page banner.
+  const register = useAdminMutation<
+    {
+      id: string;
+      hmac_key: string;
+      ts_authkey: string | null;
+      installer_url: string | null;
+    },
+    { name: string }
+  >((vars) => ({ path: '/api/admin/bridges', method: 'POST', body: vars }), {
+    invalidateKeys: [bridgeKeys.all],
+    silent: true,
+  });
 
   return (
     <Dialog
@@ -91,7 +103,11 @@ export function AddBridgeDialog() {
             disabled={!name.trim() || register.isPending}
             onClick={async () => {
               const r = await register.mutateAsync({ name: name.trim() });
-              stashFreshBridgeKey(r.id, r.hmac_key);
+              stashFreshBridgeSecrets(r.id, {
+                hmacKey: r.hmac_key,
+                tsAuthkey: r.ts_authkey,
+                installerUrl: r.installer_url,
+              });
               setOpen(false);
               setName('');
               void navigate({
