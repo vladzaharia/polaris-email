@@ -15,6 +15,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -110,28 +111,30 @@ func main() {
 	}
 	log.Printf("polaris-bridge: bridge config fetched (fqdn=%s)", bridgeCfg.FQDN)
 
-	renewer := &acme.Renewer{
-		FQDN:       bridgeCfg.FQDN,
-		AcmeEmail:  bridgeCfg.AcmeEmail,
-		CFDnsToken: bridgeCfg.CFDnsToken,
-		// Lego resolves the zone id from the FQDN via its own
-		// `/zones?name=...` lookup (the per-bridge token has Zone:Read
-		// scope for that). For our own A-record upsert we need the
-		// zone id explicitly — get it from the same Lego provider on
-		// first cert issue. To keep startup linear, leave CFZoneID
-		// empty here; the renewer skips A-record management when
-		// empty. Setting it requires the operator to wire the zone id
-		// into the api worker's response (already in scope; the api
-		// returns cf_zone but not the zone id). Followup: add zone_id
-		// to BridgeConfigResponse so this path activates.
-		CFZoneID: "",
-		CertDir:  cfg.TLSCertDir,
-		BridgeIP: acme.DetectBridgeIP(),
+	// CF / ACME is optional. When the api worker isn't configured for
+	// CF token minting (CF_API_TOKEN unset), it returns
+	// `cf_dns_token: null` and the bridge skips embedded ACME
+	// entirely. Listeners then fall back to plaintext (no TLS) unless
+	// the operator drops PEMs into the cert dir themselves. This is
+	// the documented "downgrade" path; pre-production policy.
+	hasACME := bridgeCfg.CFDnsToken != ""
+	if hasACME {
+		renewer := &acme.Renewer{
+			FQDN:       bridgeCfg.FQDN,
+			AcmeEmail:  bridgeCfg.AcmeEmail,
+			CFDnsToken: bridgeCfg.CFDnsToken,
+			CFZoneID:   "", // see comment below
+			CertDir:    cfg.TLSCertDir,
+			BridgeIP:   acme.DetectBridgeIP(),
+		}
+		if err := renewer.EnsureCert(ctx); err != nil {
+			log.Fatalf("polaris-bridge: initial acme: %v", err)
+		}
+		renewer.Start(ctx)
+	} else {
+		log.Printf("polaris-bridge: CF DNS token not provided — embedded ACME disabled. " +
+			"Listeners run plaintext unless PEMs are mounted at %s", cfg.TLSCertDir)
 	}
-	if err := renewer.EnsureCert(ctx); err != nil {
-		log.Fatalf("polaris-bridge: initial acme: %v", err)
-	}
-	renewer.Start(ctx)
 
 	// Bridge-local SQLite mirror.
 	mirrorDB, err := openMirror(cfg)
@@ -223,15 +226,26 @@ func main() {
 	// TLS source — points at the cert dir the embedded ACME renewer
 	// just populated. Source.GetCertificate does its own 30s reload
 	// cadence, so future renewals just write fresh PEMs and SMTPS /
-	// IMAP pick them up on the next accept. Falling back to plaintext
-	// would expose SMTP AUTH / IMAP LOGIN; this stays fail-fast.
-	tlsSrc, err := bridgetls.New(bridgetls.Config{
-		Mode:     bridgetls.ModeLocal,
-		CertPath: cfg.TLSCertPath(),
-		KeyPath:  cfg.TLSKeyPath(),
-	})
-	if err != nil {
-		log.Fatalf("polaris-bridge: tls init: %v (refusing to start with insecure listeners)", err)
+	// IMAP pick them up on the next accept.
+	//
+	// Plaintext fallback: when CF/ACME isn't configured and no PEMs
+	// are present on disk, fall through to `NewPlaintext()` which
+	// returns a Source with a nil TLS config. Listeners then bind
+	// without TLS wrapping (SMTP :465 / IMAP :993 still — same ports,
+	// no TLS handshake). Per the operator's explicit downgrade choice.
+	var tlsSrc *bridgetls.Source
+	if hasACME || certFilesPresent(cfg) {
+		tlsSrc, err = bridgetls.New(bridgetls.Config{
+			Mode:     bridgetls.ModeLocal,
+			CertPath: cfg.TLSCertPath(),
+			KeyPath:  cfg.TLSKeyPath(),
+		})
+		if err != nil {
+			log.Fatalf("polaris-bridge: tls init: %v", err)
+		}
+	} else {
+		log.Printf("polaris-bridge: no TLS material present — running listeners PLAINTEXT")
+		tlsSrc = bridgetls.NewPlaintext()
 	}
 
 	var wg sync.WaitGroup
@@ -295,12 +309,11 @@ func main() {
 			MaxBodyBytes:  cfg.R2BodyMaxBytes,
 		}
 		imapTLSCfg := tlsConfigFor(tlsSrc)
-		if imapTLSCfg == nil {
-			// We fail-fast on tlsSrc=nil above, so this branch should be
-			// unreachable; kept for defense-in-depth so a future refactor
-			// can't accidentally re-introduce the InsecureAuth fallback.
-			log.Fatalf("polaris-bridge: imap: TLS config nil after init succeeded — refusing to serve plaintext")
-		}
+		// Plaintext mode (CF/ACME disabled + no operator PEMs): bind a
+		// plain TCP listener and tell go-imap to admit AUTH PLAIN over
+		// the unencrypted connection. The startup log already says
+		// "PLAINTEXT" in big letters; this is the load-bearing branch
+		// that actually does it.
 		imapSrv := imapserver.New(&imapserver.Options{
 			NewSession: imapBackend.NewSession,
 			Caps: imap.CapSet{
@@ -309,10 +322,15 @@ func main() {
 				imap.AuthCap("PLAIN"): {},
 			},
 			TLSConfig:    imapTLSCfg,
-			InsecureAuth: false,
+			InsecureAuth: imapTLSCfg == nil,
 		})
 		imapAddr := getenvDefault("BRIDGE_IMAP_LISTEN_ADDR", ":993")
-		imapLn, err := tls.Listen("tcp", imapAddr, imapTLSCfg)
+		var imapLn net.Listener
+		if imapTLSCfg == nil {
+			imapLn, err = net.Listen("tcp", imapAddr)
+		} else {
+			imapLn, err = tls.Listen("tcp", imapAddr, imapTLSCfg)
+		}
 		if err != nil {
 			log.Fatalf("imap listen: %v", err)
 		}
@@ -401,6 +419,20 @@ func main() {
 	wg.Wait()
 }
 
+// certFilesPresent reports whether the operator has dropped PEMs at
+// the renewer's cert dir manually. Used by the TLS fallback path:
+// when CF/ACME isn't configured but the operator IS managing certs
+// out-of-band, we honor those rather than falling to plaintext.
+func certFilesPresent(cfg *config.Config) bool {
+	if _, err := os.Stat(cfg.TLSCertPath()); err != nil {
+		return false
+	}
+	if _, err := os.Stat(cfg.TLSKeyPath()); err != nil {
+		return false
+	}
+	return true
+}
+
 func openMirror(cfg *config.Config) (*mirrorstore.Mirror, error) {
 	path := os.Getenv("BRIDGE_MIRROR_PATH")
 	if path == "" {
@@ -426,6 +458,13 @@ func getenvDefault(key, dflt string) string {
 }
 
 func tlsConfigFor(src *bridgetls.Source) *tls.Config {
+	if src == nil || src.IsPlaintext() {
+		return nil
+	}
+	return tlsConfigForReal(src)
+}
+
+func tlsConfigForReal(src *bridgetls.Source) *tls.Config {
 	if src == nil {
 		return nil
 	}

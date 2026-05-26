@@ -887,6 +887,10 @@ export const AuditAction = z.enum([
   'bridge.delete',
   'bridge.cf_token.mint',
   'bridge.cf_token.revoke',
+  // Per-bridge Tailscale auth-key lifecycle (added in 0010 alongside
+  // the optional TS sidecar deployment mode).
+  'bridge.ts_authkey.mint',
+  'bridge.ts_authkey.revoke',
   // domain + DKIM
   'domain.create',
   'domain.update',
@@ -1318,10 +1322,15 @@ export type BridgeActivityRollup = z.infer<typeof BridgeActivityRollup>;
 // CF zone name (for completeness). The bridge feeds these into its
 // embedded Lego loop on startup. Operators never see `cf_dns_token` —
 // it lives only in the service-to-bridge channel.
+// `cf_dns_token` is nullable so bridges deployed without CF auto-mint
+// (api worker without `CF_API_TOKEN` etc.) get a clear signal to skip
+// embedded ACME and fall back to plaintext listeners or operator-
+// managed PEMs. `acme_email` is also empty in that mode — the bridge
+// only consults it when cf_dns_token is non-null.
 export const BridgeConfigResponse = z.object({
-  cf_dns_token: z.string().min(1),
+  cf_dns_token: z.string().nullable(),
   cf_zone: z.string().min(1),
   fqdn: z.string().min(1),
-  acme_email: z.string().email(),
+  acme_email: z.string(),
 });
 export type BridgeConfigResponse = z.infer<typeof BridgeConfigResponse>;

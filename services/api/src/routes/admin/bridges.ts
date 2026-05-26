@@ -21,6 +21,7 @@ import {
   mintCfDnsTokenForBridge,
   revokeCfDnsTokenBestEffort,
 } from '../../bridge-cf-token.js';
+import { mintTsAuthKeyForBridge, revokeTsAuthKeyBestEffort } from '../../bridge-ts-token.js';
 
 // Liveness thresholds (ms). Anything inside `LIVE_MS` is "live"; inside
 // `STALE_MS` is "stale" (concerning but not gone); beyond is "offline".
@@ -97,12 +98,15 @@ bridges.post('/v1/admin/bridges', requireScope('admin:rotate'), async (c) => {
   const secret = generateSecret();
   const hashed = await hashSecret(secret, c.env.ARGON2_PEPPER);
   const nowIso = new Date().toISOString();
-  // Mint the per-bridge CF DNS token BEFORE the INSERT so a failed mint
-  // leaves no orphan bridge row. The plaintext goes into KV after the
-  // row commit so the bridge's first /v1/bridge/config call resolves.
-  let minted;
+  // Mint optional integrations BEFORE the INSERT so a failed mint
+  // leaves no orphan bridge row. Both CF and TS can be disabled by
+  // omitting the relevant env vars — mint functions return `{id:
+  // null}` and we proceed without that integration. Failures (env
+  // present but call failed) bubble as 502 since the operator
+  // presumably wants the integration when it's configured.
+  let cfMinted;
   try {
-    minted = await mintCfDnsTokenForBridge(c.env, body.name, id);
+    cfMinted = await mintCfDnsTokenForBridge(c.env, body.name, id);
   } catch (e) {
     return buildError(
       c,
@@ -110,16 +114,31 @@ bridges.post('/v1/admin/bridges', requireScope('admin:rotate'), async (c) => {
       `cf token mint failed: ${e instanceof Error ? e.message : String(e)}`,
     );
   }
+  let tsMinted;
+  try {
+    tsMinted = await mintTsAuthKeyForBridge(c.env, body.name);
+  } catch (e) {
+    // Roll back the CF token we just minted to avoid a half-provisioned
+    // bridge that the operator can't reach.
+    if (cfMinted.tokenId) await revokeCfDnsTokenBestEffort(c.env, cfMinted.tokenId);
+    return buildError(
+      c,
+      'degraded',
+      `ts auth-key mint failed: ${e instanceof Error ? e.message : String(e)}`,
+    );
+  }
   try {
     await c.env.DB.prepare(
-      `INSERT INTO bridges (id, name, hmac_key_secret_name, cf_dns_token_id, created_at)
-       VALUES (?, ?, ?, ?, ?)`,
+      `INSERT INTO bridges
+         (id, name, hmac_key_secret_name, cf_dns_token_id, ts_authkey_id, created_at)
+       VALUES (?, ?, ?, ?, ?, ?)`,
     )
-      .bind(id, body.name, hashed, minted.tokenId, nowIso)
+      .bind(id, body.name, hashed, cfMinted.tokenId, tsMinted.key?.id ?? null, nowIso)
       .run();
   } catch (e) {
-    // Best-effort revoke so the CF dashboard stays clean.
-    await revokeCfDnsTokenBestEffort(c.env, minted.tokenId);
+    // Best-effort revoke of both tokens so external state stays clean.
+    if (cfMinted.tokenId) await revokeCfDnsTokenBestEffort(c.env, cfMinted.tokenId);
+    if (tsMinted.key) await revokeTsAuthKeyBestEffort(c.env, tsMinted.key.id);
     if (String(e).includes('UNIQUE')) return buildError(c, 'conflict', 'bridge name taken');
     throw e;
   }
@@ -128,23 +147,45 @@ bridges.post('/v1/admin/bridges', requireScope('admin:rotate'), async (c) => {
   await c.env.KV_KEY_CACHE.put(bridgePlainKvKey(id), secret, {
     expirationTtl: BRIDGE_PLAIN_KV_TTL_SECONDS,
   });
-  // CF token plaintext — surfaced to the bridge via /v1/bridge/config.
-  await c.env.KV_KEY_CACHE.put(bridgeCfDnsPlainKvKey(id), minted.plaintext, {
-    expirationTtl: BRIDGE_CF_DNS_PLAIN_KV_TTL_SECONDS,
-  });
+  if (cfMinted.plaintext) {
+    // CF token plaintext — surfaced to the bridge via /v1/bridge/config.
+    await c.env.KV_KEY_CACHE.put(bridgeCfDnsPlainKvKey(id), cfMinted.plaintext, {
+      expirationTtl: BRIDGE_CF_DNS_PLAIN_KV_TTL_SECONDS,
+    });
+  }
   await audit(c.env, {
     actor: actorOf(c),
     action: 'bridge.register',
     target: id,
     meta: { name: body.name },
   });
-  await audit(c.env, {
-    actor: actorOf(c),
-    action: 'bridge.cf_token.mint',
-    target: id,
-    meta: { token_id: minted.tokenId, name: body.name },
-  });
-  return c.json({ id, name: body.name, hmac_key: secret }, 201);
+  if (cfMinted.tokenId) {
+    await audit(c.env, {
+      actor: actorOf(c),
+      action: 'bridge.cf_token.mint',
+      target: id,
+      meta: { token_id: cfMinted.tokenId, name: body.name },
+    });
+  }
+  if (tsMinted.key) {
+    await audit(c.env, {
+      actor: actorOf(c),
+      action: 'bridge.ts_authkey.mint',
+      target: id,
+      meta: { key_id: tsMinted.key.id, name: body.name },
+    });
+  }
+  return c.json(
+    {
+      id,
+      name: body.name,
+      hmac_key: secret,
+      // One-shot reveal for the operator's `./secrets/ts_authkey` file.
+      // Null when TS minting isn't configured server-side.
+      ts_authkey: tsMinted.key?.value ?? null,
+    },
+    201,
+  );
 });
 
 bridges.get('/v1/admin/bridges/lookup', requireScope('admin:read'), async (c) => {
@@ -207,18 +248,24 @@ bridges.get('/v1/admin/bridges/:id', requireScope('admin:read'), async (c) => {
 bridges.post('/v1/admin/bridges/:id/rotate', requireScope('admin:rotate'), async (c) => {
   const id = c.req.param('id');
   const existing = await c.env.DB.prepare(
-    `SELECT id, name, cf_dns_token_id FROM bridges WHERE id = ?`,
+    `SELECT id, name, cf_dns_token_id, ts_authkey_id FROM bridges WHERE id = ?`,
   )
     .bind(id)
-    .first<{ id: string; name: string; cf_dns_token_id: string | null }>();
+    .first<{
+      id: string;
+      name: string;
+      cf_dns_token_id: string | null;
+      ts_authkey_id: string | null;
+    }>();
   if (!existing) return buildError(c, 'not_found', 'bridge not found');
   const secret = generateSecret();
   const hashed = await hashSecret(secret, c.env.ARGON2_PEPPER);
-  // Mint the new CF token before touching D1 — same atomicity story as
-  // register: don't leave a row referencing a half-existing token.
-  let minted;
+  // Same atomicity discipline as register: mint both upstream tokens
+  // BEFORE touching D1. CF/TS individually optional — null returns
+  // mean "not configured", we proceed without that integration.
+  let cfMinted;
   try {
-    minted = await mintCfDnsTokenForBridge(c.env, existing.name, id);
+    cfMinted = await mintCfDnsTokenForBridge(c.env, existing.name, id);
   } catch (e) {
     return buildError(
       c,
@@ -226,21 +273,37 @@ bridges.post('/v1/admin/bridges/:id/rotate', requireScope('admin:rotate'), async
       `cf token mint failed: ${e instanceof Error ? e.message : String(e)}`,
     );
   }
+  let tsMinted;
+  try {
+    tsMinted = await mintTsAuthKeyForBridge(c.env, existing.name);
+  } catch (e) {
+    if (cfMinted.tokenId) await revokeCfDnsTokenBestEffort(c.env, cfMinted.tokenId);
+    return buildError(
+      c,
+      'degraded',
+      `ts auth-key mint failed: ${e instanceof Error ? e.message : String(e)}`,
+    );
+  }
   await c.env.DB.prepare(
-    `UPDATE bridges SET hmac_key_secret_name = ?, cf_dns_token_id = ? WHERE id = ?`,
+    `UPDATE bridges
+       SET hmac_key_secret_name = ?, cf_dns_token_id = ?, ts_authkey_id = ?
+     WHERE id = ?`,
   )
-    .bind(hashed, minted.tokenId, id)
+    .bind(hashed, cfMinted.tokenId, tsMinted.key?.id ?? null, id)
     .run();
   // Repopulate plaintext caches so verify + /v1/bridge/config both
   // resolve immediately after rotate.
   await c.env.KV_KEY_CACHE.put(bridgePlainKvKey(id), secret, {
     expirationTtl: BRIDGE_PLAIN_KV_TTL_SECONDS,
   });
-  await c.env.KV_KEY_CACHE.put(bridgeCfDnsPlainKvKey(id), minted.plaintext, {
-    expirationTtl: BRIDGE_CF_DNS_PLAIN_KV_TTL_SECONDS,
-  });
-  // Best-effort revoke of the prior CF token. Don't block the response;
-  // the new token is what matters for forward operation.
+  if (cfMinted.plaintext) {
+    await c.env.KV_KEY_CACHE.put(bridgeCfDnsPlainKvKey(id), cfMinted.plaintext, {
+      expirationTtl: BRIDGE_CF_DNS_PLAIN_KV_TTL_SECONDS,
+    });
+  } else {
+    await c.env.KV_KEY_CACHE.delete(bridgeCfDnsPlainKvKey(id));
+  }
+  // Best-effort revokes of the prior tokens.
   if (existing.cf_dns_token_id) {
     c.executionCtx.waitUntil(revokeCfDnsTokenBestEffort(c.env, existing.cf_dns_token_id));
     await audit(c.env, {
@@ -250,19 +313,38 @@ bridges.post('/v1/admin/bridges/:id/rotate', requireScope('admin:rotate'), async
       meta: { token_id: existing.cf_dns_token_id, reason: 'rotate' },
     });
   }
+  if (existing.ts_authkey_id) {
+    c.executionCtx.waitUntil(revokeTsAuthKeyBestEffort(c.env, existing.ts_authkey_id));
+    await audit(c.env, {
+      actor: actorOf(c),
+      action: 'bridge.ts_authkey.revoke',
+      target: id,
+      meta: { key_id: existing.ts_authkey_id, reason: 'rotate' },
+    });
+  }
   await audit(c.env, {
     actor: actorOf(c),
     action: 'bridge.rotate',
     target: id,
     meta: { name: existing.name },
   });
-  await audit(c.env, {
-    actor: actorOf(c),
-    action: 'bridge.cf_token.mint',
-    target: id,
-    meta: { token_id: minted.tokenId, name: existing.name, reason: 'rotate' },
-  });
-  return c.json({ id, hmac_key: secret });
+  if (cfMinted.tokenId) {
+    await audit(c.env, {
+      actor: actorOf(c),
+      action: 'bridge.cf_token.mint',
+      target: id,
+      meta: { token_id: cfMinted.tokenId, name: existing.name, reason: 'rotate' },
+    });
+  }
+  if (tsMinted.key) {
+    await audit(c.env, {
+      actor: actorOf(c),
+      action: 'bridge.ts_authkey.mint',
+      target: id,
+      meta: { key_id: tsMinted.key.id, name: existing.name, reason: 'rotate' },
+    });
+  }
+  return c.json({ id, hmac_key: secret, ts_authkey: tsMinted.key?.value ?? null });
 });
 
 // DELETE has two modes:
@@ -302,7 +384,7 @@ bridges.delete('/v1/admin/bridges/:id', requireScope('admin:rotate'), async (c) 
 
   // Hard delete path.
   const existing = await c.env.DB.prepare(
-    `SELECT id, name, disabled_at, cf_dns_token_id FROM bridges WHERE id = ?`,
+    `SELECT id, name, disabled_at, cf_dns_token_id, ts_authkey_id FROM bridges WHERE id = ?`,
   )
     .bind(id)
     .first<{
@@ -310,6 +392,7 @@ bridges.delete('/v1/admin/bridges/:id', requireScope('admin:rotate'), async (c) 
       name: string;
       disabled_at: string | null;
       cf_dns_token_id: string | null;
+      ts_authkey_id: string | null;
     }>();
   if (!existing) return buildError(c, 'not_found', 'bridge not found');
   if (existing.disabled_at == null) {
@@ -341,6 +424,15 @@ bridges.delete('/v1/admin/bridges/:id', requireScope('admin:rotate'), async (c) 
       action: 'bridge.cf_token.revoke',
       target: id,
       meta: { token_id: existing.cf_dns_token_id, reason: 'delete' },
+    });
+  }
+  if (existing.ts_authkey_id) {
+    c.executionCtx.waitUntil(revokeTsAuthKeyBestEffort(c.env, existing.ts_authkey_id));
+    await audit(c.env, {
+      actor: actorOf(c),
+      action: 'bridge.ts_authkey.revoke',
+      target: id,
+      meta: { key_id: existing.ts_authkey_id, reason: 'delete' },
     });
   }
   await audit(c.env, {

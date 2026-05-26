@@ -52,29 +52,37 @@ bridgeConfig.get('/v1/bridge/config', async (c) => {
     return buildError(c, 'unauthorized', 'bridge disabled or unknown');
   }
 
-  const cfDnsToken = await c.env.KV_KEY_CACHE.get(bridgeCfDnsPlainKvKey(bridgeId));
-  if (!cfDnsToken) {
-    return buildError(
-      c,
-      'key_propagating',
-      'cf dns token plaintext not in cache; rotate the bridge to repopulate',
-      { 'retry-after': '5' },
-    );
-  }
-
-  // Both required for the response to be useful. Misconfiguration
-  // surfaces here rather than later inside the bridge's ACME loop.
-  if (!c.env.ACME_EMAIL) {
-    return buildError(c, 'degraded', 'ACME_EMAIL env not configured on api worker');
-  }
-  if (!c.env.CF_ZONE_ID_MAIL_PLRS_IM) {
-    return buildError(c, 'degraded', 'CF_ZONE_ID_MAIL_PLRS_IM env not configured on api worker');
+  // CF DNS plaintext is OPTIONAL. Two cases:
+  //   - Operator never configured CF on the api worker (CF_API_TOKEN
+  //     etc. unset). Register/rotate skipped the mint and we return
+  //     `cf_dns_token: null` so the bridge falls back to plaintext
+  //     listeners / operator-managed PEMs.
+  //   - Operator did configure CF, the mint succeeded, but the KV
+  //     cache expired (90d TTL) before the bridge restarted. Return
+  //     `key_propagating` (retryable) — operator rotates to repopulate.
+  //
+  // We distinguish via the row's `cf_dns_token_id`: NULL = never minted
+  // → return null. Non-null but KV miss = expired → key_propagating.
+  const tokenRow = await c.env.DB.prepare(`SELECT cf_dns_token_id FROM bridges WHERE id = ?`)
+    .bind(bridgeId)
+    .first<{ cf_dns_token_id: string | null }>();
+  let cfDnsToken: string | null = null;
+  if (tokenRow?.cf_dns_token_id) {
+    cfDnsToken = await c.env.KV_KEY_CACHE.get(bridgeCfDnsPlainKvKey(bridgeId));
+    if (!cfDnsToken) {
+      return buildError(
+        c,
+        'key_propagating',
+        'cf dns token plaintext not in cache; rotate the bridge to repopulate',
+        { 'retry-after': '5' },
+      );
+    }
   }
 
   return c.json({
     cf_dns_token: cfDnsToken,
     cf_zone: 'mail.plrs.im',
     fqdn: `${row.name}.mail.plrs.im`,
-    acme_email: c.env.ACME_EMAIL,
+    acme_email: c.env.ACME_EMAIL ?? '',
   });
 });

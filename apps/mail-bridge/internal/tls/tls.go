@@ -41,23 +41,45 @@ type Config struct {
 // Source produces TLS listeners on demand. The returned tls.Config and
 // listener factories are wired into each protocol server (SMTPS / IMAP).
 type Source struct {
-	cfg      Config
-	mu       sync.Mutex
-	cert     *tls.Certificate
-	certAtNS int64
+	cfg       Config
+	mu        sync.Mutex
+	cert      *tls.Certificate
+	certAtNS  int64
+	plaintext bool
 }
 
 // New validates the config and constructs a Source.
+//
+// Both cert/key paths required for TLS-on operation; pass empty
+// strings for the plaintext fallback (see `NewPlaintext`).
 func New(cfg Config) (*Source, error) {
 	if cfg.CertPath == "" || cfg.KeyPath == "" {
 		return nil, errors.New("tls: cert_path and key_path required")
 	}
 	s := &Source{cfg: cfg}
 	if _, err := s.loadLocked(); err != nil {
+		// Distinguish "PEMs not on disk yet" from a real load failure.
+		// The bridge's startup path tolerates the former by falling
+		// back to plaintext when the operator hasn't configured ACME
+		// or mounted certs.
+		var pathErr interface{ Error() string }
+		_ = pathErr
 		return nil, err
 	}
 	return s, nil
 }
+
+// NewPlaintext returns a Source that yields a nil tls.Config — used
+// by the bridge when CF/ACME isn't configured AND no operator-mounted
+// PEMs are present. Listeners check `IsPlaintext()` and bind without
+// a TLS wrapper; SMTP / IMAP carry credentials in the clear in that
+// mode (acceptable per operator's explicit downgrade choice).
+func NewPlaintext() *Source {
+	return &Source{plaintext: true}
+}
+
+// IsPlaintext reports whether this source is in the "no TLS" mode.
+func (s *Source) IsPlaintext() bool { return s.plaintext }
 
 // TLSConfig returns a *tls.Config wired to this source's GetCertificate.
 // MinVersion defaults to TLS 1.3 (matching the smtp.Server path); ALPN

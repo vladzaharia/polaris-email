@@ -134,6 +134,17 @@ export interface Env {
    * rotation.
    */
   ACME_EMAIL?: string;
+
+  // -- per-bridge Tailscale auth-key minting (migration 0010) -------------
+  /**
+   * Tailscale OAuth client credentials. The api worker uses these to
+   * exchange for a short-lived access token and mint per-bridge
+   * ephemeral auth keys (tagged `tag:polaris-mail`). Optional — bridges
+   * deploying outside the Tailscale tab don't need this. When unset,
+   * the register/rotate responses omit `ts_authkey`.
+   */
+  TS_API_CLIENT_ID?: string;
+  TS_API_CLIENT_SECRET?: string;
 }
 
 export interface OutboundQueueMessage {

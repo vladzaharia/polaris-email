@@ -35,15 +35,22 @@ export function bridgeCfDnsPlainKvKey(bridgeId: string): string {
 export const BRIDGE_CF_DNS_PLAIN_KV_TTL_SECONDS = 90 * 24 * 60 * 60;
 
 interface MintForBridgeResult {
-  tokenId: string;
+  /** null when CF env isn't configured — caller treats as graceful skip. */
+  tokenId: string | null;
   /** Plaintext is returned for the caller to cache in KV. Don't log it. */
-  plaintext: string;
+  plaintext: string | null;
 }
 
 /**
  * Mint a fresh per-bridge CF DNS token. Names it after the bridge so
  * the CF dashboard is greppable; the suffix is a short slice of the
  * bridge ULID for collision avoidance after deregister + re-register.
+ *
+ * Returns `{tokenId: null, plaintext: null}` when the api worker is
+ * not configured with CF credentials. Operators who manage their own
+ * TLS (mounted PEMs) can leave `CF_API_TOKEN` / `CF_ZONE_ID_MAIL_PLRS_IM`
+ * unset; register/rotate still succeed and the bridge falls back to
+ * operator-managed certs.
  */
 export async function mintCfDnsTokenForBridge(
   env: Env,
@@ -51,7 +58,7 @@ export async function mintCfDnsTokenForBridge(
   bridgeId: string,
 ): Promise<MintForBridgeResult> {
   if (!env.CF_API_TOKEN || !env.CF_ACCOUNT_ID || !env.CF_ZONE_ID_MAIL_PLRS_IM) {
-    throw new Error('cf_token_mint: required CF_* env vars are not configured');
+    return { tokenId: null, plaintext: null };
   }
   const client = new CloudflareApiClient({
     apiToken: env.CF_API_TOKEN,
