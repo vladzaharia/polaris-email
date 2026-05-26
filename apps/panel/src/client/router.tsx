@@ -233,13 +233,22 @@ const bridgeDetail = createRoute({
   getParentRoute: () => rootRoute,
   path: '/bridges/$id',
   // `?tab=` persists the active tab on the bridge detail page
-  // (Overview / Activity / Connection / Audit) so alerts and runbooks
-  // can deep-link to a specific tab.
+  // (Overview / Activity / Connection / Settings / Logs / Audit) so
+  // alerts and runbooks can deep-link to a specific tab.
   validateSearch: (
     search: Record<string, unknown>,
-  ): { tab?: 'overview' | 'activity' | 'connection' | 'audit' } => {
+  ): {
+    tab?: 'overview' | 'activity' | 'connection' | 'settings' | 'logs' | 'audit';
+  } => {
     const t = search.tab;
-    if (t === 'overview' || t === 'activity' || t === 'connection' || t === 'audit') {
+    if (
+      t === 'overview' ||
+      t === 'activity' ||
+      t === 'connection' ||
+      t === 'settings' ||
+      t === 'logs' ||
+      t === 'audit'
+    ) {
       return { tab: t };
     }
     return {};

@@ -12,20 +12,18 @@ package main
 
 import (
 	"context"
-	"crypto/tls"
 	"errors"
+	"fmt"
 	"log"
-	"net"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
-	"sync"
 	"syscall"
 	"time"
 
-	"github.com/emersion/go-imap/v2"
-	"github.com/emersion/go-imap/v2/imapserver"
 	polarissdk "github.com/polaris-mail/polaris-sdk-go"
 
 	"github.com/vladzaharia/polaris-email/apps/mail-bridge/internal/acme"
@@ -35,6 +33,8 @@ import (
 	"github.com/vladzaharia/polaris-email/apps/mail-bridge/internal/forwarder"
 	"github.com/vladzaharia/polaris-email/apps/mail-bridge/internal/heartbeat"
 	bridgeimap "github.com/vladzaharia/polaris-email/apps/mail-bridge/internal/imap"
+	"github.com/vladzaharia/polaris-email/apps/mail-bridge/internal/listeners"
+	"github.com/vladzaharia/polaris-email/apps/mail-bridge/internal/logbuf"
 	"github.com/vladzaharia/polaris-email/apps/mail-bridge/internal/metrics"
 	"github.com/vladzaharia/polaris-email/apps/mail-bridge/internal/push"
 	dsmtp "github.com/vladzaharia/polaris-email/apps/mail-bridge/internal/smtp"
@@ -59,6 +59,17 @@ func main() {
 	if err != nil {
 		log.Fatalf("config: %v", err)
 	}
+
+	// Capture every `log.*` line into an in-process ring buffer so the
+	// heartbeat ticker can forward the delta to the server. Stderr stays
+	// the secondary sink so `docker compose logs` keeps working
+	// unchanged. The slog `LevelVar` lets the supervisor live-flip
+	// log_level on settings apply.
+	logRing := logbuf.New(0, os.Stderr)
+	log.SetOutput(logRing)
+	logLevelVar := &slog.LevelVar{}
+	logLevelVar.Set(slog.LevelInfo)
+
 	log.Printf("polaris-bridge starting: name=%s id=%s", cfg.BridgeName, cfg.BridgeID)
 
 	// Shared subsystems.
@@ -259,154 +270,81 @@ func main() {
 		tlsSrc = bridgetls.NewPlaintext()
 	}
 
-	var wg sync.WaitGroup
-
-	// SMTPS listener — inherited submission path. We block startup briefly
-	// on the credstore poller so we don't accept connections that would
-	// just 454 every AUTH; if the initial sync never completes we still
-	// proceed but log a clear warning so operators see it (acceptable
-	// because it lets the bridge come up while the API is briefly down,
-	// and the next successful poll will heal auth).
+	// Wait for the initial credstore sync so SMTP AUTH doesn't 454 every
+	// connection on a fresh boot. If the sync never completes we still
+	// proceed — the supervisor brings listeners up regardless and the
+	// poller heals auth as soon as the API is reachable.
 	if enabled("BRIDGE_SMTPS_ENABLED", true) {
 		waitForCredstore(ctx, poller, 30*time.Second)
-		authLockout := credstore.NewLockout()
-		be := &dsmtp.Backend{
-			Deps: dsmtp.Deps{
-				Store:          store,
-				Forwarder:      fwd,
-				Audit:          auditLog,
-				MaxMessageSize: cfg.MaxMessageSize,
-				Lockout:        authLockout,
-				Metrics: &dsmtp.MetricsHooks{
-					Submissions: metricsReg.Submissions,
-					Errors:      metricsReg.Errors,
-				},
-			},
-			RootContext: ctx,
-		}
-		smtpSrv := dsmtp.New(dsmtp.ServerOptions{
-			ListenAddr:     getenvDefault("BRIDGE_SMTPS_LISTEN_ADDR", cfg.ListenAddr),
-			Domain:         cfg.BridgeName,
-			TLSCert:        cfg.TLSCertPath(),
-			TLSKey:         cfg.TLSKeyPath(),
+	}
+
+	// Build the listener supervisor. SMTP + IMAP + webhook lifecycles
+	// move from inline goroutines in main into the supervisor; the
+	// heartbeat ticker (below) drives Suspend/Resume on the
+	// `enabled` signal and signals restart-required for port/TLS-mode
+	// settings changes.
+	smtpBackend := &dsmtp.Backend{
+		Deps: dsmtp.Deps{
+			Store:          store,
+			Forwarder:      fwd,
+			Audit:          auditLog,
 			MaxMessageSize: cfg.MaxMessageSize,
-		}, be)
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			if err := smtpSrv.ListenAndServe(); err != nil {
-				log.Printf("smtp server exited: %v", err)
-			}
-		}()
-		// SIGTERM hook for SMTPS.
-		go func() {
-			<-ctx.Done()
-			shutCtx, c := context.WithTimeout(context.Background(), 10*time.Second)
-			defer c()
-			_ = smtpSrv.Shutdown(shutCtx)
-		}()
-	}
-
-	// IMAP listener — emersion/go-imap v2 imapserver wrapping our backend.
-	// IMAP4rev2 is advertised when supported; the library handles all wire
-	// concerns + capability honesty. INBOX-only is enforced inside the
-	// backend's Session methods.
-	if enabled("BRIDGE_IMAP_ENABLED", true) {
-		imapBackend := &bridgeimap.Backend{
-			Client:       sdkClient,
-			Mirror:       mirrorDB,
-			Push:         pushMgr,
-			SessionGauge: metricsReg.IMAP,
-			MaxBodyBytes:  cfg.R2BodyMaxBytes,
-		}
-		imapTLSCfg := tlsConfigFor(tlsSrc)
-		// Plaintext mode (CF/ACME disabled + no operator PEMs): bind a
-		// plain TCP listener and tell go-imap to admit AUTH PLAIN over
-		// the unencrypted connection. The startup log already says
-		// "PLAINTEXT" in big letters; this is the load-bearing branch
-		// that actually does it.
-		imapSrv := imapserver.New(&imapserver.Options{
-			NewSession: imapBackend.NewSession,
-			Caps: imap.CapSet{
-				imap.CapIMAP4rev2:     {},
-				imap.CapIMAP4rev1:     {},
-				imap.AuthCap("PLAIN"): {},
+			Lockout:        credstore.NewLockout(),
+			Metrics: &dsmtp.MetricsHooks{
+				Submissions: metricsReg.Submissions,
+				Errors:      metricsReg.Errors,
 			},
-			TLSConfig:    imapTLSCfg,
-			InsecureAuth: imapTLSCfg == nil,
-		})
-		imapAddr := getenvDefault("BRIDGE_IMAP_LISTEN_ADDR", ":993")
-		var imapLn net.Listener
-		if imapTLSCfg == nil {
-			imapLn, err = net.Listen("tcp", imapAddr)
-		} else {
-			imapLn, err = tls.Listen("tcp", imapAddr, imapTLSCfg)
-		}
-		if err != nil {
-			log.Fatalf("imap listen: %v", err)
-		}
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			if err := imapSrv.Serve(imapLn); err != nil {
-				log.Printf("imap server exited: %v", err)
-			}
-		}()
-		go func() {
-			<-ctx.Done()
-			// Close the listener explicitly so the underlying TCP socket
-			// + file descriptor is released; imapSrv.Close() alone is not
-			// guaranteed to release it on every emersion/go-imap version.
-			_ = imapLn.Close()
-			_ = imapSrv.Close()
-		}()
+		},
+		RootContext: ctx,
 	}
-
-	// Webhook receiver — served on its own minimal HTTP listener. The
-	// deployment fronts the bridge with either Tailscale (mTLS inside the
-	// tailnet) or a local reverse proxy, so this listener is plain HTTP by
-	// default. Operators that want TLS termination at the bridge itself
-	// can put the listener behind a wrapper.
-	if enabled("BRIDGE_WEBHOOK_ENABLED", true) {
-		mux := http.NewServeMux()
-		mux.Handle(wh.Path, wh)
-		webhookSrv := &http.Server{
-			Addr:              getenvDefault("BRIDGE_WEBHOOK_LISTEN_ADDR", ":8080"),
-			Handler:           mux,
-			ReadHeaderTimeout: 15 * time.Second,
-		}
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			if err := webhookSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-				log.Printf("webhook server exited: %v", err)
-			}
-		}()
-		go func() {
-			<-ctx.Done()
-			shutCtx, c := context.WithTimeout(context.Background(), 10*time.Second)
-			defer c()
-			_ = webhookSrv.Shutdown(shutCtx)
-		}()
+	imapBackend := &bridgeimap.Backend{
+		Client:       sdkClient,
+		Mirror:       mirrorDB,
+		Push:         pushMgr,
+		SessionGauge: metricsReg.IMAP,
+		MaxBodyBytes: cfg.R2BodyMaxBytes,
+	}
+	supervisor := listeners.New(listeners.Deps{
+		SMTPBackend:       smtpBackend,
+		SMTPDomain:        cfg.BridgeName,
+		SMTPListenAddr:    getenvDefault("BRIDGE_SMTPS_LISTEN_ADDR", cfg.ListenAddr),
+		TLSCertPath:       cfg.TLSCertPath(),
+		TLSKeyPath:        cfg.TLSKeyPath(),
+		IMAPBackend:       imapBackend,
+		IMAPListenAddr:    getenvDefault("BRIDGE_IMAP_LISTEN_ADDR", ":993"),
+		WebhookHandler:    wh,
+		WebhookListenAddr: getenvDefault("BRIDGE_WEBHOOK_LISTEN_ADDR", ":8080"),
+		TLSSource:         tlsSrc,
+		LogLevelVar:       logLevelVar,
+	})
+	initialSettings := listeners.Settings{
+		Version:         0,
+		SMTPEnabled:     enabled("BRIDGE_SMTPS_ENABLED", true),
+		IMAPEnabled:     enabled("BRIDGE_IMAP_ENABLED", true),
+		MaxMessageSize:  cfg.MaxMessageSize,
+		MaxIMAPSessions: 200,
+		LogLevel:        "info",
+	}
+	if err := supervisor.Start(ctx, initialSettings); err != nil {
+		log.Fatalf("polaris-bridge: supervisor start: %v", err)
 	}
 
 	// Heartbeat ticker (v2) — POST /v1/bridge/heartbeat every 60s
-	// (adaptive). The request envelope carries node info + service /
-	// acme / mirror state + recent logs; the response carries the
-	// enable/disable signal + settings (currently logged-only) +
-	// directives (roll_hmac, restart). See internal/heartbeat for the
-	// applied-vs-deferred matrix.
-	//
-	// Phase 1: LogRing + WriteHMAC are nil, meaning logs aren't
-	// forwarded and roll_hmac directives are logged-only. Wiring those
-	// is a Phase 2 followup that lands with the listener supervisor.
+	// (adaptive). Request: node info + service / acme / mirror state +
+	// log delta. Response: enabled flag + settings + directives. The
+	// ticker calls supervisor.Suspend/Resume on the enabled flag,
+	// supervisor.Apply on settings (port/TLS-mode changes → restart),
+	// and rolls the HMAC via the on-disk file when roll_hmac fires.
 	heartbeat.Start(ctx, heartbeat.Deps{
-		Client:    sdkClient,
-		Metrics:   metricsReg,
-		Mirror:    mirrorDB,
-		FQDN:      bridgeCfg.FQDN,
-		HMACKey:   cfg.HMACKey,
-		StartedAt: time.Now(),
+		Client:     sdkClient,
+		Metrics:    metricsReg,
+		Mirror:     mirrorDB,
+		LogRing:    logRing,
+		FQDN:       bridgeCfg.FQDN,
+		HMACKey:    cfg.HMACKey,
+		WriteHMAC:  newHMACWriter(),
+		Supervisor: supervisor,
+		StartedAt:  time.Now(),
 	})
 
 	// Readiness log.
@@ -429,13 +367,12 @@ func main() {
 	// Signals.
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
-	go func() {
-		s := <-sigCh
-		log.Printf("polaris-bridge: signal %s, shutting down", s)
-		cancel()
-	}()
-
-	wg.Wait()
+	s := <-sigCh
+	log.Printf("polaris-bridge: signal %s, shutting down", s)
+	shutCtx, cancelShut := context.WithTimeout(context.Background(), 15*time.Second)
+	supervisor.Shutdown(shutCtx)
+	cancelShut()
+	cancel()
 }
 
 // certFilesPresent reports whether the operator has dropped PEMs at
@@ -476,18 +413,52 @@ func getenvDefault(key, dflt string) string {
 	return dflt
 }
 
-func tlsConfigFor(src *bridgetls.Source) *tls.Config {
-	if src == nil || src.IsPlaintext() {
-		return nil
-	}
-	return tlsConfigForReal(src)
+// hmacWriter applies a roll_hmac directive by atomically replacing the
+// on-disk HMAC plaintext at the file the bridge reads on startup.
+// `BRIDGE_POLARIS_HMAC_KEY_FILE` is honored; if the operator instead
+// uses `BRIDGE_POLARIS_HMAC_KEY` (inline env), we have nowhere to
+// persist the new key and the write returns an error so the heartbeat
+// declines to apply.
+type hmacWriter struct {
+	path string
 }
 
-func tlsConfigForReal(src *bridgetls.Source) *tls.Config {
-	if src == nil {
-		return nil
+func newHMACWriter() *hmacWriter {
+	return &hmacWriter{path: os.Getenv("BRIDGE_POLARIS_HMAC_KEY_FILE")}
+}
+
+func (w *hmacWriter) WriteHMACKey(plaintext string) error {
+	if w.path == "" {
+		return errors.New(
+			"BRIDGE_POLARIS_HMAC_KEY_FILE not set; can't persist a rolled HMAC " +
+				"(the env-var form is read-only). Mount a writable secrets dir + " +
+				"point BRIDGE_POLARIS_HMAC_KEY_FILE at it to enable in-place rolls.")
 	}
-	return src.TLSConfig()
+	dir := filepath.Dir(w.path)
+	tmp, err := os.CreateTemp(dir, ".hmac-tmp-*")
+	if err != nil {
+		return fmt.Errorf("create temp: %w", err)
+	}
+	defer func() { _ = os.Remove(tmp.Name()) }()
+	if _, err := tmp.WriteString(plaintext); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("write temp: %w", err)
+	}
+	if err := tmp.Chmod(0o600); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("chmod temp: %w", err)
+	}
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("sync temp: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("close temp: %w", err)
+	}
+	if err := os.Rename(tmp.Name(), w.path); err != nil {
+		return fmt.Errorf("rename: %w", err)
+	}
+	return nil
 }
 
 // validatePublicWebhookURL rejects empty, localhost, and loopback values

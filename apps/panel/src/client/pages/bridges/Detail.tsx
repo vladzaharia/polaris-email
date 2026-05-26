@@ -28,8 +28,26 @@ import { useNavigate, useParams, useSearch } from '@tanstack/react-router';
 import { Activity as ActivityIcon, History, KeyRound, Settings } from 'lucide-react';
 import { PageCard } from '../../layouts/PageCard.js';
 import { Button } from '../../components/ui/button.js';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '../../components/ui/dialog.js';
+import { Input } from '../../components/ui/input.js';
+import { Label } from '../../components/ui/label.js';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '../../components/ui/select.js';
 import { Skeleton } from '../../components/ui/skeleton.js';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../components/ui/tabs.js';
+import { ToggleGroup, ToggleGroupItem } from '../../components/ui/toggle-group.js';
 import { StatusBadge } from '../../components/StatusBadge.js';
 import { StatTile } from '../../components/StatTile.js';
 import { MetaList, MetaRow } from '../../components/MetaList.js';
@@ -43,6 +61,8 @@ import { cn } from '../../lib/cn.js';
 import { MessagesListView } from '../messages/MessagesListView.js';
 import { BridgeAuditCard } from './BridgeAuditCard.js';
 import { BridgeConnectionCard } from './BridgeConnectionCard.js';
+import { BridgeLogsCard } from './BridgeLogsCard.js';
+import { BridgeSettingsCard } from './BridgeSettingsCard.js';
 import {
   clearFreshBridgeSecrets,
   readFreshBridgeSecrets,
@@ -50,7 +70,7 @@ import {
   type FreshBridgeSecrets,
 } from './freshBridgeKey.js';
 
-type TabValue = 'overview' | 'activity' | 'connection' | 'audit';
+type TabValue = 'overview' | 'activity' | 'connection' | 'settings' | 'logs' | 'audit';
 
 interface BridgeDetail {
   id: string;
@@ -115,7 +135,14 @@ interface ActivityRollup {
 const HEARTBEAT_REFETCH_MS = 30_000;
 
 function isTab(v: unknown): v is TabValue {
-  return v === 'overview' || v === 'activity' || v === 'connection' || v === 'audit';
+  return (
+    v === 'overview' ||
+    v === 'activity' ||
+    v === 'connection' ||
+    v === 'settings' ||
+    v === 'logs' ||
+    v === 'audit'
+  );
 }
 
 function When({ iso }: { iso: string | null }) {
@@ -208,10 +235,22 @@ export function BridgeDetail() {
     { invalidateKeys: [bridgeKeys.all], successMessage: 'Bridge re-enabled.' },
   );
   // POST /v1/admin/bridges/:id/rotate — mints a fresh HMAC + install URL.
-  // The fresh banner + Connection-tab snippets re-render with the new
-  // values; the bridge has to be reinstalled to reconnect.
-  const rotate = useAdminMutation<{ hmac_key: string; installer_url: string }, undefined>(
-    () => ({ path: `/api/admin/bridges/${id}/rotate`, method: 'POST' }),
+  // Two modes: staged (delivered via heartbeat with a grace window;
+  // bridge applies seamlessly) or emergency (immediate revoke + the
+  // bridge gets disabled — operator must reinstall via curl|sh).
+  type RollMode = 'staged' | 'emergency';
+  type GraceWindow = '600' | '3600' | '86400' | 'until-acked';
+  const [rollMode, setRollMode] = useState<RollMode>('staged');
+  const [rollGrace, setRollGrace] = useState<GraceWindow>('3600');
+  const rotate = useAdminMutation<
+    { hmac_key: string; installer_url: string; mode: string; grace_expires_at: string | null },
+    { mode: RollMode; grace_seconds?: GraceWindow }
+  >(
+    ({ mode, grace_seconds }) => {
+      const qs = new URLSearchParams({ mode });
+      if (mode === 'staged' && grace_seconds) qs.set('grace_seconds', grace_seconds);
+      return { path: `/api/admin/bridges/${id}/rotate?${qs.toString()}`, method: 'POST' };
+    },
     { invalidateKeys: [bridgeKeys.detail(id)], silent: true },
   );
 
@@ -578,6 +617,8 @@ export function BridgeDetail() {
               ) : null}
             </TabsTrigger>
             <TabsTrigger value="connection">Connection</TabsTrigger>
+            <TabsTrigger value="settings">Settings</TabsTrigger>
+            <TabsTrigger value="logs">Logs</TabsTrigger>
             <TabsTrigger value="audit">Audit</TabsTrigger>
           </TabsList>
 
@@ -609,32 +650,36 @@ export function BridgeDetail() {
             />
           </TabsContent>
 
+          <TabsContent value="settings">
+            <BridgeSettingsCard bridgeId={d.id} />
+          </TabsContent>
+
+          <TabsContent value="logs">
+            <BridgeLogsCard bridgeId={d.id} />
+          </TabsContent>
+
           <TabsContent value="audit">
             <BridgeAuditCard bridgeId={d.id} />
           </TabsContent>
         </Tabs>
       </div>
 
-      <DestructiveActionDialog
+      <RollHMACDialog
         open={confirmRoll}
         onOpenChange={setConfirmRoll}
-        action="Roll HMAC Secret"
-        name={d.name}
-        blastRadius={[
-          'A fresh HMAC key is minted — the previous one is invalidated immediately',
-          'The previous per-bridge CF DNS token is revoked',
-          'Any install URL minted before this roll stops working',
-          'A running bridge will need to reinstall using the new URL (HMAC mismatch)',
-          'Webhook deliveries signed with the old key are rejected',
-        ]}
-        reversible={false}
-        confirmLabel="Roll HMAC Secret"
+        bridgeName={d.name}
+        mode={rollMode}
+        onModeChange={setRollMode}
+        grace={rollGrace}
+        onGraceChange={setRollGrace}
+        isPending={rotate.isPending}
         onConfirm={async () => {
-          const r = await rotate.mutateAsync(undefined);
+          const r = await rotate.mutateAsync(
+            rollMode === 'staged'
+              ? { mode: 'staged', grace_seconds: rollGrace }
+              : { mode: 'emergency' },
+          );
           setConfirmRoll(false);
-          // Mirror the post-registration flow: stash the new secrets,
-          // navigate to the Connection tab so the operator lands on
-          // the fully-configured snippets immediately.
           const now = Date.now();
           stashFreshBridgeSecrets(id, {
             hmacKey: r.hmac_key,
@@ -653,7 +698,6 @@ export function BridgeDetail() {
             replace: true,
           });
         }}
-        isPending={rotate.isPending}
       />
 
       <DestructiveActionDialog
@@ -834,5 +878,134 @@ function OverviewMiniCard({
         ) : null}
       </div>
     </button>
+  );
+}
+
+// --- Roll HMAC Secret dialog ----------------------------------------------
+// Two modes the operator picks between:
+//   * Staged   — server delivers the new HMAC over the next heartbeat;
+//                old and new both verify for the chosen grace window.
+//                Seamless from the bridge's perspective.
+//   * Emergency — server immediately revokes the old HMAC AND disables
+//                 the bridge. The operator must reinstall via the new
+//                 curl|sh URL + re-enable. Locks the bridge out NOW.
+function RollHMACDialog(props: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  bridgeName: string;
+  mode: 'staged' | 'emergency';
+  onModeChange: (m: 'staged' | 'emergency') => void;
+  grace: '600' | '3600' | '86400' | 'until-acked';
+  onGraceChange: (g: '600' | '3600' | '86400' | 'until-acked') => void;
+  isPending: boolean;
+  onConfirm: () => Promise<void>;
+}) {
+  const [typed, setTyped] = useState('');
+  // Reset the emergency confirmation gate every time the dialog closes
+  // so a re-open starts blank — type-to-confirm should never carry
+  // state across operator dwells.
+  useEffect(() => {
+    if (!props.open) setTyped('');
+  }, [props.open]);
+
+  const emergencyOk = props.mode === 'staged' || typed === props.bridgeName;
+
+  return (
+    <Dialog open={props.open} onOpenChange={props.onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Roll HMAC Secret</DialogTitle>
+          <DialogDescription>
+            Rotate the HMAC key for <span className="font-mono">{props.bridgeName}</span>. Pick a
+            mode below.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          <ToggleGroup
+            type="single"
+            value={props.mode}
+            onValueChange={(v) => {
+              if (v === 'staged' || v === 'emergency') props.onModeChange(v);
+            }}
+            className="w-full"
+          >
+            <ToggleGroupItem value="staged" className="flex-1">
+              Staged
+            </ToggleGroupItem>
+            <ToggleGroupItem value="emergency" className="flex-1">
+              Emergency
+            </ToggleGroupItem>
+          </ToggleGroup>
+          {props.mode === 'staged' ? (
+            <div className="space-y-2 rounded-md border border-[var(--color-border)] p-3">
+              <p className="text-xs text-[var(--color-muted-foreground)]">
+                Server delivers the new HMAC to the bridge over the next heartbeat. Old + new HMACs
+                both verify for the chosen grace window — the bridge applies seamlessly with no
+                downtime.
+              </p>
+              <div>
+                <Label htmlFor="roll-grace" className="text-xs">
+                  Grace window
+                </Label>
+                <Select
+                  value={props.grace}
+                  onValueChange={(v) =>
+                    props.onGraceChange(v as '600' | '3600' | '86400' | 'until-acked')
+                  }
+                >
+                  <SelectTrigger id="roll-grace">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="600">10 minutes</SelectItem>
+                    <SelectItem value="3600">1 hour (default)</SelectItem>
+                    <SelectItem value="86400">24 hours</SelectItem>
+                    <SelectItem value="until-acked">Until bridge acks (30d cap)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-2 rounded-md border border-[var(--color-destructive)] p-3">
+              <p className="text-xs text-[var(--color-foreground)]">
+                <strong>Locks the bridge out immediately.</strong> The current HMAC stops working
+                AND the bridge is disabled. Operator must reinstall via the new install URL and
+                re-enable. Use only when the existing credential is believed compromised.
+              </p>
+              <div>
+                <Label htmlFor="roll-confirm" className="text-xs">
+                  Type the bridge name to confirm
+                </Label>
+                <Input
+                  id="roll-confirm"
+                  value={typed}
+                  onChange={(e) => setTyped(e.target.value)}
+                  placeholder={props.bridgeName}
+                  autoComplete="off"
+                  spellCheck={false}
+                />
+              </div>
+            </div>
+          )}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" size="sm" onClick={() => props.onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button
+            size="sm"
+            variant={props.mode === 'emergency' ? 'destructive' : 'default'}
+            disabled={!emergencyOk || props.isPending}
+            onClick={() => void props.onConfirm()}
+          >
+            {props.isPending
+              ? 'Rolling…'
+              : props.mode === 'staged'
+                ? 'Roll (staged)'
+                : 'Roll & lock out (emergency)'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

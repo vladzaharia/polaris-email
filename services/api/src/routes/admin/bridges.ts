@@ -899,6 +899,84 @@ bridges.get('/v1/admin/bridges/:id/heartbeat', requireScope('admin:read'), async
   });
 });
 
+// Bridge log tail. Reads R2 objects under `bridge-logs/<id>/`
+// (written by the heartbeat handler, one JSONL chunk per heartbeat
+// with new lines) and returns them flattened newest-first by default,
+// with optional pagination via a `since` cursor that's the R2 key the
+// last response stopped at.
+//
+// Query params:
+//   * limit  — max lines to return (default 200, capped at 2000)
+//   * since  — R2 key of the last object included in the previous
+//              response (exclusive). Omit on first call.
+//   * order  — `desc` (default; newest first) or `asc`
+bridges.get('/v1/admin/bridges/:id/logs', requireScope('admin:read'), async (c) => {
+  const id = c.req.param('id');
+  if (!/^[0-9A-HJKMNP-TV-Z]{26}$/.test(id)) {
+    return buildError(c, 'bad_request', 'invalid bridge id');
+  }
+  const limitRaw = Number.parseInt(c.req.query('limit') ?? '200', 10);
+  const limit = Math.min(2000, Math.max(1, Number.isFinite(limitRaw) ? limitRaw : 200));
+  const since = c.req.query('since') ?? undefined;
+  const order = c.req.query('order') === 'asc' ? 'asc' : 'desc';
+
+  // R2 list() with a prefix walks the bucket lexicographically by key.
+  // Our keys are `bridge-logs/<id>/<YYYY-MM-DD>/<RFC3339>.jsonl`, which
+  // sorts to chronological order naturally. We pull 100 keys per page
+  // until we have enough lines or run out.
+  const prefix = `bridge-logs/${id}/`;
+  const lines: unknown[] = [];
+  let cursor: string | undefined;
+  let lastKey: string | null = null;
+  let done = false;
+  while (!done && lines.length < limit) {
+    const page: R2Objects = await c.env.R2.list({
+      prefix,
+      cursor,
+      limit: 100,
+    });
+    // R2 returns keys in ascending order. For `order=desc` we reverse
+    // the slice; the `since` cursor is honoured AFTER ordering.
+    const objects = order === 'desc' ? [...page.objects].reverse() : page.objects;
+    for (const obj of objects) {
+      if (since && obj.key === since) continue;
+      if (since && order === 'desc' && obj.key >= since) continue;
+      if (since && order === 'asc' && obj.key <= since) continue;
+      const body = await c.env.R2.get(obj.key);
+      if (!body) continue;
+      const text = await body.text();
+      for (const raw of text.split('\n')) {
+        if (!raw) continue;
+        try {
+          lines.push(JSON.parse(raw));
+        } catch {
+          // Skip malformed lines; the chunk format is well-known
+          // (heartbeat handler writes JSONL via JSON.stringify) so
+          // garbage here would be storage corruption.
+        }
+        if (lines.length >= limit) break;
+      }
+      lastKey = obj.key;
+      if (lines.length >= limit) break;
+    }
+    if (!page.truncated) {
+      done = true;
+    } else {
+      cursor = page.cursor;
+    }
+  }
+
+  return c.json({
+    bridge_id: id,
+    order,
+    limit,
+    lines,
+    // Caller passes this back as `since` on the next call to paginate.
+    // Null when we exhausted the available log objects.
+    next_cursor: lastKey,
+  });
+});
+
 // 24h message activity rollup keyed by `messages.bridge_id`. The
 // covering index added in migration 0007 (`idx_messages_bridge_created`)
 // keeps this index-driven. Status buckets follow the same vocabulary

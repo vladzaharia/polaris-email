@@ -39,6 +39,7 @@ import (
 
 	polarissdk "github.com/polaris-mail/polaris-sdk-go"
 
+	"github.com/vladzaharia/polaris-email/apps/mail-bridge/internal/listeners"
 	"github.com/vladzaharia/polaris-email/apps/mail-bridge/internal/logbuf"
 	"github.com/vladzaharia/polaris-email/apps/mail-bridge/internal/metrics"
 	"github.com/vladzaharia/polaris-email/apps/mail-bridge/internal/version"
@@ -60,18 +61,33 @@ type HMACWriter interface {
 	WriteHMACKey(plaintext string) error
 }
 
+// ListenerSupervisor is the narrow surface the heartbeat needs from
+// the listener supervisor. We import `internal/listeners` for the
+// settings type — supervisor → listeners → smtp/imap/webhook is the
+// dependency tree; heartbeat → listeners doesn't introduce a cycle
+// because listeners doesn't import heartbeat.
+type ListenerSupervisor interface {
+	Suspend(ctx context.Context)
+	Resume(ctx context.Context) error
+	Apply(
+		ctx context.Context,
+		next listeners.Settings,
+	) (restartRequired bool, err error)
+}
+
 // Deps bundles ticker collaborators.
 type Deps struct {
-	Client    *polarissdk.Client
-	Metrics   *metrics.Registry
-	Mirror    MirrorRowCounter // optional; if nil the count is reported as 0
-	LogRing   *logbuf.Ring     // optional; if nil the bridge ships no logs
-	HMACKey   []byte           // current in-memory HMAC plaintext (for roll_hmac dup detection)
-	WriteHMAC HMACWriter       // applies roll_hmac directive on disk
-	FQDN      string           // for the acme block; empty when no ACME configured
-	Interval  time.Duration    // default 60s (also the "no override" fallback)
-	Settle    time.Duration    // default 5s (wait for listeners to bind)
-	StartedAt time.Time        // set by Start; readers see uptime in heartbeats
+	Client     *polarissdk.Client
+	Metrics    *metrics.Registry
+	Mirror     MirrorRowCounter   // optional; if nil the count is reported as 0
+	LogRing    *logbuf.Ring       // optional; if nil the bridge ships no logs
+	HMACKey    []byte             // current in-memory HMAC plaintext (for roll_hmac dup detection)
+	WriteHMAC  HMACWriter         // applies roll_hmac directive on disk
+	Supervisor ListenerSupervisor // optional; if nil enabled=false exits the process
+	FQDN       string             // for the acme block; empty when no ACME configured
+	Interval   time.Duration      // default 60s (also the "no override" fallback)
+	Settle     time.Duration      // default 5s (wait for listeners to bind)
+	StartedAt  time.Time          // set by Start; readers see uptime in heartbeats
 }
 
 // state carries values that change between ticks. Kept on the
@@ -150,13 +166,33 @@ func tick(ctx context.Context, deps Deps, st *state) time.Duration {
 
 	if resp.Settings != nil {
 		log.Printf(
-			"heartbeat: settings v%d received (smtp=%v imap=%v ports=%d/%d tls=%s/%s) — apply on restart",
+			"heartbeat: settings v%d received (smtp=%v imap=%v ports=%d/%d tls=%s/%s)",
 			resp.Settings.Version,
 			resp.Settings.SMTPEnabled, resp.Settings.IMAPEnabled,
 			resp.Settings.SMTPPort, resp.Settings.IMAPPort,
 			resp.Settings.SMTPTLSMode, resp.Settings.IMAPTLSMode,
 		)
 		st.settingsVersion = resp.Settings.Version
+		if deps.Supervisor != nil {
+			restartRequired, err := deps.Supervisor.Apply(ctx, listeners.Settings{
+				Version:         resp.Settings.Version,
+				SMTPEnabled:     resp.Settings.SMTPEnabled,
+				IMAPEnabled:     resp.Settings.IMAPEnabled,
+				SMTPPort:        resp.Settings.SMTPPort,
+				IMAPPort:        resp.Settings.IMAPPort,
+				SMTPTLSMode:     resp.Settings.SMTPTLSMode,
+				IMAPTLSMode:     resp.Settings.IMAPTLSMode,
+				MaxMessageSize:  resp.Settings.MaxMessageSizeBytes,
+				MaxIMAPSessions: resp.Settings.MaxIMAPSessions,
+				LogLevel:        resp.Settings.LogLevel,
+			})
+			if err != nil {
+				log.Printf("heartbeat: supervisor.Apply: %v", err)
+			} else if restartRequired {
+				log.Printf("heartbeat: settings change requires restart — exiting for compose")
+				exitSoon()
+			}
+		}
 	}
 
 	for _, d := range resp.Directives {
@@ -168,9 +204,19 @@ func tick(ctx context.Context, deps Deps, st *state) time.Duration {
 		if resp.Reason != nil {
 			reason = *resp.Reason
 		}
-		log.Printf("heartbeat: bridge disabled by admin (%s); exiting for compose to suspend", reason)
-		// Defer briefly so this log line flushes before the process tears down.
-		exitSoon()
+		if deps.Supervisor != nil {
+			log.Printf("heartbeat: bridge disabled by admin (%s); suspending listeners", reason)
+			deps.Supervisor.Suspend(ctx)
+		} else {
+			log.Printf("heartbeat: bridge disabled by admin (%s); no supervisor wired — exiting", reason)
+			exitSoon()
+		}
+	} else if deps.Supervisor != nil {
+		// Resume() is a no-op when the supervisor isn't suspended, so
+		// it's safe to call on every enabled tick.
+		if err := deps.Supervisor.Resume(ctx); err != nil {
+			log.Printf("heartbeat: supervisor.Resume: %v", err)
+		}
 	}
 
 	if resp.NextHeartbeatInSeconds > 0 {
