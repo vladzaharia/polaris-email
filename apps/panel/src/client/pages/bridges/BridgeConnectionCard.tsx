@@ -10,7 +10,9 @@
 //      (the TS sidecar's container_name). Cert: the bridge mints its
 //      own via embedded ACME using the per-bridge CF DNS token
 //      fetched from `/v1/bridge/config` — no Lego sidecar needed.
-//      Only operator-procured value: a Tailscale auth key.
+//      Auth key: a bootstrap init container HMAC-fetches the per-
+//      bridge tailnet auth key and writes it to ./secrets/ts_authkey
+//      before TS starts — nothing operator-procured.
 //
 //   2. Docker (public host). Bridge binds host ports directly.
 //      Suitable when the host is already publicly reachable. No TS
@@ -352,10 +354,12 @@ export function BridgeConnectionCard({
           ) : null}
         </div>
         <p className="mb-3 text-xs text-[var(--color-muted-foreground)]">
-          The bridge mints its own LE certificate on startup using a CF DNS token fetched from the
-          polaris API. No Lego sidecar; no <span className="font-mono">CF_DNS_API_TOKEN</span> in
-          any operator file. The only on-disk secret is the HMAC key (
-          <span className="font-mono">{HMAC_PLACEHOLDER}</span> below unless you just rotated).
+          The bridge fetches its operational secrets from the polaris API at startup over its own
+          HMAC channel: the Cloudflare DNS-01 token (used for embedded Let's Encrypt — no Lego
+          sidecar), and in Tailscale mode the per-bridge tailnet auth key (a bootstrap init
+          container writes it for the TS sidecar). The only on-disk secret you put in place is the
+          HMAC key (<span className="font-mono">{HMAC_PLACEHOLDER}</span> below unless you just
+          rotated).
         </p>
 
         <Tabs defaultValue="tailscale">
@@ -367,10 +371,14 @@ export function BridgeConnectionCard({
 
           <TabsContent value="tailscale" className="space-y-3">
             <p className="text-xs text-[var(--color-muted-foreground)]">
-              Other Docker services on the same compose project reach the bridge as{' '}
-              <span className="font-mono">polaris-mail:465 / 993</span>. Tailnet members resolve{' '}
-              <span className="font-mono">{tailnetHostnameFor(bridgeName)}</span> via MagicDNS.
-              Public DNS (CNAME <span className="font-mono">{fqdnFor(bridgeName)}</span> →{' '}
+              A short-lived <span className="font-mono">bootstrap</span> container runs first; it
+              HMAC-fetches a fresh tailnet auth key from polaris and writes it to{' '}
+              <span className="font-mono">./secrets/ts_authkey</span> before the Tailscale sidecar
+              starts — no key handling for you. Other Docker services on the same compose project
+              reach the bridge at <span className="font-mono">polaris-mail:465 / 993</span>; tailnet
+              members resolve <span className="font-mono">{tailnetHostnameFor(bridgeName)}</span>{' '}
+              via MagicDNS. Public DNS (CNAME{' '}
+              <span className="font-mono">{fqdnFor(bridgeName)}</span> →{' '}
               <span className="font-mono">
                 {tailnetHostnameFor(bridgeName)}.&lt;tailnet&gt;.ts.net
               </span>

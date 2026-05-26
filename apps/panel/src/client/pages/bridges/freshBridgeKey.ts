@@ -1,11 +1,15 @@
 // Pass-the-fresh-secrets channel between the Add-bridge dialog and the
 // bridge Detail page.
 //
-// At registration we mint up to three things for the operator's one-
-// time view: the HMAC key, the Tailscale auth key (when TS minting
-// is configured server-side), and an installer URL that wraps both
-// into a curl-pipe bash script with a 1h server-side TTL. We don't
-// want any of these in the URL (browser history, server logs), so
+// At registration we mint two things for the operator's one-time view:
+// the HMAC key (the only secret the operator ever holds), and an
+// installer URL that wraps the HMAC + the one-shot install script
+// with a 1h server-side TTL. The TS auth key + CF DNS token never
+// reach this channel — they flow server-to-bridge over /v1/bridge/
+// config and are fetched at compose-up time by the bootstrap init
+// container.
+//
+// We don't put either in the URL (browser history, server logs), so
 // they get stashed in sessionStorage under a key the Detail page
 // knows. The browser tab boundary acts as the TTL: closing the tab
 // or navigating away in a different tab loses them — and "rotate to

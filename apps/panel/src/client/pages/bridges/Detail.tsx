@@ -241,11 +241,13 @@ export function BridgeDetail() {
             <div className="flex items-start gap-3">
               <KeyRound className="h-5 w-5 text-[var(--color-success)]" aria-hidden />
               <div className="min-w-0 flex-1 space-y-3">
-                <div className="font-semibold">Bridge registered — one-shot credentials below</div>
+                <div className="font-semibold">Bridge registered — install on the host</div>
                 <p className="text-xs text-[var(--color-muted-foreground)]">
-                  These values are shown ONCE. They disappear as soon as the bridge phones home, or
-                  as soon as you dismiss this banner. If you lose them, rotate the bridge from this
-                  page to mint a new set.
+                  The curl line below is the fast path: it writes the compose file, the env file,
+                  and the bridge id + HMAC key into <span className="font-mono">./secrets/</span>,
+                  then brings everything up. The Cloudflare DNS-01 token, ACME state, and (in
+                  Tailscale mode) the per-bridge tailnet auth key all flow server-to-bridge over the
+                  wire — no other secrets for you to copy.
                 </p>
 
                 {freshSecrets.installerUrl ? (
@@ -255,20 +257,23 @@ export function BridgeDetail() {
                     </div>
                     <CodeBlock code={`curl -fsSL ${freshSecrets.installerUrl} | sh`} />
                     <p className="text-xs text-[var(--color-muted-foreground)]">
-                      Run on the bridge host. The URL is good for 1 hour and consumed on first
-                      fetch. The script writes <span className="font-mono">docker-compose.yml</span>
-                      , <span className="font-mono">docker-compose.env</span>, and{' '}
-                      <span className="font-mono">./secrets/*</span>, then{' '}
-                      <span className="font-mono">docker compose up -d</span> and tails the logs.
+                      Run on the bridge host. The URL is valid for 1 hour and consumed on first
+                      fetch; re-running this curl will 404. The script handles diffs against any
+                      pre-existing files on the host (apt-style overwrite / keep / abort).
                     </p>
                   </div>
                 ) : null}
 
                 <div className="space-y-1">
                   <div className="text-[10px] uppercase tracking-wide text-[var(--color-muted-foreground)]">
-                    HMAC key
+                    HMAC key (shown ONCE)
                   </div>
                   <CodeBlock code={freshSecrets.hmacKey} />
+                  <p className="text-xs text-[var(--color-muted-foreground)]">
+                    The only secret you might need to keep around — for re-installing or for the
+                    manual path on the Connection tab. If you lose it, rotate the bridge here to
+                    mint a fresh one.
+                  </p>
                 </div>
 
                 {/* No Tailscale auth key shown — it flows server-to-bridge
@@ -284,10 +289,11 @@ export function BridgeDetail() {
                       setFreshSecrets(null);
                     }}
                   >
-                    I've saved them
+                    Dismiss
                   </Button>
                   <span className="text-xs text-[var(--color-muted-foreground)]">
-                    The Connection tab below also carries these values for the manual flow.
+                    Auto-dismisses when the bridge phones home. The Connection tab below has the
+                    manual install steps if you'd rather not run curl | sh.
                   </span>
                 </div>
               </div>
