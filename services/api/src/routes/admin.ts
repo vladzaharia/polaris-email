@@ -56,13 +56,14 @@ admin.use('/v1/admin/*', async (c, next) => {
 });
 // /v1/bridge/* uses the same api-key HMAC.
 //
-// Exception: /v1/bridge/heartbeat authenticates with the per-bridge HMAC
-// key (NOT an admin api key) so liveness can't be spoofed by anything
-// that happens to hold `imap_bridge:read`. Handled by `bridgeHeartbeat`
-// sub-router mounted in `services/api/src/index.ts`; we just need to
+// Exceptions: /v1/bridge/heartbeat and /v1/bridge/config authenticate
+// with the per-bridge HMAC key (NOT an admin api key) so their per-
+// bridge attribution can't be spoofed by anything that happens to hold
+// `imap_bridge:read`. Handled by the `bridgeHeartbeat` / `bridgeConfig`
+// sub-routers mounted in `services/api/src/index.ts`; we just need to
 // step out of the way here.
 admin.use('/v1/bridge/*', async (c, next) => {
-  if (c.req.path === '/v1/bridge/heartbeat') return next();
+  if (c.req.path === '/v1/bridge/heartbeat' || c.req.path === '/v1/bridge/config') return next();
   return adminHmac(c, next);
 });
 

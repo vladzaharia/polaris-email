@@ -22,6 +22,7 @@ import { internalCfEvents } from './routes/internal-cf-events.js';
 import { mtaStsPolicy } from './routes/mta-sts.js';
 import { unsub } from './routes/unsub.js';
 import { bridgeHeartbeat } from './routes/bridge/heartbeat.js';
+import { bridgeConfig } from './routes/bridge/config.js';
 import { requestId } from '@polaris-mail/ids';
 import { buildError } from './errors.js';
 import { scheduled } from './scheduled/index.js';
@@ -55,10 +56,11 @@ app.route('/', messages);
 app.route('/', messagesState);
 app.route('/', internalCfEvents);
 app.route('/', unsub);
-// Bridge heartbeat — mounted BEFORE admin so its `/v1/bridge/heartbeat`
-// handler wins routing. The admin router still owns the rest of
-// `/v1/bridge/*` (credential lookup) under admin-api-key auth.
+// Bridge self-fetch endpoints — mounted BEFORE admin so their
+// `/v1/bridge/*` handlers win routing. The admin router still owns the
+// rest of `/v1/bridge/*` (credential lookup) under admin-api-key auth.
 app.route('/', bridgeHeartbeat);
+app.route('/', bridgeConfig);
 app.route('/', admin);
 app.route('/', auth);
 app.route('/', bootstrap);

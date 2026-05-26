@@ -878,11 +878,15 @@ export const AuditAction = z.enum([
   'dry_run_rotate',
   // bridge lifecycle (renamed from daemon.* in B4). `bridge.delete` is
   // the hard-delete that follows a deregister and physically removes
-  // the row (added in migration 0008).
+  // the row (added in migration 0008). `bridge.cf_token.*` track the
+  // per-bridge Cloudflare DNS token lifecycle (added in 0009 alongside
+  // the embedded-ACME flow).
   'bridge.register',
   'bridge.rotate',
   'bridge.deregister',
   'bridge.delete',
+  'bridge.cf_token.mint',
+  'bridge.cf_token.revoke',
   // domain + DKIM
   'domain.create',
   'domain.update',
@@ -1307,3 +1311,17 @@ export const BridgeActivityRollup = z.object({
   latest_message: BridgeLatestMessage.nullable(),
 });
 export type BridgeActivityRollup = z.infer<typeof BridgeActivityRollup>;
+
+// `GET /v1/bridge/config` — returned to the bridge over its own HMAC
+// channel. Carries the per-bridge CF DNS token (plaintext, sourced from
+// KV_KEY_CACHE), the FQDN convention, the ACME contact email, and the
+// CF zone name (for completeness). The bridge feeds these into its
+// embedded Lego loop on startup. Operators never see `cf_dns_token` —
+// it lives only in the service-to-bridge channel.
+export const BridgeConfigResponse = z.object({
+  cf_dns_token: z.string().min(1),
+  cf_zone: z.string().min(1),
+  fqdn: z.string().min(1),
+  acme_email: z.string().email(),
+});
+export type BridgeConfigResponse = z.infer<typeof BridgeConfigResponse>;

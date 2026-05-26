@@ -15,6 +15,12 @@ import { ulid } from '@polaris-mail/ids';
 import { generateSecret } from '@polaris-mail/hmac';
 import { hashSecret } from '../../hashing.js';
 import { bridgePlainKvKey, BRIDGE_PLAIN_KV_TTL_SECONDS } from '../../bridge-auth.js';
+import {
+  bridgeCfDnsPlainKvKey,
+  BRIDGE_CF_DNS_PLAIN_KV_TTL_SECONDS,
+  mintCfDnsTokenForBridge,
+  revokeCfDnsTokenBestEffort,
+} from '../../bridge-cf-token.js';
 
 // Liveness thresholds (ms). Anything inside `LIVE_MS` is "live"; inside
 // `STALE_MS` is "stale" (concerning but not gone); beyond is "offline".
@@ -91,14 +97,29 @@ bridges.post('/v1/admin/bridges', requireScope('admin:rotate'), async (c) => {
   const secret = generateSecret();
   const hashed = await hashSecret(secret, c.env.ARGON2_PEPPER);
   const nowIso = new Date().toISOString();
+  // Mint the per-bridge CF DNS token BEFORE the INSERT so a failed mint
+  // leaves no orphan bridge row. The plaintext goes into KV after the
+  // row commit so the bridge's first /v1/bridge/config call resolves.
+  let minted;
+  try {
+    minted = await mintCfDnsTokenForBridge(c.env, body.name, id);
+  } catch (e) {
+    return buildError(
+      c,
+      'degraded',
+      `cf token mint failed: ${e instanceof Error ? e.message : String(e)}`,
+    );
+  }
   try {
     await c.env.DB.prepare(
-      `INSERT INTO bridges (id, name, hmac_key_secret_name, created_at)
-       VALUES (?, ?, ?, ?)`,
+      `INSERT INTO bridges (id, name, hmac_key_secret_name, cf_dns_token_id, created_at)
+       VALUES (?, ?, ?, ?, ?)`,
     )
-      .bind(id, body.name, hashed, nowIso)
+      .bind(id, body.name, hashed, minted.tokenId, nowIso)
       .run();
   } catch (e) {
+    // Best-effort revoke so the CF dashboard stays clean.
+    await revokeCfDnsTokenBestEffort(c.env, minted.tokenId);
     if (String(e).includes('UNIQUE')) return buildError(c, 'conflict', 'bridge name taken');
     throw e;
   }
@@ -107,11 +128,21 @@ bridges.post('/v1/admin/bridges', requireScope('admin:rotate'), async (c) => {
   await c.env.KV_KEY_CACHE.put(bridgePlainKvKey(id), secret, {
     expirationTtl: BRIDGE_PLAIN_KV_TTL_SECONDS,
   });
+  // CF token plaintext — surfaced to the bridge via /v1/bridge/config.
+  await c.env.KV_KEY_CACHE.put(bridgeCfDnsPlainKvKey(id), minted.plaintext, {
+    expirationTtl: BRIDGE_CF_DNS_PLAIN_KV_TTL_SECONDS,
+  });
   await audit(c.env, {
     actor: actorOf(c),
     action: 'bridge.register',
     target: id,
     meta: { name: body.name },
+  });
+  await audit(c.env, {
+    actor: actorOf(c),
+    action: 'bridge.cf_token.mint',
+    target: id,
+    meta: { token_id: minted.tokenId, name: body.name },
   });
   return c.json({ id, name: body.name, hmac_key: secret }, 201);
 });
@@ -175,25 +206,61 @@ bridges.get('/v1/admin/bridges/:id', requireScope('admin:read'), async (c) => {
 
 bridges.post('/v1/admin/bridges/:id/rotate', requireScope('admin:rotate'), async (c) => {
   const id = c.req.param('id');
-  const existing = await c.env.DB.prepare(`SELECT id, name FROM bridges WHERE id = ?`)
+  const existing = await c.env.DB.prepare(
+    `SELECT id, name, cf_dns_token_id FROM bridges WHERE id = ?`,
+  )
     .bind(id)
-    .first<{ id: string; name: string }>();
+    .first<{ id: string; name: string; cf_dns_token_id: string | null }>();
   if (!existing) return buildError(c, 'not_found', 'bridge not found');
   const secret = generateSecret();
   const hashed = await hashSecret(secret, c.env.ARGON2_PEPPER);
-  await c.env.DB.prepare(`UPDATE bridges SET hmac_key_secret_name = ? WHERE id = ?`)
-    .bind(hashed, id)
+  // Mint the new CF token before touching D1 — same atomicity story as
+  // register: don't leave a row referencing a half-existing token.
+  let minted;
+  try {
+    minted = await mintCfDnsTokenForBridge(c.env, existing.name, id);
+  } catch (e) {
+    return buildError(
+      c,
+      'degraded',
+      `cf token mint failed: ${e instanceof Error ? e.message : String(e)}`,
+    );
+  }
+  await c.env.DB.prepare(
+    `UPDATE bridges SET hmac_key_secret_name = ?, cf_dns_token_id = ? WHERE id = ?`,
+  )
+    .bind(hashed, minted.tokenId, id)
     .run();
-  // Repopulate the plaintext cache so verify lookups resolve immediately
-  // after rotate (Phase 2h).
+  // Repopulate plaintext caches so verify + /v1/bridge/config both
+  // resolve immediately after rotate.
   await c.env.KV_KEY_CACHE.put(bridgePlainKvKey(id), secret, {
     expirationTtl: BRIDGE_PLAIN_KV_TTL_SECONDS,
   });
+  await c.env.KV_KEY_CACHE.put(bridgeCfDnsPlainKvKey(id), minted.plaintext, {
+    expirationTtl: BRIDGE_CF_DNS_PLAIN_KV_TTL_SECONDS,
+  });
+  // Best-effort revoke of the prior CF token. Don't block the response;
+  // the new token is what matters for forward operation.
+  if (existing.cf_dns_token_id) {
+    c.executionCtx.waitUntil(revokeCfDnsTokenBestEffort(c.env, existing.cf_dns_token_id));
+    await audit(c.env, {
+      actor: actorOf(c),
+      action: 'bridge.cf_token.revoke',
+      target: id,
+      meta: { token_id: existing.cf_dns_token_id, reason: 'rotate' },
+    });
+  }
   await audit(c.env, {
     actor: actorOf(c),
     action: 'bridge.rotate',
     target: id,
     meta: { name: existing.name },
+  });
+  await audit(c.env, {
+    actor: actorOf(c),
+    action: 'bridge.cf_token.mint',
+    target: id,
+    meta: { token_id: minted.tokenId, name: existing.name, reason: 'rotate' },
   });
   return c.json({ id, hmac_key: secret });
 });
@@ -234,9 +301,16 @@ bridges.delete('/v1/admin/bridges/:id', requireScope('admin:rotate'), async (c) 
   }
 
   // Hard delete path.
-  const existing = await c.env.DB.prepare(`SELECT id, name, disabled_at FROM bridges WHERE id = ?`)
+  const existing = await c.env.DB.prepare(
+    `SELECT id, name, disabled_at, cf_dns_token_id FROM bridges WHERE id = ?`,
+  )
     .bind(id)
-    .first<{ id: string; name: string; disabled_at: string | null }>();
+    .first<{
+      id: string;
+      name: string;
+      disabled_at: string | null;
+      cf_dns_token_id: string | null;
+    }>();
   if (!existing) return buildError(c, 'not_found', 'bridge not found');
   if (existing.disabled_at == null) {
     return buildError(
@@ -256,6 +330,19 @@ bridges.delete('/v1/admin/bridges/:id', requireScope('admin:rotate'), async (c) 
   ]);
 
   await c.env.KV_KEY_CACHE.delete(bridgePlainKvKey(id));
+  await c.env.KV_KEY_CACHE.delete(bridgeCfDnsPlainKvKey(id));
+  // Best-effort CF cleanup. Orphan tokens cost nothing operationally
+  // but they clutter the dashboard; we want the audit-log entry on
+  // success so a future "list orphans" cron has something to compare.
+  if (existing.cf_dns_token_id) {
+    c.executionCtx.waitUntil(revokeCfDnsTokenBestEffort(c.env, existing.cf_dns_token_id));
+    await audit(c.env, {
+      actor: actorOf(c),
+      action: 'bridge.cf_token.revoke',
+      target: id,
+      meta: { token_id: existing.cf_dns_token_id, reason: 'delete' },
+    });
+  }
   await audit(c.env, {
     actor: actorOf(c),
     action: 'bridge.delete',

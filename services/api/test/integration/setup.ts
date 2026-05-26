@@ -38,6 +38,10 @@ export const ctx = {
   waitUntil: (p: Promise<unknown>) => p,
 } as unknown as ExecutionContext;
 
+// CF fetch stub is now installed by `mocks.ts` so every test that imports
+// `mkEnv()` automatically gets the canned mint/revoke responses for
+// `/user/tokens`. No-op for non-Cloudflare URLs.
+
 /**
  * Wipe per-isolate module state that leaks between tests. The revocation
  * package keeps a process-wide cache; without this, a test that revokes

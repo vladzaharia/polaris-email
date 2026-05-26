@@ -625,6 +625,48 @@ export class MockQueue<T> {
   }
 }
 
+// Stub `globalThis.fetch` for the Cloudflare /user/tokens endpoints
+// that the bridge register/rotate/delete handlers call via
+// packages/cf-api. Installed once when mocks.ts is first imported;
+// every test that touches `mkEnv` automatically gets a canned mint /
+// revoke response without needing per-test setup. Non-CF URLs pass
+// through to the original fetch — the in-memory env doesn't go over
+// the wire anyway, but the safety net is free.
+let cfStubInstalled = false;
+let cfStubMintCounter = 1;
+function ensureCfFetchStub(): void {
+  if (cfStubInstalled) return;
+  cfStubInstalled = true;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url =
+      typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+    if (!url.startsWith('https://api.cloudflare.com/client/v4/')) {
+      return originalFetch(input as RequestInfo, init);
+    }
+    const method = (init?.method ?? 'GET').toUpperCase();
+    if (method === 'POST' && url.endsWith('/user/tokens')) {
+      const id = `cftok-mock-${cfStubMintCounter++}`;
+      return new Response(
+        JSON.stringify({
+          success: true,
+          errors: [],
+          messages: [],
+          result: { id, value: `${id}-plaintext` },
+        }),
+        { headers: { 'content-type': 'application/json' } },
+      );
+    }
+    if (method === 'DELETE' && /\/user\/tokens\/[^/]+$/.test(url)) {
+      return new Response(JSON.stringify({ success: true, errors: [], messages: [], result: {} }), {
+        headers: { 'content-type': 'application/json' },
+      });
+    }
+    return new Response(`unhandled CF call ${method} ${url}`, { status: 502 });
+  }) as typeof fetch;
+}
+ensureCfFetchStub();
+
 export function mkEnv(overrides: Partial<Env> = {}): Env {
   const env = {
     DB: new MockD1() as unknown as D1Database,
@@ -639,6 +681,13 @@ export function mkEnv(overrides: Partial<Env> = {}): Env {
     R2_PUBLIC_HOST: 'r2.mail.plrs.im',
     POLARIS_SECRET_A: 'test-control-plane-secret',
     ARGON2_PEPPER: 'test-pepper',
+    // Stubs for the CF-token flow exercised by bridge register/rotate/
+    // delete. The accompanying fetch stub in `setup.ts` intercepts
+    // /user/tokens calls so these env vars never reach real CF.
+    CF_API_TOKEN: 'cf-token-mock',
+    CF_ACCOUNT_ID: 'acct-mock',
+    CF_ZONE_ID_MAIL_PLRS_IM: 'zone-mail-plrs-mock',
+    ACME_EMAIL: 'ops@plrs.im',
     ...overrides,
   };
   return env as unknown as Env;

@@ -54,6 +54,10 @@ export {
 
 export { findZoneByName, getZone, listZones } from './zones.js';
 
+// Per-bridge CF API token mint/revoke (migration 0009 + embedded-ACME flow).
+export { mintBridgeDnsToken, revokeToken } from './tokens.js';
+export type { MintedToken, MintBridgeDnsTokenSpec } from './tokens.js';
+
 export { DohDnsVerifier, type VerifyStep, type DnsVerifier } from './dns-verify.js';
 
 export type {

@@ -120,6 +120,20 @@ export interface Env {
   // CF_API_TOKEN + CF_ACCOUNT_ID are declared above and reused here.
   /** Worker name the catch-all rule must target. Default `polaris-mail-in`. */
   WORKER_NAME_INBOUND?: string;
+
+  // -- per-bridge CF DNS token + embedded-ACME flow (migration 0009) -------
+  /**
+   * Cloudflare zone id for `mail.plrs.im`. Scopes per-bridge CF tokens
+   * minted at bridge registration to just this zone (`Zone:DNS:Edit`).
+   * Bridges read it transitively via `/v1/bridge/config`.
+   */
+  CF_ZONE_ID_MAIL_PLRS_IM?: string;
+  /**
+   * ACME contact email handed to each bridge's embedded Lego loop.
+   * Same value for all bridges; bumping it requires a rebind, not a
+   * rotation.
+   */
+  ACME_EMAIL?: string;
 }
 
 export interface OutboundQueueMessage {
