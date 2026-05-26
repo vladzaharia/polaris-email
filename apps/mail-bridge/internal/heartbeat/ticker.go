@@ -166,22 +166,27 @@ func tick(ctx context.Context, deps Deps, st *state) time.Duration {
 
 	if resp.Settings != nil {
 		log.Printf(
-			"heartbeat: settings v%d received (smtp=%v imap=%v ports=%d/%d tls=%s/%s)",
+			"heartbeat: settings v%d received (smtps=%v:%d smtp=%v:%d imaps=%v:%d imap=%v:%d tls_source=%s)",
 			resp.Settings.Version,
-			resp.Settings.SMTPEnabled, resp.Settings.IMAPEnabled,
-			resp.Settings.SMTPPort, resp.Settings.IMAPPort,
-			resp.Settings.SMTPTLSMode, resp.Settings.IMAPTLSMode,
+			resp.Settings.SMTPSEnabled, resp.Settings.SMTPSPort,
+			resp.Settings.SMTPEnabled, resp.Settings.SMTPPort,
+			resp.Settings.IMAPSEnabled, resp.Settings.IMAPSPort,
+			resp.Settings.IMAPEnabled, resp.Settings.IMAPPort,
+			resp.Settings.TLSSource,
 		)
 		st.settingsVersion = resp.Settings.Version
 		if deps.Supervisor != nil {
 			restartRequired, err := deps.Supervisor.Apply(ctx, listeners.Settings{
 				Version:         resp.Settings.Version,
+				SMTPSEnabled:    resp.Settings.SMTPSEnabled,
+				SMTPSPort:       resp.Settings.SMTPSPort,
 				SMTPEnabled:     resp.Settings.SMTPEnabled,
-				IMAPEnabled:     resp.Settings.IMAPEnabled,
 				SMTPPort:        resp.Settings.SMTPPort,
+				IMAPSEnabled:    resp.Settings.IMAPSEnabled,
+				IMAPSPort:       resp.Settings.IMAPSPort,
+				IMAPEnabled:     resp.Settings.IMAPEnabled,
 				IMAPPort:        resp.Settings.IMAPPort,
-				SMTPTLSMode:     resp.Settings.SMTPTLSMode,
-				IMAPTLSMode:     resp.Settings.IMAPTLSMode,
+				TLSSource:       resp.Settings.TLSSource,
 				MaxMessageSize:  resp.Settings.MaxMessageSizeBytes,
 				MaxIMAPSessions: resp.Settings.MaxIMAPSessions,
 				LogLevel:        resp.Settings.LogLevel,

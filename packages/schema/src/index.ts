@@ -1292,21 +1292,33 @@ export type BridgeLiveness = z.infer<typeof BridgeLiveness>;
 
 // --- BridgeSettings ---
 // Settings rendered by the panel + applied by the bridge supervisor.
-// `version` advances by 1 on every change so the bridge can short-circuit
-// re-application when its current version matches the response.
-export const BridgeTlsMode = z.enum(['auto', 'manual', 'off']);
-export type BridgeTlsMode = z.infer<typeof BridgeTlsMode>;
+// `version` advances by 1 on every change so the bridge can short-
+// circuit re-application when its current version matches the response.
+//
+// Heartbeat v2.1 (migration 0013) splits each protocol into its
+// encrypted + unencrypted variants. The bridge can run all four
+// listeners simultaneously; the panel toggles each independently.
+// `tls_source` is shared between SMTPS and IMAPS — both use the same
+// cert material so a per-protocol mode would be confusing busywork.
+export const BridgeTlsSource = z.enum(['auto', 'manual']);
+export type BridgeTlsSource = z.infer<typeof BridgeTlsSource>;
 export const BridgeLogLevel = z.enum(['debug', 'info', 'warn', 'error']);
 export type BridgeLogLevel = z.infer<typeof BridgeLogLevel>;
 
 export const BridgeSettings = z.object({
   version: z.number().int().nonnegative(),
+  // Encrypted submission (SMTPS) + plain SMTP.
+  smtps_enabled: z.boolean(),
+  smtps_port: z.number().int().min(1).max(65535),
   smtp_enabled: z.boolean(),
-  imap_enabled: z.boolean(),
   smtp_port: z.number().int().min(1).max(65535),
+  // Encrypted read (IMAPS) + plain IMAP.
+  imaps_enabled: z.boolean(),
+  imaps_port: z.number().int().min(1).max(65535),
+  imap_enabled: z.boolean(),
   imap_port: z.number().int().min(1).max(65535),
-  smtp_tls_mode: BridgeTlsMode,
-  imap_tls_mode: BridgeTlsMode,
+  // Shared TLS source for the encrypted variants.
+  tls_source: BridgeTlsSource,
   max_message_size_bytes: z.number().int().positive(),
   max_imap_sessions: z.number().int().positive(),
   log_level: BridgeLogLevel,

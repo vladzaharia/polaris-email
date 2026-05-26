@@ -429,15 +429,21 @@ export function BridgeDetail() {
               <MetaRow label="Registered">
                 <When iso={d.created_at} />
               </MetaRow>
-              <MetaRow label="Last seen">
-                <When iso={d.last_seen_at} />
-              </MetaRow>
               <MetaRow label="Last heartbeat">
-                <When iso={d.last_heartbeat_at} />
+                <When iso={d.last_heartbeat_at ?? d.last_seen_at} />
               </MetaRow>
-              <MetaRow label="Serves">
-                {d.serves_mailboxes} mailbox{d.serves_mailboxes === 1 ? '' : 'es'}
-              </MetaRow>
+              {hb?.acme.fqdn ? (
+                <MetaRow label="FQDN">
+                  <code className="font-mono text-xs break-all">{hb.acme.fqdn}</code>
+                </MetaRow>
+              ) : null}
+              {hb ? (
+                <MetaRow label="Uptime">
+                  <span title={`since ${formatDate(hb.reported_at)}`}>
+                    {formatDuration(hb.uptime_seconds * 1000)}
+                  </span>
+                </MetaRow>
+              ) : null}
               {disabled ? (
                 <MetaRow label="Disabled">
                   <When iso={d.disabled_at} />

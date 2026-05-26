@@ -533,12 +533,15 @@ bridges.post('/v1/admin/bridges/:id/rotate', requireScope('admin:rotate'), async
 interface BridgeSettingsRow {
   bridge_id: string;
   version: number;
+  smtps_enabled: number;
+  smtps_port: number;
   smtp_enabled: number;
-  imap_enabled: number;
   smtp_port: number;
+  imaps_enabled: number;
+  imaps_port: number;
+  imap_enabled: number;
   imap_port: number;
-  smtp_tls_mode: 'auto' | 'manual' | 'off';
-  imap_tls_mode: 'auto' | 'manual' | 'off';
+  tls_source: 'auto' | 'manual';
   max_message_size_bytes: number;
   max_imap_sessions: number;
   log_level: 'debug' | 'info' | 'warn' | 'error';
@@ -550,12 +553,15 @@ function settingsRowToResponse(row: BridgeSettingsRow): Record<string, unknown> 
   return {
     bridge_id: row.bridge_id,
     version: row.version,
+    smtps_enabled: row.smtps_enabled === 1,
+    smtps_port: row.smtps_port,
     smtp_enabled: row.smtp_enabled === 1,
-    imap_enabled: row.imap_enabled === 1,
     smtp_port: row.smtp_port,
+    imaps_enabled: row.imaps_enabled === 1,
+    imaps_port: row.imaps_port,
+    imap_enabled: row.imap_enabled === 1,
     imap_port: row.imap_port,
-    smtp_tls_mode: row.smtp_tls_mode,
-    imap_tls_mode: row.imap_tls_mode,
+    tls_source: row.tls_source,
     max_message_size_bytes: row.max_message_size_bytes,
     max_imap_sessions: row.max_imap_sessions,
     log_level: row.log_level,
@@ -574,18 +580,21 @@ bridges.get('/v1/admin/bridges/:id/settings', requireScope('admin:read'), async 
 });
 
 interface SettingsPatch {
+  smtps_enabled?: boolean;
+  smtps_port?: number;
   smtp_enabled?: boolean;
-  imap_enabled?: boolean;
   smtp_port?: number;
+  imaps_enabled?: boolean;
+  imaps_port?: number;
+  imap_enabled?: boolean;
   imap_port?: number;
-  smtp_tls_mode?: 'auto' | 'manual' | 'off';
-  imap_tls_mode?: 'auto' | 'manual' | 'off';
+  tls_source?: 'auto' | 'manual';
   max_message_size_bytes?: number;
   max_imap_sessions?: number;
   log_level?: 'debug' | 'info' | 'warn' | 'error';
 }
 
-const TLS_MODES = new Set(['auto', 'manual', 'off']);
+const TLS_SOURCES = new Set(['auto', 'manual']);
 const LOG_LEVELS = new Set(['debug', 'info', 'warn', 'error']);
 
 function validateSettingsPatch(input: unknown): SettingsPatch | string {
@@ -594,15 +603,13 @@ function validateSettingsPatch(input: unknown): SettingsPatch | string {
   }
   const p = input as Record<string, unknown>;
   const out: SettingsPatch = {};
-  if ('smtp_enabled' in p) {
-    if (typeof p.smtp_enabled !== 'boolean') return 'smtp_enabled must be boolean';
-    out.smtp_enabled = p.smtp_enabled;
+  for (const k of ['smtps_enabled', 'smtp_enabled', 'imaps_enabled', 'imap_enabled'] as const) {
+    if (k in p) {
+      if (typeof p[k] !== 'boolean') return `${k} must be boolean`;
+      out[k] = p[k] as boolean;
+    }
   }
-  if ('imap_enabled' in p) {
-    if (typeof p.imap_enabled !== 'boolean') return 'imap_enabled must be boolean';
-    out.imap_enabled = p.imap_enabled;
-  }
-  for (const k of ['smtp_port', 'imap_port'] as const) {
+  for (const k of ['smtps_port', 'smtp_port', 'imaps_port', 'imap_port'] as const) {
     if (k in p) {
       const v = p[k];
       if (typeof v !== 'number' || !Number.isInteger(v) || v < 1 || v > 65535) {
@@ -611,12 +618,10 @@ function validateSettingsPatch(input: unknown): SettingsPatch | string {
       out[k] = v;
     }
   }
-  for (const k of ['smtp_tls_mode', 'imap_tls_mode'] as const) {
-    if (k in p) {
-      const v = p[k];
-      if (typeof v !== 'string' || !TLS_MODES.has(v)) return `${k} must be auto|manual|off`;
-      out[k] = v as 'auto' | 'manual' | 'off';
-    }
+  if ('tls_source' in p) {
+    const v = p.tls_source;
+    if (typeof v !== 'string' || !TLS_SOURCES.has(v)) return 'tls_source must be auto|manual';
+    out.tls_source = v as 'auto' | 'manual';
   }
   if ('max_message_size_bytes' in p) {
     const v = p.max_message_size_bytes;
@@ -672,23 +677,20 @@ bridges.put('/v1/admin/bridges/:id/settings', requireScope('admin:rotate'), asyn
     binds.push(sqlVal);
     diff[String(col)] = { from: rowVal, to: patch[col] };
   };
-  if (patch.smtp_enabled !== undefined && patch.smtp_enabled !== (existing.smtp_enabled === 1)) {
-    set('smtp_enabled', patch.smtp_enabled ? 1 : 0, existing.smtp_enabled === 1);
+  // Four enable toggles (encrypted + unencrypted variants per protocol).
+  for (const k of ['smtps_enabled', 'smtp_enabled', 'imaps_enabled', 'imap_enabled'] as const) {
+    if (patch[k] !== undefined && patch[k] !== (existing[k] === 1)) {
+      set(k, patch[k] ? 1 : 0, existing[k] === 1);
+    }
   }
-  if (patch.imap_enabled !== undefined && patch.imap_enabled !== (existing.imap_enabled === 1)) {
-    set('imap_enabled', patch.imap_enabled ? 1 : 0, existing.imap_enabled === 1);
+  // Four port columns.
+  for (const k of ['smtps_port', 'smtp_port', 'imaps_port', 'imap_port'] as const) {
+    if (patch[k] !== undefined && patch[k] !== existing[k]) {
+      set(k, patch[k] as number, existing[k]);
+    }
   }
-  if (patch.smtp_port !== undefined && patch.smtp_port !== existing.smtp_port) {
-    set('smtp_port', patch.smtp_port, existing.smtp_port);
-  }
-  if (patch.imap_port !== undefined && patch.imap_port !== existing.imap_port) {
-    set('imap_port', patch.imap_port, existing.imap_port);
-  }
-  if (patch.smtp_tls_mode !== undefined && patch.smtp_tls_mode !== existing.smtp_tls_mode) {
-    set('smtp_tls_mode', patch.smtp_tls_mode, existing.smtp_tls_mode);
-  }
-  if (patch.imap_tls_mode !== undefined && patch.imap_tls_mode !== existing.imap_tls_mode) {
-    set('imap_tls_mode', patch.imap_tls_mode, existing.imap_tls_mode);
+  if (patch.tls_source !== undefined && patch.tls_source !== existing.tls_source) {
+    set('tls_source', patch.tls_source, existing.tls_source);
   }
   if (
     patch.max_message_size_bytes !== undefined &&

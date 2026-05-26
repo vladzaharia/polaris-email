@@ -111,18 +111,22 @@ type BridgeServicesBlock struct {
 	WebhookReceiver BridgeWebhookReceiverState `json:"webhook_receiver"`
 }
 
-// BridgeSettings mirrors the Zod `BridgeSettings`. Same fields as the
-// server-side row plus a `Version` the bridge tracks in memory and
-// persists locally so a restart doesn't re-apply settings it already
-// has.
+// BridgeSettings mirrors the Zod `BridgeSettings`. Heartbeat v2.1
+// (migration 0013) splits each protocol into its encrypted +
+// unencrypted variants — the bridge runs SMTPS + SMTP + IMAPS + IMAP
+// listeners independently. `TLSSource` is shared between SMTPS and
+// IMAPS (they use the same cert material).
 type BridgeSettings struct {
 	Version             int    `json:"version"`
+	SMTPSEnabled        bool   `json:"smtps_enabled"`
+	SMTPSPort           int    `json:"smtps_port"`
 	SMTPEnabled         bool   `json:"smtp_enabled"`
-	IMAPEnabled         bool   `json:"imap_enabled"`
 	SMTPPort            int    `json:"smtp_port"`
+	IMAPSEnabled        bool   `json:"imaps_enabled"`
+	IMAPSPort           int    `json:"imaps_port"`
+	IMAPEnabled         bool   `json:"imap_enabled"`
 	IMAPPort            int    `json:"imap_port"`
-	SMTPTLSMode         string `json:"smtp_tls_mode"`
-	IMAPTLSMode         string `json:"imap_tls_mode"`
+	TLSSource           string `json:"tls_source"` // "auto" | "manual"
 	MaxMessageSizeBytes int64  `json:"max_message_size_bytes"`
 	MaxIMAPSessions     int    `json:"max_imap_sessions"`
 	LogLevel            string `json:"log_level"`

@@ -307,20 +307,28 @@ func main() {
 	supervisor := listeners.New(listeners.Deps{
 		SMTPBackend:       smtpBackend,
 		SMTPDomain:        cfg.BridgeName,
-		SMTPListenAddr:    getenvDefault("BRIDGE_SMTPS_LISTEN_ADDR", cfg.ListenAddr),
 		TLSCertPath:       cfg.TLSCertPath(),
 		TLSKeyPath:        cfg.TLSKeyPath(),
 		IMAPBackend:       imapBackend,
-		IMAPListenAddr:    getenvDefault("BRIDGE_IMAP_LISTEN_ADDR", ":993"),
 		WebhookHandler:    wh,
 		WebhookListenAddr: getenvDefault("BRIDGE_WEBHOOK_LISTEN_ADDR", ":8080"),
 		TLSSource:         tlsSrc,
 		LogLevelVar:       logLevelVar,
 	})
+	// Boot defaults — encrypted on, unencrypted off. The supervisor
+	// replays these into actual listener binds; the first heartbeat
+	// response overrides with the server-side settings row.
 	initialSettings := listeners.Settings{
 		Version:         0,
-		SMTPEnabled:     enabled("BRIDGE_SMTPS_ENABLED", true),
-		IMAPEnabled:     enabled("BRIDGE_IMAP_ENABLED", true),
+		SMTPSEnabled:    enabled("BRIDGE_SMTPS_ENABLED", true),
+		SMTPSPort:       465,
+		SMTPEnabled:     enabled("BRIDGE_SMTP_PLAIN_ENABLED", false),
+		SMTPPort:        25,
+		IMAPSEnabled:    enabled("BRIDGE_IMAP_ENABLED", true),
+		IMAPSPort:       993,
+		IMAPEnabled:     enabled("BRIDGE_IMAP_PLAIN_ENABLED", false),
+		IMAPPort:        143,
+		TLSSource:       "auto",
 		MaxMessageSize:  cfg.MaxMessageSize,
 		MaxIMAPSessions: 200,
 		LogLevel:        "info",

@@ -24,7 +24,9 @@ func minTLSVersion() uint16 {
 	}
 }
 
-// ServerOptions configures the wrapping bridge Server.
+// ServerOptions configures the wrapping bridge Server. When TLSCert /
+// TLSKey are empty, the server runs in plain mode (no implicit TLS;
+// `AllowInsecureAuth = true` so AUTH PLAIN works without TLS).
 type ServerOptions struct {
 	ListenAddr     string
 	Domain         string
@@ -35,10 +37,13 @@ type ServerOptions struct {
 	WriteTimeout   time.Duration
 }
 
-// Server runs the go-smtp Server with hot-reloading TLS certs.
+// Server runs the go-smtp Server. Mode (implicit-TLS vs plain) is
+// determined at construction time by whether TLSCert/TLSKey were
+// provided.
 type Server struct {
-	srv  *gosmtp.Server
-	opts ServerOptions
+	srv     *gosmtp.Server
+	opts    ServerOptions
+	useTLS  bool
 }
 
 // New creates the wrapped server.
@@ -60,27 +65,41 @@ func New(opts ServerOptions, be *Backend) *Server {
 	// Idle timeout, bye bye"). 60s is plenty for any legitimate client.
 	srv.ReadTimeout = opts.ReadTimeout
 	srv.WriteTimeout = opts.WriteTimeout
-	srv.AllowInsecureAuth = false
 
-	// Hot-reload TLS cert on every accept via GetCertificate.
-	// MinVersion defaults to TLS 1.3 — TLS 1.2 still permits SHA1-based
-	// suites in the wild and Go 1.25's TLS 1.3 implementation enforces
-	// AEAD-only ciphers. Operators on a legacy client/library can opt back
-	// to TLS 1.2 via BRIDGE_TLS_MIN_VERSION=1.2.
-	cache := &certCache{certPath: opts.TLSCert, keyPath: opts.TLSKey}
-	srv.TLSConfig = &tls.Config{
-		MinVersion:     minTLSVersion(),
-		GetCertificate: cache.Get,
-		// SMTP is not an HTTP protocol; advertising `h2` / `http/1.1`
-		// via ALPN invites protocol-confusion attempts. Leave NextProtos
-		// empty so ALPN is not offered.
-		NextProtos: nil,
+	useTLS := opts.TLSCert != "" && opts.TLSKey != ""
+	if useTLS {
+		srv.AllowInsecureAuth = false
+		// Hot-reload TLS cert on every accept via GetCertificate.
+		// MinVersion defaults to TLS 1.3 — TLS 1.2 still permits SHA1-
+		// based suites in the wild and Go 1.25's TLS 1.3 implementation
+		// enforces AEAD-only ciphers. Operators on a legacy client can
+		// opt back to TLS 1.2 via BRIDGE_TLS_MIN_VERSION=1.2.
+		cache := &certCache{certPath: opts.TLSCert, keyPath: opts.TLSKey}
+		srv.TLSConfig = &tls.Config{
+			MinVersion:     minTLSVersion(),
+			GetCertificate: cache.Get,
+			// SMTP is not an HTTP protocol; advertising `h2` / `http/
+			// 1.1` via ALPN invites protocol-confusion attempts. Leave
+			// NextProtos empty so ALPN is not offered.
+			NextProtos: nil,
+		}
+	} else {
+		// Plain SMTP — accept AUTH PLAIN without TLS. The operator
+		// must have an external safeguard (tailnet, VPN, internal
+		// network) for this to be safe.
+		srv.AllowInsecureAuth = true
 	}
-	return &Server{srv: srv, opts: opts}
+	return &Server{srv: srv, opts: opts, useTLS: useTLS}
 }
 
-// ListenAndServe blocks running implicit-TLS SMTPS.
-func (s *Server) ListenAndServe() error { return s.srv.ListenAndServeTLS() }
+// ListenAndServe blocks serving SMTPS (TLS) or SMTP (plain) depending
+// on whether TLS material was provided at construction time.
+func (s *Server) ListenAndServe() error {
+	if s.useTLS {
+		return s.srv.ListenAndServeTLS()
+	}
+	return s.srv.ListenAndServe()
+}
 
 // Shutdown gracefully stops accepting new connections.
 func (s *Server) Shutdown(ctx context.Context) error {

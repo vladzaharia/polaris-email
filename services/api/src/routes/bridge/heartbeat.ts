@@ -57,12 +57,15 @@ bridgeHeartbeat.use(
 interface BridgeSettingsRow {
   bridge_id: string;
   version: number;
+  smtps_enabled: number;
+  smtps_port: number;
   smtp_enabled: number;
-  imap_enabled: number;
   smtp_port: number;
+  imaps_enabled: number;
+  imaps_port: number;
+  imap_enabled: number;
   imap_port: number;
-  smtp_tls_mode: 'auto' | 'manual' | 'off';
-  imap_tls_mode: 'auto' | 'manual' | 'off';
+  tls_source: 'auto' | 'manual';
   max_message_size_bytes: number;
   max_imap_sessions: number;
   log_level: 'debug' | 'info' | 'warn' | 'error';
@@ -71,12 +74,15 @@ interface BridgeSettingsRow {
 function settingsRowToPayload(row: BridgeSettingsRow): BridgeSettings {
   return {
     version: row.version,
+    smtps_enabled: row.smtps_enabled === 1,
+    smtps_port: row.smtps_port,
     smtp_enabled: row.smtp_enabled === 1,
-    imap_enabled: row.imap_enabled === 1,
     smtp_port: row.smtp_port,
+    imaps_enabled: row.imaps_enabled === 1,
+    imaps_port: row.imaps_port,
+    imap_enabled: row.imap_enabled === 1,
     imap_port: row.imap_port,
-    smtp_tls_mode: row.smtp_tls_mode,
-    imap_tls_mode: row.imap_tls_mode,
+    tls_source: row.tls_source,
     max_message_size_bytes: row.max_message_size_bytes,
     max_imap_sessions: row.max_imap_sessions,
     log_level: row.log_level,

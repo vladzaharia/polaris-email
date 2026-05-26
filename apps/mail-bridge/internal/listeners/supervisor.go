@@ -42,38 +42,49 @@ import (
 )
 
 // Settings is the bridge's view of `BridgeSettings` from the server's
-// heartbeat response. Phase 2 acts on a narrow subset of these.
+// heartbeat response. Heartbeat v2.1 (migration 0013) splits each
+// protocol into its encrypted + unencrypted variants — the bridge
+// runs SMTPS + SMTP + IMAPS + IMAP listeners independently.
 type Settings struct {
-	Version         int
-	SMTPEnabled     bool
-	IMAPEnabled     bool
-	SMTPPort        int
-	IMAPPort        int
-	SMTPTLSMode     string // "auto" | "manual" | "off"
-	IMAPTLSMode     string
+	Version int
+
+	SMTPSEnabled bool
+	SMTPSPort    int
+	SMTPEnabled  bool
+	SMTPPort     int
+
+	IMAPSEnabled bool
+	IMAPSPort    int
+	IMAPEnabled  bool
+	IMAPPort     int
+
+	// Shared TLS source for SMTPS + IMAPS. "auto" = embedded ACME;
+	// "manual" = operator-supplied PEMs at TLSCertPath/TLSKeyPath.
+	TLSSource string
+
 	MaxMessageSize  int64
 	MaxIMAPSessions int
 	LogLevel        string
 }
 
 // Deps bundles every dependency the supervisor needs to instantiate
-// listeners. main.go builds them once and hands them in.
+// listeners. main.go builds them once and hands them in. Listener
+// addresses come from Settings (per-protocol port), not Deps — only
+// dependencies that don't change across reconciles live here.
 type Deps struct {
 	// SMTP
-	SMTPBackend    *dsmtp.Backend
-	SMTPDomain     string
-	SMTPListenAddr string
-	TLSCertPath    string
-	TLSKeyPath     string
+	SMTPBackend *dsmtp.Backend
+	SMTPDomain  string
+	TLSCertPath string
+	TLSKeyPath  string
 	// IMAP
-	IMAPBackend    *bridgeimap.Backend
-	IMAPListenAddr string
+	IMAPBackend *bridgeimap.Backend
 	// Webhook receiver
 	WebhookHandler    *webhook.Handler
 	WebhookListenAddr string
 	// Shared
-	TLSSource    *bridgetls.Source
-	LogLevelVar  *slog.LevelVar // optional; supervisor flips this on log_level apply
+	TLSSource   *bridgetls.Source
+	LogLevelVar *slog.LevelVar // optional; supervisor flips this on log_level apply
 }
 
 // Supervisor coordinates the three listeners. Methods are safe to call
@@ -85,8 +96,10 @@ type Supervisor struct {
 	started   bool
 	suspended bool
 
-	smtp    *smtpHandle
-	imap    *imapHandle
+	smtps   *smtpHandle // encrypted (TLS)
+	smtp    *smtpHandle // plain
+	imaps   *imapHandle // encrypted
+	imap    *imapHandle // plain
 	webhook *webhookHandle
 }
 
@@ -160,14 +173,15 @@ func (s *Supervisor) Apply(ctx context.Context, next Settings) (restartRequired 
 		return false, nil
 	}
 
-	// Restart-required diffs: ports + TLS modes + message size + IMAP
+	// Restart-required diffs: ports + TLS source + message size + IMAP
 	// session cap. Those are baked into the listener's TLS config /
 	// SMTP server options at construction time and a clean re-bind on
 	// a fresh process is simpler than a hot rebind.
-	if next.SMTPPort != s.current.SMTPPort ||
+	if next.SMTPSPort != s.current.SMTPSPort ||
+		next.SMTPPort != s.current.SMTPPort ||
+		next.IMAPSPort != s.current.IMAPSPort ||
 		next.IMAPPort != s.current.IMAPPort ||
-		next.SMTPTLSMode != s.current.SMTPTLSMode ||
-		next.IMAPTLSMode != s.current.IMAPTLSMode ||
+		next.TLSSource != s.current.TLSSource ||
 		next.MaxMessageSize != s.current.MaxMessageSize ||
 		next.MaxIMAPSessions != s.current.MaxIMAPSessions {
 		return true, nil
@@ -181,28 +195,44 @@ func (s *Supervisor) Apply(ctx context.Context, next Settings) (restartRequired 
 	// Skip listener work when suspended — Resume() will replay with
 	// the new current settings.
 	if !s.suspended {
-		if next.SMTPEnabled != s.current.SMTPEnabled {
-			if next.SMTPEnabled {
-				if err := s.startSMTPLocked(ctx); err != nil {
-					return false, err
-				}
-			} else {
-				s.stopSMTPLocked(ctx)
-			}
+		s.current = next // updated first so start*Locked sees the new flags
+		if err := s.reconcileLocked(ctx); err != nil {
+			return false, err
 		}
-		if next.IMAPEnabled != s.current.IMAPEnabled {
-			if next.IMAPEnabled {
-				if err := s.startIMAPLocked(ctx); err != nil {
-					return false, err
-				}
-			} else {
-				s.stopIMAPLocked(ctx)
-			}
-		}
+		return false, nil
 	}
 
 	s.current = next
 	return false, nil
+}
+
+// reconcileLocked starts or stops each listener variant so the running
+// set matches `s.current`. Called by Apply (hot-reload) and bringUp
+// (initial Start / Resume).
+func (s *Supervisor) reconcileLocked(ctx context.Context) error {
+	type entry struct {
+		want bool
+		on   bool
+		start func(context.Context) error
+		stop  func(context.Context)
+	}
+	entries := []entry{
+		{s.current.SMTPSEnabled, s.smtps != nil, s.startSMTPSLocked, s.stopSMTPSLocked},
+		{s.current.SMTPEnabled, s.smtp != nil, s.startSMTPLocked, s.stopSMTPLocked},
+		{s.current.IMAPSEnabled, s.imaps != nil, s.startIMAPSLocked, s.stopIMAPSLocked},
+		{s.current.IMAPEnabled, s.imap != nil, s.startIMAPLocked, s.stopIMAPLocked},
+	}
+	for _, e := range entries {
+		switch {
+		case e.want && !e.on:
+			if err := e.start(ctx); err != nil {
+				return err
+			}
+		case !e.want && e.on:
+			e.stop(ctx)
+		}
+	}
+	return nil
 }
 
 // Shutdown stops every listener and marks the supervisor done. Call
@@ -218,15 +248,8 @@ func (s *Supervisor) Shutdown(ctx context.Context) {
 // ---------- internals ----------
 
 func (s *Supervisor) bringUpLocked(ctx context.Context) error {
-	if s.current.SMTPEnabled {
-		if err := s.startSMTPLocked(ctx); err != nil {
-			return fmt.Errorf("smtp: %w", err)
-		}
-	}
-	if s.current.IMAPEnabled {
-		if err := s.startIMAPLocked(ctx); err != nil {
-			return fmt.Errorf("imap: %w", err)
-		}
+	if err := s.reconcileLocked(ctx); err != nil {
+		return err
 	}
 	if err := s.startWebhookLocked(ctx); err != nil {
 		return fmt.Errorf("webhook: %w", err)
@@ -235,7 +258,9 @@ func (s *Supervisor) bringUpLocked(ctx context.Context) error {
 }
 
 func (s *Supervisor) tearDownLocked(ctx context.Context) {
+	s.stopSMTPSLocked(ctx)
 	s.stopSMTPLocked(ctx)
+	s.stopIMAPSLocked(ctx)
 	s.stopIMAPLocked(ctx)
 	s.stopWebhookLocked(ctx)
 }
@@ -245,19 +270,20 @@ func (s *Supervisor) tearDownLocked(ctx context.Context) {
 type smtpHandle struct {
 	srv  *dsmtp.Server
 	done chan struct{}
+	port int
+	tls  bool
 }
 
-func (s *Supervisor) startSMTPLocked(_ context.Context) error {
-	if s.smtp != nil {
+// startSMTPSLocked binds the encrypted SMTPS variant. Listens on
+// `:<smtps_port>`; TLS material comes from the shared cert dir.
+func (s *Supervisor) startSMTPSLocked(_ context.Context) error {
+	if s.smtps != nil || s.deps.SMTPBackend == nil {
 		return nil
 	}
-	if s.deps.SMTPBackend == nil {
-		log.Printf("supervisor: SMTP backend not wired; skipping start")
-		return nil
-	}
+	addr := fmt.Sprintf(":%d", s.current.SMTPSPort)
 	srv := dsmtp.New(
 		dsmtp.ServerOptions{
-			ListenAddr:     s.deps.SMTPListenAddr,
+			ListenAddr:     addr,
 			Domain:         s.deps.SMTPDomain,
 			TLSCert:        s.deps.TLSCertPath,
 			TLSKey:         s.deps.TLSKeyPath,
@@ -269,16 +295,54 @@ func (s *Supervisor) startSMTPLocked(_ context.Context) error {
 	go func() {
 		defer close(done)
 		if err := srv.ListenAndServe(); err != nil {
+			log.Printf("supervisor: smtps server exited: %v", err)
+		}
+	}()
+	s.smtps = &smtpHandle{srv: srv, done: done, port: s.current.SMTPSPort, tls: true}
+	log.Printf("supervisor: smtps listening on %s", addr)
+	return nil
+}
+
+func (s *Supervisor) stopSMTPSLocked(ctx context.Context) {
+	stopSMTP(&s.smtps, ctx, "smtps")
+}
+
+// startSMTPLocked binds the plain SMTP variant. Listens on
+// `:<smtp_port>`; no TLS, AUTH PLAIN over plaintext (operator's
+// responsibility to gate via tailnet / private network).
+func (s *Supervisor) startSMTPLocked(_ context.Context) error {
+	if s.smtp != nil || s.deps.SMTPBackend == nil {
+		return nil
+	}
+	addr := fmt.Sprintf(":%d", s.current.SMTPPort)
+	srv := dsmtp.New(
+		dsmtp.ServerOptions{
+			ListenAddr:     addr,
+			Domain:         s.deps.SMTPDomain,
+			MaxMessageSize: s.current.MaxMessageSize,
+			// TLSCert/TLSKey empty → plain mode (AllowInsecureAuth on).
+		},
+		s.deps.SMTPBackend,
+	)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		if err := srv.ListenAndServe(); err != nil {
 			log.Printf("supervisor: smtp server exited: %v", err)
 		}
 	}()
-	s.smtp = &smtpHandle{srv: srv, done: done}
-	log.Printf("supervisor: smtp listening on %s", s.deps.SMTPListenAddr)
+	s.smtp = &smtpHandle{srv: srv, done: done, port: s.current.SMTPPort, tls: false}
+	log.Printf("supervisor: smtp listening on %s (PLAIN)", addr)
 	return nil
 }
 
 func (s *Supervisor) stopSMTPLocked(ctx context.Context) {
-	if s.smtp == nil {
+	stopSMTP(&s.smtp, ctx, "smtp")
+}
+
+func stopSMTP(handle **smtpHandle, ctx context.Context, label string) {
+	h := *handle
+	if h == nil {
 		return
 	}
 	if ctx == nil {
@@ -286,10 +350,10 @@ func (s *Supervisor) stopSMTPLocked(ctx context.Context) {
 	}
 	shutCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	_ = s.smtp.srv.Shutdown(shutCtx)
-	<-s.smtp.done
-	s.smtp = nil
-	log.Printf("supervisor: smtp stopped")
+	_ = h.srv.Shutdown(shutCtx)
+	<-h.done
+	*handle = nil
+	log.Printf("supervisor: %s stopped", label)
 }
 
 // --- IMAP ---
@@ -298,19 +362,64 @@ type imapHandle struct {
 	srv  *imapserver.Server
 	ln   net.Listener
 	done chan struct{}
+	port int
+	tls  bool
 }
 
-func (s *Supervisor) startIMAPLocked(_ context.Context) error {
-	if s.imap != nil {
-		return nil
-	}
-	if s.deps.IMAPBackend == nil {
-		log.Printf("supervisor: IMAP backend not wired; skipping start")
+// startIMAPSLocked binds the encrypted IMAPS variant on `:<imaps_port>`.
+func (s *Supervisor) startIMAPSLocked(_ context.Context) error {
+	if s.imaps != nil || s.deps.IMAPBackend == nil {
 		return nil
 	}
 	tlsCfg := tlsConfigFor(s.deps.TLSSource)
+	if tlsCfg == nil {
+		log.Printf("supervisor: imaps enabled but no TLS source available — skipping")
+		return nil
+	}
+	addr := fmt.Sprintf(":%d", s.current.IMAPSPort)
+	handle, err := startIMAPListener(s.deps.IMAPBackend, addr, tlsCfg)
+	if err != nil {
+		return err
+	}
+	handle.port = s.current.IMAPSPort
+	handle.tls = true
+	s.imaps = handle
+	log.Printf("supervisor: imaps listening on %s", addr)
+	return nil
+}
+
+func (s *Supervisor) stopIMAPSLocked(_ context.Context) {
+	stopIMAP(&s.imaps, "imaps")
+}
+
+// startIMAPLocked binds the plain IMAP variant on `:<imap_port>`.
+func (s *Supervisor) startIMAPLocked(_ context.Context) error {
+	if s.imap != nil || s.deps.IMAPBackend == nil {
+		return nil
+	}
+	addr := fmt.Sprintf(":%d", s.current.IMAPPort)
+	handle, err := startIMAPListener(s.deps.IMAPBackend, addr, nil)
+	if err != nil {
+		return err
+	}
+	handle.port = s.current.IMAPPort
+	handle.tls = false
+	s.imap = handle
+	log.Printf("supervisor: imap listening on %s (PLAIN)", addr)
+	return nil
+}
+
+func (s *Supervisor) stopIMAPLocked(_ context.Context) {
+	stopIMAP(&s.imap, "imap")
+}
+
+func startIMAPListener(
+	backend *bridgeimap.Backend,
+	addr string,
+	tlsCfg *tls.Config,
+) (*imapHandle, error) {
 	srv := imapserver.New(&imapserver.Options{
-		NewSession: s.deps.IMAPBackend.NewSession,
+		NewSession: backend.NewSession,
 		Caps: imap.CapSet{
 			imap.CapIMAP4rev2:     {},
 			imap.CapIMAP4rev1:     {},
@@ -322,12 +431,12 @@ func (s *Supervisor) startIMAPLocked(_ context.Context) error {
 	var ln net.Listener
 	var err error
 	if tlsCfg == nil {
-		ln, err = net.Listen("tcp", s.deps.IMAPListenAddr)
+		ln, err = net.Listen("tcp", addr)
 	} else {
-		ln, err = tls.Listen("tcp", s.deps.IMAPListenAddr, tlsCfg)
+		ln, err = tls.Listen("tcp", addr, tlsCfg)
 	}
 	if err != nil {
-		return err
+		return nil, err
 	}
 	done := make(chan struct{})
 	go func() {
@@ -336,20 +445,19 @@ func (s *Supervisor) startIMAPLocked(_ context.Context) error {
 			log.Printf("supervisor: imap server exited: %v", err)
 		}
 	}()
-	s.imap = &imapHandle{srv: srv, ln: ln, done: done}
-	log.Printf("supervisor: imap listening on %s (tls=%v)", s.deps.IMAPListenAddr, tlsCfg != nil)
-	return nil
+	return &imapHandle{srv: srv, ln: ln, done: done}, nil
 }
 
-func (s *Supervisor) stopIMAPLocked(_ context.Context) {
-	if s.imap == nil {
+func stopIMAP(handle **imapHandle, label string) {
+	h := *handle
+	if h == nil {
 		return
 	}
-	_ = s.imap.ln.Close()
-	_ = s.imap.srv.Close()
-	<-s.imap.done
-	s.imap = nil
-	log.Printf("supervisor: imap stopped")
+	_ = h.ln.Close()
+	_ = h.srv.Close()
+	<-h.done
+	*handle = nil
+	log.Printf("supervisor: %s stopped", label)
 }
 
 // --- Webhook receiver ---
