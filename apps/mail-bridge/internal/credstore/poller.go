@@ -15,12 +15,10 @@ import (
 
 // PollerConfig configures the poller HTTP calls.
 type PollerConfig struct {
-	APIURL             string
-	HMACKey            []byte
-	BridgeID           string
-	AccessClientID     string
-	AccessClientSecret string
-	Interval           time.Duration
+	APIURL   string
+	HMACKey  []byte
+	BridgeID string
+	Interval time.Duration
 }
 
 // Poller periodically pulls credential deltas from the bridge credentials API.
@@ -37,10 +35,8 @@ func NewPoller(cfg PollerConfig, store *Store) *Poller {
 	c.HTTPClient = &http.Client{Timeout: 30 * time.Second}
 	c.BridgeID = cfg.BridgeID
 	c.BridgeSecret = cfg.HMACKey
-	c.ExtraHeaders = map[string]string{
-		"CF-Access-Client-Id":     cfg.AccessClientID,
-		"CF-Access-Client-Secret": cfg.AccessClientSecret,
-	}
+	// No ExtraHeaders — the polaris API isn't fronted by CF Access; the
+	// bridge HMAC is the only auth surface (see project memory).
 	return &Poller{cfg: cfg, store: store, client: c}
 }
 

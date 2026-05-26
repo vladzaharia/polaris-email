@@ -13,37 +13,29 @@ package tls
 import (
 	"crypto/tls"
 	"errors"
-	"fmt"
 	"log"
 	"net"
 	"sync"
 	"time"
 )
 
-// Mode is the TLS source selector.
+// Mode is retained as a single-valued type so callers can still pass
+// `ModeLocal` for documentation purposes. With the embedded ACME loop
+// owning cert files on disk, there is only one TLS source path. The
+// historical `ModeTailscale` was an unimplemented branch and is gone;
+// Tailscale-fronted deployments now share their network namespace via
+// the docker-compose sidecar pattern (`network_mode: service:tailscale`),
+// which is a deployment concern, not a TLS-source one.
 type Mode string
 
-const (
-	ModeLocal     Mode = "local"
-	ModeTailscale Mode = "tailscale"
-)
+const ModeLocal Mode = "local"
 
-// ErrTailscaleUnsupported is returned by New when Mode == ModeTailscale and
-// the build does not include tsnet integration. Callers must treat this as
-// a fatal startup error — falling back to plaintext IMAP/SMTPS would expose
-// LOGIN over the wire.
-var ErrTailscaleUnsupported = errors.New("tls.tailscale: tsnet integration not compiled into this build (future enhancement); use BRIDGE_TLS_MODE=local with mounted PEMs, or run behind a tailscale-serve sidecar")
-
-// Config selects a Mode plus mode-specific knobs.
+// Config carries the cert/key paths the source loads from disk.
 type Config struct {
 	Mode      Mode
 	CertPath  string
 	KeyPath   string
 	HotReload bool
-	// TailscaleHostname is the MagicDNS hostname for tsnet.ListenTLS.
-	TailscaleHostname string
-	// TailscaleDir is the tsnet state directory.
-	TailscaleDir string
 }
 
 // Source produces TLS listeners on demand. The returned tls.Config and
@@ -57,27 +49,14 @@ type Source struct {
 
 // New validates the config and constructs a Source.
 func New(cfg Config) (*Source, error) {
-	switch cfg.Mode {
-	case ModeLocal:
-		if cfg.CertPath == "" || cfg.KeyPath == "" {
-			return nil, errors.New("tls.local: cert_path and key_path required")
-		}
-		s := &Source{cfg: cfg}
-		if _, err := s.loadLocked(); err != nil {
-			return nil, err
-		}
-		return s, nil
-	case ModeTailscale:
-		// tsnet.ListenTLS is a future enhancement: the tsnet dependency adds
-		// ~30MB to the binary and requires TS_AUTHKEY at runtime, so it
-		// stays out of the default build. Callers MUST treat
-		// ErrTailscaleUnsupported as fatal and abort startup — never
-		// silently fall back to plaintext, which would leave SMTPS / IMAP
-		// AUTH credentials traversing the public internet in the clear.
-		return nil, ErrTailscaleUnsupported
-	default:
-		return nil, fmt.Errorf("tls: unknown mode %q", cfg.Mode)
+	if cfg.CertPath == "" || cfg.KeyPath == "" {
+		return nil, errors.New("tls: cert_path and key_path required")
 	}
+	s := &Source{cfg: cfg}
+	if _, err := s.loadLocked(); err != nil {
+		return nil, err
+	}
+	return s, nil
 }
 
 // TLSConfig returns a *tls.Config wired to this source's GetCertificate.

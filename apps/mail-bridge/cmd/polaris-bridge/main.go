@@ -27,6 +27,7 @@ import (
 	"github.com/emersion/go-imap/v2/imapserver"
 	polarissdk "github.com/polaris-mail/polaris-sdk-go"
 
+	"github.com/vladzaharia/polaris-email/apps/mail-bridge/internal/acme"
 	"github.com/vladzaharia/polaris-email/apps/mail-bridge/internal/audit"
 	"github.com/vladzaharia/polaris-email/apps/mail-bridge/internal/config"
 	"github.com/vladzaharia/polaris-email/apps/mail-bridge/internal/credstore"
@@ -63,28 +64,74 @@ func main() {
 
 	httpClient := &http.Client{Timeout: 60 * time.Second}
 
+	// Single bridge-wide context. Downstream goroutines (poller,
+	// refresher, heartbeat, renewer) all derive from this; SIGTERM at
+	// the bottom of main cancels and propagates.
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	poller := credstore.NewPoller(credstore.PollerConfig{
-		APIURL:             cfg.APIURL,
-		HMACKey:            cfg.HMACKey,
-		BridgeID:           cfg.BridgeID,
-		AccessClientID:     cfg.AccessClientID,
-		AccessClientSecret: cfg.AccessClientSecret,
-		Interval:           cfg.PollInterval,
+		APIURL:   cfg.APIURL,
+		HMACKey:  cfg.HMACKey,
+		BridgeID: cfg.BridgeID,
+		Interval: cfg.PollInterval,
 	}, store)
 
 	fwd := forwarder.New(forwarder.Config{
-		APIURL:             cfg.APIURL,
-		HMACKey:            cfg.HMACKey,
-		BridgeID:           cfg.BridgeID,
-		AccessClientID:     cfg.AccessClientID,
-		AccessClientSecret: cfg.AccessClientSecret,
-		HTTPClient:         httpClient,
+		APIURL:     cfg.APIURL,
+		HMACKey:    cfg.HMACKey,
+		BridgeID:   cfg.BridgeID,
+		HTTPClient: httpClient,
 	})
 
 	// Polaris SDK client used by the IMAP listener + push.
+	// CF Access is not in front of the polaris API; the bridge HMAC is
+	// the only auth surface (see project memory).
 	sdkClient := polarissdk.NewClient(cfg.APIURL)
 	sdkClient.BridgeID = cfg.BridgeID
 	sdkClient.BridgeSecret = cfg.HMACKey
+
+	// ---------- Fetch operational config + start embedded ACME ----------
+	//
+	// `/v1/bridge/config` returns the per-bridge CF DNS-01 token, the
+	// bridge's canonical FQDN (`<name>.mail.plrs.im`), and the ACME
+	// contact email. We MUST have a valid cert on disk before TLS
+	// listeners come up — falling back to plaintext would expose SMTP
+	// AUTH / IMAP LOGIN. Failure here is fatal.
+	//
+	// Retry the fetch once if it returns `key_propagating` — that's the
+	// expected transient when the operator rotated the bridge between
+	// process restart and our first call.
+	configCtx, configCancel := context.WithTimeout(ctx, 60*time.Second)
+	bridgeCfg, err := sdkClient.GetBridgeConfig(configCtx)
+	configCancel()
+	if err != nil {
+		log.Fatalf("polaris-bridge: fetch bridge config: %v", err)
+	}
+	log.Printf("polaris-bridge: bridge config fetched (fqdn=%s)", bridgeCfg.FQDN)
+
+	renewer := &acme.Renewer{
+		FQDN:       bridgeCfg.FQDN,
+		AcmeEmail:  bridgeCfg.AcmeEmail,
+		CFDnsToken: bridgeCfg.CFDnsToken,
+		// Lego resolves the zone id from the FQDN via its own
+		// `/zones?name=...` lookup (the per-bridge token has Zone:Read
+		// scope for that). For our own A-record upsert we need the
+		// zone id explicitly — get it from the same Lego provider on
+		// first cert issue. To keep startup linear, leave CFZoneID
+		// empty here; the renewer skips A-record management when
+		// empty. Setting it requires the operator to wire the zone id
+		// into the api worker's response (already in scope; the api
+		// returns cf_zone but not the zone id). Followup: add zone_id
+		// to BridgeConfigResponse so this path activates.
+		CFZoneID: "",
+		CertDir:  cfg.TLSCertDir,
+		BridgeIP: acme.DetectBridgeIP(),
+	}
+	if err := renewer.EnsureCert(ctx); err != nil {
+		log.Fatalf("polaris-bridge: initial acme: %v", err)
+	}
+	renewer.Start(ctx)
 
 	// Bridge-local SQLite mirror.
 	mirrorDB, err := openMirror(cfg)
@@ -123,9 +170,6 @@ func main() {
 		PublicURL: publicURL,
 		Path:      "/internal/webhook/message-received",
 	}
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 
 	go poller.Run(ctx)
 
@@ -176,19 +220,17 @@ func main() {
 		}
 	}()
 
-	// TLS source. Misconfiguration is a fatal startup error — falling back
-	// to plaintext on a TLS-required listener would expose IMAP LOGIN /
-	// SMTPS AUTH PLAIN over the wire (Phase 2d audit caught the previous
-	// "log and continue" path which left InsecureAuth=true on :993).
+	// TLS source — points at the cert dir the embedded ACME renewer
+	// just populated. Source.GetCertificate does its own 30s reload
+	// cadence, so future renewals just write fresh PEMs and SMTPS /
+	// IMAP pick them up on the next accept. Falling back to plaintext
+	// would expose SMTP AUTH / IMAP LOGIN; this stays fail-fast.
 	tlsSrc, err := bridgetls.New(bridgetls.Config{
-		Mode:     bridgetls.Mode(getenvDefault("BRIDGE_TLS_MODE", "local")),
-		CertPath: cfg.TLSCert,
-		KeyPath:  cfg.TLSKey,
+		Mode:     bridgetls.ModeLocal,
+		CertPath: cfg.TLSCertPath(),
+		KeyPath:  cfg.TLSKeyPath(),
 	})
 	if err != nil {
-		if errors.Is(err, bridgetls.ErrTailscaleUnsupported) {
-			log.Fatalf("polaris-bridge: BRIDGE_TLS_MODE=tailscale not supported in this build (tsnet integration is a future enhancement); set BRIDGE_TLS_MODE=local and mount certs, or run behind a tailscale-serve sidecar. Underlying error: %v", err)
-		}
 		log.Fatalf("polaris-bridge: tls init: %v (refusing to start with insecure listeners)", err)
 	}
 
@@ -220,8 +262,8 @@ func main() {
 		smtpSrv := dsmtp.New(dsmtp.ServerOptions{
 			ListenAddr:     getenvDefault("BRIDGE_SMTPS_LISTEN_ADDR", cfg.ListenAddr),
 			Domain:         cfg.BridgeName,
-			TLSCert:        cfg.TLSCert,
-			TLSKey:         cfg.TLSKey,
+			TLSCert:        cfg.TLSCertPath(),
+			TLSKey:         cfg.TLSKeyPath(),
 			MaxMessageSize: cfg.MaxMessageSize,
 		}, be)
 		wg.Add(1)

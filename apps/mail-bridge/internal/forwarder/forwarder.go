@@ -22,12 +22,10 @@ import (
 
 // Config carries the fixed bits each Forward call needs.
 type Config struct {
-	APIURL             string
-	HMACKey            []byte
-	BridgeID           string
-	AccessClientID     string
-	AccessClientSecret string
-	HTTPClient         *http.Client
+	APIURL     string
+	HMACKey    []byte
+	BridgeID   string
+	HTTPClient *http.Client
 }
 
 // Forwarder posts to POST /v1/messages (message/rfc822).
@@ -46,10 +44,8 @@ func New(cfg Config) *Forwarder {
 	c.HTTPClient = httpClient
 	c.BridgeID = cfg.BridgeID
 	c.BridgeSecret = cfg.HMACKey
-	c.ExtraHeaders = map[string]string{
-		"CF-Access-Client-Id":     cfg.AccessClientID,
-		"CF-Access-Client-Secret": cfg.AccessClientSecret,
-	}
+	// No ExtraHeaders — the polaris API isn't fronted by CF Access; the
+	// bridge HMAC is the only auth surface (see project memory).
 	return &Forwarder{cfg: cfg, client: c}
 }
 

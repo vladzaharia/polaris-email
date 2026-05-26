@@ -16,21 +16,28 @@
 //	BRIDGE_POLARIS_BRIDGE_ID_FILE       Docker-secrets / systemd-credential mounts)
 //	BRIDGE_POLARIS_HMAC_KEY /           same — bridge HMAC key for control-plane auth
 //	BRIDGE_POLARIS_HMAC_KEY_FILE
-//	BRIDGE_ACCESS_CLIENT_ID             required, Cloudflare Access service token id
-//	BRIDGE_ACCESS_CLIENT_SECRET         required, Cloudflare Access service token secret
-//	BRIDGE_TLS_CERT_PATH                required, X.509 cert PEM
-//	BRIDGE_TLS_KEY_PATH                 required, X.509 key PEM
+//	BRIDGE_TLS_CERT_DIR                 optional, default /var/lib/polaris-bridge/certs
+//	                                    (bridge's embedded ACME loop owns this dir;
+//	                                    writes fullchain.pem + privkey.pem here)
 //	BRIDGE_SMTPS_LISTEN_ADDR            optional, default ":465"
 //	BRIDGE_POLL_INTERVAL                optional, default 5s
 //	BRIDGE_MAX_MESSAGE_SIZE             optional, default 25 MiB
 //	BRIDGE_CREDSTORE_PATH               optional, default /var/lib/polaris-bridge/credstore.db
 //	BRIDGE_LOGGING_FILE                 optional, default /var/log/polaris-bridge/audit.jsonl
 //	BRIDGE_R2_BODY_MAX_BYTES            optional, default 64 MiB (IMAP body fetch cap)
+//
+// Removed in the embedded-ACME refactor (per the plan):
+//   - BRIDGE_TLS_CERT_PATH / BRIDGE_TLS_KEY_PATH — paths derived from
+//     TLSCertDir; the renewer owns the file layout.
+//   - BRIDGE_ACCESS_CLIENT_ID / BRIDGE_ACCESS_CLIENT_SECRET — CF Access
+//     is not in front of the polaris API; the bridge's HMAC is the
+//     only auth surface (see project memory `no_cf_access`).
 package config
 
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -38,14 +45,15 @@ import (
 
 // Config holds all runtime configuration.
 type Config struct {
-	APIURL             string
-	BridgeName         string
-	BridgeID           string
-	HMACKey            []byte
-	AccessClientID     string
-	AccessClientSecret string
-	TLSCert            string
-	TLSKey             string
+	APIURL     string
+	BridgeName string
+	BridgeID   string
+	HMACKey    []byte
+
+	// TLSCertDir is the directory the embedded ACME loop writes
+	// fullchain.pem + privkey.pem into. internal/tls.Source loads from
+	// here with a 30s hot-reload cadence.
+	TLSCertDir string
 
 	ListenAddr     string
 	PollInterval   time.Duration
@@ -56,6 +64,12 @@ type Config struct {
 	// to 64 MiB; matches the upstream R2 multipart upload ceiling.
 	R2BodyMaxBytes int64
 }
+
+// TLSCertPath returns the path the renewer writes the fullchain to.
+func (c *Config) TLSCertPath() string { return filepath.Join(c.TLSCertDir, "fullchain.pem") }
+
+// TLSKeyPath returns the path the renewer writes the private key to.
+func (c *Config) TLSKeyPath() string { return filepath.Join(c.TLSCertDir, "privkey.pem") }
 
 // Load reads the environment and returns a populated Config or an error
 // listing every missing/invalid field.
@@ -82,21 +96,9 @@ func Load() (*Config, error) {
 		errs = append(errs, err.Error())
 	}
 
-	accessID := get("BRIDGE_ACCESS_CLIENT_ID")
-	accessSecret := get("BRIDGE_ACCESS_CLIENT_SECRET")
-	if accessID == "" {
-		errs = append(errs, "BRIDGE_ACCESS_CLIENT_ID required")
-	}
-	if accessSecret == "" {
-		errs = append(errs, "BRIDGE_ACCESS_CLIENT_SECRET required")
-	}
-	tlsCert := get("BRIDGE_TLS_CERT_PATH")
-	tlsKey := get("BRIDGE_TLS_KEY_PATH")
-	if tlsCert == "" {
-		errs = append(errs, "BRIDGE_TLS_CERT_PATH required")
-	}
-	if tlsKey == "" {
-		errs = append(errs, "BRIDGE_TLS_KEY_PATH required")
+	certDir := get("BRIDGE_TLS_CERT_DIR")
+	if certDir == "" {
+		certDir = "/var/lib/polaris-bridge/certs"
 	}
 
 	listen := get("BRIDGE_SMTPS_LISTEN_ADDR")
@@ -146,20 +148,17 @@ func Load() (*Config, error) {
 	}
 
 	return &Config{
-		APIURL:             strings.TrimRight(apiURL, "/"),
-		BridgeName:         bridgeName,
-		BridgeID:           bridgeID,
-		HMACKey:            hmacKey,
-		AccessClientID:     accessID,
-		AccessClientSecret: accessSecret,
-		TLSCert:            tlsCert,
-		TLSKey:             tlsKey,
-		ListenAddr:         listen,
-		PollInterval:       poll,
-		MaxMessageSize:     maxSize,
-		SQLitePath:         sqlitePath,
-		AuditLogPath:       auditPath,
-		R2BodyMaxBytes:     r2Cap,
+		APIURL:         strings.TrimRight(apiURL, "/"),
+		BridgeName:     bridgeName,
+		BridgeID:       bridgeID,
+		HMACKey:        hmacKey,
+		TLSCertDir:     certDir,
+		ListenAddr:     listen,
+		PollInterval:   poll,
+		MaxMessageSize: maxSize,
+		SQLitePath:     sqlitePath,
+		AuditLogPath:   auditPath,
+		R2BodyMaxBytes: r2Cap,
 	}, nil
 }
 
