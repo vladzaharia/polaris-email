@@ -34,6 +34,18 @@ import {
   type BridgeInstallerPayload,
 } from '../installer/bridge.js';
 
+/**
+ * Build the installer URL for a freshly minted token. Prefers
+ * `BRIDGE_INSTALLER_BASE_URL` (e.g. `https://dl.mail.plrs.im`) and emits
+ * the short form `<base>/<token>`; falls back to the canonical long
+ * form on the api hostname when the var is unset.
+ */
+function installerUrlFor(env: Env, token: string): string {
+  const base = env.BRIDGE_INSTALLER_BASE_URL;
+  if (base) return `${base.replace(/\/$/, '')}/${token}`;
+  return `${env.API_BASE_URL}/v1/installer/bridge/${token}`;
+}
+
 // Liveness thresholds (ms). Anything inside `LIVE_MS` is "live"; inside
 // `STALE_MS` is "stale" (concerning but not gone); beyond is "offline".
 // 90s gives a 60s heartbeat interval one full skipped beat of slack
@@ -196,10 +208,9 @@ bridges.post('/v1/admin/bridges', requireScope('admin:rotate'), async (c) => {
       meta: { key_id: tsMinted.key.id, name: body.name },
     });
   }
-  // One-shot installer token. The panel renders `curl
-  // <api>/v1/installer/bridge/<token> | sh` and the operator pipes
-  // it on the bridge host. KV TTL is 1h; the installer endpoint
-  // deletes the entry after first GET.
+  // One-shot installer token. The panel renders `curl <url> | sh` and
+  // the operator pipes it on the bridge host. KV TTL is 1h; the
+  // installer endpoint deletes the entry after first GET.
   const installerToken = generateNonce();
   const installerPayload: BridgeInstallerPayload = {
     bridge_id: id,
@@ -221,8 +232,7 @@ bridges.post('/v1/admin/bridges', requireScope('admin:rotate'), async (c) => {
       name: body.name,
       hmac_key: secret,
       // One-shot bash-installer URL. Token is valid for 1h, consumed
-      // on first GET. Operator runs:
-      //   curl <api>/v1/installer/bridge/<token> | sh
+      // on first GET. Operator runs `curl <url> | sh`.
       //
       // The TS auth key (when minted) is NOT in this response — it
       // flows directly from the api worker to the bridge over its own
@@ -231,7 +241,7 @@ bridges.post('/v1/admin/bridges', requireScope('admin:rotate'), async (c) => {
       // container in the compose handles the fetch + file write at
       // `docker compose up` time.
       installer_token: installerToken,
-      installer_url: `${c.env.API_BASE_URL}/v1/installer/bridge/${installerToken}`,
+      installer_url: installerUrlFor(c.env, installerToken),
     },
     201,
   );
@@ -424,7 +434,7 @@ bridges.post('/v1/admin/bridges/:id/rotate', requireScope('admin:rotate'), async
     id,
     hmac_key: secret,
     installer_token: installerToken,
-    installer_url: `${c.env.API_BASE_URL}/v1/installer/bridge/${installerToken}`,
+    installer_url: installerUrlFor(c.env, installerToken),
   });
 });
 

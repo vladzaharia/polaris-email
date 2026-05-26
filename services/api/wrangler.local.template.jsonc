@@ -11,6 +11,12 @@
   // POLARIS_API_HOSTNAME in .env.deploy.
   "routes": [
     { "pattern": "{{ .Hostnames.PolarisAPI }}", "custom_domain": true },
+{{- if .Hostnames.BridgeInstaller }}
+    // Short-form bridge installer host: serves `<host>/<token>` as the
+    // curl|sh entry point. Token validation + lookup happen in the same
+    // handler as the canonical /v1/installer/bridge/:token path.
+    { "pattern": "{{ .Hostnames.BridgeInstaller }}", "custom_domain": true },
+{{- end }}
   ],
   "d1_databases": [
     {
@@ -35,6 +41,12 @@
     // `polaris-mail setup infra apply` from R2_PUBLIC_HOST in .env.deploy.
     "R2_PUBLIC_HOST": "{{ .Hostnames.R2Public }}",
     "ALERT_WEBHOOK": "{{ .AlertWebhook }}",
+{{- if .Hostnames.BridgeInstaller }}
+    // Short-form bridge installer base. Register/rotate emit
+    // `<base>/<token>` curl URLs; the api worker also accepts that
+    // path verbatim on the matching hostname.
+    "BRIDGE_INSTALLER_BASE_URL": "https://{{ .Hostnames.BridgeInstaller }}",
+{{- end }}
   },
 {{- if .SecretsStore.StoreID }}
   "secrets_store_secrets": [

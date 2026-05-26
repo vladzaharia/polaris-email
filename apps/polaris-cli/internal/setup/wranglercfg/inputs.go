@@ -149,6 +149,13 @@ type HostnameInputs struct {
 	// (e.g. mail.plrs.im). Required when Docs is set; the renderer
 	// emits both into the docs `routes[]` block.
 	DocsZone string
+	// BridgeInstaller is the public hostname that serves the curl|sh
+	// bridge installer (e.g. `dl.mail.plrs.im`). Optional — when blank
+	// the api worker only serves the canonical `/v1/installer/bridge/
+	// <token>` path; when set the api worker also accepts
+	// `<BridgeInstaller>/<token>` and surfaces the short form in
+	// register/rotate responses.
+	BridgeInstaller string
 }
 
 // SyntheticInputs are the synthetic-monitor-loop config knobs.

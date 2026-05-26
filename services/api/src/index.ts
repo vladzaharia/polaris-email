@@ -62,7 +62,11 @@ app.route('/', unsub);
 // rest of `/v1/bridge/*` (credential lookup) under admin-api-key auth.
 app.route('/', bridgeHeartbeat);
 app.route('/', bridgeConfig);
-// /v1/installer/bridge/<token> — public, one-shot bash installer.
+// Bridge installer — public, one-shot bash installer. Two routes
+// share one handler:
+//   * /v1/installer/bridge/<token>   on api.mail.plrs.im (canonical)
+//   * /<token>                       on dl.mail.plrs.im  (short form,
+//     gated by BRIDGE_INSTALLER_BASE_URL)
 // Token unguessability is the auth boundary.
 app.route('/', bridgeInstaller);
 app.route('/', admin);

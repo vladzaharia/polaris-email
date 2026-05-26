@@ -33,11 +33,12 @@ func LoadInputs(doc *state.Doc, envPath string) (*RenderInputs, error) {
 			ID: pick(get("CF_ACCOUNT_ID"), doc.AccountID),
 		},
 		Hostnames: HostnameInputs{
-			PolarisAPI: get("POLARIS_API_HOSTNAME"),
-			Panel:      get("POLARIS_PANEL_HOSTNAME"),
-			R2Public:   get("R2_PUBLIC_HOST"),
-			Docs:       get("POLARIS_DOCS_HOSTNAME"),
-			DocsZone:   get("POLARIS_DOCS_ZONE"),
+			PolarisAPI:      get("POLARIS_API_HOSTNAME"),
+			Panel:           get("POLARIS_PANEL_HOSTNAME"),
+			R2Public:        get("R2_PUBLIC_HOST"),
+			Docs:            get("POLARIS_DOCS_HOSTNAME"),
+			DocsZone:        get("POLARIS_DOCS_ZONE"),
+			BridgeInstaller: get("POLARIS_BRIDGE_INSTALLER_HOSTNAME"),
 		},
 		Synthetic: SyntheticInputs{
 			From:          get("SYNTHETIC_FROM"),

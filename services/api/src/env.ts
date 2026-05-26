@@ -145,6 +145,15 @@ export interface Env {
    */
   TS_API_CLIENT_ID?: string;
   TS_API_CLIENT_SECRET?: string;
+
+  /**
+   * Public base URL of the bridge installer (e.g. `https://dl.mail.plrs.im`).
+   * When set, the api worker accepts `<base>/<token>` as a short-form
+   * installer URL on that hostname, and register/rotate responses surface
+   * the short-form URL. When unset, the long-form `<API_BASE_URL>/v1/
+   * installer/bridge/<token>` is used everywhere.
+   */
+  BRIDGE_INSTALLER_BASE_URL?: string;
 }
 
 export interface OutboundQueueMessage {

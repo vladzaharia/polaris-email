@@ -1,30 +1,39 @@
-// Bridge installer: GET /v1/installer/bridge/<token>
+// Bridge installer — curl-pipe-able bootstrap script.
 //
-// Curl-pipe-able bash that bootstraps a registered bridge on the
-// operator's host. The token is a one-shot, opaque, unguessable
-// identifier handed to the panel at registration; the panel renders
-// the curl command in the fresh-credentials banner. We KV-stash the
-// per-token bundle (bridge_id, name, hmac, ts_authkey, deployment
-// mode) under `bridge_installer:<token>` with a 1h TTL, then DELETE
-// the entry on first read so the same URL can't be replayed.
+// Two routes, one handler:
+//   * `GET /v1/installer/bridge/:token`  (api.mail.plrs.im — canonical)
+//   * `GET /:token`                       (dl.mail.plrs.im  — short form)
+//
+// The short form lights up only when BRIDGE_INSTALLER_BASE_URL is set and
+// the request's Host header matches that URL's hostname. Both paths route
+// to the same handler; the only difference is the URL the operator types.
+//
+// KV-stash per-token bundle (bridge_id, name, hmac, deployment mode) under
+// `bridge_installer:<token>` with a 1h TTL at registration time, then
+// DELETE on first read so the same URL can't be replayed.
 //
 // Public endpoint — no admin auth. Security boundary is the token's
-// unguessability (32 bytes from `generateNonce`, base32 Crockford
-// per the existing nonce code path).
+// unguessability (32 bytes from `generateNonce`, base32 Crockford).
 //
-// The script:
-//   1. Validates docker + docker-compose presence.
-//   2. Writes docker-compose.yml + docker-compose.env to CWD. If files
-//      already exist, runs an apt-style diff + per-file prompt:
-//      [Y]es to overwrite, [N]o (keep), [d]iff (re-show), [a]bort.
-//   3. Writes ./secrets/{bridge_id,hmac_key,ts_authkey} with mode 600.
-//   4. Runs `docker compose pull && docker compose up -d`.
-//   5. Tails `docker compose logs -f` for the operator.
-//
-// On any failure mid-flow the script bails with a clear message;
-// nothing destructive runs without operator confirmation.
+// The emitted script:
+//   1. Detects docker. If missing, prompts to run the official
+//      `https://get.docker.com` install script (auto-skipped when
+//      `POLARIS_AUTO_INSTALL=1` is set in the caller's env — the
+//      true one-click path).
+//   2. Detects `docker compose` (v2 plugin). Bails with a clear message
+//      if the host has v1 only.
+//   3. Writes docker-compose.yml + docker-compose.env to CWD. If files
+//      already exist, apt-style diff + per-file prompt:
+//      [Y]es overwrite / [N]o keep / [d]iff / [a]bort.
+//   4. Writes ./secrets/{bridge_id,hmac_key} with mode 600. The TS auth
+//      key + CF DNS token never touch the host disk pre-startup — the
+//      bootstrap init container HMAC-fetches the TS key into
+//      ./secrets/ts_authkey before the TS sidecar starts; the bridge
+//      fetches the CF DNS token at /v1/bridge/config on every boot.
+//   5. `docker compose pull && docker compose up -d`.
+//   6. Tails `docker compose logs -f` for the operator.
 
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import type { Env } from '../../env.js';
 import { buildError } from '../../errors.js';
 
@@ -44,19 +53,15 @@ export interface BridgeInstallerPayload {
   hmac_key: string;
   mode: 'tailscale' | 'public';
   api_url: string;
-  // Bridge image tag the script should pull. Defaults to `latest` —
-  // the operator can pin via env var if they want.
+  /** Bridge image tag the script should pull. Defaults to `latest`. */
   image: string;
-  // NB: no `ts_authkey` here. In tailscale mode the compose includes a
-  // bootstrap init container that calls /v1/bridge/config (HMAC) and
-  // writes the auth key to ./secrets/ts_authkey before the TS sidecar
-  // starts. Operators never see the value.
 }
 
-bridgeInstaller.get('/v1/installer/bridge/:token', async (c) => {
-  const token = c.req.param('token');
-  // Token shape sanity check — same alphabet/length as `generateNonce`.
-  if (!/^[0-9A-HJKMNP-TV-Z]{24,128}$/.test(token)) {
+/** Token shape — same alphabet/length as `generateNonce`. */
+const TOKEN_RE = /^[0-9A-HJKMNP-TV-Z]{24,128}$/;
+
+async function handleInstaller(c: Context<{ Bindings: Env }>, token: string): Promise<Response> {
+  if (!TOKEN_RE.test(token)) {
     return buildError(c, 'bad_request', 'invalid token format');
   }
   const raw = await c.env.KV_KEY_CACHE.get(bridgeInstallerKvKey(token));
@@ -80,14 +85,34 @@ bridgeInstaller.get('/v1/installer/bridge/:token', async (c) => {
       'x-content-type-options': 'nosniff',
     },
   });
+}
+
+bridgeInstaller.get('/v1/installer/bridge/:token', (c) => handleInstaller(c, c.req.param('token')));
+
+// Short-form: dl.mail.plrs.im/<token>. Mounted at the root so the URL is
+// `dl.mail.plrs.im/<token>` with no path prefix. Host check filters this
+// out on api.mail.plrs.im (where bare `/<token>` would otherwise shadow
+// unrelated 404s but never returns a 200 because the host gate fails).
+bridgeInstaller.get('/:token', (c) => {
+  const base = c.env.BRIDGE_INSTALLER_BASE_URL;
+  if (!base) return buildError(c, 'not_found', 'short-form installer route disabled');
+  let expectedHost: string;
+  try {
+    expectedHost = new URL(base).hostname;
+  } catch {
+    return buildError(c, 'degraded', 'BRIDGE_INSTALLER_BASE_URL is not a valid URL');
+  }
+  const host = new URL(c.req.url).hostname;
+  if (host !== expectedHost) {
+    return buildError(c, 'not_found', 'use /v1/installer/bridge/<token> on this host');
+  }
+  return handleInstaller(c, c.req.param('token'));
 });
 
 function renderInstaller(p: BridgeInstallerPayload): string {
   const composeYml = p.mode === 'tailscale' ? composeTailscale(p) : composePublic(p);
   const composeEnv = composeEnvFile(p);
-  // POSIX sh script. Stays portable across Debian/Ubuntu/Alpine.
-  // Indented with tabs in source but we emit verbatim — the heredoc
-  // bodies preserve formatting because we don't strip leading whitespace.
+  // POSIX sh. Stays portable across Debian/Ubuntu/Alpine/RHEL.
   return `#!/usr/bin/env sh
 # polaris-mail-bridge installer for ${p.bridge_name} (id=${p.bridge_id}).
 # Generated by the polaris api; do not edit. The token in your URL is
@@ -95,14 +120,67 @@ function renderInstaller(p: BridgeInstallerPayload): string {
 set -eu
 
 POLARIS_BRIDGE_DIR="\${POLARIS_BRIDGE_DIR:-./polaris-mail-bridge}"
+POLARIS_AUTO_INSTALL="\${POLARIS_AUTO_INSTALL:-0}"
 
 say() { printf '\\033[1;36m▶\\033[0m %s\\n' "$*" >&2; }
 warn() { printf '\\033[1;33m!\\033[0m %s\\n' "$*" >&2; }
 die() { printf '\\033[1;31m✘ %s\\033[0m\\n' "$*" >&2; exit 1; }
 
-command -v docker >/dev/null 2>&1 || die "docker not installed"
-if ! docker compose version >/dev/null 2>&1; then
-  die "'docker compose' plugin missing — install Docker Compose v2"
+prompt_yes() {
+  # $1 = prompt text. Returns 0 on yes (default), 1 on no.
+  if [ "$POLARIS_AUTO_INSTALL" = "1" ]; then return 0; fi
+  if [ ! -t 0 ] && [ ! -r /dev/tty ]; then
+    die "$1 — no TTY available; rerun with POLARIS_AUTO_INSTALL=1 to accept defaults"
+  fi
+  while :; do
+    printf '%s [Y/n] ' "$1" >&2
+    if [ -r /dev/tty ]; then
+      read REPLY </dev/tty || REPLY=Y
+    else
+      read REPLY || REPLY=Y
+    fi
+    case "$REPLY" in
+      Y|y|"") return 0 ;;
+      N|n)    return 1 ;;
+    esac
+  done
+}
+
+install_docker() {
+  # Use Docker Inc.'s official convenience script. It detects the distro
+  # (apt/dnf/yum/zypper), adds the right repo, installs docker-ce +
+  # docker-ce-cli + containerd + the compose v2 plugin in one shot.
+  say "Installing Docker via https://get.docker.com"
+  if [ "$(id -u)" -eq 0 ]; then
+    curl -fsSL https://get.docker.com | sh
+  elif command -v sudo >/dev/null 2>&1; then
+    curl -fsSL https://get.docker.com | sudo sh
+  else
+    die "Docker install needs root; rerun as root or install sudo first"
+  fi
+  # Add the invoking user to the docker group so subsequent compose calls
+  # don't need sudo. Only relevant when we ran the install via sudo.
+  if [ "$(id -u)" -ne 0 ] && command -v sudo >/dev/null 2>&1; then
+    sudo usermod -aG docker "$USER" 2>/dev/null || true
+    warn "Added $USER to the docker group. You may need to log out + back in"
+    warn "for group membership to take effect. This script will use sudo for"
+    warn "the remaining 'docker' calls in this run."
+    POLARIS_DOCKER='sudo docker'
+  fi
+}
+
+POLARIS_DOCKER='docker'
+if ! command -v docker >/dev/null 2>&1; then
+  warn "docker is not installed."
+  if prompt_yes "Install Docker now via https://get.docker.com?"; then
+    install_docker
+  else
+    die "docker is required; install it and rerun"
+  fi
+fi
+
+if ! $POLARIS_DOCKER compose version >/dev/null 2>&1; then
+  die "'docker compose' v2 plugin missing — get.docker.com installs it; if your distro doesn't, install 'docker-compose-plugin'"
 fi
 
 say "Installing polaris-mail-bridge '${p.bridge_name}' into $POLARIS_BRIDGE_DIR"
@@ -111,7 +189,7 @@ cd "$POLARIS_BRIDGE_DIR"
 
 write_or_prompt() {
   # $1 = destination filename
-  # $2 = new content (via stdin redirection — caller pipes it)
+  # $2 = new content
   dst="$1"
   new_content="$2"
   if [ ! -e "$dst" ]; then
@@ -124,6 +202,11 @@ write_or_prompt() {
     return 0
   fi
   warn "$dst differs from the installer's version."
+  if [ "$POLARIS_AUTO_INSTALL" = "1" ]; then
+    printf '%s' "$new_content" > "$dst"
+    say "overwrote $dst (POLARIS_AUTO_INSTALL=1)"
+    return 0
+  fi
   while :; do
     printf '  [Y]es overwrite / [N]o keep / [d]iff / [a]bort? ' >&2
     read REPLY </dev/tty || REPLY=N
@@ -161,24 +244,21 @@ umask 077
 printf '%s' '${p.bridge_id}' > secrets/bridge_id
 printf '%s' '${p.hmac_key}' > secrets/hmac_key
 # Tailscale auth key (if applicable) is fetched + written by the
-# bootstrap init container in docker-compose.yml. Nothing to write
-# here.
+# bootstrap init container in docker-compose.yml.
 chmod 600 secrets/*
 
 say "docker compose pull"
-docker compose pull
+$POLARIS_DOCKER compose pull
 say "docker compose up -d"
-docker compose up -d
+$POLARIS_DOCKER compose up -d
 
-say "Streaming logs (Ctrl-C to detach; bridge keeps running)"
-docker compose logs -f
+say "Bridge is running. Streaming logs (Ctrl-C to detach; bridge keeps running)"
+$POLARIS_DOCKER compose logs -f
 `;
 }
 
 // Compose snippets — keep aligned with the panel templates in
 // `apps/panel/src/client/pages/bridges/BridgeConnectionCard.tsx`.
-// Both surfaces emit the same shape so operators see one set of
-// conventions.
 
 function composeTailscale(p: BridgeInstallerPayload): string {
   const tsHost = `${p.bridge_name}-mail`;
