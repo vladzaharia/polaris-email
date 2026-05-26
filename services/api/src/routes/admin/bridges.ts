@@ -27,47 +27,22 @@ import {
   mintTsAuthKeyForBridge,
   revokeTsAuthKeyBestEffort,
 } from '../../bridge-ts-token.js';
-import { generateNonce } from '@polaris-mail/hmac';
-import {
-  bridgeInstallerKvKey,
-  BRIDGE_INSTALLER_KV_TTL_SECONDS,
-  type BridgeInstallerPayload,
-} from '../installer/bridge.js';
 
 /**
- * Build the installer URL for a freshly minted token. Prefers
- * `BRIDGE_INSTALLER_BASE_URL` (e.g. `https://dl.mail.plrs.im`) and emits
- * the short form `<base>/bridge/<token>`; falls back to the canonical
- * long form on the api hostname when the var is unset.
+ * Build the install URL for `(bridgeId, hmacPlaintext)`. The URL itself
+ * carries the HMAC, so possessing a working URL is equivalent to
+ * possessing the bridge's current credential — there is no KV layer to
+ * "fetch the install bundle"; the installer endpoint verifies the HMAC
+ * against the stored hash and renders the script from the bridge row.
+ *
+ * Prefers `BRIDGE_INSTALLER_BASE_URL` (e.g. `https://dl.mail.plrs.im`)
+ * for the short form; falls back to the canonical long form on the api
+ * hostname when the var is unset.
  */
-function installerUrlFor(env: Env, token: string): string {
+function installerUrlFor(env: Env, bridgeId: string, hmac: string): string {
   const base = env.BRIDGE_INSTALLER_BASE_URL;
-  if (base) return `${base.replace(/\/$/, '')}/bridge/${token}`;
-  return `${env.API_BASE_URL}/v1/installer/bridge/${token}`;
-}
-
-/**
- * Mint a one-shot installer token and KV-stash its payload. Returns the
- * token (caller turns it into a URL via `installerUrlFor`). Shared
- * between register, rotate, and the on-demand `installer-link` endpoint.
- */
-async function stashInstallerToken(
-  env: Env,
-  args: { bridgeId: string; bridgeName: string; hmacKey: string; mode: 'tailscale' | 'public' },
-): Promise<string> {
-  const token = generateNonce();
-  const payload: BridgeInstallerPayload = {
-    bridge_id: args.bridgeId,
-    bridge_name: args.bridgeName,
-    hmac_key: args.hmacKey,
-    mode: args.mode,
-    api_url: env.API_BASE_URL,
-    image: 'ghcr.io/vladzaharia/polaris-mail-bridge:latest',
-  };
-  await env.KV_KEY_CACHE.put(bridgeInstallerKvKey(token), JSON.stringify(payload), {
-    expirationTtl: BRIDGE_INSTALLER_KV_TTL_SECONDS,
-  });
-  return token;
+  if (base) return `${base.replace(/\/$/, '')}/bridge/${bridgeId}/${hmac}`;
+  return `${env.API_BASE_URL}/v1/installer/bridge/${bridgeId}/${hmac}`;
 }
 
 // Liveness thresholds (ms). Anything inside `LIVE_MS` is "live"; inside
@@ -162,9 +137,13 @@ bridges.post('/v1/admin/bridges', requireScope('admin:rotate'), async (c) => {
       `cf token mint failed: ${e instanceof Error ? e.message : String(e)}`,
     );
   }
-  let tsMinted;
+  let tsMinted: Awaited<ReturnType<typeof mintTsAuthKeyForBridge>>;
   try {
-    tsMinted = await mintTsAuthKeyForBridge(c.env, body.name);
+    // Public-mode registrations skip TS key minting — the installer
+    // route uses `ts_authkey_id IS NULL` to render the no-Tailscale
+    // compose. Operators can change their mind later via rotate.
+    tsMinted =
+      mode === 'tailscale' ? await mintTsAuthKeyForBridge(c.env, body.name) : { key: null };
   } catch (e) {
     // Roll back the CF token we just minted to avoid a half-provisioned
     // bridge that the operator can't reach.
@@ -232,32 +211,21 @@ bridges.post('/v1/admin/bridges', requireScope('admin:rotate'), async (c) => {
       meta: { key_id: tsMinted.key.id, name: body.name },
     });
   }
-  // One-shot installer token. The panel renders `curl <url> | sh` and
-  // the operator pipes it on the bridge host. KV TTL is 1h; the
-  // installer endpoint deletes the entry after first GET.
-  const installerToken = await stashInstallerToken(c.env, {
-    bridgeId: id,
-    bridgeName: body.name,
-    hmacKey: secret,
-    mode,
-  });
-
+  // The install URL is just `<base>/bridge/<id>/<hmac>` — the URL
+  // itself carries the HMAC, so possessing it is equivalent to
+  // possessing the current credential. Rotating the HMAC immediately
+  // invalidates every URL ever minted with the old one; this is the
+  // only time an operator gets a working URL.
+  //
+  // TS auth key (when minted) is NOT in this response — it flows
+  // server-to-bridge over the HMAC channel via /v1/bridge/config, so
+  // operators never write `ts_authkey` to disk themselves.
   return c.json(
     {
       id,
       name: body.name,
       hmac_key: secret,
-      // One-shot bash-installer URL. Token is valid for 1h, consumed
-      // on first GET. Operator runs `curl <url> | sh`.
-      //
-      // The TS auth key (when minted) is NOT in this response — it
-      // flows directly from the api worker to the bridge over its own
-      // HMAC channel via /v1/bridge/config, so operators never have
-      // to write `ts_authkey` to disk themselves. A bootstrap init
-      // container in the compose handles the fetch + file write at
-      // `docker compose up` time.
-      installer_token: installerToken,
-      installer_url: installerUrlFor(c.env, installerToken),
+      installer_url: installerUrlFor(c.env, id, secret),
     },
     201,
   );
@@ -426,75 +394,15 @@ bridges.post('/v1/admin/bridges/:id/rotate', requireScope('admin:rotate'), async
       meta: { key_id: tsMinted.key.id, name: existing.name, reason: 'rotate' },
     });
   }
-  // Rotate also refreshes the installer URL so the operator can
-  // re-run the bash installer on the bridge host. Mode is inferred
-  // from whether TS was minted — best signal we have without a
-  // schema-side mode column.
-  const rotateMode: 'tailscale' | 'public' = tsMinted.key != null ? 'tailscale' : 'public';
-  const installerToken = await stashInstallerToken(c.env, {
-    bridgeId: id,
-    bridgeName: existing.name,
-    hmacKey: secret,
-    mode: rotateMode,
-  });
-
+  // Rotate refreshes the install URL as a side effect — the URL
+  // embeds the (now-new) HMAC. The previous URL is invalid the moment
+  // the new HMAC is in place. This is the *only* path that produces a
+  // working install URL; there is no separate "mint install URL"
+  // endpoint.
   return c.json({
     id,
     hmac_key: secret,
-    installer_token: installerToken,
-    installer_url: installerUrlFor(c.env, installerToken),
-  });
-});
-
-// Mint a fresh one-shot installer URL for an existing bridge without
-// rotating its HMAC. Useful when the operator dismissed the post-
-// registration banner (or closed the tab) and needs to re-run curl|sh
-// on the bridge host — within the 1h HMAC-plaintext KV window. Beyond
-// that window the plaintext is gone and `rotate` is the recovery path
-// (since the HMAC must end up baked into the installer payload).
-bridges.post('/v1/admin/bridges/:id/installer-link', requireScope('admin:rotate'), async (c) => {
-  const id = c.req.param('id');
-  const row = await c.env.DB.prepare(
-    `SELECT id, name, ts_authkey_id, disabled_at FROM bridges WHERE id = ?`,
-  )
-    .bind(id)
-    .first<{
-      id: string;
-      name: string;
-      ts_authkey_id: string | null;
-      disabled_at: string | null;
-    }>();
-  if (!row) return buildError(c, 'not_found', 'no such bridge');
-  if (row.disabled_at) {
-    return buildError(c, 'conflict', 'bridge is deregistered; rotate or re-register first');
-  }
-  // The HMAC plaintext lives in KV for BRIDGE_PLAIN_KV_TTL_SECONDS
-  // after register/rotate. Beyond that we can't reconstruct an
-  // installer payload — the operator has to rotate to mint fresh
-  // material. We bubble that up as a 409 with a clear instruction;
-  // the panel turns it into a "Rotate credentials" CTA.
-  const hmac = await c.env.KV_KEY_CACHE.get(bridgePlainKvKey(id));
-  if (!hmac) {
-    return buildError(
-      c,
-      'conflict',
-      'hmac plaintext cache expired — rotate credentials to mint a fresh installer URL',
-    );
-  }
-  // ts_authkey_id presence is our mode signal — same heuristic as
-  // rotate. If the bridge was registered in public mode but later
-  // grew a TS key, that's a desired upgrade and the installer
-  // reflects it.
-  const mode: 'tailscale' | 'public' = row.ts_authkey_id != null ? 'tailscale' : 'public';
-  const token = await stashInstallerToken(c.env, {
-    bridgeId: row.id,
-    bridgeName: row.name,
-    hmacKey: hmac,
-    mode,
-  });
-  return c.json({
-    installer_token: token,
-    installer_url: installerUrlFor(c.env, token),
+    installer_url: installerUrlFor(c.env, id, secret),
   });
 });
 

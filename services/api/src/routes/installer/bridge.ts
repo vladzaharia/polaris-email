@@ -1,85 +1,74 @@
 // Bridge installer — curl-pipe-able bootstrap script.
 //
-// Two routes, one handler:
-//   * `GET /v1/installer/bridge/:token`  (api.mail.plrs.im — canonical)
-//   * `GET /bridge/:token`                (dl.mail.plrs.im — short form)
+// URL shape: the install URL IS the credential. It carries the bridge
+// id + the HMAC plaintext as path segments:
 //
-// Both paths route to the same handler; the short-form is what the panel
-// shows the operator (`curl -fsSL dl.mail.plrs.im/bridge/<token> | sh`).
-// The dl.mail.plrs.im hostname is set up as a second Workers Custom
-// Domain on the same api worker via wrangler routes (gated on
-// POLARIS_BRIDGE_INSTALLER_HOSTNAME in .env.deploy).
+//   https://dl.mail.plrs.im/bridge/<bridge_id>/<hmac>     (short form)
+//   https://<api>/v1/installer/bridge/<bridge_id>/<hmac>  (canonical)
 //
-// KV-stash per-token bundle (bridge_id, name, hmac, deployment mode) under
-// `bridge_installer:<token>` with a 1h TTL at registration time, then
-// DELETE on first read so the same URL can't be replayed.
-//
-// Public endpoint — no admin auth. Security boundary is the token's
-// unguessability (32 bytes from `generateNonce`, base32 Crockford).
-//
-// The emitted script:
-//   1. Detects docker. If missing, prompts to run the official
-//      `https://get.docker.com` install script (auto-skipped when
-//      `POLARIS_AUTO_INSTALL=1` is set in the caller's env — the
-//      true one-click path).
-//   2. Detects `docker compose` (v2 plugin). Bails with a clear message
-//      if the host has v1 only.
-//   3. Writes docker-compose.yml + docker-compose.env to CWD. If files
-//      already exist, apt-style diff + per-file prompt:
-//      [Y]es overwrite / [N]o keep / [d]iff / [a]bort.
-//   4. Writes ./secrets/{bridge_id,hmac_key} with mode 600. The TS auth
-//      key + CF DNS token never touch the host disk pre-startup — the
-//      bootstrap init container HMAC-fetches the TS key into
-//      ./secrets/ts_authkey before the TS sidecar starts; the bridge
-//      fetches the CF DNS token at /v1/bridge/config on every boot.
-//   5. `docker compose pull && docker compose up -d`.
-//   6. Tails `docker compose logs -f` for the operator.
+// Server-side we look up the bridge row by id and verify the HMAC
+// against its stored hash via `verifyPbkdf2`. Wrong/missing → 404. There
+// is no KV indirection: the URL itself carries everything needed to
+// install the bridge, and rotating the HMAC immediately invalidates
+// every install URL ever minted with the old one. That symmetry is
+// deliberate — operators only get an install URL via the rotate path,
+// so possessing a working URL is equivalent to possessing the current
+// HMAC.
 
 import { Hono, type Context } from 'hono';
 import type { Env } from '../../env.js';
 import { buildError } from '../../errors.js';
+import { verifyPbkdf2 } from '../../hashing.js';
 
 export const bridgeInstaller = new Hono<{ Bindings: Env }>();
 
-/** KV key under which a bridge-installer payload lives. */
-export function bridgeInstallerKvKey(token: string): string {
-  return `bridge_installer:${token}`;
+/** ULID — 26 chars, Crockford base32. */
+const BRIDGE_ID_RE = /^[0-9A-HJKMNP-TV-Z]{26}$/;
+/** 256-bit secret in Crockford base32 (see `packages/hmac.generateSecret`). 52 chars. */
+const HMAC_RE = /^[0-9A-HJKMNP-TV-Z]{40,80}$/;
+
+interface BridgeRowForInstaller {
+  id: string;
+  name: string;
+  hmac_key_secret_name: string | null;
+  ts_authkey_id: string | null;
+  disabled_at: string | null;
 }
 
-/** 1 hour. Enough for operators to walk over to the bridge host and run curl. */
-export const BRIDGE_INSTALLER_KV_TTL_SECONDS = 60 * 60;
-
-export interface BridgeInstallerPayload {
-  bridge_id: string;
-  bridge_name: string;
-  hmac_key: string;
-  mode: 'tailscale' | 'public';
-  api_url: string;
-  /** Bridge image tag the script should pull. Defaults to `latest`. */
-  image: string;
-}
-
-/** Token shape — same alphabet/length as `generateNonce`. */
-const TOKEN_RE = /^[0-9A-HJKMNP-TV-Z]{24,128}$/;
-
-async function handleInstaller(c: Context<{ Bindings: Env }>, token: string): Promise<Response> {
-  if (!TOKEN_RE.test(token)) {
-    return buildError(c, 'bad_request', 'invalid token format');
+async function handleInstaller(
+  c: Context<{ Bindings: Env }>,
+  bridgeId: string,
+  hmac: string,
+): Promise<Response> {
+  if (!BRIDGE_ID_RE.test(bridgeId) || !HMAC_RE.test(hmac)) {
+    return buildError(c, 'bad_request', 'invalid install URL format');
   }
-  const raw = await c.env.KV_KEY_CACHE.get(bridgeInstallerKvKey(token));
-  if (!raw) {
-    return buildError(c, 'not_found', 'installer token expired or already consumed');
+  const row = await c.env.DB.prepare(
+    `SELECT id, name, hmac_key_secret_name, ts_authkey_id, disabled_at
+     FROM bridges WHERE id = ?`,
+  )
+    .bind(bridgeId)
+    .first<BridgeRowForInstaller>();
+  // 404 on missing, disabled, or wrong HMAC — never disclose which.
+  // The whole URL is the credential; a wrong-HMAC response is
+  // indistinguishable from a wrong-id response.
+  if (!row || row.disabled_at || !row.hmac_key_secret_name) {
+    return buildError(c, 'not_found', 'install URL invalid or bridge unavailable');
   }
-  // One-shot: delete before we return so a replay can't pick it up.
-  // Fire-and-forget — even if delete fails the TTL caps the window.
-  c.executionCtx.waitUntil(c.env.KV_KEY_CACHE.delete(bridgeInstallerKvKey(token)));
-  let payload: BridgeInstallerPayload;
-  try {
-    payload = JSON.parse(raw) as BridgeInstallerPayload;
-  } catch {
-    return buildError(c, 'degraded', 'installer payload corrupted');
-  }
-  const script = renderInstaller(payload);
+  const ok = await verifyPbkdf2(row.hmac_key_secret_name, hmac, c.env.ARGON2_PEPPER);
+  if (!ok) return buildError(c, 'not_found', 'install URL invalid or bridge unavailable');
+
+  // `ts_authkey_id` presence is our mode signal — same heuristic as
+  // rotate. Tailscale bridges carry the column; public ones don't.
+  const mode: 'tailscale' | 'public' = row.ts_authkey_id != null ? 'tailscale' : 'public';
+  const script = renderInstaller({
+    bridge_id: row.id,
+    bridge_name: row.name,
+    hmac_key: hmac,
+    mode,
+    api_url: c.env.API_BASE_URL,
+    image: 'ghcr.io/vladzaharia/polaris-mail-bridge:latest',
+  });
   return new Response(script, {
     headers: {
       'content-type': 'text/x-shellscript; charset=utf-8',
@@ -89,23 +78,33 @@ async function handleInstaller(c: Context<{ Bindings: Env }>, token: string): Pr
   });
 }
 
-bridgeInstaller.get('/v1/installer/bridge/:token', (c) => handleInstaller(c, c.req.param('token')));
+bridgeInstaller.get('/v1/installer/bridge/:bridgeId/:hmac', (c) =>
+  handleInstaller(c, c.req.param('bridgeId'), c.req.param('hmac')),
+);
+bridgeInstaller.get('/bridge/:bridgeId/:hmac', (c) =>
+  handleInstaller(c, c.req.param('bridgeId'), c.req.param('hmac')),
+);
 
-// Short-form: dl.mail.plrs.im/bridge/<token>. Same handler. The /bridge
-// path prefix is namespaced enough that we don't bother with a host gate
-// — colliding only with a hypothetical /bridge/<token> on api.mail.plrs.im,
-// which isn't a route on that surface (admin bridge endpoints all live
-// under /v1/admin/bridges/...).
-bridgeInstaller.get('/bridge/:token', (c) => handleInstaller(c, c.req.param('token')));
+interface RenderArgs {
+  bridge_id: string;
+  bridge_name: string;
+  hmac_key: string;
+  mode: 'tailscale' | 'public';
+  api_url: string;
+  image: string;
+}
 
-function renderInstaller(p: BridgeInstallerPayload): string {
+function renderInstaller(p: RenderArgs): string {
   const composeYml = p.mode === 'tailscale' ? composeTailscale(p) : composePublic(p);
   const composeEnv = composeEnvFile(p);
-  // POSIX sh. Stays portable across Debian/Ubuntu/Alpine/RHEL.
+  // POSIX sh. Portable across Debian/Ubuntu/Alpine/RHEL.
   return `#!/usr/bin/env sh
 # polaris-mail-bridge installer for ${p.bridge_name} (id=${p.bridge_id}).
-# Generated by the polaris api; do not edit. The token in your URL is
-# one-shot — re-running this curl will 404.
+# Generated by the polaris api; do not edit.
+#
+# The URL you fetched carries this bridge's current HMAC key, so it
+# stays valid until the next rotation. After a rotate, every previously
+# generated URL stops working — fetch a new one from the panel.
 set -eu
 
 POLARIS_BRIDGE_DIR="\${POLARIS_BRIDGE_DIR:-./polaris-mail-bridge}"
@@ -116,7 +115,6 @@ warn() { printf '\\033[1;33m!\\033[0m %s\\n' "$*" >&2; }
 die() { printf '\\033[1;31m✘ %s\\033[0m\\n' "$*" >&2; exit 1; }
 
 prompt_yes() {
-  # $1 = prompt text. Returns 0 on yes (default), 1 on no.
   if [ "$POLARIS_AUTO_INSTALL" = "1" ]; then return 0; fi
   if [ ! -t 0 ] && [ ! -r /dev/tty ]; then
     die "$1 — no TTY available; rerun with POLARIS_AUTO_INSTALL=1 to accept defaults"
@@ -136,9 +134,6 @@ prompt_yes() {
 }
 
 install_docker() {
-  # Use Docker Inc.'s official convenience script. It detects the distro
-  # (apt/dnf/yum/zypper), adds the right repo, installs docker-ce +
-  # docker-ce-cli + containerd + the compose v2 plugin in one shot.
   say "Installing Docker via https://get.docker.com"
   if [ "$(id -u)" -eq 0 ]; then
     curl -fsSL https://get.docker.com | sh
@@ -147,8 +142,6 @@ install_docker() {
   else
     die "Docker install needs root; rerun as root or install sudo first"
   fi
-  # Add the invoking user to the docker group so subsequent compose calls
-  # don't need sudo. Only relevant when we ran the install via sudo.
   if [ "$(id -u)" -ne 0 ] && command -v sudo >/dev/null 2>&1; then
     sudo usermod -aG docker "$USER" 2>/dev/null || true
     warn "Added $USER to the docker group. You may need to log out + back in"
@@ -177,8 +170,6 @@ mkdir -p "$POLARIS_BRIDGE_DIR"
 cd "$POLARIS_BRIDGE_DIR"
 
 write_or_prompt() {
-  # $1 = destination filename
-  # $2 = new content
   dst="$1"
   new_content="$2"
   if [ ! -e "$dst" ]; then
@@ -232,8 +223,6 @@ chmod 700 secrets
 umask 077
 printf '%s' '${p.bridge_id}' > secrets/bridge_id
 printf '%s' '${p.hmac_key}' > secrets/hmac_key
-# Tailscale auth key (if applicable) is fetched + written by the
-# bootstrap init container in docker-compose.yml.
 chmod 600 secrets/*
 
 say "docker compose pull"
@@ -249,7 +238,7 @@ $POLARIS_DOCKER compose logs -f
 // Compose snippets — keep aligned with the panel templates in
 // `apps/panel/src/client/pages/bridges/BridgeConnectionCard.tsx`.
 
-function composeTailscale(p: BridgeInstallerPayload): string {
+function composeTailscale(p: RenderArgs): string {
   const tsHost = `${p.bridge_name}-mail`;
   return `# docker-compose.yml — bridge + Tailscale sidecar
 #
@@ -320,7 +309,7 @@ volumes:
 `;
 }
 
-function composePublic(p: BridgeInstallerPayload): string {
+function composePublic(p: RenderArgs): string {
   return `# docker-compose.yml — bridge on public host (no Tailscale)
 services:
   bridge:
@@ -345,7 +334,7 @@ volumes:
 `;
 }
 
-function composeEnvFile(p: BridgeInstallerPayload): string {
+function composeEnvFile(p: RenderArgs): string {
   return `# docker-compose.env — referenced by docker-compose.yml via env_file.
 # No secrets in here; the HMAC key + bridge id (and TS auth key) live
 # as files under ./secrets/ that the bridge reads via *_FILE env vars.

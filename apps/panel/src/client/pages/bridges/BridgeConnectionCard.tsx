@@ -37,30 +37,24 @@
 //   * `BRIDGE_ACCESS_CLIENT_ID/SECRET`. The polaris API isn't behind
 //     CF Access (see project memory); HMAC is the only auth surface.
 import { useState } from 'react';
-import { KeyRound, Download, RefreshCw } from 'lucide-react';
+import { Download, RefreshCw } from 'lucide-react';
 import { CodeBlock } from '../../components/CodeBlock.js';
 import { Button } from '../../components/ui/button.js';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../components/ui/tabs.js';
 import { DestructiveActionDialog } from '../../components/DestructiveActionDialog.js';
-import { SecretRevealDialog } from '../../components/SecretRevealDialog.js';
 import { useAdminMutation } from '../../hooks/useAdminApi.js';
 import { bridgeKeys } from '../../queryKeys.js';
 
 interface BridgeConnectionCardProps {
   bridgeId: string;
   bridgeName: string;
-  // Optional: the just-minted plaintext HMAC key. Set by the Detail
-  // page's fresh-registration banner; omitted afterwards.
+  // Optional: the just-minted plaintext HMAC key + install URL from
+  // the post-registration fresh-secrets bundle. Seeds the card so the
+  // operator can run the curl line immediately without re-rotating.
+  // Once cleared, "Generate install URL" rotates the HMAC to mint a
+  // fresh pair — the only way to produce a working install URL.
   initialHmacKey?: string;
-  // Optional: the just-minted one-shot installer URL (e.g. from the
-  // post-registration fresh-secrets bundle). Seeds the quick-install
-  // panel so the operator sees it without a click; the same panel also
-  // lets them mint a fresh URL on demand within the HMAC-cache window.
   initialInstallerUrl?: string;
-  // Whether to expose the "Rotate HMAC key" affordance. False inside the
-  // registration wizard (rotation pre-first-deploy is pointless); true
-  // on the persistent Detail-page tab.
-  showRotate?: boolean;
 }
 
 const HMAC_PLACEHOLDER = '<paste-HMAC-key-here>';
@@ -331,38 +325,19 @@ export function BridgeConnectionCard({
   bridgeName,
   initialHmacKey,
   initialInstallerUrl,
-  showRotate = true,
 }: BridgeConnectionCardProps) {
-  const hmacKey = initialHmacKey ?? HMAC_PLACEHOLDER;
-  const [rotated, setRotated] = useState<string | null>(null);
-  const [confirmRotate, setConfirmRotate] = useState(false);
+  // HMAC key + install URL move together: each rotation produces a
+  // fresh pair, and the install URL embeds the HMAC. We hold both in
+  // local state so the post-rotate UI reflects the new pair without a
+  // page reload.
+  const [hmacKey, setHmacKey] = useState<string>(initialHmacKey ?? HMAC_PLACEHOLDER);
   const [installerUrl, setInstallerUrl] = useState<string | null>(initialInstallerUrl ?? null);
-  const [installerError, setInstallerError] = useState<string | null>(null);
+  const [confirmRotate, setConfirmRotate] = useState(false);
 
-  const rotate = useAdminMutation<{ hmac_key: string }, undefined>(
+  const rotate = useAdminMutation<{ hmac_key: string; installer_url: string }, undefined>(
     () => ({ path: `/api/admin/bridges/${bridgeId}/rotate`, method: 'POST' }),
     { invalidateKeys: [bridgeKeys.detail(bridgeId)], silent: true },
   );
-
-  // POST /v1/admin/bridges/:id/installer-link — mints a fresh one-shot
-  // installer URL using the HMAC plaintext cached in KV. 409 when the
-  // cache has expired (operator must rotate to re-mint).
-  const mintInstaller = useAdminMutation<
-    { installer_token: string; installer_url: string },
-    undefined
-  >(() => ({ path: `/api/admin/bridges/${bridgeId}/installer-link`, method: 'POST' }), {
-    silent: true,
-  });
-
-  const generateInstallerUrl = async () => {
-    setInstallerError(null);
-    try {
-      const r = await mintInstaller.mutateAsync(undefined);
-      setInstallerUrl(r.installer_url);
-    } catch (err) {
-      setInstallerError(err instanceof Error ? err.message : 'mint failed');
-    }
-  };
 
   return (
     <section className="space-y-6">
@@ -372,16 +347,16 @@ export function BridgeConnectionCard({
           <Button
             size="sm"
             variant="outline"
-            onClick={generateInstallerUrl}
-            disabled={mintInstaller.isPending}
+            onClick={() => setConfirmRotate(true)}
+            disabled={rotate.isPending}
           >
             {installerUrl ? (
               <RefreshCw className="h-3.5 w-3.5" aria-hidden />
             ) : (
               <Download className="h-3.5 w-3.5" aria-hidden />
             )}
-            {mintInstaller.isPending
-              ? 'Minting…'
+            {rotate.isPending
+              ? 'Rotating…'
               : installerUrl
                 ? 'Regenerate install URL'
                 : 'Generate install URL'}
@@ -391,52 +366,27 @@ export function BridgeConnectionCard({
           <div className="space-y-1">
             <CodeBlock code={`curl -fsSL ${installerUrl} | sh`} />
             <p className="text-xs text-[var(--color-muted-foreground)]">
-              Run on the bridge host. The URL is one-shot — consumed on first fetch and valid for 1
-              hour. The script auto-installs Docker if needed (or set{' '}
-              <span className="font-mono">POLARIS_AUTO_INSTALL=1</span> for unattended), then writes
-              compose + secrets and brings the bridge up. Click <em>Regenerate</em> to mint a new
-              URL if this one's been used.
+              Run on the bridge host. The URL embeds this bridge's current HMAC, so it stays valid
+              until the next rotation — generating a new URL rotates and invalidates the old one.
+              The script auto-installs Docker if needed (set{' '}
+              <span className="font-mono">POLARIS_AUTO_INSTALL=1</span> for unattended), writes
+              compose + secrets, and brings the bridge up.
             </p>
           </div>
         ) : (
           <p className="text-xs text-[var(--color-muted-foreground)]">
-            Mint a one-shot{' '}
-            <span className="font-mono">curl -fsSL dl.mail.plrs.im/bridge/&lt;token&gt; | sh</span>{' '}
-            link that bootstraps Docker, writes compose + secrets, and brings the bridge up on the
-            host. Manual instructions are below if you prefer to do it by hand.
+            Generates a fresh{' '}
+            <span className="font-mono">dl.mail.plrs.im/bridge/&lt;id&gt;/&lt;hmac&gt;</span> URL by
+            rotating this bridge's HMAC. The previous credential is invalidated immediately, so the
+            URL stays valid until the next rotation. Manual instructions are below if you'd rather
+            not run <span className="font-mono">curl | sh</span>.
           </p>
         )}
-        {installerError ? (
-          <p className="mt-2 text-xs text-[var(--color-destructive)]">
-            {installerError.includes('hmac plaintext cache expired') ? (
-              <>
-                The HMAC plaintext cache has expired (1 hour after register/rotate).{' '}
-                <button type="button" className="underline" onClick={() => setConfirmRotate(true)}>
-                  Rotate credentials
-                </button>{' '}
-                to mint a fresh HMAC + install URL.
-              </>
-            ) : (
-              installerError
-            )}
-          </p>
-        ) : null}
       </div>
 
       <div className="rounded-md border border-[var(--color-border)] p-4">
         <div className="mb-3 flex items-center justify-between gap-2">
           <h2 className="text-base font-semibold">Run the bridge</h2>
-          {showRotate ? (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => setConfirmRotate(true)}
-              disabled={rotate.isPending}
-            >
-              <KeyRound className="h-3.5 w-3.5" aria-hidden />
-              {rotate.isPending ? 'Rotating…' : 'Rotate HMAC key'}
-            </Button>
-          ) : null}
         </div>
         <p className="mb-3 text-xs text-[var(--color-muted-foreground)]">
           The bridge fetches its operational secrets from the polaris API at startup over its own
@@ -570,32 +520,25 @@ export function BridgeConnectionCard({
         </table>
       </div>
 
-      <SecretRevealDialog
-        open={rotated != null}
-        onOpenChange={(o) => !o && setRotated(null)}
-        title="New HMAC key"
-        secretLabel="HMAC key"
-        secret={rotated}
-        note="Re-write ./secrets/hmac_key on the bridge host with this value, then restart the bridge. Polaris stores only the hash — there is no way to retrieve this value again."
-      />
-
       <DestructiveActionDialog
         open={confirmRotate}
         onOpenChange={setConfirmRotate}
-        action="Rotate HMAC key"
+        action="Generate install URL"
         name={bridgeName}
         blastRadius={[
-          'The previous HMAC key is invalidated immediately',
-          'The previous per-bridge CF DNS token is revoked at the same time',
-          'The bridge must be reconfigured with the new key before it can reconnect',
+          'A fresh HMAC key is minted — the previous one is invalidated immediately',
+          'The previous per-bridge CF DNS token is revoked',
+          'Any previously generated install URL stops working at the same time',
+          'A running bridge will need to reinstall using the new URL (HMAC mismatch)',
           'Webhook deliveries signed with the old key are rejected',
         ]}
         reversible={false}
-        confirmLabel="Rotate HMAC key"
+        confirmLabel={installerUrl ? 'Regenerate install URL' : 'Generate install URL'}
         onConfirm={async () => {
           const r = await rotate.mutateAsync(undefined);
           setConfirmRotate(false);
-          setRotated(r.hmac_key);
+          setHmacKey(r.hmac_key);
+          setInstallerUrl(r.installer_url);
         }}
         isPending={rotate.isPending}
       />
