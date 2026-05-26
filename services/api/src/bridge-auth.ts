@@ -1,25 +1,32 @@
-// Bridge HMAC auth for /v1/messages (RFC822) + /v1/messages-state.
+// Bridge HMAC auth for the bridge-facing API surface:
+//   * `/v1/messages` (RFC822 submission), `/v1/messages-state`
+//   * `/v1/bridge/config`
+//   * `/v1/bridge/heartbeat`
 //
-// Distinct from tenant HMAC auth (auth.ts):
-// - Identity is bridge_id from X-Polaris-Bridge-Id.
-// - HMAC secret is the per-bridge secret minted at registration (stored as
-//   an argon2id hash in `bridges.hmac_key_secret_name` and cached in
-//   plaintext in KV_KEY_CACHE under `bridge_plain:<bridge_id>` for verify).
-// - Cloudflare Access service token (CF-Access-Client-Id +
-//   CF-Access-Client-Secret) verified by Access in front of the Worker.
+// Identity is `bridge_id` from `X-Polaris-Bridge-Id`. The HMAC secret is
+// the per-bridge secret minted at registration (stored as an argon2id
+// hash in `bridges.hmac_key_secret_name`; plaintext cached in
+// `KV_KEY_CACHE` under `bridge_plain:<bridge_id>` for verify).
 //
-// Phase 2h:
-//   * Removed the global Env.BRIDGE_HMAC_KEY shared key — it gave every
-//     bridge the same secret and let one bridge impersonate any other.
-//   * `lookupBridgeSecret()` is the single point for resolving the
-//     verifying secret given a bridge_id; all three call sites
-//     (routes/messages.ts, routes/messages-state.ts, the middleware here)
-//     route through it.
-//   * Plaintext is sourced from KV_KEY_CACHE; on cache miss we DO NOT
-//     reload from D1 (the stored value is an argon2 hash and is one-way).
-//     The operator must `polaris-mail bridge rotate` to repopulate KV.
-//     Pre-launch tradeoff: a global KV-cache flush implies a planned
-//     rotation rather than a transparent re-derive. Documented here.
+// Heartbeat v2 (migration 0012) extends the lookup in two ways:
+//
+//   1. **Staged rotation grace.** During a `roll_hmac` window, both the
+//      old and the new plaintext are valid. The new plaintext lives at
+//      `bridge_plain_next:<bridge_id>`. `lookupBridgeSecrets()` returns
+//      both candidates; `bridgeHmacAuth()` tries each in order and
+//      records which one matched (callers can detect a bridge that
+//      already applied the rotation by checking
+//      `c.get('bridgeUsedKey') === 'next'`).
+//
+//   2. **`allowDisabled`.** Disabled bridges no longer have their KV
+//      plaintext wiped — the heartbeat endpoint needs to authenticate
+//      them so it can return `enabled: false` and the bridge can shut
+//      its listeners. Other endpoints (`/v1/messages`, `/v1/bridge/
+//      config`, `/v1/messages-state`) continue to reject disabled
+//      bridges via an explicit `disabled_at IS NULL` check.
+//
+// On cache miss we DO NOT reload from D1 (the stored value is an argon2
+// hash, one-way). The operator must roll the bridge to repopulate KV.
 
 import type { MiddlewareHandler } from 'hono';
 import { verify } from '@polaris-mail/hmac';
@@ -30,6 +37,10 @@ declare module 'hono' {
   interface ContextVariableMap {
     bridgeId: string;
     submissionId: string;
+    // Which key matched HMAC verification: 'current' from
+    // `bridge_plain:<id>` or 'next' from `bridge_plain_next:<id>`.
+    // Set by `bridgeHmacAuth()` on success.
+    bridgeUsedKey: 'current' | 'next';
   }
 }
 
@@ -38,65 +49,112 @@ export function bridgePlainKvKey(bridgeId: string): string {
   return `bridge_plain:${bridgeId}`;
 }
 
+/**
+ * KV key for the staged-rotation pending plaintext. Lives only during
+ * the staged-roll grace window; promoted to `bridge_plain:<id>` on ack
+ * (or by the expire cron after the grace deadline).
+ */
+export function bridgePlainNextKvKey(bridgeId: string): string {
+  return `bridge_plain_next:${bridgeId}`;
+}
+
 /** TTL for the plaintext cache. Matches the api-key plaintext TTL convention. */
 export const BRIDGE_PLAIN_KV_TTL_SECONDS = 60 * 60;
 
-export type BridgeSecretLookupOk = { ok: true; secret: string };
-export type BridgeSecretLookupErr = {
+export type BridgeSecretsOk = {
+  ok: true;
+  current: string;
+  /** Present only during a staged-rotation grace window. */
+  next: string | null;
+};
+export type BridgeSecretsErr = {
   ok: false;
   code: 'unknown_bridge' | 'disabled' | 'key_propagating';
 };
-export type BridgeSecretLookup = BridgeSecretLookupOk | BridgeSecretLookupErr;
+export type BridgeSecretsLookup = BridgeSecretsOk | BridgeSecretsErr;
+
+export interface BridgeAuthOptions {
+  /**
+   * When true, disabled bridges (bridges.disabled_at IS NOT NULL) still
+   * authenticate. Used by the heartbeat endpoint so the bridge can see
+   * `enabled: false` in the response and suspend its listeners. Default
+   * false — every other bridge-facing endpoint refuses disabled
+   * bridges.
+   */
+  allowDisabled?: boolean;
+  /**
+   * When true (default), the middleware requires a valid
+   * `X-Polaris-Submission-Id` header. The message-submission paths
+   * carry one; the bridge-config and heartbeat paths don't.
+   */
+  requireSubmissionId?: boolean;
+}
 
 /**
- * Resolve the verifying HMAC secret for a bridge_id.
+ * Resolve verifying HMAC secret candidates for a bridge_id.
  *
  * Returns:
- *   - `{ ok: true, secret }` when the bridge exists, is not disabled, AND
- *     the plaintext is in KV.
+ *   - `{ ok: true, current, next }` where both are plaintexts (the
+ *     middleware tries verify against each). `next` is non-null only
+ *     during a staged-rotation grace window.
  *   - `{ ok: false, code: 'unknown_bridge' }` when no row exists.
- *   - `{ ok: false, code: 'disabled' }` when the row's `disabled_at` is set.
- *   - `{ ok: false, code: 'key_propagating' }` when the row exists and is
- *     active but the plaintext is missing from KV. The stored argon2 hash
- *     can't be reversed, so the operator must rotate to repopulate KV.
+ *   - `{ ok: false, code: 'disabled' }` when the row is disabled AND
+ *     the caller didn't pass `allowDisabled`.
+ *   - `{ ok: false, code: 'key_propagating' }` when the row exists and
+ *     is active but the plaintext is missing from KV. The stored
+ *     argon2 hash can't be reversed, so the operator must roll to
+ *     repopulate KV.
  */
-export async function lookupBridgeSecret(env: Env, bridgeId: string): Promise<BridgeSecretLookup> {
+export async function lookupBridgeSecrets(
+  env: Env,
+  bridgeId: string,
+  opts: { allowDisabled?: boolean } = {},
+): Promise<BridgeSecretsLookup> {
   const row = await env.DB.prepare(`SELECT id, disabled_at FROM bridges WHERE id = ? LIMIT 1`)
     .bind(bridgeId)
     .first<{ id: string; disabled_at: string | null }>();
   if (!row) return { ok: false, code: 'unknown_bridge' };
-  if (row.disabled_at != null) return { ok: false, code: 'disabled' };
-  const plaintext = await env.KV_KEY_CACHE.get(bridgePlainKvKey(bridgeId));
-  if (!plaintext) return { ok: false, code: 'key_propagating' };
-  return { ok: true, secret: plaintext };
+  if (row.disabled_at != null && !opts.allowDisabled) {
+    return { ok: false, code: 'disabled' };
+  }
+  const [current, next] = await Promise.all([
+    env.KV_KEY_CACHE.get(bridgePlainKvKey(bridgeId)),
+    env.KV_KEY_CACHE.get(bridgePlainNextKvKey(bridgeId)),
+  ]);
+  if (!current && !next) return { ok: false, code: 'key_propagating' };
+  return { ok: true, current: current ?? next ?? '', next: current ? next : null };
 }
 
-export function bridgeHmacAuth(): MiddlewareHandler<{ Bindings: Env }> {
+export function bridgeHmacAuth(opts: BridgeAuthOptions = {}): MiddlewareHandler<{ Bindings: Env }> {
+  const { allowDisabled = false, requireSubmissionId = true } = opts;
   return async (c, next) => {
     const env = c.env;
     const bridgeId = c.req.header('x-polaris-bridge-id');
-    const submissionId = c.req.header('x-polaris-submission-id');
     if (!bridgeId) return buildError(c, 'unauthorized', 'X-Polaris-Bridge-Id required');
     if (!/^[0-9A-HJKMNP-TV-Z]{26}$/.test(bridgeId)) {
       return buildError(c, 'unauthorized', 'invalid bridge_id format');
     }
-    if (!submissionId || !/^[0-9A-HJKMNP-TV-Z]{26}$/.test(submissionId)) {
-      return buildError(c, 'unauthorized', 'invalid submission_id format');
+
+    let submissionId: string | undefined;
+    if (requireSubmissionId) {
+      submissionId = c.req.header('x-polaris-submission-id');
+      if (!submissionId || !/^[0-9A-HJKMNP-TV-Z]{26}$/.test(submissionId)) {
+        return buildError(c, 'unauthorized', 'invalid submission_id format');
+      }
     }
 
-    const lookup = await lookupBridgeSecret(env, bridgeId);
+    const lookup = await lookupBridgeSecrets(env, bridgeId, { allowDisabled });
     if (!lookup.ok) {
       if (lookup.code === 'key_propagating') {
         return buildError(
           c,
           'key_propagating',
-          'bridge plaintext not in cache; rotate to repopulate',
+          'bridge plaintext not in cache; roll to repopulate',
           {
             'retry-after': '2',
           },
         );
       }
-      // unknown_bridge / disabled both look like an unauthorized identity.
       return buildError(c, 'unauthorized', `bridge: ${lookup.code}`);
     }
 
@@ -104,8 +162,8 @@ export function bridgeHmacAuth(): MiddlewareHandler<{ Bindings: Env }> {
     (c.req as unknown as { _cachedBody: string })._cachedBody = bodyText;
 
     const url = new URL(c.req.url);
-    const result = await verify({
-      direction: 'polaris-api',
+    const verifyInput = {
+      direction: 'polaris-api' as const,
       method: c.req.method,
       path: url.pathname,
       query: url.search.slice(1),
@@ -115,17 +173,27 @@ export function bridgeHmacAuth(): MiddlewareHandler<{ Bindings: Env }> {
         },
       },
       body: bodyText,
-      secret: lookup.secret,
-    });
-    if (!result.ok) {
-      return buildError(c, 'unauthorized', `bridge HMAC: ${result.code}`);
+    };
+
+    let usedKey: 'current' | 'next' | null = null;
+    const currentResult = await verify({ ...verifyInput, secret: lookup.current });
+    if (currentResult.ok) {
+      usedKey = 'current';
+    } else if (lookup.next) {
+      const nextResult = await verify({ ...verifyInput, secret: lookup.next });
+      if (nextResult.ok) usedKey = 'next';
+    }
+    if (!usedKey) {
+      return buildError(
+        c,
+        'unauthorized',
+        `bridge HMAC: ${currentResult.ok ? 'unknown' : currentResult.code}`,
+      );
     }
 
-    // Best-effort liveness ping. Every authenticated bridge call —
-    // submission, state sync, heartbeat — drops a fresh timestamp here
-    // so `bridges.last_seen_at` stops being silently always-null. The
-    // catch swallow is deliberate: a transient D1 hiccup must not fail
-    // the actual request (telemetry-only data path).
+    // Best-effort liveness ping. Every authenticated bridge call drops a
+    // fresh timestamp so `bridges.last_seen_at` is meaningful. Telemetry
+    // path — never block the request on D1.
     c.executionCtx.waitUntil(
       env.DB.prepare(`UPDATE bridges SET last_seen_at = ? WHERE id = ?`)
         .bind(new Date().toISOString(), bridgeId)
@@ -135,7 +203,8 @@ export function bridgeHmacAuth(): MiddlewareHandler<{ Bindings: Env }> {
     );
 
     c.set('bridgeId', bridgeId);
-    c.set('submissionId', submissionId);
+    if (submissionId) c.set('submissionId', submissionId);
+    c.set('bridgeUsedKey', usedKey);
     await next();
   };
 }
@@ -153,4 +222,20 @@ export function touchBridgeLastSeen(env: Env, ctx: ExecutionContext, bridgeId: s
       .then(() => undefined)
       .catch(() => undefined),
   );
+}
+
+// --- Back-compat shims ---
+// `lookupBridgeSecret()` is the legacy single-secret lookup used by
+// inline auth in routes/messages.ts and routes/messages-state.ts.
+// Forwards to the candidates lookup and returns just the current key;
+// kept as a separate symbol so the call sites can adopt the staged-
+// rotation tolerant variant gradually.
+export type BridgeSecretLookupOk = { ok: true; secret: string };
+export type BridgeSecretLookupErr = BridgeSecretsErr;
+export type BridgeSecretLookup = BridgeSecretLookupOk | BridgeSecretLookupErr;
+
+export async function lookupBridgeSecret(env: Env, bridgeId: string): Promise<BridgeSecretLookup> {
+  const r = await lookupBridgeSecrets(env, bridgeId);
+  if (!r.ok) return r;
+  return { ok: true, secret: r.current };
 }

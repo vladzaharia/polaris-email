@@ -6,7 +6,7 @@
 //   * POST /v1/admin/bridges/:id/rotate returns the new key ONCE.
 //   * GET responses omit the stored hash column entirely.
 import { Hono } from 'hono';
-import { BridgeHeartbeatBody, type BridgeLiveness } from '@polaris-mail/schema';
+import { BridgeHeartbeatRequest, type BridgeLiveness } from '@polaris-mail/schema';
 import { actorOf, audit } from '../../audit.js';
 import { bodyText, requireScope } from '../../auth.js';
 import type { Env } from '../../env.js';
@@ -14,7 +14,11 @@ import { buildError } from '../../errors.js';
 import { ulid } from '@polaris-mail/ids';
 import { generateSecret } from '@polaris-mail/hmac';
 import { hashSecret } from '../../hashing.js';
-import { bridgePlainKvKey, BRIDGE_PLAIN_KV_TTL_SECONDS } from '../../bridge-auth.js';
+import {
+  bridgePlainKvKey,
+  bridgePlainNextKvKey,
+  BRIDGE_PLAIN_KV_TTL_SECONDS,
+} from '../../bridge-auth.js';
 import {
   bridgeCfDnsPlainKvKey,
   BRIDGE_CF_DNS_PLAIN_KV_TTL_SECONDS,
@@ -155,13 +159,21 @@ bridges.post('/v1/admin/bridges', requireScope('admin:rotate'), async (c) => {
     );
   }
   try {
-    await c.env.DB.prepare(
-      `INSERT INTO bridges
-         (id, name, hmac_key_secret_name, cf_dns_token_id, ts_authkey_id, created_at)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-    )
-      .bind(id, body.name, hashed, cfMinted.tokenId, tsMinted.key?.id ?? null, nowIso)
-      .run();
+    // Two-statement batch: bridges row + default bridge_settings row.
+    // D1 batches as one implicit transaction so a failure on either
+    // leaves nothing behind.
+    await c.env.DB.batch([
+      c.env.DB.prepare(
+        `INSERT INTO bridges
+           (id, name, hmac_key_secret_name, cf_dns_token_id, ts_authkey_id,
+            created_at, hmac_rotated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      ).bind(id, body.name, hashed, cfMinted.tokenId, tsMinted.key?.id ?? null, nowIso, nowIso),
+      c.env.DB.prepare(
+        `INSERT INTO bridge_settings (bridge_id, updated_at, updated_by)
+         VALUES (?, ?, ?)`,
+      ).bind(id, nowIso, actorOf(c)),
+    ]);
   } catch (e) {
     // Best-effort revoke of both tokens so external state stays clean.
     if (cfMinted.tokenId) await revokeCfDnsTokenBestEffort(c.env, cfMinted.tokenId);
@@ -288,10 +300,35 @@ bridges.get('/v1/admin/bridges/:id', requireScope('admin:read'), async (c) => {
   });
 });
 
+/**
+ * Resolve the grace window in seconds for a staged roll. Manual rolls
+ * accept 10m / 1h / 24h / "until-acked" (Number.MAX_SAFE_INTEGER, KV-
+ * limited); auto-roll passes "3600" verbatim.
+ */
+function parseGraceSeconds(raw: string | undefined): number {
+  if (!raw) return 60 * 60; // default 1h
+  if (raw === 'until-acked') return 30 * 24 * 60 * 60; // KV's max TTL is 60d; 30d is plenty
+  const n = Number.parseInt(raw, 10);
+  if (!Number.isFinite(n) || n < 60 || n > 30 * 24 * 60 * 60) return 60 * 60;
+  return n;
+}
+
 bridges.post('/v1/admin/bridges/:id/rotate', requireScope('admin:rotate'), async (c) => {
   const id = c.req.param('id');
+  // mode=staged (default) — Heartbeat-delivered HMAC roll with a grace
+  //   window during which both old and new HMACs are valid. Server
+  //   queues a roll_hmac directive; bridge applies + acks on next
+  //   heartbeat. CF DNS + TS tokens get rotated immediately (the bridge
+  //   picks them up on next /v1/bridge/config fetch or restart).
+  // mode=emergency — Immediate HMAC revocation + disable. The bridge
+  //   stops working until reinstall + Enable. For "we think this
+  //   bridge is compromised, lock it out NOW" scenarios.
+  const mode: 'staged' | 'emergency' = c.req.query('mode') === 'emergency' ? 'emergency' : 'staged';
+  const graceSeconds = parseGraceSeconds(c.req.query('grace_seconds'));
+
   const existing = await c.env.DB.prepare(
-    `SELECT id, name, cf_dns_token_id, ts_authkey_id, disabled_at FROM bridges WHERE id = ?`,
+    `SELECT id, name, cf_dns_token_id, ts_authkey_id, disabled_at, hmac_pending_rotated_at
+     FROM bridges WHERE id = ?`,
   )
     .bind(id)
     .first<{
@@ -300,14 +337,24 @@ bridges.post('/v1/admin/bridges/:id/rotate', requireScope('admin:rotate'), async
       cf_dns_token_id: string | null;
       ts_authkey_id: string | null;
       disabled_at: string | null;
+      hmac_pending_rotated_at: string | null;
     }>();
   if (!existing) return buildError(c, 'not_found', 'bridge not found');
+  if (mode === 'staged' && existing.hmac_pending_rotated_at) {
+    return buildError(
+      c,
+      'conflict',
+      'a staged roll is already in flight for this bridge; wait for it to ack or expire',
+    );
+  }
   const wasDisabled = existing.disabled_at != null;
   const secret = generateSecret();
   const hashed = await hashSecret(secret, c.env.ARGON2_PEPPER);
-  // Same atomicity discipline as register: mint both upstream tokens
-  // BEFORE touching D1. CF/TS individually optional — null returns
-  // mean "not configured", we proceed without that integration.
+  const nowIso = new Date().toISOString();
+
+  // Mint CF + TS BEFORE touching D1, same atomicity discipline as
+  // register. Both are rotated immediately for both modes — only the
+  // HMAC has a staged/grace concept.
   let cfMinted;
   try {
     cfMinted = await mintCfDnsTokenForBridge(c.env, existing.name, id);
@@ -329,21 +376,58 @@ bridges.post('/v1/admin/bridges/:id/rotate', requireScope('admin:rotate'), async
       `ts auth-key mint failed: ${e instanceof Error ? e.message : String(e)}`,
     );
   }
-  // Rolling the HMAC also re-enables a previously-disabled bridge:
-  // the operator can't have meant to roll credentials on a bridge
-  // they didn't intend to bring back online.
-  await c.env.DB.prepare(
-    `UPDATE bridges
-       SET hmac_key_secret_name = ?, cf_dns_token_id = ?, ts_authkey_id = ?, disabled_at = NULL
-     WHERE id = ?`,
-  )
-    .bind(hashed, cfMinted.tokenId, tsMinted.key?.id ?? null, id)
-    .run();
-  // Repopulate plaintext caches so verify + /v1/bridge/config both
-  // resolve immediately after rotate.
-  await c.env.KV_KEY_CACHE.put(bridgePlainKvKey(id), secret, {
-    expirationTtl: BRIDGE_PLAIN_KV_TTL_SECONDS,
-  });
+
+  let graceExpiresAt: string | null = null;
+  let directiveId: string | null = null;
+
+  if (mode === 'staged') {
+    // HMAC stays as bridge_plain (old) + bridge_plain_next (new).
+    // Don't touch hmac_key_secret_name or hmac_rotated_at yet — both
+    // get set on ack (or by the expire cron at grace_expires_at).
+    await c.env.KV_KEY_CACHE.put(bridgePlainNextKvKey(id), secret, {
+      expirationTtl: graceSeconds + 120, // a little slack past the directive deadline
+    });
+    graceExpiresAt = new Date(Date.now() + graceSeconds * 1000).toISOString();
+    directiveId = ulid();
+    await c.env.DB.batch([
+      c.env.DB.prepare(
+        `UPDATE bridges
+           SET cf_dns_token_id = ?, ts_authkey_id = ?,
+               hmac_pending_rotated_at = ?, disabled_at = NULL
+         WHERE id = ?`,
+      ).bind(cfMinted.tokenId, tsMinted.key?.id ?? null, nowIso, id),
+      c.env.DB.prepare(
+        `INSERT INTO bridge_directives
+           (id, bridge_id, kind, payload, queued_at, expires_at)
+         VALUES (?, ?, 'roll_hmac', ?, ?, ?)`,
+      ).bind(
+        directiveId,
+        id,
+        JSON.stringify({ new_hmac_key: secret, grace_expires_at: graceExpiresAt }),
+        nowIso,
+        graceExpiresAt,
+      ),
+    ]);
+  } else {
+    // Emergency: replace HMAC + disable in one transaction. Drop any
+    // pending-roll plaintext so a stale staged roll doesn't keep the
+    // old key alive.
+    await c.env.DB.prepare(
+      `UPDATE bridges
+         SET hmac_key_secret_name = ?, cf_dns_token_id = ?, ts_authkey_id = ?,
+             hmac_rotated_at = ?, hmac_pending_rotated_at = NULL,
+             disabled_at = ?
+       WHERE id = ?`,
+    )
+      .bind(hashed, cfMinted.tokenId, tsMinted.key?.id ?? null, nowIso, nowIso, id)
+      .run();
+    await c.env.KV_KEY_CACHE.put(bridgePlainKvKey(id), secret, {
+      expirationTtl: BRIDGE_PLAIN_KV_TTL_SECONDS,
+    });
+    await c.env.KV_KEY_CACHE.delete(bridgePlainNextKvKey(id));
+  }
+
+  // CF + TS plaintext KV writes (immediate for both modes).
   if (cfMinted.plaintext) {
     await c.env.KV_KEY_CACHE.put(bridgeCfDnsPlainKvKey(id), cfMinted.plaintext, {
       expirationTtl: BRIDGE_CF_DNS_PLAIN_KV_TTL_SECONDS,
@@ -358,7 +442,9 @@ bridges.post('/v1/admin/bridges/:id/rotate', requireScope('admin:rotate'), async
   } else {
     await c.env.KV_KEY_CACHE.delete(bridgeTsAuthkeyPlainKvKey(id));
   }
-  // Best-effort revokes of the prior tokens.
+
+  // Best-effort revokes of the prior CF + TS tokens. (HMAC is plaintext
+  // in KV and gets retired by the ack or expire path.)
   if (existing.cf_dns_token_id) {
     c.executionCtx.waitUntil(revokeCfDnsTokenBestEffort(c.env, existing.cf_dns_token_id));
     await audit(c.env, {
@@ -381,14 +467,34 @@ bridges.post('/v1/admin/bridges/:id/rotate', requireScope('admin:rotate'), async
     actor: actorOf(c),
     action: 'bridge.rotate',
     target: id,
-    meta: { name: existing.name },
+    meta: { name: existing.name, mode, ...(directiveId ? { directive_id: directiveId } : {}) },
   });
-  if (wasDisabled) {
+  if (mode === 'staged' && directiveId) {
+    await audit(c.env, {
+      actor: actorOf(c),
+      action: 'bridge.directive.queue',
+      target: id,
+      meta: {
+        directive_id: directiveId,
+        kind: 'roll_hmac',
+        grace_expires_at: graceExpiresAt,
+      },
+    });
+  }
+  if (mode === 'staged' && wasDisabled) {
     await audit(c.env, {
       actor: actorOf(c),
       action: 'bridge.enable',
       target: id,
       meta: { name: existing.name, reason: 'rotate' },
+    });
+  }
+  if (mode === 'emergency' && !wasDisabled) {
+    await audit(c.env, {
+      actor: actorOf(c),
+      action: 'bridge.disable',
+      target: id,
+      meta: { reason: 'rotate.emergency' },
     });
   }
   if (cfMinted.tokenId) {
@@ -407,27 +513,227 @@ bridges.post('/v1/admin/bridges/:id/rotate', requireScope('admin:rotate'), async
       meta: { key_id: tsMinted.key.id, name: existing.name, reason: 'rotate' },
     });
   }
-  // Rotate refreshes the install URL as a side effect — the URL
-  // embeds the (now-new) HMAC. The previous URL is invalid the moment
-  // the new HMAC is in place. This is the *only* path that produces a
-  // working install URL; there is no separate "mint install URL"
-  // endpoint.
+
   return c.json({
     id,
     hmac_key: secret,
     installer_url: installerUrlFor(c.env, id, secret),
+    mode,
+    grace_expires_at: graceExpiresAt,
+    directive_id: directiveId,
   });
 });
 
-// Re-enable a disabled bridge without rotating the HMAC. The previous
-// HMAC plaintext is gone from KV (we wipe it on disable), so the bridge
-// itself can't reconnect until either:
-//   * its existing on-disk HMAC re-populates KV via the existing
-//     verify-then-cache path on first request, or
-//   * the operator rolls the HMAC (which mints a fresh pair and
-//     re-enables atomically via the rotate endpoint above).
-// In practice operators reach for Enable when they disabled by
-// mistake; Roll HMAC Secret remains the "clean restart" path.
+// --- Bridge settings ---------------------------------------------------------
+// One row per bridge in `bridge_settings` (inserted defaulted on
+// register). The heartbeat response carries the row whenever the
+// bridge's `settings_version` trails the stored version. Panel reads
+// + writes via these endpoints.
+
+interface BridgeSettingsRow {
+  bridge_id: string;
+  version: number;
+  smtp_enabled: number;
+  imap_enabled: number;
+  smtp_port: number;
+  imap_port: number;
+  smtp_tls_mode: 'auto' | 'manual' | 'off';
+  imap_tls_mode: 'auto' | 'manual' | 'off';
+  max_message_size_bytes: number;
+  max_imap_sessions: number;
+  log_level: 'debug' | 'info' | 'warn' | 'error';
+  updated_at: string;
+  updated_by: string;
+}
+
+function settingsRowToResponse(row: BridgeSettingsRow): Record<string, unknown> {
+  return {
+    bridge_id: row.bridge_id,
+    version: row.version,
+    smtp_enabled: row.smtp_enabled === 1,
+    imap_enabled: row.imap_enabled === 1,
+    smtp_port: row.smtp_port,
+    imap_port: row.imap_port,
+    smtp_tls_mode: row.smtp_tls_mode,
+    imap_tls_mode: row.imap_tls_mode,
+    max_message_size_bytes: row.max_message_size_bytes,
+    max_imap_sessions: row.max_imap_sessions,
+    log_level: row.log_level,
+    updated_at: row.updated_at,
+    updated_by: row.updated_by,
+  };
+}
+
+bridges.get('/v1/admin/bridges/:id/settings', requireScope('admin:read'), async (c) => {
+  const id = c.req.param('id');
+  const row = await c.env.DB.prepare(`SELECT * FROM bridge_settings WHERE bridge_id = ?`)
+    .bind(id)
+    .first<BridgeSettingsRow>();
+  if (!row) return buildError(c, 'not_found', 'bridge settings not found');
+  return c.json(settingsRowToResponse(row));
+});
+
+interface SettingsPatch {
+  smtp_enabled?: boolean;
+  imap_enabled?: boolean;
+  smtp_port?: number;
+  imap_port?: number;
+  smtp_tls_mode?: 'auto' | 'manual' | 'off';
+  imap_tls_mode?: 'auto' | 'manual' | 'off';
+  max_message_size_bytes?: number;
+  max_imap_sessions?: number;
+  log_level?: 'debug' | 'info' | 'warn' | 'error';
+}
+
+const TLS_MODES = new Set(['auto', 'manual', 'off']);
+const LOG_LEVELS = new Set(['debug', 'info', 'warn', 'error']);
+
+function validateSettingsPatch(input: unknown): SettingsPatch | string {
+  if (typeof input !== 'object' || input === null || Array.isArray(input)) {
+    return 'body must be an object';
+  }
+  const p = input as Record<string, unknown>;
+  const out: SettingsPatch = {};
+  if ('smtp_enabled' in p) {
+    if (typeof p.smtp_enabled !== 'boolean') return 'smtp_enabled must be boolean';
+    out.smtp_enabled = p.smtp_enabled;
+  }
+  if ('imap_enabled' in p) {
+    if (typeof p.imap_enabled !== 'boolean') return 'imap_enabled must be boolean';
+    out.imap_enabled = p.imap_enabled;
+  }
+  for (const k of ['smtp_port', 'imap_port'] as const) {
+    if (k in p) {
+      const v = p[k];
+      if (typeof v !== 'number' || !Number.isInteger(v) || v < 1 || v > 65535) {
+        return `${k} must be an integer 1-65535`;
+      }
+      out[k] = v;
+    }
+  }
+  for (const k of ['smtp_tls_mode', 'imap_tls_mode'] as const) {
+    if (k in p) {
+      const v = p[k];
+      if (typeof v !== 'string' || !TLS_MODES.has(v)) return `${k} must be auto|manual|off`;
+      out[k] = v as 'auto' | 'manual' | 'off';
+    }
+  }
+  if ('max_message_size_bytes' in p) {
+    const v = p.max_message_size_bytes;
+    if (typeof v !== 'number' || !Number.isInteger(v) || v < 1024 || v > 1024 * 1024 * 1024) {
+      return 'max_message_size_bytes must be an integer 1024..1073741824';
+    }
+    out.max_message_size_bytes = v;
+  }
+  if ('max_imap_sessions' in p) {
+    const v = p.max_imap_sessions;
+    if (typeof v !== 'number' || !Number.isInteger(v) || v < 1 || v > 10000) {
+      return 'max_imap_sessions must be an integer 1..10000';
+    }
+    out.max_imap_sessions = v;
+  }
+  if ('log_level' in p) {
+    const v = p.log_level;
+    if (typeof v !== 'string' || !LOG_LEVELS.has(v)) {
+      return 'log_level must be debug|info|warn|error';
+    }
+    out.log_level = v as 'debug' | 'info' | 'warn' | 'error';
+  }
+  return out;
+}
+
+bridges.put('/v1/admin/bridges/:id/settings', requireScope('admin:rotate'), async (c) => {
+  const id = c.req.param('id');
+  let body: unknown;
+  try {
+    body = JSON.parse(bodyText(c) || '{}');
+  } catch {
+    return buildError(c, 'bad_request', 'invalid json');
+  }
+  const patch = validateSettingsPatch(body);
+  if (typeof patch === 'string') return buildError(c, 'bad_request', patch);
+
+  const existing = await c.env.DB.prepare(`SELECT * FROM bridge_settings WHERE bridge_id = ?`)
+    .bind(id)
+    .first<BridgeSettingsRow>();
+  if (!existing) return buildError(c, 'not_found', 'bridge settings not found');
+
+  // Build the diff for audit + the SET clauses. Only emit a write +
+  // version bump when at least one field actually changes.
+  const updates: string[] = [];
+  const binds: (string | number)[] = [];
+  const diff: Record<string, { from: unknown; to: unknown }> = {};
+  const set = <K extends keyof SettingsPatch>(
+    col: K,
+    sqlVal: string | number,
+    rowVal: unknown,
+  ): void => {
+    updates.push(`${String(col)} = ?`);
+    binds.push(sqlVal);
+    diff[String(col)] = { from: rowVal, to: patch[col] };
+  };
+  if (patch.smtp_enabled !== undefined && patch.smtp_enabled !== (existing.smtp_enabled === 1)) {
+    set('smtp_enabled', patch.smtp_enabled ? 1 : 0, existing.smtp_enabled === 1);
+  }
+  if (patch.imap_enabled !== undefined && patch.imap_enabled !== (existing.imap_enabled === 1)) {
+    set('imap_enabled', patch.imap_enabled ? 1 : 0, existing.imap_enabled === 1);
+  }
+  if (patch.smtp_port !== undefined && patch.smtp_port !== existing.smtp_port) {
+    set('smtp_port', patch.smtp_port, existing.smtp_port);
+  }
+  if (patch.imap_port !== undefined && patch.imap_port !== existing.imap_port) {
+    set('imap_port', patch.imap_port, existing.imap_port);
+  }
+  if (patch.smtp_tls_mode !== undefined && patch.smtp_tls_mode !== existing.smtp_tls_mode) {
+    set('smtp_tls_mode', patch.smtp_tls_mode, existing.smtp_tls_mode);
+  }
+  if (patch.imap_tls_mode !== undefined && patch.imap_tls_mode !== existing.imap_tls_mode) {
+    set('imap_tls_mode', patch.imap_tls_mode, existing.imap_tls_mode);
+  }
+  if (
+    patch.max_message_size_bytes !== undefined &&
+    patch.max_message_size_bytes !== existing.max_message_size_bytes
+  ) {
+    set('max_message_size_bytes', patch.max_message_size_bytes, existing.max_message_size_bytes);
+  }
+  if (
+    patch.max_imap_sessions !== undefined &&
+    patch.max_imap_sessions !== existing.max_imap_sessions
+  ) {
+    set('max_imap_sessions', patch.max_imap_sessions, existing.max_imap_sessions);
+  }
+  if (patch.log_level !== undefined && patch.log_level !== existing.log_level) {
+    set('log_level', patch.log_level, existing.log_level);
+  }
+
+  if (updates.length === 0) {
+    return c.json(settingsRowToResponse(existing));
+  }
+
+  const nowIso = new Date().toISOString();
+  const actor = actorOf(c);
+  const newVersion = existing.version + 1;
+  updates.push('version = ?', 'updated_at = ?', 'updated_by = ?');
+  binds.push(newVersion, nowIso, actor);
+  binds.push(id);
+  await c.env.DB.prepare(`UPDATE bridge_settings SET ${updates.join(', ')} WHERE bridge_id = ?`)
+    .bind(...binds)
+    .run();
+
+  await audit(c.env, {
+    actor,
+    action: 'bridge.settings.update',
+    target: id,
+    meta: { version: newVersion, diff },
+  });
+
+  const updated = await c.env.DB.prepare(`SELECT * FROM bridge_settings WHERE bridge_id = ?`)
+    .bind(id)
+    .first<BridgeSettingsRow>();
+  return c.json(settingsRowToResponse(updated as BridgeSettingsRow));
+});
+
+// Re-enable a disabled bridge without rotating the HMAC.
 bridges.post('/v1/admin/bridges/:id/enable', requireScope('admin:rotate'), async (c) => {
   const id = c.req.param('id');
   const row = await c.env.DB.prepare(`SELECT id, name, disabled_at FROM bridges WHERE id = ?`)
@@ -468,9 +774,12 @@ bridges.delete('/v1/admin/bridges/:id', requireScope('admin:rotate'), async (c) 
       .bind(nowIso, id)
       .run();
     if (r.meta.changes === 0) return buildError(c, 'not_found', 'not found or already disabled');
-    // Drop the plaintext cache so any further verify with this id 401s
-    // immediately rather than waiting on the TTL.
-    await c.env.KV_KEY_CACHE.delete(bridgePlainKvKey(id));
+    // Heartbeat v2: keep the HMAC plaintext in KV so the bridge can
+    // still authenticate the heartbeat endpoint and receive the
+    // `enabled: false` signal. Every other bridge-facing endpoint is
+    // already gated by `lookupBridgeSecrets()`'s row check (returns
+    // `code: 'disabled'` when allowDisabled is false), so the bridge
+    // can't submit messages or fetch config while disabled.
     await audit(c.env, {
       actor: actorOf(c),
       action: 'bridge.disable',
@@ -548,7 +857,7 @@ bridges.delete('/v1/admin/bridges/:id', requireScope('admin:rotate'), async (c) 
 // All three are admin:read. They surface what the new panel detail page
 // needs without forcing the panel to assemble it from generic endpoints.
 
-// Latest heartbeat snapshot. `payload` is the parsed BridgeHeartbeatBody
+// Latest heartbeat snapshot. `payload` is the parsed BridgeHeartbeatRequest
 // (or null if the bridge has never phoned home). Server-side `liveness`
 // is computed from `last_seen_at`, NOT from `last_heartbeat_at` — a
 // bridge that's submitting messages but hasn't sent a heartbeat yet
@@ -571,7 +880,7 @@ bridges.get('/v1/admin/bridges/:id/heartbeat', requireScope('admin:read'), async
   let payload: unknown = null;
   if (row.last_heartbeat_json) {
     try {
-      const parsed = BridgeHeartbeatBody.safeParse(JSON.parse(row.last_heartbeat_json));
+      const parsed = BridgeHeartbeatRequest.safeParse(JSON.parse(row.last_heartbeat_json));
       // If the stored payload no longer parses (schema bumped, manual
       // tampering), surface null rather than half-parsed garbage. The
       // raw bytes stay on disk; just don't show them to the panel.

@@ -44,6 +44,9 @@ export class MockD1 {
     this.tables.set('api_keys', []);
     this.tables.set('dkim_keys', []);
     this.tables.set('bridges', []);
+    // Heartbeat v2 (migration 0012).
+    this.tables.set('bridge_settings', []);
+    this.tables.set('bridge_directives', []);
     this.tables.set('webhook_subs', []);
     this.tables.set('messages', []);
     this.tables.set('message_attempts', []);

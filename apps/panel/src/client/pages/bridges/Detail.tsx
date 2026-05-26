@@ -64,21 +64,39 @@ interface BridgeDetail {
   last_heartbeat_at: string | null;
 }
 
+interface HeartbeatV2Payload {
+  schema_version: 2;
+  bridge_version: string;
+  uptime_seconds: number;
+  reported_at: string;
+  node: {
+    hostname: string;
+    os: string;
+    arch: string;
+    container_id: string | null;
+    tailnet_node_id: string | null;
+  };
+  services: {
+    smtp: { listening: boolean; port: number; sessions_active: number; errors_24h: number };
+    imap: { listening: boolean; port: number; sessions_active: number; errors_24h: number };
+    webhook_receiver: { deliveries_24h: number; errors_24h: number };
+  };
+  acme: {
+    fqdn: string;
+    cert_not_after: string | null;
+    last_renew_attempt_at: string | null;
+    last_renew_status: 'ok' | 'failed' | 'pending' | null;
+  };
+  mirror: { message_count: number; lag_seconds: number; last_sync_at: string | null };
+  recent_errors: { at: string; code: string; message: string }[];
+}
+
 interface HeartbeatSnapshot {
   liveness: 'live' | 'stale' | 'offline';
   bridge_version: string | null;
   last_heartbeat_at: string | null;
   last_seen_at: string | null;
-  payload: {
-    schema_version: 1;
-    bridge_version: string;
-    uptime_seconds: number;
-    imap_sessions_active: number;
-    smtp_submissions_24h: number;
-    errors_24h: number;
-    mirror_message_count: number;
-    reported_at: string;
-  } | null;
+  payload: HeartbeatV2Payload | null;
 }
 
 interface ActivityRollup {
@@ -390,7 +408,7 @@ export function BridgeDetail() {
           </div>
 
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-            <StatTile label="IMAP sessions" value={hb?.imap_sessions_active ?? '—'} />
+            <StatTile label="IMAP sessions" value={hb?.services.imap.sessions_active ?? '—'} />
             <StatTile label="Sent (24h)" value={totals?.submitted ?? '—'} />
             <StatTile
               label="Failed (24h)"
@@ -404,13 +422,147 @@ export function BridgeDetail() {
               value={hb ? formatDuration(hb.uptime_seconds * 1000) : '—'}
               mono={!hb}
             />
-            <StatTile label="Mirror rows" value={hb?.mirror_message_count ?? '—'} />
+            <StatTile label="Mirror rows" value={hb?.mirror.message_count ?? '—'} />
             <StatTile
               label="Errors (24h)"
-              value={hb?.errors_24h ?? '—'}
-              className={hb && hb.errors_24h > 0 ? 'border-[var(--color-warning)]' : undefined}
+              value={hb ? hb.services.smtp.errors_24h + hb.services.imap.errors_24h : '—'}
+              className={
+                hb && hb.services.smtp.errors_24h + hb.services.imap.errors_24h > 0
+                  ? 'border-[var(--color-warning)]'
+                  : undefined
+              }
             />
           </div>
+
+          {hb ? (
+            <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+              {/* Node */}
+              <section className="rounded-md border border-[var(--color-border)] p-3">
+                <div className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-[var(--color-muted-foreground)]">
+                  Node
+                </div>
+                <MetaList>
+                  <MetaRow label="Hostname">
+                    <span className="font-mono text-xs">{hb.node.hostname}</span>
+                  </MetaRow>
+                  <MetaRow label="OS / arch">
+                    <span className="font-mono text-xs">
+                      {hb.node.os}/{hb.node.arch}
+                    </span>
+                  </MetaRow>
+                  {hb.node.container_id ? (
+                    <MetaRow label="Container">
+                      <span className="font-mono text-xs">{hb.node.container_id.slice(0, 12)}</span>
+                    </MetaRow>
+                  ) : null}
+                  {hb.node.tailnet_node_id ? (
+                    <MetaRow label="Tailnet node">
+                      <span className="font-mono text-xs">{hb.node.tailnet_node_id}</span>
+                    </MetaRow>
+                  ) : null}
+                </MetaList>
+              </section>
+
+              {/* Services */}
+              <section className="rounded-md border border-[var(--color-border)] p-3">
+                <div className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-[var(--color-muted-foreground)]">
+                  Services
+                </div>
+                <MetaList>
+                  <MetaRow label="SMTP">
+                    <span className="font-mono text-xs">
+                      {hb.services.smtp.listening ? 'up' : 'down'} :{hb.services.smtp.port}
+                      {' · '}
+                      sessions {hb.services.smtp.sessions_active}
+                      {' · '}
+                      errors {hb.services.smtp.errors_24h}/24h
+                    </span>
+                  </MetaRow>
+                  <MetaRow label="IMAP">
+                    <span className="font-mono text-xs">
+                      {hb.services.imap.listening ? 'up' : 'down'} :{hb.services.imap.port}
+                      {' · '}
+                      sessions {hb.services.imap.sessions_active}
+                      {' · '}
+                      errors {hb.services.imap.errors_24h}/24h
+                    </span>
+                  </MetaRow>
+                  <MetaRow label="Webhooks">
+                    <span className="font-mono text-xs">
+                      delivered {hb.services.webhook_receiver.deliveries_24h}/24h
+                      {' · '}
+                      errors {hb.services.webhook_receiver.errors_24h}/24h
+                    </span>
+                  </MetaRow>
+                </MetaList>
+              </section>
+
+              {/* ACME */}
+              <section className="rounded-md border border-[var(--color-border)] p-3">
+                <div className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-[var(--color-muted-foreground)]">
+                  ACME / certs
+                </div>
+                <MetaList>
+                  <MetaRow label="FQDN">
+                    <span className="font-mono text-xs">{hb.acme.fqdn || '—'}</span>
+                  </MetaRow>
+                  <MetaRow label="Cert expiry">
+                    {hb.acme.cert_not_after ? (
+                      <span title={formatDate(hb.acme.cert_not_after)}>
+                        {formatRelative(hb.acme.cert_not_after)}
+                      </span>
+                    ) : (
+                      <span className="text-[var(--color-muted-foreground)]">—</span>
+                    )}
+                  </MetaRow>
+                  <MetaRow label="Last renew">
+                    {hb.acme.last_renew_status ? (
+                      <span className="font-mono text-xs">{hb.acme.last_renew_status}</span>
+                    ) : (
+                      <span className="text-[var(--color-muted-foreground)]">—</span>
+                    )}
+                  </MetaRow>
+                </MetaList>
+              </section>
+
+              {/* Mirror + recent errors */}
+              <section className="rounded-md border border-[var(--color-border)] p-3">
+                <div className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-[var(--color-muted-foreground)]">
+                  Mirror &amp; errors
+                </div>
+                <MetaList>
+                  <MetaRow label="Messages">
+                    <span className="font-mono text-xs">{hb.mirror.message_count}</span>
+                  </MetaRow>
+                  <MetaRow label="Sync lag">
+                    <span className="font-mono text-xs">{hb.mirror.lag_seconds.toFixed(1)}s</span>
+                  </MetaRow>
+                </MetaList>
+                {hb.recent_errors.length > 0 ? (
+                  <div className="mt-3 max-h-32 space-y-1 overflow-auto text-xs">
+                    {hb.recent_errors.slice(0, 10).map((e, i) => (
+                      <div
+                        key={`${e.at}-${i}`}
+                        className="rounded border border-[var(--color-border)] bg-[var(--color-card)] p-1.5 font-mono"
+                      >
+                        <span className="text-[var(--color-muted-foreground)]">
+                          {formatRelative(e.at)}
+                        </span>
+                        {' · '}
+                        <span className="text-[var(--color-warning)]">{e.code}</span>
+                        {' · '}
+                        <span>{e.message}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="mt-2 text-xs text-[var(--color-muted-foreground)]">
+                    No recent errors reported.
+                  </p>
+                )}
+              </section>
+            </div>
+          ) : null}
         </section>
 
         {/* ---------- tabs ---------- */}
@@ -624,7 +776,7 @@ function OverviewTab({
           primary={hb ? `mail-bridge ${hb.bridge_version}` : 'No heartbeat yet'}
           secondary={
             hb
-              ? `${hb.imap_sessions_active} IMAP session${hb.imap_sessions_active === 1 ? '' : 's'}`
+              ? `${hb.services.imap.sessions_active} IMAP session${hb.services.imap.sessions_active === 1 ? '' : 's'}`
               : 'Open to grab setup snippets'
           }
           onOpen={onOpenConnection}

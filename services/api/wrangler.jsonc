@@ -47,6 +47,8 @@
   //   `20 5 * * *`   daily 05:20  → audit-verify
   //   `50 5 * * *`   daily 05:50  → policy-backfill
   //   `0 6 * * 7`    weekly Sun   → d1-backup  (CF rejects `0` for day-of-week; `7` is also Sunday)
+  //   `15 4 * * *`   daily 04:15  → bridge-roll-rotate (30d HMAC hygiene)
+  //   `*/10 * * * *` every 10 min → bridge-roll-expire (staged-roll grace sweep)
   "triggers": {
     "crons": [
       "*/5 * * * *",
@@ -62,6 +64,8 @@
       "20 5 * * *",
       "50 5 * * *",
       "0 6 * * 7",
+      "15 4 * * *",
+      "*/10 * * * *",
     ],
   },
   // FANOUT_QUEUE is bound both as a consumer (webhook fan-out worker) and a

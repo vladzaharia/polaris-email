@@ -229,15 +229,38 @@ async function bridgeHeartbeatRequest(
   });
 }
 
+// Heartbeat v2 body — matches BridgeHeartbeatRequest in
+// packages/schema/src/index.ts. Earlier tests used the v1 shape;
+// migration 0012 made v2 mandatory.
 const validHeartbeatBody = () => ({
-  schema_version: 1 as const,
+  schema_version: 2 as const,
   bridge_version: '0.1.0-test',
   uptime_seconds: 300,
-  imap_sessions_active: 2,
-  smtp_submissions_24h: 17,
-  errors_24h: 0,
-  mirror_message_count: 42,
   reported_at: new Date().toISOString(),
+  node: {
+    hostname: 'test-host',
+    os: 'linux',
+    arch: 'amd64',
+    container_id: null,
+    tailnet_node_id: null,
+  },
+  services: {
+    smtp: { listening: true, port: 465, sessions_active: 0, errors_24h: 0 },
+    imap: { listening: true, port: 993, sessions_active: 2, errors_24h: 0 },
+    webhook_receiver: { deliveries_24h: 17, errors_24h: 0 },
+  },
+  acme: {
+    fqdn: 'test.mail.plrs.im',
+    cert_not_after: null,
+    last_renew_attempt_at: null,
+    last_renew_status: null,
+  },
+  mirror: { message_count: 42, lag_seconds: 0, last_sync_at: null },
+  recent_errors: [],
+  settings_version: 0,
+  directive_acks: [],
+  logs: [],
+  last_log_seq: 0,
 });
 
 describe('bridge telemetry', () => {
@@ -292,7 +315,10 @@ describe('bridge telemetry', () => {
     const hbRes = await callWorker(
       await bridgeHeartbeatRequest(bridge.id, bridge.hmac_key, validHeartbeatBody()),
     );
-    expect(hbRes.status).toBe(204);
+    expect(hbRes.status).toBe(200);
+    const hbBody = (await hbRes.json()) as { enabled: boolean; settings: unknown };
+    expect(hbBody.enabled).toBe(true);
+    expect(hbBody.settings).not.toBeNull();
 
     const getRes = await callWorker(
       await signedRequest(
@@ -330,9 +356,8 @@ describe('bridge telemetry', () => {
     expect(snap.payload).toMatchObject({
       bridge_version: '0.1.0-test',
       uptime_seconds: 300,
-      imap_sessions_active: 2,
-      smtp_submissions_24h: 17,
-      mirror_message_count: 42,
+      services: { imap: { sessions_active: 2 } },
+      mirror: { message_count: 42 },
     });
   });
 
@@ -347,20 +372,36 @@ describe('bridge telemetry', () => {
     expect(res.status).toBe(401);
   });
 
-  it('rejects heartbeat with invalid body shape', async () => {
+  it('rejects v1 heartbeats with a clear upgrade-required error', async () => {
     const admin = sharedAdmin;
-    const bridge = await registerBridge(admin, 'tel-bad');
+    const bridge = await registerBridge(admin, 'tel-v1');
 
     const res = await callWorker(
       await bridgeHeartbeatRequest(bridge.id, bridge.hmac_key, {
         schema_version: 1,
-        bridge_version: '',
+        bridge_version: '0.0.9',
         uptime_seconds: 0,
         imap_sessions_active: 0,
         smtp_submissions_24h: 0,
         errors_24h: 0,
         mirror_message_count: 0,
         reported_at: new Date().toISOString(),
+      }),
+    );
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: { message: string } };
+    expect(body.error.message).toContain('bridge image too old');
+  });
+
+  it('rejects heartbeat with invalid body shape', async () => {
+    const admin = sharedAdmin;
+    const bridge = await registerBridge(admin, 'tel-bad');
+
+    const res = await callWorker(
+      await bridgeHeartbeatRequest(bridge.id, bridge.hmac_key, {
+        schema_version: 2,
+        bridge_version: '',
+        uptime_seconds: 0,
       }),
     );
     expect(res.status).toBe(400);

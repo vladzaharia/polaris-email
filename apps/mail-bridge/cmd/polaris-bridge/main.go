@@ -390,14 +390,22 @@ func main() {
 		}()
 	}
 
-	// Heartbeat ticker — POST /v1/bridge/heartbeat every 60s with version
-	// + counter snapshot. Best-effort; failures log and we move on. The
-	// ticker also implicitly bumps `bridges.last_seen_at` on the API side
-	// since the heartbeat goes through bridgeHmacAuth.
+	// Heartbeat ticker (v2) — POST /v1/bridge/heartbeat every 60s
+	// (adaptive). The request envelope carries node info + service /
+	// acme / mirror state + recent logs; the response carries the
+	// enable/disable signal + settings (currently logged-only) +
+	// directives (roll_hmac, restart). See internal/heartbeat for the
+	// applied-vs-deferred matrix.
+	//
+	// Phase 1: LogRing + WriteHMAC are nil, meaning logs aren't
+	// forwarded and roll_hmac directives are logged-only. Wiring those
+	// is a Phase 2 followup that lands with the listener supervisor.
 	heartbeat.Start(ctx, heartbeat.Deps{
 		Client:    sdkClient,
 		Metrics:   metricsReg,
 		Mirror:    mirrorDB,
+		FQDN:      bridgeCfg.FQDN,
+		HMACKey:   cfg.HMACKey,
 		StartedAt: time.Now(),
 	})
 

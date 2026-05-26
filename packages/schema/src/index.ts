@@ -897,6 +897,14 @@ export const AuditAction = z.enum([
   // the optional TS sidecar deployment mode).
   'bridge.ts_authkey.mint',
   'bridge.ts_authkey.revoke',
+  // Heartbeat v2 (added in migration 0012). `bridge.settings.update`
+  // is one row per panel-side change with the diff in meta;
+  // directive.{queue,ack,expire} bookend the lifecycle of each
+  // server-issued directive (roll_hmac, restart).
+  'bridge.settings.update',
+  'bridge.directive.queue',
+  'bridge.directive.ack',
+  'bridge.directive.expire',
   // domain + DKIM
   'domain.create',
   'domain.update',
@@ -1255,37 +1263,182 @@ export type UpdateSuppressionRequest = z.infer<typeof UpdateSuppressionRequest>;
 
 // ---------- Bridge telemetry ----------
 //
+// Heartbeat v2 (schema_version: 2): bidirectional control + diagnostics
+// channel. Bridge → server every 60s (adaptive down to 5s on demand);
+// server response carries enable/disable, settings, and one-shot
+// directives the bridge applies + acks on a subsequent heartbeat.
+//
 // Inputs:
-//   * `BridgeHeartbeatBody` — the body the on-prem mail-bridge POSTs to
-//     /v1/bridge/heartbeat every ~60s. Signed with the bridge HMAC key
-//     (see `bridge-auth.ts`); identity is in X-Polaris-Bridge-Id, not the
-//     body. `schema_version` is mandatory and bumped on any breaking
-//     payload change so the handler can branch on it instead of inferring
-//     from field presence.
+//   * `BridgeHeartbeatRequest` — body the bridge POSTs to
+//     /v1/bridge/heartbeat. HMAC-signed (see `bridge-auth.ts`); identity
+//     is in X-Polaris-Bridge-Id, not the body. `schema_version` is
+//     mandatory and lets handlers reject older bridge images cleanly.
 //
 // Outputs:
-//   * `BridgeLiveness` — coarse "is it alive" enum computed by the server
-//     from `last_seen_at`. The panel's badge reads this enum verbatim.
-//   * `BridgeHeartbeatSnapshot` — what GET /v1/admin/bridges/:id/heartbeat
-//     returns. Carries the parsed heartbeat payload plus server-stamped
-//     `last_heartbeat_at` (we trust the server clock over the bridge's).
+//   * `BridgeHeartbeatResponse` — server's reply: enabled flag, the
+//     current `BridgeSettings` (only when bridge's `settings_version`
+//     trails the server), pending `BridgeDirective`s, and the polling
+//     hint the bridge uses to size the next sleep.
+//   * `BridgeLiveness` — coarse "is it alive" enum computed by the
+//     server from `last_seen_at`. The panel's badge reads it verbatim.
+//   * `BridgeHeartbeatSnapshot` — what GET /v1/admin/bridges/:id/
+//     heartbeat returns. Carries the parsed heartbeat payload plus
+//     server-stamped `last_heartbeat_at`.
 //   * `BridgeActivityRollup` — what GET /v1/admin/bridges/:id/activity
 //     returns: 24h message counts plus the most recent message envelope.
 
 export const BridgeLiveness = z.enum(['live', 'stale', 'offline']);
 export type BridgeLiveness = z.infer<typeof BridgeLiveness>;
 
-export const BridgeHeartbeatBody = z.object({
-  schema_version: z.literal(1),
+// --- BridgeSettings ---
+// Settings rendered by the panel + applied by the bridge supervisor.
+// `version` advances by 1 on every change so the bridge can short-circuit
+// re-application when its current version matches the response.
+export const BridgeTlsMode = z.enum(['auto', 'manual', 'off']);
+export type BridgeTlsMode = z.infer<typeof BridgeTlsMode>;
+export const BridgeLogLevel = z.enum(['debug', 'info', 'warn', 'error']);
+export type BridgeLogLevel = z.infer<typeof BridgeLogLevel>;
+
+export const BridgeSettings = z.object({
+  version: z.number().int().nonnegative(),
+  smtp_enabled: z.boolean(),
+  imap_enabled: z.boolean(),
+  smtp_port: z.number().int().min(1).max(65535),
+  imap_port: z.number().int().min(1).max(65535),
+  smtp_tls_mode: BridgeTlsMode,
+  imap_tls_mode: BridgeTlsMode,
+  max_message_size_bytes: z.number().int().positive(),
+  max_imap_sessions: z.number().int().positive(),
+  log_level: BridgeLogLevel,
+});
+export type BridgeSettings = z.infer<typeof BridgeSettings>;
+
+// --- BridgeDirective ---
+// One-shot commands the bridge applies + acks on a subsequent heartbeat.
+// Discriminated by `kind`.
+export const BridgeDirective = z.discriminatedUnion('kind', [
+  z.object({
+    id: Ulid,
+    kind: z.literal('roll_hmac'),
+    // Plaintext of the new HMAC. The server is already trusted via the
+    // outer HMAC-auth on the heartbeat request, so embedding the
+    // plaintext here is no weaker than what an attacker with the HMAC
+    // could already do.
+    new_hmac_key: z.string().min(1),
+    // ISO timestamp; the server keeps both old + new HMACs valid until
+    // this point (or until the bridge acks, whichever is first).
+    grace_expires_at: z.string(),
+  }),
+  z.object({
+    id: Ulid,
+    kind: z.literal('restart'),
+    // ISO timestamp the directive was queued; bridge uses this purely
+    // for ack metadata. No body fields — restart is unconditional.
+    queued_at: z.string(),
+  }),
+]);
+export type BridgeDirective = z.infer<typeof BridgeDirective>;
+
+export const BridgeDirectiveAck = z.object({
+  id: Ulid,
+  kind: z.enum(['roll_hmac', 'restart']),
+  applied_at: z.string(),
+});
+export type BridgeDirectiveAck = z.infer<typeof BridgeDirectiveAck>;
+
+// --- Heartbeat envelope ---
+export const BridgeServiceState = z.object({
+  listening: z.boolean(),
+  port: z.number().int().min(0).max(65535),
+  sessions_active: z.number().int().nonnegative(),
+  errors_24h: z.number().int().nonnegative(),
+});
+export type BridgeServiceState = z.infer<typeof BridgeServiceState>;
+
+export const BridgeNodeInfo = z.object({
+  hostname: z.string(),
+  os: z.string(), // e.g. "linux/amd64"
+  arch: z.string(),
+  container_id: z.string().nullable(),
+  tailnet_node_id: z.string().nullable(),
+});
+export type BridgeNodeInfo = z.infer<typeof BridgeNodeInfo>;
+
+export const BridgeAcmeState = z.object({
+  fqdn: z.string(),
+  cert_not_after: z.string().nullable(),
+  last_renew_attempt_at: z.string().nullable(),
+  last_renew_status: z.enum(['ok', 'failed', 'pending']).nullable(),
+});
+export type BridgeAcmeState = z.infer<typeof BridgeAcmeState>;
+
+export const BridgeMirrorState = z.object({
+  message_count: z.number().int().nonnegative(),
+  lag_seconds: z.number().nonnegative(),
+  last_sync_at: z.string().nullable(),
+});
+export type BridgeMirrorState = z.infer<typeof BridgeMirrorState>;
+
+export const BridgeErrorRecord = z.object({
+  at: z.string(),
+  code: z.string(),
+  message: z.string(),
+});
+export type BridgeErrorRecord = z.infer<typeof BridgeErrorRecord>;
+
+export const BridgeLogLine = z.object({
+  seq: z.number().int().nonnegative(),
+  at: z.string(),
+  level: BridgeLogLevel,
+  msg: z.string(),
+});
+export type BridgeLogLine = z.infer<typeof BridgeLogLine>;
+
+export const BridgeHeartbeatRequest = z.object({
+  schema_version: z.literal(2),
   bridge_version: z.string().min(1).max(64),
   uptime_seconds: z.number().int().nonnegative(),
-  imap_sessions_active: z.number().int().nonnegative(),
-  smtp_submissions_24h: z.number().int().nonnegative(),
-  errors_24h: z.number().int().nonnegative(),
-  mirror_message_count: z.number().int().nonnegative(),
   reported_at: z.string().datetime(),
+  node: BridgeNodeInfo,
+  services: z.object({
+    smtp: BridgeServiceState,
+    imap: BridgeServiceState,
+    webhook_receiver: z.object({
+      deliveries_24h: z.number().int().nonnegative(),
+      errors_24h: z.number().int().nonnegative(),
+    }),
+  }),
+  acme: BridgeAcmeState,
+  mirror: BridgeMirrorState,
+  recent_errors: z.array(BridgeErrorRecord).max(10),
+  // What settings_version the bridge is currently running. Server omits
+  // settings from the response when this matches the stored version.
+  settings_version: z.number().int().nonnegative(),
+  // Acks for directives delivered in earlier heartbeats.
+  directive_acks: z.array(BridgeDirectiveAck),
+  // New log lines since the previous successful heartbeat. Unbounded;
+  // bridge ships everything it has buffered locally.
+  logs: z.array(BridgeLogLine),
+  // High-water mark the bridge has shipped through. Server returns the
+  // server-side high-water in the response so the bridge can advance.
+  last_log_seq: z.number().int().nonnegative(),
 });
-export type BridgeHeartbeatBody = z.infer<typeof BridgeHeartbeatBody>;
+export type BridgeHeartbeatRequest = z.infer<typeof BridgeHeartbeatRequest>;
+
+export const BridgeHeartbeatResponse = z.object({
+  enabled: z.boolean(),
+  reason: z.string().nullable(),
+  // Bridge sleeps this many seconds before its next heartbeat. Defaults
+  // to 60; server can shrink to 5 during active operations.
+  next_heartbeat_in_seconds: z.number().int().positive(),
+  // null when the bridge's settings_version matches the stored row.
+  settings: BridgeSettings.nullable(),
+  directives: z.array(BridgeDirective),
+  // Echo of last_log_seq the server has stored. Bridge uses this to
+  // confirm logs are durably stashed and advance its local pointer.
+  log_high_water: z.number().int().nonnegative(),
+});
+export type BridgeHeartbeatResponse = z.infer<typeof BridgeHeartbeatResponse>;
 
 export const BridgeHeartbeatSnapshot = z.object({
   bridge_id: Ulid,
@@ -1293,7 +1446,7 @@ export const BridgeHeartbeatSnapshot = z.object({
   last_seen_at: z.string().nullable(),
   last_heartbeat_at: z.string().nullable(),
   bridge_version: z.string().nullable(),
-  payload: BridgeHeartbeatBody.nullable(),
+  payload: BridgeHeartbeatRequest.nullable(),
 });
 export type BridgeHeartbeatSnapshot = z.infer<typeof BridgeHeartbeatSnapshot>;
 

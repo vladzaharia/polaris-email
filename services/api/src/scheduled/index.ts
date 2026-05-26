@@ -32,6 +32,8 @@ import { mtaStsContinuityRun } from './mta-sts-continuity.js';
 import { dkimSelfVerifyRun } from './dkim-self-verify.js';
 import { domainVerifyRun } from './domain-verify.js';
 import { feedbackWindowRefresh } from './feedback-window-refresh.js';
+import { bridgeRollRotate } from './bridge-roll-rotate.js';
+import { bridgeRollExpire } from './bridge-roll-expire.js';
 import { withCronTelemetry } from './cron-runs.js';
 import type { Env } from '../env.js';
 
@@ -112,6 +114,26 @@ export async function scheduled(event: ScheduledEvent, env: Env): Promise<void> 
       return auditVerify(env); // self-reports telemetry
     case '50 5 * * *':
       return policyBackfill(env); // self-reports telemetry
+    case '15 4 * * *':
+      await withCronTelemetry(env, 'bridge-roll-rotate', async () => {
+        const r = await bridgeRollRotate(env);
+        // eslint-disable-next-line no-console
+        console.log(
+          'bridge-roll-rotate cron:',
+          `candidates=${r.candidates} rolled=${r.rolled} failed=${r.failed}`,
+        );
+      });
+      return;
+    case '*/10 * * * *':
+      await withCronTelemetry(env, 'bridge-roll-expire', async () => {
+        const r = await bridgeRollExpire(env);
+        // eslint-disable-next-line no-console
+        console.log(
+          'bridge-roll-expire cron:',
+          `candidates=${r.candidates} expired=${r.expired} failed=${r.failed}`,
+        );
+      });
+      return;
     case '0 6 * * 7':
       // Weekly D1 export to R2. `7` is Sunday in CF's cron parser (it
       // rejects `0` for day-of-week despite docs saying otherwise).
