@@ -198,7 +198,7 @@ services:
     environment:
       TS_STATE_DIR: /var/lib/tailscale
       TS_USERSPACE: 'false'
-      TS_EXTRA_ARGS: --advertise-tags=tag:polaris-mail
+      TS_EXTRA_ARGS: --advertise-tags=tag:mail-bridge
       TS_AUTHKEY_FILE: /run/secrets/ts_authkey
     volumes:
       - ts-state:/var/lib/tailscale

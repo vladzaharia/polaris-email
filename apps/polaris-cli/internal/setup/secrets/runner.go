@@ -313,6 +313,36 @@ func DefaultSpecs(allWorkers []string) []Spec {
 			Name:     "CF_ACCOUNT_ID",
 			Services: []string{"api"},
 		},
+		{
+			// CF zone id for `mail.plrs.im`. Used by the per-bridge CF DNS
+			// token mint flow (services/api/src/bridge-cf-token.ts) to
+			// scope the minted token to a single zone. Operator-supplied
+			// in `.env.deploy`; no generator (zone ids come from the CF
+			// dashboard).
+			Name:     "CF_ZONE_ID_MAIL_PLRS_IM",
+			Services: []string{"api"},
+		},
+		{
+			// Single ACME contact email handed to every bridge's embedded
+			// Lego loop via /v1/bridge/config. Operator-supplied.
+			Name:     "ACME_EMAIL",
+			Services: []string{"api"},
+		},
+		{
+			// Tailscale OAuth client id (auth_keys scope). The api worker
+			// exchanges (id, secret) for an access token and mints per-
+			// bridge ephemeral tagged auth keys. Optional — when unset
+			// the bridge install flow falls back to operator-procured
+			// auth keys, no fatal error.
+			Name:     "TS_API_CLIENT_ID",
+			Services: []string{"api"},
+			Optional: true,
+		},
+		{
+			Name:     "TS_API_CLIENT_SECRET",
+			Services: []string{"api"},
+			Optional: true,
+		},
 	}
 }
 

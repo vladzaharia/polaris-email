@@ -117,7 +117,7 @@ services:
     environment:
       TS_STATE_DIR: /var/lib/tailscale
       TS_USERSPACE: 'false'
-      TS_EXTRA_ARGS: --advertise-tags=tag:polaris-mail
+      TS_EXTRA_ARGS: --advertise-tags=tag:mail-bridge
       TS_AUTHKEY_FILE: /run/secrets/ts_authkey
     volumes:
       - ts-state:/var/lib/tailscale
@@ -192,7 +192,7 @@ BRIDGE_POLARIS_API_URL=${API_URL}
 
 function secretsShell(bridgeId: string, hmacKey: string, withTailscale: boolean): string {
   const tsLine = withTailscale
-    ? `# Mint a Tailscale auth key in the admin (tags: tag:polaris-mail) and paste:
+    ? `# Mint a Tailscale auth key in the admin (tags: tag:mail-bridge) and paste:
 echo -n 'tskey-auth-...' > secrets/ts_authkey
 `
     : '';

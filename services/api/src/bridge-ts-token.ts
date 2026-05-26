@@ -17,7 +17,7 @@
 //      → mints an ephemeral, reusable, tagged auth key.
 //
 // "Ephemeral" is the right default — bridges that get rotated leave
-// no stale tailnet identity behind. We tag the key `tag:polaris-mail`
+// no stale tailnet identity behind. We tag the key `tag:mail-bridge`
 // so ACL rules can target the whole fleet uniformly.
 //
 // Falls open when TS env vars are missing — operators not using the
@@ -55,7 +55,7 @@ export async function mintTsAuthKeyForBridge(
   const access = await fetchTsAccessToken(env.TS_API_CLIENT_ID, env.TS_API_CLIENT_SECRET);
   // Capabilities: ephemeral so a deregistered bridge's tailnet node
   // ages out automatically; reusable=false because each bridge gets a
-  // unique key; tagged so ACLs can target `tag:polaris-mail`.
+  // unique key; tagged so ACLs can target `tag:mail-bridge`.
   const body = {
     capabilities: {
       devices: {
@@ -63,7 +63,7 @@ export async function mintTsAuthKeyForBridge(
           reusable: false,
           ephemeral: true,
           preauthorized: true,
-          tags: ['tag:polaris-mail'],
+          tags: ['tag:mail-bridge'],
         },
       },
     },

@@ -139,7 +139,7 @@ export interface Env {
   /**
    * Tailscale OAuth client credentials. The api worker uses these to
    * exchange for a short-lived access token and mint per-bridge
-   * ephemeral auth keys (tagged `tag:polaris-mail`). Optional — bridges
+   * ephemeral auth keys (tagged `tag:mail-bridge`). Optional — bridges
    * deploying outside the Tailscale tab don't need this. When unset,
    * the register/rotate responses omit `ts_authkey`.
    */
