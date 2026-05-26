@@ -105,6 +105,7 @@ export function AddBridgeDialog() {
               stashFreshBridgeSecrets(r.id, {
                 hmacKey: r.hmac_key,
                 installerUrl: r.installer_url,
+                mintedAtMs: Date.now(),
               });
               setOpen(false);
               setName('');

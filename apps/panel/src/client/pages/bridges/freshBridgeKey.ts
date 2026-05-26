@@ -19,10 +19,15 @@ const PREFIX = 'polaris-bridge-fresh:';
 
 export interface FreshBridgeSecrets {
   hmacKey: string;
-  // One-shot installer URL. Null when the operator dismissed the
-  // banner after deploy or the bridge has been alive long enough that
-  // we cleared the bundle.
+  // Installer URL. Embeds the HMAC plaintext and stays valid until the
+  // next rotation. Null when we couldn't compute one server-side.
   installerUrl: string | null;
+  // Wall-clock ms of the moment we minted these secrets. The Detail
+  // page auto-clears the banner once the bridge has phoned home AT OR
+  // AFTER this timestamp — so re-rolling on an already-live bridge
+  // doesn't immediately wipe the banner (stale heartbeat would clear
+  // it before the operator reinstalls).
+  mintedAtMs: number;
 }
 
 export function stashFreshBridgeSecrets(bridgeId: string, secrets: FreshBridgeSecrets): void {
@@ -43,6 +48,10 @@ export function readFreshBridgeSecrets(bridgeId: string): FreshBridgeSecrets | n
     return {
       hmacKey: parsed.hmacKey,
       installerUrl: parsed.installerUrl ?? null,
+      // Older entries (pre-mintedAtMs) fall back to 0 — the auto-clear
+      // path will then behave like the original "clear on first
+      // heartbeat" behaviour for those.
+      mintedAtMs: typeof parsed.mintedAtMs === 'number' ? parsed.mintedAtMs : 0,
     };
   } catch {
     return null;
@@ -61,7 +70,7 @@ export function clearFreshBridgeSecrets(bridgeId: string): void {
 // migrated yet (kept thin so future cleanup is a sed). New code should
 // use the *Secrets variants above.
 export function stashFreshBridgeKey(bridgeId: string, hmacKey: string): void {
-  stashFreshBridgeSecrets(bridgeId, { hmacKey, installerUrl: null });
+  stashFreshBridgeSecrets(bridgeId, { hmacKey, installerUrl: null, mintedAtMs: Date.now() });
 }
 export function readFreshBridgeKey(bridgeId: string): string | null {
   return readFreshBridgeSecrets(bridgeId)?.hmacKey ?? null;

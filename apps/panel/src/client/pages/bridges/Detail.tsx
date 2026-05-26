@@ -46,6 +46,7 @@ import { BridgeConnectionCard } from './BridgeConnectionCard.js';
 import {
   clearFreshBridgeSecrets,
   readFreshBridgeSecrets,
+  stashFreshBridgeSecrets,
   type FreshBridgeSecrets,
 } from './freshBridgeKey.js';
 
@@ -146,18 +147,26 @@ export function BridgeDetail() {
     });
   };
 
-  // Auto-clear the fresh key once the bridge has phoned home — at that
-  // point the snippets in the Connection tab no longer need to display
-  // the plaintext, and we want to keep its lifetime as short as we can.
+  // Auto-clear the fresh secrets once the bridge has phoned home *with
+  // the freshly minted HMAC* — i.e., its last_heartbeat_at is at or
+  // after the mint timestamp. This handles both first-registration
+  // (mintedAtMs = registration time; cleared once the bridge ever
+  // connects) and re-roll on a live bridge (mintedAtMs = rotation
+  // time; the previous heartbeat doesn't count, only a new one with
+  // the new HMAC does).
+  const lastHeartbeatMs = detail.data?.last_heartbeat_at
+    ? Date.parse(detail.data.last_heartbeat_at)
+    : 0;
   useEffect(() => {
-    if (freshSecrets && hasEverConnected) {
+    if (freshSecrets && lastHeartbeatMs >= freshSecrets.mintedAtMs && lastHeartbeatMs > 0) {
       clearFreshBridgeSecrets(id);
       setFreshSecrets(null);
     }
-  }, [freshSecrets, hasEverConnected, id]);
+  }, [freshSecrets, lastHeartbeatMs, id]);
 
   const [confirmDereg, setConfirmDereg] = useState(false);
   const [confirmHardDelete, setConfirmHardDelete] = useState(false);
+  const [confirmRoll, setConfirmRoll] = useState(false);
   const dereg = useAdminMutation<unknown, undefined>(
     () => ({ path: `/api/admin/bridges/${id}`, method: 'DELETE' }),
     { invalidateKeys: [bridgeKeys.all], successMessage: 'Bridge deregistered.' },
@@ -169,6 +178,13 @@ export function BridgeDetail() {
       successMessage: 'Bridge permanently deleted.',
       silent: true,
     },
+  );
+  // POST /v1/admin/bridges/:id/rotate — mints a fresh HMAC + install URL.
+  // The fresh banner + Connection-tab snippets re-render with the new
+  // values; the bridge has to be reinstalled to reconnect.
+  const rotate = useAdminMutation<{ hmac_key: string; installer_url: string }, undefined>(
+    () => ({ path: `/api/admin/bridges/${id}/rotate`, method: 'POST' }),
+    { invalidateKeys: [bridgeKeys.detail(id)], silent: true },
   );
 
   const breadcrumbs = [{ label: 'Bridges', to: '/bridges' }, { label: detail.data?.name ?? id }];
@@ -218,20 +234,31 @@ export function BridgeDetail() {
             Delete permanently
           </Button>
         ) : (
-          <Button size="sm" variant="destructive" onClick={() => setConfirmDereg(true)}>
-            Deregister
-          </Button>
+          <>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setConfirmRoll(true)}
+              disabled={rotate.isPending}
+            >
+              {rotate.isPending ? 'Rolling…' : 'Roll HMAC Secret'}
+            </Button>
+            <Button size="sm" variant="destructive" onClick={() => setConfirmDereg(true)}>
+              Deregister
+            </Button>
+          </>
         )
       }
     >
       <div className="space-y-6">
-        {/* ---------- freshly-registered banner ----------
-            Shown only when the operator arrived here from the Add-bridge
-            dialog and the bridge hasn't checked in yet. Surfaces the
-            one-time HMAC key + a brief checklist. Disappears as soon as
-            the bridge phones home (the useEffect above clears
-            freshKey). */}
-        {freshSecrets && !hasEverConnected ? (
+        {/* ---------- fresh-credentials banner ----------
+            Shown whenever the operator has un-installed credentials in
+            sessionStorage — either right after Add-bridge or right
+            after a Roll HMAC Secret. Auto-clears once the bridge
+            phones home AT OR AFTER the mint time (so re-rolling a
+            previously-live bridge doesn't get wiped by a stale
+            heartbeat). */}
+        {freshSecrets ? (
           <section
             className="rounded-md border border-[var(--color-border)] p-4"
             style={{
@@ -241,7 +268,11 @@ export function BridgeDetail() {
             <div className="flex items-start gap-3">
               <KeyRound className="h-5 w-5 text-[var(--color-success)]" aria-hidden />
               <div className="min-w-0 flex-1 space-y-3">
-                <div className="font-semibold">Bridge registered — install on the host</div>
+                <div className="font-semibold">
+                  {hasEverConnected
+                    ? 'HMAC rolled — reinstall on the host'
+                    : 'Bridge registered — install on the host'}
+                </div>
                 <p className="text-xs text-[var(--color-muted-foreground)]">
                   The curl line below is the fast path: it writes the compose file, the env file,
                   and the bridge id + HMAC key into <span className="font-mono">./secrets/</span>,
@@ -253,13 +284,14 @@ export function BridgeDetail() {
                 {freshSecrets.installerUrl ? (
                   <div className="space-y-1">
                     <div className="text-[10px] uppercase tracking-wide text-[var(--color-muted-foreground)]">
-                      One-shot install (curl | sh)
+                      One-click install (curl | sh)
                     </div>
                     <CodeBlock code={`curl -fsSL ${freshSecrets.installerUrl} | sh`} />
                     <p className="text-xs text-[var(--color-muted-foreground)]">
-                      Run on the bridge host. The URL is valid for 1 hour and consumed on first
-                      fetch; re-running this curl will 404. The script handles diffs against any
-                      pre-existing files on the host (apt-style overwrite / keep / abort).
+                      Run on the bridge host. The URL embeds this bridge's current HMAC, so it stays
+                      valid until the next roll. The script auto-installs Docker (or set{' '}
+                      <span className="font-mono">POLARIS_AUTO_INSTALL=1</span> for unattended),
+                      writes compose + secrets, and brings the bridge up.
                     </p>
                   </div>
                 ) : null}
@@ -271,7 +303,7 @@ export function BridgeDetail() {
                   <CodeBlock code={freshSecrets.hmacKey} />
                   <p className="text-xs text-[var(--color-muted-foreground)]">
                     The only secret you might need to keep around — for re-installing or for the
-                    manual path on the Connection tab. If you lose it, rotate the bridge here to
+                    manual path on the Connection tab. If you lose it, roll the HMAC secret above to
                     mint a fresh one.
                   </p>
                 </div>
@@ -292,8 +324,8 @@ export function BridgeDetail() {
                     Dismiss
                   </Button>
                   <span className="text-xs text-[var(--color-muted-foreground)]">
-                    Auto-dismisses when the bridge phones home. The Connection tab below has the
-                    manual install steps if you'd rather not run curl | sh.
+                    Auto-dismisses when the bridge phones home with the new HMAC. The Connection tab
+                    below has the manual install steps if you'd rather not run curl | sh.
                   </span>
                 </div>
               </div>
@@ -410,6 +442,47 @@ export function BridgeDetail() {
           </TabsContent>
         </Tabs>
       </div>
+
+      <DestructiveActionDialog
+        open={confirmRoll}
+        onOpenChange={setConfirmRoll}
+        action="Roll HMAC Secret"
+        name={d.name}
+        blastRadius={[
+          'A fresh HMAC key is minted — the previous one is invalidated immediately',
+          'The previous per-bridge CF DNS token is revoked',
+          'Any install URL minted before this roll stops working',
+          'A running bridge will need to reinstall using the new URL (HMAC mismatch)',
+          'Webhook deliveries signed with the old key are rejected',
+        ]}
+        reversible={false}
+        confirmLabel="Roll HMAC Secret"
+        onConfirm={async () => {
+          const r = await rotate.mutateAsync(undefined);
+          setConfirmRoll(false);
+          // Mirror the post-registration flow: stash the new secrets,
+          // navigate to the Connection tab so the operator lands on
+          // the fully-configured snippets immediately.
+          const now = Date.now();
+          stashFreshBridgeSecrets(id, {
+            hmacKey: r.hmac_key,
+            installerUrl: r.installer_url,
+            mintedAtMs: now,
+          });
+          setFreshSecrets({
+            hmacKey: r.hmac_key,
+            installerUrl: r.installer_url,
+            mintedAtMs: now,
+          });
+          void navigate({
+            to: '/bridges/$id',
+            params: { id },
+            search: { tab: 'connection' },
+            replace: true,
+          });
+        }}
+        isPending={rotate.isPending}
+      />
 
       <DestructiveActionDialog
         open={confirmDereg}
