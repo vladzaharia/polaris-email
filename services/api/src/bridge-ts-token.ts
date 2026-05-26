@@ -29,6 +29,14 @@ import type { Env } from './env.js';
 const TS_API_BASE = 'https://api.tailscale.com/api/v2';
 const TS_TAILNET = '-'; // alias for the OAuth client's owning tailnet
 
+/** KV key under which the per-bridge TS auth-key plaintext is cached. */
+export function bridgeTsAuthkeyPlainKvKey(bridgeId: string): string {
+  return `bridge_ts_authkey_plain:${bridgeId}`;
+}
+
+/** 90 days. Same horizon as the CF plaintext cache. */
+export const BRIDGE_TS_AUTHKEY_PLAIN_KV_TTL_SECONDS = 90 * 24 * 60 * 60;
+
 interface MintedTsKey {
   id: string;
   value: string;

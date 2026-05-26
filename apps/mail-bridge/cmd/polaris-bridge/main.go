@@ -44,6 +44,17 @@ import (
 )
 
 func main() {
+	// Subcommand dispatch. The default (no args) is the long-running
+	// bridge daemon; auxiliary modes are short-lived helpers used by
+	// the docker-compose init container pattern.
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "bootstrap-tailscale":
+			runBootstrapTailscale()
+			return
+		}
+	}
+
 	cfg, err := config.Load()
 	if err != nil {
 		log.Fatalf("config: %v", err)

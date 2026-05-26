@@ -1332,5 +1332,11 @@ export const BridgeConfigResponse = z.object({
   cf_zone: z.string().min(1),
   fqdn: z.string().min(1),
   acme_email: z.string(),
+  // Per-bridge Tailscale auth key, minted server-side and cached in
+  // KV. Bridges' `bootstrap-tailscale` subcommand fetches this and
+  // writes it to `/run/secrets/ts_authkey` so the TS sidecar can
+  // join the tailnet without operator handling. Null when TS minting
+  // isn't configured server-side (no TS_API_CLIENT_*).
+  ts_authkey: z.string().nullable(),
 });
 export type BridgeConfigResponse = z.infer<typeof BridgeConfigResponse>;

@@ -38,6 +38,11 @@ type BridgeConfig struct {
 	CFZone     string `json:"cf_zone"`
 	FQDN       string `json:"fqdn"`
 	AcmeEmail  string `json:"acme_email"`
+	// Per-bridge Tailscale auth key. Empty string when TS minting
+	// isn't configured server-side. The bridge's bootstrap-tailscale
+	// subcommand reads this and writes it to /run/secrets/ts_authkey
+	// so the TS sidecar can pick it up at compose-up time.
+	TsAuthkey string `json:"ts_authkey"`
 }
 
 // GetBridgeConfig fetches the bridge's operational secrets from the

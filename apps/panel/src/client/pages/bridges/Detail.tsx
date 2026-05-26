@@ -271,14 +271,9 @@ export function BridgeDetail() {
                   <CodeBlock code={freshSecrets.hmacKey} />
                 </div>
 
-                {freshSecrets.tsAuthkey ? (
-                  <div className="space-y-1">
-                    <div className="text-[10px] uppercase tracking-wide text-[var(--color-muted-foreground)]">
-                      Tailscale auth key
-                    </div>
-                    <CodeBlock code={freshSecrets.tsAuthkey} />
-                  </div>
-                ) : null}
+                {/* No Tailscale auth key shown — it flows server-to-bridge
+                    via /v1/bridge/config and the bootstrap init container
+                    writes it to ./secrets/ts_authkey at compose-up time. */}
 
                 <div className="flex flex-wrap items-center gap-2 pt-1">
                   <Button

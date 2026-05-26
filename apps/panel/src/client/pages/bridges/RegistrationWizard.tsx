@@ -39,15 +39,14 @@ export function AddBridgeDialog() {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState('');
 
-  // Response also carries `ts_authkey` (null when TS minting isn't
-  // configured server-side) and `installer_url` (one-shot bash
-  // installer link, 1h TTL). All three values flow through
-  // sessionStorage into the Detail-page banner.
+  // Response carries `installer_url` (one-shot bash installer link,
+  // 1h TTL). The TS auth key is NOT in this response — it flows
+  // server-to-bridge via /v1/bridge/config + the bootstrap init
+  // container, so operators never see it.
   const register = useAdminMutation<
     {
       id: string;
       hmac_key: string;
-      ts_authkey: string | null;
       installer_url: string | null;
     },
     { name: string }
@@ -105,7 +104,6 @@ export function AddBridgeDialog() {
               const r = await register.mutateAsync({ name: name.trim() });
               stashFreshBridgeSecrets(r.id, {
                 hmacKey: r.hmac_key,
-                tsAuthkey: r.ts_authkey,
                 installerUrl: r.installer_url,
               });
               setOpen(false);

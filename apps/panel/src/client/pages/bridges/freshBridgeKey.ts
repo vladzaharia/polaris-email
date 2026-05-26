@@ -15,7 +15,9 @@ const PREFIX = 'polaris-bridge-fresh:';
 
 export interface FreshBridgeSecrets {
   hmacKey: string;
-  tsAuthkey: string | null;
+  // One-shot installer URL. Null when the operator dismissed the
+  // banner after deploy or the bridge has been alive long enough that
+  // we cleared the bundle.
   installerUrl: string | null;
 }
 
@@ -36,7 +38,6 @@ export function readFreshBridgeSecrets(bridgeId: string): FreshBridgeSecrets | n
     if (!parsed || typeof parsed.hmacKey !== 'string') return null;
     return {
       hmacKey: parsed.hmacKey,
-      tsAuthkey: parsed.tsAuthkey ?? null,
       installerUrl: parsed.installerUrl ?? null,
     };
   } catch {
@@ -56,7 +57,7 @@ export function clearFreshBridgeSecrets(bridgeId: string): void {
 // migrated yet (kept thin so future cleanup is a sed). New code should
 // use the *Secrets variants above.
 export function stashFreshBridgeKey(bridgeId: string, hmacKey: string): void {
-  stashFreshBridgeSecrets(bridgeId, { hmacKey, tsAuthkey: null, installerUrl: null });
+  stashFreshBridgeSecrets(bridgeId, { hmacKey, installerUrl: null });
 }
 export function readFreshBridgeKey(bridgeId: string): string | null {
   return readFreshBridgeSecrets(bridgeId)?.hmacKey ?? null;

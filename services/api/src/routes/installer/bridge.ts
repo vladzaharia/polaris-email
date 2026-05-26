@@ -42,12 +42,15 @@ export interface BridgeInstallerPayload {
   bridge_id: string;
   bridge_name: string;
   hmac_key: string;
-  ts_authkey: string | null;
   mode: 'tailscale' | 'public';
   api_url: string;
   // Bridge image tag the script should pull. Defaults to `latest` —
   // the operator can pin via env var if they want.
   image: string;
+  // NB: no `ts_authkey` here. In tailscale mode the compose includes a
+  // bootstrap init container that calls /v1/bridge/config (HMAC) and
+  // writes the auth key to ./secrets/ts_authkey before the TS sidecar
+  // starts. Operators never see the value.
 }
 
 bridgeInstaller.get('/v1/installer/bridge/:token', async (c) => {
@@ -157,11 +160,9 @@ chmod 700 secrets
 umask 077
 printf '%s' '${p.bridge_id}' > secrets/bridge_id
 printf '%s' '${p.hmac_key}' > secrets/hmac_key
-${
-  p.ts_authkey != null
-    ? `printf '%s' '${p.ts_authkey}' > secrets/ts_authkey`
-    : `# (no ts_authkey — TS minting not configured server-side)`
-}
+# Tailscale auth key (if applicable) is fetched + written by the
+# bootstrap init container in docker-compose.yml. Nothing to write
+# here.
 chmod 600 secrets/*
 
 say "docker compose pull"
@@ -182,11 +183,29 @@ docker compose logs -f
 function composeTailscale(p: BridgeInstallerPayload): string {
   const tsHost = `${p.bridge_name}-mail`;
   return `# docker-compose.yml — bridge + Tailscale sidecar
+#
+# Bootstrap init: the bridge image is reused as a short-lived sibling
+# that fetches the per-bridge Tailscale auth key from the polaris API
+# (HMAC-authed) and writes it to ./secrets/ts_authkey before the TS
+# sidecar starts. Operators never touch the TS auth key — only the
+# bridge_id + HMAC key need to exist in ./secrets/ before compose up.
 networks:
   polaris-mail-net:
     driver: bridge
 
 services:
+  bootstrap:
+    image: ${p.image}
+    container_name: polaris-mail-bootstrap
+    command: ['polaris-bridge', 'bootstrap-tailscale']
+    env_file: docker-compose.env
+    environment:
+      BRIDGE_POLARIS_BRIDGE_ID_FILE: /run/secrets/bridge_id
+      BRIDGE_POLARIS_HMAC_KEY_FILE: /run/secrets/hmac_key
+      TS_AUTHKEY_PATH: /run/secrets/ts_authkey
+    volumes:
+      - ./secrets:/run/secrets
+
   tailscale:
     image: tailscale/tailscale:stable
     container_name: polaris-mail
@@ -203,6 +222,9 @@ services:
     volumes:
       - ts-state:/var/lib/tailscale
       - ./secrets:/run/secrets:ro
+    depends_on:
+      bootstrap:
+        condition: service_completed_successfully
 
   bridge:
     image: ${p.image}

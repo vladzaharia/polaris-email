@@ -21,7 +21,12 @@ import {
   mintCfDnsTokenForBridge,
   revokeCfDnsTokenBestEffort,
 } from '../../bridge-cf-token.js';
-import { mintTsAuthKeyForBridge, revokeTsAuthKeyBestEffort } from '../../bridge-ts-token.js';
+import {
+  bridgeTsAuthkeyPlainKvKey,
+  BRIDGE_TS_AUTHKEY_PLAIN_KV_TTL_SECONDS,
+  mintTsAuthKeyForBridge,
+  revokeTsAuthKeyBestEffort,
+} from '../../bridge-ts-token.js';
 import { generateNonce } from '@polaris-mail/hmac';
 import {
   bridgeInstallerKvKey,
@@ -160,6 +165,15 @@ bridges.post('/v1/admin/bridges', requireScope('admin:rotate'), async (c) => {
       expirationTtl: BRIDGE_CF_DNS_PLAIN_KV_TTL_SECONDS,
     });
   }
+  if (tsMinted.key) {
+    // TS authkey plaintext — surfaced to the bridge via /v1/bridge/config.
+    // The bridge's bootstrap-tailscale subcommand reads it and writes to
+    // /run/secrets/ts_authkey so the TS sidecar can pick it up at compose
+    // up. Operators never see this value.
+    await c.env.KV_KEY_CACHE.put(bridgeTsAuthkeyPlainKvKey(id), tsMinted.key.value, {
+      expirationTtl: BRIDGE_TS_AUTHKEY_PLAIN_KV_TTL_SECONDS,
+    });
+  }
   await audit(c.env, {
     actor: actorOf(c),
     action: 'bridge.register',
@@ -191,7 +205,6 @@ bridges.post('/v1/admin/bridges', requireScope('admin:rotate'), async (c) => {
     bridge_id: id,
     bridge_name: body.name,
     hmac_key: secret,
-    ts_authkey: tsMinted.key?.value ?? null,
     mode,
     api_url: c.env.API_BASE_URL,
     image: 'ghcr.io/vladzaharia/polaris-mail-bridge:latest',
@@ -207,12 +220,16 @@ bridges.post('/v1/admin/bridges', requireScope('admin:rotate'), async (c) => {
       id,
       name: body.name,
       hmac_key: secret,
-      // One-shot reveal for the operator's `./secrets/ts_authkey` file.
-      // Null when TS minting isn't configured server-side.
-      ts_authkey: tsMinted.key?.value ?? null,
       // One-shot bash-installer URL. Token is valid for 1h, consumed
       // on first GET. Operator runs:
       //   curl <api>/v1/installer/bridge/<token> | sh
+      //
+      // The TS auth key (when minted) is NOT in this response — it
+      // flows directly from the api worker to the bridge over its own
+      // HMAC channel via /v1/bridge/config, so operators never have
+      // to write `ts_authkey` to disk themselves. A bootstrap init
+      // container in the compose handles the fetch + file write at
+      // `docker compose up` time.
       installer_token: installerToken,
       installer_url: `${c.env.API_BASE_URL}/v1/installer/bridge/${installerToken}`,
     },
@@ -335,6 +352,13 @@ bridges.post('/v1/admin/bridges/:id/rotate', requireScope('admin:rotate'), async
   } else {
     await c.env.KV_KEY_CACHE.delete(bridgeCfDnsPlainKvKey(id));
   }
+  if (tsMinted.key) {
+    await c.env.KV_KEY_CACHE.put(bridgeTsAuthkeyPlainKvKey(id), tsMinted.key.value, {
+      expirationTtl: BRIDGE_TS_AUTHKEY_PLAIN_KV_TTL_SECONDS,
+    });
+  } else {
+    await c.env.KV_KEY_CACHE.delete(bridgeTsAuthkeyPlainKvKey(id));
+  }
   // Best-effort revokes of the prior tokens.
   if (existing.cf_dns_token_id) {
     c.executionCtx.waitUntil(revokeCfDnsTokenBestEffort(c.env, existing.cf_dns_token_id));
@@ -386,7 +410,6 @@ bridges.post('/v1/admin/bridges/:id/rotate', requireScope('admin:rotate'), async
     bridge_id: id,
     bridge_name: existing.name,
     hmac_key: secret,
-    ts_authkey: tsMinted.key?.value ?? null,
     mode: rotateMode,
     api_url: c.env.API_BASE_URL,
     image: 'ghcr.io/vladzaharia/polaris-mail-bridge:latest',
@@ -400,7 +423,6 @@ bridges.post('/v1/admin/bridges/:id/rotate', requireScope('admin:rotate'), async
   return c.json({
     id,
     hmac_key: secret,
-    ts_authkey: tsMinted.key?.value ?? null,
     installer_token: installerToken,
     installer_url: `${c.env.API_BASE_URL}/v1/installer/bridge/${installerToken}`,
   });
@@ -473,6 +495,7 @@ bridges.delete('/v1/admin/bridges/:id', requireScope('admin:rotate'), async (c) 
 
   await c.env.KV_KEY_CACHE.delete(bridgePlainKvKey(id));
   await c.env.KV_KEY_CACHE.delete(bridgeCfDnsPlainKvKey(id));
+  await c.env.KV_KEY_CACHE.delete(bridgeTsAuthkeyPlainKvKey(id));
   // Best-effort CF cleanup. Orphan tokens cost nothing operationally
   // but they clutter the dashboard; we want the audit-log entry on
   // success so a future "list orphans" cron has something to compare.

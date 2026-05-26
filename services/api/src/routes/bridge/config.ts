@@ -28,6 +28,7 @@
 import { Hono } from 'hono';
 import { bridgeHmacAuth } from '../../bridge-auth.js';
 import { bridgeCfDnsPlainKvKey } from '../../bridge-cf-token.js';
+import { bridgeTsAuthkeyPlainKvKey } from '../../bridge-ts-token.js';
 import type { Env } from '../../env.js';
 import { buildError } from '../../errors.js';
 
@@ -79,10 +80,28 @@ bridgeConfig.get('/v1/bridge/config', async (c) => {
     }
   }
 
+  // TS authkey plaintext — same nullable-by-non-config story as the CF
+  // token. When the api worker isn't configured for TS minting (no
+  // `TS_API_CLIENT_*`), register/rotate never minted, KV is empty, and
+  // we return null. Bridges treat null as "no automated TS bootstrap"
+  // and the operator falls back to whatever path they prefer.
+  const tsRow = await c.env.DB.prepare(`SELECT ts_authkey_id FROM bridges WHERE id = ?`)
+    .bind(bridgeId)
+    .first<{ ts_authkey_id: string | null }>();
+  let tsAuthkey: string | null = null;
+  if (tsRow?.ts_authkey_id) {
+    tsAuthkey = await c.env.KV_KEY_CACHE.get(bridgeTsAuthkeyPlainKvKey(bridgeId));
+    // KV miss = expired cache. Don't 401 the whole config call for it;
+    // a stale TS key isn't fatal (the bridge falls back to whatever's
+    // already in its persistent TS state). Return null so the bootstrap
+    // container logs "no key available" and exits cleanly.
+  }
+
   return c.json({
     cf_dns_token: cfDnsToken,
     cf_zone: 'mail.plrs.im',
     fqdn: `${row.name}.mail.plrs.im`,
     acme_email: c.env.ACME_EMAIL ?? '',
+    ts_authkey: tsAuthkey,
   });
 });

@@ -99,13 +99,29 @@ function composeTailscale(bridgeName: string): string {
 #   polaris-mail:993  (IMAP)
 # Tailnet members resolve \`${tsHost}\` (MagicDNS) to the same node.
 #
-# Secrets: edit ./secrets/{bridge_id,hmac_key,ts_authkey} (mode 0600).
-# See the "Secrets bootstrap" snippet below.
+# Bootstrap init: a short-lived sibling container fetches the per-
+# bridge Tailscale auth key from the polaris API (HMAC-authed) and
+# writes it to ./secrets/ts_authkey before the TS sidecar starts.
+# Operators never handle the TS auth key themselves; only
+# ./secrets/bridge_id + ./secrets/hmac_key need to exist before
+# compose up.
 networks:
   polaris-mail-net:
     driver: bridge
 
 services:
+  bootstrap:
+    image: ${IMAGE}
+    container_name: polaris-mail-bootstrap
+    command: ['polaris-bridge', 'bootstrap-tailscale']
+    env_file: docker-compose.env
+    environment:
+      BRIDGE_POLARIS_BRIDGE_ID_FILE: /run/secrets/bridge_id
+      BRIDGE_POLARIS_HMAC_KEY_FILE: /run/secrets/hmac_key
+      TS_AUTHKEY_PATH: /run/secrets/ts_authkey
+    volumes:
+      - ./secrets:/run/secrets
+
   tailscale:
     image: tailscale/tailscale:stable
     container_name: polaris-mail
@@ -122,6 +138,9 @@ services:
     volumes:
       - ts-state:/var/lib/tailscale
       - ./secrets:/run/secrets:ro
+    depends_on:
+      bootstrap:
+        condition: service_completed_successfully
 
   bridge:
     image: ${IMAGE}
@@ -190,19 +209,19 @@ BRIDGE_POLARIS_API_URL=${API_URL}
 `;
 }
 
-function secretsShell(bridgeId: string, hmacKey: string, withTailscale: boolean): string {
-  const tsLine = withTailscale
-    ? `# Mint a Tailscale auth key in the admin (tags: tag:mail-bridge) and paste:
-echo -n 'tskey-auth-...' > secrets/ts_authkey
-`
-    : '';
-  return `# Run once on the bridge host. ./secrets/ holds the only secrets the
-# bridge needs at bootstrap; everything else (CF DNS token, ACME state,
-# cert files) the bridge fetches or mints on startup.
+function secretsShell(bridgeId: string, hmacKey: string, _withTailscale: boolean): string {
+  // Only TWO secrets need to exist on the bridge host before
+  // `docker compose up`: the bridge id (identifier) and the HMAC key
+  // (the one true bootstrap secret). Everything else — CF DNS token,
+  // ACME state, the TS auth key — flows over the wire from the
+  // polaris API. The Tailscale tab uses a bootstrap init container
+  // that fetches `ts_authkey` and writes it before the TS sidecar
+  // starts; nothing for the operator to copy.
+  return `# Run once on the bridge host.
 mkdir -p secrets
 echo -n '${bridgeId}' > secrets/bridge_id
 echo -n '${hmacKey}' > secrets/hmac_key
-${tsLine}chmod 600 secrets/*
+chmod 600 secrets/*
 `;
 }
 
