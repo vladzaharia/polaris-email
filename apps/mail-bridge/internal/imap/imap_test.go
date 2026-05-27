@@ -5,18 +5,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
-	"net"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"path/filepath"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/emersion/go-imap/v2"
-	"github.com/emersion/go-imap/v2/imapclient"
 	"github.com/emersion/go-imap/v2/imapserver"
 	polarissdk "github.com/polaris-mail/polaris-sdk-go"
 	"golang.org/x/crypto/bcrypt"
@@ -162,17 +158,6 @@ func (fx *testFixture) session() *bridgeSession {
 		fx.t.Fatalf("session type %T", s)
 	}
 	return bs
-}
-
-// shortSockPath returns a unix socket path that fits in the 104-byte limit
-// macOS imposes on sun_path. The default t.TempDir() returns a path under
-// /var/folders/... that frequently overflows. We use /tmp with a fixed
-// prefix and clean up via t.Cleanup.
-func shortSockPath(t *testing.T) string {
-	t.Helper()
-	p := fmt.Sprintf("/tmp/polaris-imap-%d.sock", time.Now().UnixNano())
-	t.Cleanup(func() { _ = os.Remove(p) })
-	return p
 }
 
 // ---------- Backend unit tests ----------
@@ -334,220 +319,15 @@ func TestBackend_IdleBroadcast(t *testing.T) {
 	}
 }
 
-// ---------- End-to-end integration (real client → real server) ----------
-
-func TestE2E_LoginSelectFetchIdleLogout(t *testing.T) {
-	if testing.Short() {
-		t.Skip("e2e skipped in -short mode")
-	}
-	t.Parallel()
-	fx := newFixture(t)
-
-	srv := imapserver.New(&imapserver.Options{
-		NewSession: fx.backend.NewSession,
-		Caps: imap.CapSet{
-			imap.CapIMAP4rev1:     {},
-			imap.CapIMAP4rev2:     {},
-			imap.AuthCap("PLAIN"): {},
-		},
-		InsecureAuth: true,
-	})
-
-	sockPath := shortSockPath(t)
-	ln, err := net.Listen("unix", sockPath)
-	if err != nil {
-		t.Fatalf("listen unix: %v", err)
-	}
-	go func() { _ = srv.Serve(ln) }()
-	t.Cleanup(func() {
-		_ = srv.Close()
-		_ = os.Remove(sockPath)
-	})
-
-	rawConn, err := net.DialTimeout("unix", sockPath, 2*time.Second)
-	if err != nil {
-		t.Fatalf("dial: %v", err)
-	}
-	// Buffer the unilateral channel so the client read loop never blocks
-	// while we wait on it from the test goroutine.
-	mailboxCh := make(chan uint32, 4)
-	c := imapclient.New(rawConn, &imapclient.Options{
-		UnilateralDataHandler: &imapclient.UnilateralDataHandler{
-			Mailbox: func(m *imapclient.UnilateralDataMailbox) {
-				if m.NumMessages != nil {
-					mailboxCh <- *m.NumMessages
-				}
-			},
-		},
-	})
-	defer c.Close()
-
-	if err := c.Login("alice", "good-password").Wait(); err != nil {
-		t.Fatalf("login: %v", err)
-	}
-	sel, err := c.Select("INBOX", nil).Wait()
-	if err != nil {
-		t.Fatalf("select: %v", err)
-	}
-	if sel.NumMessages != 2 {
-		t.Fatalf("e2e NumMessages = %d, want 2", sel.NumMessages)
-	}
-
-	msgs, err := c.Fetch(imap.UIDSetNum(1, 2), &imap.FetchOptions{
-		UID: true, Flags: true, Envelope: true,
-	}).Collect()
-	if err != nil {
-		t.Fatalf("fetch: %v", err)
-	}
-	if len(msgs) != 2 {
-		t.Fatalf("fetched %d messages, want 2", len(msgs))
-	}
-
-	idleCmd, err := c.Idle()
-	if err != nil {
-		t.Fatalf("idle: %v", err)
-	}
-	// Wait for the server-side sink to register before broadcasting.
-	deadline := time.Now().Add(2 * time.Second)
-	for fx.push.Count("mb-1") == 0 {
-		if time.Now().After(deadline) {
-			t.Fatalf("IDLE never registered a sink")
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
-	fx.push.Broadcast("mb-1", push.StateChange{Type: "message.received"})
-	select {
-	case n := <-mailboxCh:
-		if n == 0 {
-			t.Fatalf("EXISTS=0 from IDLE")
-		}
-	case <-time.After(2 * time.Second):
-		t.Fatalf("no EXISTS within 2s")
-	}
-	if err := idleCmd.Close(); err != nil {
-		t.Fatalf("idle close: %v", err)
-	}
-	if err := idleCmd.Wait(); err != nil {
-		t.Fatalf("idle wait: %v", err)
-	}
-
-	if err := c.Logout().Wait(); err != nil {
-		t.Fatalf("logout: %v", err)
-	}
-}
-
 // ---------- Phase 2e regression tests ----------
-
-// TestE2E_Expunge_MultiMessageSequenceNumbers proves the EXPUNGE sequence
-// arithmetic in backend.go. Pre-2e the loop used `i+1` against the original
-// index walked in descending order, which produced wrong sequence numbers
-// when more than one message was deleted in a single EXPUNGE response.
 //
-// Setup: 5 live messages (UIDs 10..14), mark UIDs 11, 13, 14 \Deleted, then
-// EXPUNGE. The library client returns the emitted sequence numbers via
-// Expunge().Collect(); we verify the post-shrink-aware values.
-//
-//	original seq:  1  2  3  4  5
-//	UID:           10 11 12 13 14
-//	flags:         -  D  -  D  D
-//
-// Walk order: i=1 emits seq 2 (UID 11), i=3 emits seq 2 (UID 13 was at seq
-// 4, minus 2 because two prior deletes already shifted: wait — only one
-// prior delete (UID 11) when we reach UID 13, so i+1=4 minus 1 = 3),
-// i=4 emits seq 3 (UID 14 was at seq 5; two prior deletes ⇒ 5-2=3).
-//
-// Expected emitted sequence: [2, 3, 3].
-func TestE2E_Expunge_MultiMessageSequenceNumbers(t *testing.T) {
-	if testing.Short() {
-		t.Skip("e2e skipped in -short mode")
-	}
-	t.Parallel()
-	fx := newFixture(t)
-	ctx := context.Background()
-
-	// Reset the seeded mailbox-state to a known 5-row layout.
-	if _, err := fx.mirror.DB.ExecContext(ctx, `DELETE FROM mailbox_state WHERE mailbox_id = ?`, "mb-1"); err != nil {
-		t.Fatalf("clear: %v", err)
-	}
-	type row struct {
-		id    string
-		uid   int64
-		flags string
-	}
-	rows := []row{
-		{"m10", 10, `[]`},
-		{"m11", 11, `["\\Deleted"]`},
-		{"m12", 12, `[]`},
-		{"m13", 13, `["\\Deleted"]`},
-		{"m14", 14, `["\\Deleted"]`},
-	}
-	for _, r := range rows {
-		if err := fx.mirror.UpsertMessageMeta(ctx, store.MessageMeta{
-			ID: r.id, MailboxID: "mb-1", FromAddr: "x@x", Subject: r.id,
-			BodyBytes: 1, CreatedAt: "2026-05-13T00:00:00Z",
-		}); err != nil {
-			t.Fatalf("seed meta: %v", err)
-		}
-		if err := fx.mirror.UpsertState(ctx, store.MailboxState{
-			MailboxID: "mb-1", MessageID: r.id, UID: r.uid, UIDValidity: 1,
-			ChangeID: r.uid, Flags: r.flags,
-		}); err != nil {
-			t.Fatalf("seed state: %v", err)
-		}
-	}
-
-	srv := imapserver.New(&imapserver.Options{
-		NewSession: fx.backend.NewSession,
-		Caps: imap.CapSet{
-			imap.CapIMAP4rev1:     {},
-			imap.CapIMAP4rev2:     {},
-			imap.AuthCap("PLAIN"): {},
-		},
-		InsecureAuth: true,
-	})
-	sockPath := shortSockPath(t)
-	ln, err := net.Listen("unix", sockPath)
-	if err != nil {
-		t.Fatalf("listen: %v", err)
-	}
-	go func() { _ = srv.Serve(ln) }()
-	t.Cleanup(func() { _ = srv.Close(); _ = os.Remove(sockPath) })
-
-	conn, err := net.DialTimeout("unix", sockPath, 2*time.Second)
-	if err != nil {
-		t.Fatalf("dial: %v", err)
-	}
-	c := imapclient.New(conn, nil)
-	defer c.Close()
-
-	if err := c.Login("alice", "good-password").Wait(); err != nil {
-		t.Fatalf("login: %v", err)
-	}
-	sel, err := c.Select("INBOX", nil).Wait()
-	if err != nil {
-		t.Fatalf("select: %v", err)
-	}
-	if sel.NumMessages != 5 {
-		t.Fatalf("NumMessages = %d, want 5", sel.NumMessages)
-	}
-
-	seqs, err := c.Expunge().Collect()
-	if err != nil {
-		t.Fatalf("expunge: %v", err)
-	}
-	want := []uint32{2, 3, 3}
-	if len(seqs) != len(want) {
-		t.Fatalf("emit count %d, want %d (got %v)", len(seqs), len(want), seqs)
-	}
-	for i, got := range seqs {
-		if got != want[i] {
-			t.Fatalf("emit[%d] = %d, want %d (full=%v)", i, got, want[i], seqs)
-		}
-	}
-	if got := fx.deleteCalls.Load(); got != 3 {
-		t.Fatalf("API delete calls = %d, want 3", got)
-	}
-}
+// (TestE2E_LoginSelectFetchIdleLogout, TestE2E_Expunge_MultiMessageSequenceNumbers,
+// and TestE2E_StoreAndExpunge were retired in favor of the integration
+// suite at apps/mail-bridge/test/mailtest_inproc/...  — they covered
+// the same flows but spun up a unix-socket IMAP server here, which
+// duplicates what the integration harness does against the real
+// bridge binary. The Phase 2e regressions (Store_PersistsToMirror,
+// FetchBody_*) are unit-scoped and stay below.)
 
 // TestStore_PersistsToMirror proves the flags_json column fix. Pre-2e the
 // UpdateFlags helper wrote to a non-existent `flags` column, the error was
@@ -683,65 +463,6 @@ func TestFetchBody_R2LimitReader(t *testing.T) {
 	}
 	if int64(len(body)) != fx.backend.MaxBodyBytes {
 		t.Fatalf("body length %d, want %d (cap should truncate)", len(body), fx.backend.MaxBodyBytes)
-	}
-}
-
-func TestE2E_StoreAndExpunge(t *testing.T) {
-	if testing.Short() {
-		t.Skip("e2e skipped in -short mode")
-	}
-	t.Parallel()
-	fx := newFixture(t)
-
-	srv := imapserver.New(&imapserver.Options{
-		NewSession: fx.backend.NewSession,
-		Caps: imap.CapSet{
-			imap.CapIMAP4rev1:     {},
-			imap.CapIMAP4rev2:     {},
-			imap.AuthCap("PLAIN"): {},
-		},
-		InsecureAuth: true,
-	})
-	sockPath := shortSockPath(t)
-	ln, err := net.Listen("unix", sockPath)
-	if err != nil {
-		t.Fatalf("listen: %v", err)
-	}
-	go func() { _ = srv.Serve(ln) }()
-	t.Cleanup(func() {
-		_ = srv.Close()
-		_ = os.Remove(sockPath)
-	})
-
-	conn, err := net.DialTimeout("unix", sockPath, 2*time.Second)
-	if err != nil {
-		t.Fatalf("dial: %v", err)
-	}
-	c := imapclient.New(conn, nil)
-	defer c.Close()
-
-	if err := c.Login("alice", "good-password").Wait(); err != nil {
-		t.Fatalf("login: %v", err)
-	}
-	if _, err := c.Select("INBOX", nil).Wait(); err != nil {
-		t.Fatalf("select: %v", err)
-	}
-
-	// Mark UID 1 as \Seen via STORE — expect a PATCH /v1/messages call.
-	store := &imap.StoreFlags{Op: imap.StoreFlagsAdd, Flags: []imap.Flag{imap.FlagSeen}, Silent: true}
-	if err := c.Store(imap.UIDSetNum(1), store, nil).Close(); err != nil {
-		t.Fatalf("store: %v", err)
-	}
-	if got := fx.patchCalls.Load(); got != 1 {
-		t.Fatalf("patchCalls = %d, want 1", got)
-	}
-
-	// EXPUNGE — UID 2 has \Deleted from seed, expect a single DELETE.
-	if err := c.Expunge().Close(); err != nil {
-		t.Fatalf("expunge: %v", err)
-	}
-	if got := fx.deleteCalls.Load(); got != 1 {
-		t.Fatalf("deleteCalls = %d, want 1", got)
 	}
 }
 

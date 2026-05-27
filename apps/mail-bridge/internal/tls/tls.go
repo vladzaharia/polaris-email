@@ -36,16 +36,25 @@ type Config struct {
 	CertPath  string
 	KeyPath   string
 	HotReload bool
+	// ReloadInterval bounds the per-accept lazy reload cadence. Zero
+	// uses DefaultReloadInterval (30s). Integration tests override to
+	// 1s so rotation assertions don't blow the CI timeout.
+	ReloadInterval time.Duration
 }
+
+// DefaultReloadInterval is the production-default cadence for the
+// per-accept GetCertificate lazy reload.
+const DefaultReloadInterval = 30 * time.Second
 
 // Source produces TLS listeners on demand. The returned tls.Config and
 // listener factories are wired into each protocol server (SMTPS / IMAP).
 type Source struct {
-	cfg       Config
-	mu        sync.Mutex
-	cert      *tls.Certificate
-	certAtNS  int64
-	plaintext bool
+	cfg            Config
+	reloadInterval time.Duration
+	mu             sync.Mutex
+	cert           *tls.Certificate
+	certAtNS       int64
+	plaintext      bool
 }
 
 // New validates the config and constructs a Source.
@@ -56,7 +65,11 @@ func New(cfg Config) (*Source, error) {
 	if cfg.CertPath == "" || cfg.KeyPath == "" {
 		return nil, errors.New("tls: cert_path and key_path required")
 	}
-	s := &Source{cfg: cfg}
+	reloadInterval := cfg.ReloadInterval
+	if reloadInterval <= 0 {
+		reloadInterval = DefaultReloadInterval
+	}
+	s := &Source{cfg: cfg, reloadInterval: reloadInterval}
 	if _, err := s.loadLocked(); err != nil {
 		// Distinguish "PEMs not on disk yet" from a real load failure.
 		// The bridge's startup path tolerates the former by falling
@@ -94,11 +107,11 @@ func (s *Source) TLSConfig() *tls.Config {
 }
 
 // GetCertificate is the tls.Config.GetCertificate callback. Reloads at
-// most once every 30s.
+// most once per the configured ReloadInterval (default 30s).
 func (s *Source) GetCertificate(_ *tls.ClientHelloInfo) (*tls.Certificate, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.cert != nil && time.Now().UnixNano()-s.certAtNS < int64(30*time.Second) {
+	if s.cert != nil && time.Now().UnixNano()-s.certAtNS < int64(s.reloadInterval) {
 		return s.cert, nil
 	}
 	c, err := s.loadLocked()

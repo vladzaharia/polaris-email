@@ -36,11 +36,27 @@ const (
 
 // NewLockout returns a Lockout with the default thresholds.
 func NewLockout() *Lockout {
+	return NewLockoutWith(DefaultWindow, DefaultLimit, DefaultCooldown)
+}
+
+// NewLockoutWith returns a Lockout with custom thresholds. Zero values fall
+// back to the corresponding Default* constant so callers can override only
+// the field they care about.
+func NewLockoutWith(window time.Duration, limit int, cooldown time.Duration) *Lockout {
+	if window <= 0 {
+		window = DefaultWindow
+	}
+	if limit <= 0 {
+		limit = DefaultLimit
+	}
+	if cooldown <= 0 {
+		cooldown = DefaultCooldown
+	}
 	return &Lockout{
 		state:    map[string]*lockoutState{},
-		window:   DefaultWindow,
-		limit:    DefaultLimit,
-		cooldown: DefaultCooldown,
+		window:   window,
+		limit:    limit,
+		cooldown: cooldown,
 	}
 }
 

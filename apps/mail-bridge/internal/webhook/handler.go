@@ -75,14 +75,31 @@ func (h *Handler) SetSecret(s []byte) {
 }
 
 // Envelope mirrors the polaris webhook payload top-level shape.
+//
+// v2 format (current production): { event_id, event, occurred_at,
+// message: { id, mailbox_id, ... } }. The bridge previously parsed the
+// v1 shape ({id, event, data: {message_id, mailbox_id}}) which silently
+// returned empty MailboxID against current production, so
+// RefreshMailbox never fired and IMAP IDLE clients missed updates.
+// We keep the v1 fields decoded as a fallback for any subscriber still
+// publishing the legacy shape, but the v2 message: block wins.
 type Envelope struct {
-	ID    string          `json:"id"`
-	Event string          `json:"event"`
-	Data  json.RawMessage `json:"data"`
+	// v2 fields.
+	EventID    string      `json:"event_id"`
+	Event      string      `json:"event"`
+	OccurredAt string      `json:"occurred_at"`
+	Message    MessageData `json:"message"`
+	// v1 legacy fields (kept so a v1 publisher can still drive mirror
+	// refresh; v2's `event_id` takes precedence over v1's `id`).
+	ID   string          `json:"id"`
+	Data json.RawMessage `json:"data"`
 }
 
-// MessageData is the `data` block for `message.received`.
+// MessageData carries the routing fields the bridge needs from the
+// envelope. v2 uses `id`; v1's `data` block used `message_id`. Both
+// are tolerated.
 type MessageData struct {
+	ID        string `json:"id"`
 	MessageID string `json:"message_id"`
 	MailboxID string `json:"mailbox_id"`
 }
@@ -149,8 +166,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
-	var d MessageData
-	if len(env.Data) > 0 {
+	// Prefer the v2 envelope's `message:` block; fall back to v1's
+	// `data:` block if it's the only thing present.
+	d := env.Message
+	if d.MailboxID == "" && len(env.Data) > 0 {
 		_ = json.Unmarshal(env.Data, &d)
 	}
 	if d.MailboxID != "" {

@@ -34,7 +34,12 @@ import { buildError } from '../../errors.js';
 
 export const bridgeConfig = new Hono<{ Bindings: Env }>();
 
-bridgeConfig.use('/v1/bridge/config', bridgeHmacAuth());
+// requireSubmissionId is false because /v1/bridge/config is a
+// startup/bootstrap call — not a message-submission path. The
+// submission_id header is only meaningful for /v1/messages, and
+// surfacing a 401 here breaks the bridge's startup sequence before it
+// can even reach the heartbeat endpoint.
+bridgeConfig.use('/v1/bridge/config', bridgeHmacAuth({ requireSubmissionId: false }));
 
 bridgeConfig.get('/v1/bridge/config', async (c) => {
   const bridgeId = c.get('bridgeId');

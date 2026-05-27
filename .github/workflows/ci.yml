@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
 # Cancel an in-flight run when a new commit is pushed to the same ref — but
 # never cancel CI runs on main. The deploy workflow consumes artifacts from
@@ -233,7 +234,61 @@ jobs:
       - working-directory: apps/mail-bridge
         run: go vet ./...
       - working-directory: apps/mail-bridge
-        run: go test -race ./...
+        # Unit tests only; mail-test-inproc runs the integration suite
+        # below. Splitting keeps unit-test feedback fast while the
+        # subprocess-based integration suite gets its own budget.
+        run: go test -race -timeout 5m ./internal/... ./cmd/...
+
+  mail-test-inproc:
+    # PR-blocking integration suite. Compiles the bridge binary once and
+    # spawns it as a subprocess against an in-process Go fake control
+    # plane. ~3min wall time on Linux runners.
+    needs: [mail-bridge-test]
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/setup-go-with-cache
+        with:
+          working-directory: apps/mail-bridge
+      - working-directory: apps/mail-bridge
+        run: go test -race -timeout 10m ./test/mailtest_inproc/...
+
+  mail-test-docker:
+    # Container packaging coverage. Runs ~7 happy-path scenarios via
+    # docker-compose against the production Dockerfile. Main-only because
+    # docker pull + image build adds ~5-10min per job.
+    if: github.ref == 'refs/heads/main'
+    needs: [mail-test-inproc]
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/setup-go-with-cache
+        with:
+          working-directory: apps/mail-bridge
+      - working-directory: apps/mail-bridge
+        run: go test -tags=mailtest_docker -race -timeout 22m ./test/mailtest_docker/...
+
+  mail-test-contract:
+    # Cross-language wire contract suite. Runs the bridge against a real
+    # services/api Worker on wrangler dev (miniflare-emulated D1/KV/R2).
+    # Covers: wrangler-dev orchestration, genesis-seal bootstrap, bridge
+    # registration + heartbeat round-trip (HMAC + envelope schema), and
+    # REST `/v1/messages` JSON submission wire-format validation. This
+    # is the suite that has caught real Go↔TS contract drifts to date.
+    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+    needs: [mail-test-inproc, setup]
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/restore-pnpm-workspace
+      - uses: ./.github/actions/setup-go-with-cache
+        with:
+          working-directory: apps/mail-bridge
+      - working-directory: apps/mail-bridge
+        run: go test -tags=mailtest_contract -race -timeout 22m ./test/mailtest_contract/...
 
   polaris-cli-test:
     # Unit tests for the polaris-mail Go CLI, including the PR 9 setup
@@ -317,6 +372,7 @@ jobs:
       - integration-test
       - go-test
       - mail-bridge-test
+      - mail-test-inproc
       - polaris-cli-test
       - compose-examples-drift
       - build-docs

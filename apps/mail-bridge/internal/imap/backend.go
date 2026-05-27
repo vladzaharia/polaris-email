@@ -722,8 +722,19 @@ func (s *bridgeSession) writeMessage(ctx context.Context, w *imapserver.FetchWri
 	}
 	meta, err := s.backend.Mirror.GetMessageMeta(ctx, mailboxID, st.MessageID)
 	if err != nil {
-		s.backend.logger().Printf("imap: meta %s: %v", st.MessageID, err)
-		return nil
+		// Lazy-fetch path: messages that arrived via the webhook→
+		// /v1/mailboxes/:id/changes flow only seeded a mailbox_state
+		// row, not the `messages` metadata table — the refresher's
+		// ApplyChanges inserts placeholder state rows but not metadata.
+		// Pull the envelope via BulkGet now and persist so subsequent
+		// FETCHes hit cache. Without this, FETCH ENVELOPE on freshly-
+		// arrived inbound mail returns empty.
+		fetched, lazyErr := s.lazyFetchMessageMeta(ctx, mailboxID, st.MessageID)
+		if lazyErr != nil {
+			s.backend.logger().Printf("imap: meta %s: %v (lazy: %v)", st.MessageID, err, lazyErr)
+			return nil
+		}
+		meta = fetched
 	}
 	if opts.InternalDate {
 		if t, err := time.Parse(time.RFC3339, meta.CreatedAt); err == nil {
@@ -785,6 +796,44 @@ func (s *bridgeSession) writeMessage(ctx context.Context, w *imapserver.FetchWri
 // something parseable. Returning a bare body (the pre-2e behavior) made
 // HEADER fetches return blank because sliceBodySection couldn't find the
 // header/body separator.
+// lazyFetchMessageMeta pulls envelope metadata via SDK BulkGet when
+// the local mirror's `messages` table doesn't have it yet — typically
+// for newly-arrived inbound mail where /v1/mailboxes/:id/changes
+// returned the id but no metadata. The fetched meta is persisted via
+// UpsertMessageMeta so subsequent FETCHes hit cache.
+func (s *bridgeSession) lazyFetchMessageMeta(ctx context.Context, mailboxID, messageID string) (*store.MessageMeta, error) {
+	m, err := s.backend.Client.GetMessage(ctx, messageID)
+	if err != nil {
+		return nil, fmt.Errorf("bulk get: %w", err)
+	}
+	meta := store.MessageMeta{
+		ID:                    m.ID,
+		MailboxID:             mailboxID,
+		FromAddr:              firstNonEmpty(m.FromAddr, m.From),
+		Subject:               m.Subject,
+		HeaderMessageID:       m.HeaderMessageID,
+		BodyBytes:             m.BodyBytes,
+		AttachmentsTotalBytes: m.AttachmentsTotalBytes,
+		CreatedAt:             m.CreatedAt,
+	}
+	if err := s.backend.Mirror.UpsertMessageMeta(ctx, meta); err != nil {
+		// Persist failure isn't fatal — we still return the meta we
+		// fetched so this FETCH responds correctly; the next FETCH
+		// will re-fetch (idempotent).
+		s.backend.logger().Printf("imap: meta upsert %s: %v", messageID, err)
+	}
+	return &meta, nil
+}
+
+func firstNonEmpty(s ...string) string {
+	for _, v := range s {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
 func (s *bridgeSession) fetchBody(ctx context.Context, messageID string, meta *store.MessageMeta) ([]byte, error) {
 	m, err := s.backend.Client.GetMessage(ctx, messageID)
 	if err != nil {

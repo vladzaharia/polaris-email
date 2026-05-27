@@ -1,0 +1,20 @@
+From: alice@example.com
+To: bob@inbound.test
+Subject: with-attachment
+Date: Mon, 26 May 2026 12:01:00 +0000
+Message-ID: <attachment-mailtest@example.com>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="boundary42"
+
+--boundary42
+Content-Type: text/plain; charset=utf-8
+
+See attachment.
+
+--boundary42
+Content-Type: application/octet-stream; name="tiny.bin"
+Content-Disposition: attachment; filename="tiny.bin"
+Content-Transfer-Encoding: base64
+
+SGVsbG8sIFdvcmxkIQ==
+--boundary42--

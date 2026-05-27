@@ -20,6 +20,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -181,7 +182,8 @@ func main() {
 	// succeeded. Fail fast at startup so the operator notices immediately.
 	publicURL := os.Getenv("BRIDGE_PUBLIC_URL")
 	if enabled("BRIDGE_WEBHOOK_ENABLED", true) {
-		if err := validatePublicWebhookURL(publicURL); err != nil {
+		allowLoopback := enabled("BRIDGE_PUBLIC_URL_ALLOW_LOOPBACK", false)
+		if err := validatePublicWebhookURL(publicURL, allowLoopback); err != nil {
 			log.Fatalf("polaris-bridge: BRIDGE_PUBLIC_URL invalid: %v", err)
 		}
 	}
@@ -200,10 +202,25 @@ func main() {
 
 	// Baseline mirror refresh. Constructed before the webhook handler so the
 	// reactive (webhook-driven) refresh path can reuse it.
+	//
+	// BRIDGE_REFRESH_MAILBOXES (comma-separated) seeds the baseline
+	// mailbox set. In production, the bridge auto-discovers mailboxes
+	// from credstore; tests set this env explicitly to populate the
+	// refresher without going through the credstore poller.
+	refreshMailboxes := []string{}
+	if raw := os.Getenv("BRIDGE_REFRESH_MAILBOXES"); raw != "" {
+		for _, id := range strings.Split(raw, ",") {
+			id = strings.TrimSpace(id)
+			if id != "" {
+				refreshMailboxes = append(refreshMailboxes, id)
+			}
+		}
+	}
 	refresher := &mirrorstore.Refresher{
-		Mirror:   mirrorDB,
-		Client:   sdkClient,
-		Interval: 30 * time.Second,
+		Mirror:    mirrorDB,
+		Client:    sdkClient,
+		Interval:  getenvDuration("BRIDGE_REFRESH_INTERVAL", 30*time.Second),
+		Mailboxes: refreshMailboxes,
 	}
 	go refresher.Run(ctx)
 
@@ -230,7 +247,20 @@ func main() {
 		// subs for each. Full implementation lives in webhook.Bootstrap.
 		// On error we log and continue — the rest of the bridge is
 		// independent of webhook delivery.
-		results, err := bootstrap.Run(ctx, []string{})
+		// Integration tests can pre-seed the mailbox list via the
+		// BRIDGE_WEBHOOK_BOOTSTRAP_MAILBOXES env var (comma-separated).
+		// Once production has a mailbox-discovery endpoint, this knob
+		// can stop being the bootstrap's sole input.
+		mailboxIDs := []string{}
+		if raw := os.Getenv("BRIDGE_WEBHOOK_BOOTSTRAP_MAILBOXES"); raw != "" {
+			for _, id := range strings.Split(raw, ",") {
+				id = strings.TrimSpace(id)
+				if id != "" {
+					mailboxIDs = append(mailboxIDs, id)
+				}
+			}
+		}
+		results, err := bootstrap.Run(ctx, mailboxIDs)
 		if err != nil {
 			log.Printf("polaris-bridge: webhook bootstrap: %v (continuing)", err)
 			return
@@ -258,9 +288,10 @@ func main() {
 	var tlsSrc *bridgetls.Source
 	if hasACME || certFilesPresent(cfg) {
 		tlsSrc, err = bridgetls.New(bridgetls.Config{
-			Mode:     bridgetls.ModeLocal,
-			CertPath: cfg.TLSCertPath(),
-			KeyPath:  cfg.TLSKeyPath(),
+			Mode:           bridgetls.ModeLocal,
+			CertPath:       cfg.TLSCertPath(),
+			KeyPath:        cfg.TLSKeyPath(),
+			ReloadInterval: getenvDuration("BRIDGE_TLS_RELOAD_INTERVAL", 0),
 		})
 		if err != nil {
 			log.Fatalf("polaris-bridge: tls init: %v", err)
@@ -289,7 +320,11 @@ func main() {
 			Forwarder:      fwd,
 			Audit:          auditLog,
 			MaxMessageSize: cfg.MaxMessageSize,
-			Lockout:        credstore.NewLockout(),
+			Lockout: credstore.NewLockoutWith(
+				0, // window: default
+				0, // limit: default
+				getenvDuration("BRIDGE_AUTH_LOCKOUT_COOLDOWN", 0),
+			),
 			Metrics: &dsmtp.MetricsHooks{
 				Submissions: metricsReg.Submissions,
 				Errors:      metricsReg.Errors,
@@ -318,16 +353,19 @@ func main() {
 	// Boot defaults — encrypted on, unencrypted off. The supervisor
 	// replays these into actual listener binds; the first heartbeat
 	// response overrides with the server-side settings row.
+	// Per-port BRIDGE_*_PORT env knobs let the integration test
+	// harness bind on random ports without colliding with anything
+	// else on the host.
 	initialSettings := listeners.Settings{
 		Version:         0,
 		SMTPSEnabled:    enabled("BRIDGE_SMTPS_ENABLED", true),
-		SMTPSPort:       465,
+		SMTPSPort:       getenvInt("BRIDGE_SMTPS_PORT", 465),
 		SMTPEnabled:     enabled("BRIDGE_SMTP_PLAIN_ENABLED", false),
-		SMTPPort:        25,
+		SMTPPort:        getenvInt("BRIDGE_SMTP_PORT", 25),
 		IMAPSEnabled:    enabled("BRIDGE_IMAP_ENABLED", true),
-		IMAPSPort:       993,
+		IMAPSPort:       getenvInt("BRIDGE_IMAPS_PORT", 993),
 		IMAPEnabled:     enabled("BRIDGE_IMAP_PLAIN_ENABLED", false),
-		IMAPPort:        143,
+		IMAPPort:        getenvInt("BRIDGE_IMAP_PORT", 143),
 		TLSSource:       "auto",
 		MaxMessageSize:  cfg.MaxMessageSize,
 		MaxIMAPSessions: 200,
@@ -352,6 +390,8 @@ func main() {
 		HMACKey:    cfg.HMACKey,
 		WriteHMAC:  newHMACWriter(),
 		Supervisor: supervisor,
+		Interval:   getenvDuration("BRIDGE_HEARTBEAT_INTERVAL", 0),
+		Settle:     getenvDuration("BRIDGE_HEARTBEAT_SETTLE", 0),
 		StartedAt:  time.Now(),
 	})
 
@@ -421,6 +461,37 @@ func getenvDefault(key, dflt string) string {
 	return dflt
 }
 
+// getenvInt reads an int from env. Empty / unparseable values fall back
+// to dflt.
+func getenvInt(key string, dflt int) int {
+	v := os.Getenv(key)
+	if v == "" {
+		return dflt
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil {
+		log.Printf("polaris-bridge: %s=%q unparseable (%v); using default %d", key, v, err, dflt)
+		return dflt
+	}
+	return n
+}
+
+// getenvDuration reads a time.Duration from env. Empty / unparseable values
+// fall back to dflt (which may be zero — downstream code is expected to
+// translate zero into its own default).
+func getenvDuration(key string, dflt time.Duration) time.Duration {
+	v := os.Getenv(key)
+	if v == "" {
+		return dflt
+	}
+	d, err := time.ParseDuration(v)
+	if err != nil {
+		log.Printf("polaris-bridge: %s=%q unparseable (%v); using default %s", key, v, err, dflt)
+		return dflt
+	}
+	return d
+}
+
 // hmacWriter applies a roll_hmac directive by atomically replacing the
 // on-disk HMAC plaintext at the file the bridge reads on startup.
 // `BRIDGE_POLARIS_HMAC_KEY_FILE` is honored; if the operator instead
@@ -475,9 +546,16 @@ func (w *hmacWriter) WriteHMACKey(plaintext string) error {
 // match against "localhost" / "127.0.0.1" / "::1" trips it. Operators
 // running an explicit reverse proxy in front of the bridge should set
 // BRIDGE_PUBLIC_URL to that proxy's externally-routable URL.
-func validatePublicWebhookURL(raw string) error {
+//
+// allowLoopback is for integration tests only (BRIDGE_PUBLIC_URL_ALLOW_LOOPBACK=1)
+// where the control plane and bridge co-exist on a single host; the empty
+// check still applies.
+func validatePublicWebhookURL(raw string, allowLoopback bool) error {
 	if raw == "" {
 		return errors.New("BRIDGE_PUBLIC_URL must be set when BRIDGE_WEBHOOK_ENABLED is true; polaris must be able to reach this bridge to deliver events")
+	}
+	if allowLoopback {
+		return nil
 	}
 	lower := strings.ToLower(raw)
 	for _, banned := range []string{"localhost", "127.0.0.1", "[::1]", "://::1"} {

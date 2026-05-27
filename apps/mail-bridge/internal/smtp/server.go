@@ -74,7 +74,11 @@ func New(opts ServerOptions, be *Backend) *Server {
 		// based suites in the wild and Go 1.25's TLS 1.3 implementation
 		// enforces AEAD-only ciphers. Operators on a legacy client can
 		// opt back to TLS 1.2 via BRIDGE_TLS_MIN_VERSION=1.2.
-		cache := &certCache{certPath: opts.TLSCert, keyPath: opts.TLSKey}
+		cache := &certCache{
+			certPath:       opts.TLSCert,
+			keyPath:        opts.TLSKey,
+			reloadInterval: certReloadInterval(),
+		}
 		srv.TLSConfig = &tls.Config{
 			MinVersion:     minTLSVersion(),
 			GetCertificate: cache.Get,
@@ -114,20 +118,27 @@ func (s *Server) Shutdown(ctx context.Context) error {
 }
 
 // certCache reloads the cert from disk if the file mtime changed.
+// Reload cadence defaults to 30s; integration tests override via
+// BRIDGE_TLS_RELOAD_INTERVAL (read by the smtp Server constructor) so
+// cert-rotation assertions don't blow the CI timeout.
 type certCache struct {
-	mu       sync.Mutex
-	certPath string
-	keyPath  string
-	loaded   *tls.Certificate
-	loadedAt time.Time
+	mu             sync.Mutex
+	certPath       string
+	keyPath        string
+	loaded         *tls.Certificate
+	loadedAt       time.Time
+	reloadInterval time.Duration
 }
 
 // Get is suitable for tls.Config.GetCertificate.
 func (c *certCache) Get(_ *tls.ClientHelloInfo) (*tls.Certificate, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	// Reload at most once per 30s; lego rotates on order, not on every accept.
-	if c.loaded != nil && time.Since(c.loadedAt) < 30*time.Second {
+	interval := c.reloadInterval
+	if interval <= 0 {
+		interval = 30 * time.Second
+	}
+	if c.loaded != nil && time.Since(c.loadedAt) < interval {
 		return c.loaded, nil
 	}
 	cert, err := tls.LoadX509KeyPair(c.certPath, c.keyPath)
@@ -141,4 +152,17 @@ func (c *certCache) Get(_ *tls.ClientHelloInfo) (*tls.Certificate, error) {
 	c.loaded = &cert
 	c.loadedAt = time.Now()
 	return c.loaded, nil
+}
+
+// certReloadInterval reads BRIDGE_TLS_RELOAD_INTERVAL. Defaults to 30s.
+func certReloadInterval() time.Duration {
+	v := strings.TrimSpace(os.Getenv("BRIDGE_TLS_RELOAD_INTERVAL"))
+	if v == "" {
+		return 30 * time.Second
+	}
+	d, err := time.ParseDuration(v)
+	if err != nil || d <= 0 {
+		return 30 * time.Second
+	}
+	return d
 }

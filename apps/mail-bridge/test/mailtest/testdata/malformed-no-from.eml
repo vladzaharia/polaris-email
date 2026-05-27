@@ -1,0 +1,9 @@
+To: bob@inbound.test
+Subject: missing-from-header
+Date: Mon, 26 May 2026 12:02:00 +0000
+Message-ID: <malformed-mailtest@example.com>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+
+This message has no From header — the bridge's strict MIME parser
+should reject it.

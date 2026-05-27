@@ -336,6 +336,17 @@ func buildRequest(deps Deps, st *state) polarissdk.BridgeHeartbeatRequest {
 		_ = hw
 	}
 
+	// IMPORTANT: every slice field MUST be a non-nil empty slice (not
+	// nil) so encoding/json emits `[]` instead of `null`. The
+	// TypeScript Zod schema rejects null for arrays — a real contract
+	// drift caught by the mailtest_contract suite.
+	directiveAcks := st.pendingAcks
+	if directiveAcks == nil {
+		directiveAcks = []polarissdk.BridgeDirectiveAck{}
+	}
+	if logs == nil {
+		logs = []polarissdk.BridgeLogLine{}
+	}
 	return polarissdk.BridgeHeartbeatRequest{
 		SchemaVersion: 2,
 		BridgeVersion: bridgeVersionString(),
@@ -372,7 +383,7 @@ func buildRequest(deps Deps, st *state) polarissdk.BridgeHeartbeatRequest {
 		},
 		RecentErrors:    []polarissdk.BridgeErrorRecord{},
 		SettingsVersion: st.settingsVersion,
-		DirectiveAcks:   st.pendingAcks,
+		DirectiveAcks:   directiveAcks,
 		Logs:            logs,
 		LastLogSeq:      st.lastLogSeq,
 	}
