@@ -155,6 +155,16 @@ func start(t *testing.T, opts mt.HarnessOpts, ca *mt.CA) mt.Harness {
 	if !opts.WithoutTLS && ca != nil {
 		cert := ca.IssueServerCert(t, "smtps.test", "imaps.test", "localhost", "127.0.0.1")
 		mt.WritePEMs(t, certDir, cert)
+		// mt.WritePEMs writes privkey.pem at 0o600. Linux docker
+		// containers run as the in-image `polaris` user (alpine UID
+		// ~101) which doesn't match the host UID owning the bind
+		// mount; 0o600 then surfaces as "permission denied" inside the
+		// container. Loosen to world-readable for the test mount.
+		// (The cert/key are minted per-test and live in t.TempDir(),
+		// so they go away when the test ends — no production-secret
+		// concern.)
+		_ = os.Chmod(filepath.Join(certDir, "privkey.pem"), 0o644)
+		_ = os.Chmod(filepath.Join(certDir, "fullchain.pem"), 0o644)
 	}
 
 	return h
@@ -204,8 +214,11 @@ func (h *dockerHarness) CABundle() *tls.Config {
 
 func (h *dockerHarness) ReplaceCert(t *testing.T, cert tls.Certificate) {
 	t.Helper()
-	mt.WritePEMs(t, filepath.Join(h.tmpDir, "certs"), cert)
-	// Container reads from a bind mount, no copy-in needed.
+	certDir := filepath.Join(h.tmpDir, "certs")
+	mt.WritePEMs(t, certDir, cert)
+	// Same reason as start(): containerized polaris user needs read.
+	_ = os.Chmod(filepath.Join(certDir, "privkey.pem"), 0o644)
+	_ = os.Chmod(filepath.Join(certDir, "fullchain.pem"), 0o644)
 }
 
 func (h *dockerHarness) Fake() mt.FakeControlPlane { return h.fake }

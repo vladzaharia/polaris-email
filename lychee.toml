@@ -8,6 +8,11 @@ exclude = [
   # Polaris-owned hostnames that aren't deployed yet — link-check on the docs
   # site itself can validate them once the deploy is live.
   'mail\.plrs\.im',
+  # support.plrs.im is a static Polaris-owned hostname referenced from the
+  # docs nav/footer; the box hosting it intermittently times out from CI
+  # runners' egress. Skip until we either move the page or front it with
+  # something more reliable.
+  'support\.plrs\.im',
   # github.com is rate-limited from unauthenticated GH runners and trivially
   # validatable by other means.
   '^https?://github\.com',
