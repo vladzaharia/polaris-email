@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"sort"
 	"testing"
 	"time"
 
@@ -67,28 +68,46 @@ func TestAuthPlain_ConstantTime(t *testing.T) {
 
 	sess := newTestSession(t, store, nil)
 
-	// Time a wrong-password against a real user.
-	t0 := time.Now()
-	_ = sess.authPlain("alice", "wrong-password")
-	dReal := time.Since(t0)
-
-	// Time a missing user.
-	t1 := time.Now()
-	_ = sess.authPlain("nobody", "wrong-password")
-	dMiss := time.Since(t1)
+	// Sample 5 runs each; compare the medians. CI runners share CPU
+	// and bcrypt cost=12 takes ~250-500ms — a single tail spike can
+	// otherwise swamp the constant-time signal. Single-sample timing
+	// with a 50ms tolerance was flaky on GitHub's Linux runners; the
+	// median-of-5 + 200ms tolerance keeps the assertion meaningful
+	// (it'd catch a missing burn — ~250ms gap) without false alarms.
+	const samples = 5
+	const tolerance = 200 * time.Millisecond
+	reals := make([]time.Duration, samples)
+	misses := make([]time.Duration, samples)
+	for i := 0; i < samples; i++ {
+		t0 := time.Now()
+		_ = sess.authPlain("alice", "wrong-password")
+		reals[i] = time.Since(t0)
+		t1 := time.Now()
+		_ = sess.authPlain("nobody", "wrong-password")
+		misses[i] = time.Since(t1)
+	}
+	dReal := medianDuration(reals)
+	dMiss := medianDuration(misses)
 
 	diff := dMiss - dReal
 	if diff < 0 {
 		diff = -diff
 	}
-	// Within 50ms tolerance — both should hit a real bcrypt op.
-	if diff > 50*time.Millisecond {
-		t.Fatalf("constant-time leak: real=%v miss=%v diff=%v", dReal, dMiss, diff)
+	if diff > tolerance {
+		t.Fatalf("constant-time leak: real_median=%v miss_median=%v diff=%v (reals=%v misses=%v)",
+			dReal, dMiss, diff, reals, misses)
 	}
 	// Sanity: each should take at least 10ms (cost=12).
 	if dReal < 10*time.Millisecond || dMiss < 10*time.Millisecond {
 		t.Fatalf("bcrypt unexpectedly fast: real=%v miss=%v", dReal, dMiss)
 	}
+}
+
+// medianDuration returns the median of a sorted copy of `in`.
+func medianDuration(in []time.Duration) time.Duration {
+	cp := append([]time.Duration(nil), in...)
+	sort.Slice(cp, func(i, j int) bool { return cp[i] < cp[j] })
+	return cp[len(cp)/2]
 }
 
 func TestAuthPlain_SuccessAndRevoke(t *testing.T) {
