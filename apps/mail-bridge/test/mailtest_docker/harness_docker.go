@@ -102,6 +102,11 @@ func start(t *testing.T, opts mt.HarnessOpts, ca *mt.CA) mt.Harness {
 	bridgeName := "mailtest-docker-" + strconv.FormatInt(time.Now().UnixNano()%1_000_000, 36)
 	h.bridge = h.fake.RegisterBridge(bridgeName)
 	h.fake.SyncBridgePorts(h.bridge, h.smtpsPort, h.smtpPort, h.imapsPort, h.imapPort)
+	// Mirror inproc: the compose env passes BRIDGE_PUBLIC_URL into the
+	// bridge's initialSettings.WebhookURLOverride; the fake must echo
+	// the same URL back on first heartbeat or the supervisor sees a
+	// diff and restart-loops the bridge.
+	h.fake.SyncBridgeWebhookURL(h.bridge, "http://127.0.0.1:"+strconv.Itoa(h.webhookPort))
 
 	for _, m := range opts.InitialMailboxes {
 		mb := h.fake.SeedMailbox(m.OwnerAddr)
