@@ -221,16 +221,21 @@ ${composeEnv}__POLARIS_COMPOSE_ENV_EOF__
 write_or_prompt docker-compose.yml "$COMPOSE_YML"
 write_or_prompt docker-compose.env "$COMPOSE_ENV"
 
-say "Writing ./secrets/ (dir 700, files 644)"
+say "Writing ./secrets/ (dir 711, files 644)"
 mkdir -p secrets
-chmod 700 secrets
+# Directory is 711 (rwx for owner, --x for others). On Linux a process
+# needs +x on every dir in a path to open() any file inside it. The
+# bridge container runs as alpine's polaris user (UID ~100), not the
+# host UID owning this dir — without +x for others the container hits
+# EACCES traversing /run/secrets/, regardless of file mode. 711 still
+# hides directory *listing* from anyone but the owner, so secret
+# filenames stay un-enumerable; only a process that already knows the
+# exact path (the bridge does — via BRIDGE_POLARIS_*_FILE) can open them.
+chmod 711 secrets
 printf '%s' '${p.bridge_id}' > secrets/bridge_id
 printf '%s' '${p.hmac_key}' > secrets/hmac_key
-# Files are 644 (not 600) because the bridge container's polaris user
-# (alpine UID ~100) doesn't match the host UID owning the bind mount.
-# The parent directory at 700 is what gates host-side access; only the
-# bridge container (mounted at /run/secrets) needs to read these files,
-# and inside the container they're owned by polaris regardless.
+# Files are 644 for the same UID-mismatch reason. Container only needs
+# read; write is host-side via this installer.
 chmod 644 secrets/*
 
 say "docker compose pull"
