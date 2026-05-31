@@ -11,7 +11,7 @@ require (
 	github.com/polaris-mail/polaris-sdk-go v0.0.0
 	golang.org/x/crypto v0.51.0
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1
-	modernc.org/sqlite v1.50.1
+	modernc.org/sqlite v1.51.0
 )
 
 replace github.com/polaris-mail/polaris-sdk-go => ../../packages/sdk-go
