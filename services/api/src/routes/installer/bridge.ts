@@ -67,7 +67,11 @@ async function handleInstaller(
     hmac_key: hmac,
     mode,
     api_url: c.env.API_BASE_URL,
-    image: 'ghcr.io/vladzaharia/polaris-mail-bridge:latest',
+    // :edge publishes on every push-to-main; :latest only on semver tag
+    // pushes (see .github/workflows/mail-bridge-image.yml). For pre-
+    // production where main moves daily, :edge is the right install
+    // target — using :latest pins to a frozen image from the last tag.
+    image: 'ghcr.io/vladzaharia/polaris-mail-bridge:edge',
   });
   return new Response(script, {
     headers: {
@@ -217,13 +221,17 @@ ${composeEnv}__POLARIS_COMPOSE_ENV_EOF__
 write_or_prompt docker-compose.yml "$COMPOSE_YML"
 write_or_prompt docker-compose.env "$COMPOSE_ENV"
 
-say "Writing ./secrets/ (mode 600)"
+say "Writing ./secrets/ (dir 700, files 644)"
 mkdir -p secrets
 chmod 700 secrets
-umask 077
 printf '%s' '${p.bridge_id}' > secrets/bridge_id
 printf '%s' '${p.hmac_key}' > secrets/hmac_key
-chmod 600 secrets/*
+# Files are 644 (not 600) because the bridge container's polaris user
+# (alpine UID ~100) doesn't match the host UID owning the bind mount.
+# The parent directory at 700 is what gates host-side access; only the
+# bridge container (mounted at /run/secrets) needs to read these files,
+# and inside the container they're owned by polaris regardless.
+chmod 644 secrets/*
 
 say "docker compose pull"
 $POLARIS_DOCKER compose pull
