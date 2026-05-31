@@ -123,11 +123,15 @@ func (r *Renewer) EnsureCert(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("acme: lego client: %w", err)
 	}
-	provider, err := cloudflare.NewDNSProviderConfig(&cloudflare.Config{
-		AuthToken: r.CFDnsToken,
-		// `ZoneToken` defaults to AuthToken when unset; our token has
-		// Zone:Read so Lego can resolve the zone-id by name.
-	})
+	// Start from Lego's defaults so TTL / PropagationTimeout / PollingInterval
+	// are populated. Constructing &cloudflare.Config{} directly leaves TTL=0,
+	// and Cloudflare rejects DNS records with TTL < 120 ("invalid TTL, TTL
+	// (0) must be greater than 120"). Then override the token.
+	cfDnsCfg := cloudflare.NewDefaultConfig()
+	cfDnsCfg.AuthToken = r.CFDnsToken
+	// `ZoneToken` defaults to AuthToken when unset; our token has
+	// Zone:Read so Lego can resolve the zone-id by name.
+	provider, err := cloudflare.NewDNSProviderConfig(cfDnsCfg)
 	if err != nil {
 		return fmt.Errorf("acme: cf dns provider: %w", err)
 	}
