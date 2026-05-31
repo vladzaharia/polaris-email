@@ -51,8 +51,22 @@ func DialIMAPSWithOptions(t *testing.T, addr string, opts DialIMAPSOpts, clientO
 }
 
 // MustClose tears down the IMAP session.
+//
+// Logout grabs the client write mutex, which deadlocks if the test
+// abandons the connection mid-IDLE (the IDLE goroutine never released
+// the lock). The transport Close() unblocks the IDLE reader; we always
+// reach it via the deferred call, so a stuck Logout caps the wait at
+// 2 seconds instead of pinning CI to the test framework's full timeout.
 func (c *IMAPClient) MustClose(t *testing.T) {
 	t.Helper()
-	_ = c.Logout().Wait()
+	done := make(chan struct{})
+	go func() {
+		_ = c.Logout().Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+	}
 	_ = c.Close()
 }

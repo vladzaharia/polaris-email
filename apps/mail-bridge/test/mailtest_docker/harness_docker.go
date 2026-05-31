@@ -314,6 +314,10 @@ func (h *dockerHarness) renderCompose() string {
       BRIDGE_IMAPS_PORT: "%[7]d"
       BRIDGE_IMAP_PORT: "%[8]d"
       BRIDGE_WEBHOOK_LISTEN_ADDR: "0.0.0.0:%[9]d"
+      # WebhookEnabled now defaults to false at the bridge level (operators
+      # opt in via the panel). Tests need the receiver up from boot so the
+      # fake's auto-route delivers events without waiting for a reconcile.
+      BRIDGE_WEBHOOK_ENABLED: "true"
       BRIDGE_WEBHOOK_BOOTSTRAP_MAILBOXES: "%[10]s"
       BRIDGE_REFRESH_MAILBOXES: "%[10]s"
     ports:
