@@ -19,6 +19,7 @@ import { Hono, type Context } from 'hono';
 import type { Env } from '../../env.js';
 import { buildError } from '../../errors.js';
 import { verifyPbkdf2 } from '../../hashing.js';
+import { bridgePlainNextKvKey } from '../../bridge-auth.js';
 
 export const bridgeInstaller = new Hono<{ Bindings: Env }>();
 
@@ -33,6 +34,7 @@ interface BridgeRowForInstaller {
   hmac_key_secret_name: string | null;
   ts_authkey_id: string | null;
   disabled_at: string | null;
+  hmac_pending_rotated_at: string | null;
 }
 
 async function handleInstaller(
@@ -44,7 +46,7 @@ async function handleInstaller(
     return buildError(c, 'bad_request', 'invalid install URL format');
   }
   const row = await c.env.DB.prepare(
-    `SELECT id, name, hmac_key_secret_name, ts_authkey_id, disabled_at
+    `SELECT id, name, hmac_key_secret_name, ts_authkey_id, disabled_at, hmac_pending_rotated_at
      FROM bridges WHERE id = ?`,
   )
     .bind(bridgeId)
@@ -55,7 +57,20 @@ async function handleInstaller(
   if (!row || row.disabled_at || !row.hmac_key_secret_name) {
     return buildError(c, 'not_found', 'install URL invalid or bridge unavailable');
   }
-  const ok = await verifyPbkdf2(row.hmac_key_secret_name, hmac, c.env.ARGON2_PEPPER);
+  let ok = await verifyPbkdf2(row.hmac_key_secret_name, hmac, c.env.ARGON2_PEPPER);
+  // Staged-roll case: the new HMAC is in KV at bridge_plain_next:<id>
+  // and won't be written to hmac_key_secret_name until the bridge
+  // acks the directive. Until then, the install URL returned from
+  // POST /v1/admin/bridges/:id/rotate carries the new key and would
+  // otherwise 404 here. Accept either the persisted hash OR the
+  // staged plaintext — only relevant when hmac_pending_rotated_at is
+  // set (i.e. a staged roll is in flight).
+  if (!ok && row.hmac_pending_rotated_at) {
+    const stagedPlain = await c.env.KV_KEY_CACHE.get(bridgePlainNextKvKey(bridgeId));
+    if (stagedPlain && stagedPlain === hmac) {
+      ok = true;
+    }
+  }
   if (!ok) return buildError(c, 'not_found', 'install URL invalid or bridge unavailable');
 
   // `ts_authkey_id` presence is our mode signal — same heuristic as
