@@ -268,9 +268,15 @@ function composeTailscale(p: RenderArgs): string {
 #
 # Bootstrap init: the bridge image is reused as a short-lived sibling
 # that fetches the per-bridge Tailscale auth key from the polaris API
-# (HMAC-authed) and writes it to ./secrets/ts_authkey before the TS
-# sidecar starts. Operators never touch the TS auth key — only the
-# bridge_id + HMAC key need to exist in ./secrets/ before compose up.
+# (HMAC-authed) and writes it to the \`bridge-runtime\` docker volume.
+# The TS sidecar reads from the same volume via TS_AUTHKEY_FILE.
+#
+# Why a docker volume (not the operator's ./secrets/ bind mount): the
+# host secrets dir is mode 0711, owned by the operator UID — the
+# bridge container runs as a non-root user that can read the existing
+# bridge_id/hmac_key files but cannot create new files there. The
+# docker volume gives bootstrap a writable shared surface that's still
+# isolated from the host fs.
 networks:
   polaris-mail-net:
     driver: bridge
@@ -284,13 +290,14 @@ services:
     environment:
       BRIDGE_POLARIS_BRIDGE_ID_FILE: /run/secrets/bridge_id
       BRIDGE_POLARIS_HMAC_KEY_FILE: /run/secrets/hmac_key
-      TS_AUTHKEY_PATH: /run/secrets/ts_authkey
+      TS_AUTHKEY_PATH: /run/bridge-runtime/ts_authkey
     volumes:
-      - ./secrets:/run/secrets
+      - ./secrets:/run/secrets:ro
+      - bridge-runtime:/run/bridge-runtime
 
   tailscale:
     image: tailscale/tailscale:stable
-    container_name: polaris-mail
+    container_name: polaris-mail-ts
     hostname: ${tsHost}
     restart: unless-stopped
     networks: [polaris-mail-net]
@@ -300,10 +307,10 @@ services:
       TS_STATE_DIR: /var/lib/tailscale
       TS_USERSPACE: 'false'
       TS_EXTRA_ARGS: --advertise-tags=tag:mail-bridge
-      TS_AUTHKEY_FILE: /run/secrets/ts_authkey
+      TS_AUTHKEY_FILE: /run/bridge-runtime/ts_authkey
     volumes:
       - ts-state:/var/lib/tailscale
-      - ./secrets:/run/secrets:ro
+      - bridge-runtime:/run/bridge-runtime:ro
     depends_on:
       bootstrap:
         condition: service_completed_successfully
@@ -327,6 +334,7 @@ services:
 
 volumes:
   ts-state:
+  bridge-runtime:
   bridge-certs:
   bridge-data:
   bridge-logs:

@@ -11,7 +11,7 @@
 services:
   tailscale:
     image: tailscale/tailscale:stable
-    container_name: polaris-mail-tailscale
+    container_name: polaris-mail-ts
     hostname: polaris-mail-${REGION:-{{ .Region }}}
     environment:
       TS_AUTHKEY: ${TS_AUTHKEY}

@@ -32,12 +32,19 @@ RUN GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} \
 
 FROM alpine:3.21
 # procps brings `pgrep`, which the HEALTHCHECK below relies on.
-RUN apk add --no-cache ca-certificates tzdata procps && \
+# su-exec is the minimal setuid-bit-free privilege drop we use from the
+# entrypoint after fixing volume ownership.
+RUN apk add --no-cache ca-certificates tzdata procps su-exec && \
     addgroup -S polaris && adduser -S -G polaris polaris && \
     mkdir -p /var/lib/polaris-bridge /var/log/polaris-bridge /etc/polaris-bridge && \
     chown -R polaris:polaris /var/lib/polaris-bridge /var/log/polaris-bridge /etc/polaris-bridge
 COPY --from=build /out/polaris-bridge /usr/local/bin/polaris-bridge
-USER polaris
+COPY apps/mail-bridge/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+# NOTE: we intentionally do NOT set `USER polaris` here — the entrypoint
+# enters as root long enough to chown the named-volume mounts (docker
+# leaves them root-owned regardless of build-time chown), then drops to
+# the polaris user via su-exec.
 # SMTPS (465), IMAPS (993), JMAP/HTTPS (443). The container exposes all three;
 # which actually listen is controlled by bridge.toml ([smtps].enabled etc.).
 EXPOSE 465 993 443
@@ -55,4 +62,4 @@ LABEL org.opencontainers.image.source="https://github.com/vladzaharia/polaris-em
       org.opencontainers.image.title="polaris-mail-bridge" \
       org.opencontainers.image.vendor="polaris-mail"
 
-ENTRYPOINT ["/usr/local/bin/polaris-bridge"]
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
