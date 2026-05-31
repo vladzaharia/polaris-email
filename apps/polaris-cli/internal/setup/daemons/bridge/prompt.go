@@ -77,13 +77,6 @@ func Prompt(seed *BridgeSetupInput, cliVersion string) (*BridgeSetupInput, error
 		huh.NewGroup(
 			huh.NewSelect[string]().Title("TLS source").Options(tlsOptions...).Value(&tlsStr),
 			huh.NewInput().Title("FQDN").Description("SAN on the bridge's server cert").Value(&in.FQDN),
-			huh.NewInput().Title("Public URL").Description("Operator-routable URL polaris fanout POSTs webhooks to").
-				Value(&in.PublicURL).Validate(func(s string) error {
-				if isLoopbackHost(s) {
-					return fmt.Errorf("loopback URLs are not reachable from polaris")
-				}
-				return nil
-			}),
 		),
 	)
 	if err := stage2.Run(); err != nil {

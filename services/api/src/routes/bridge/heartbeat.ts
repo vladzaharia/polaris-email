@@ -69,6 +69,8 @@ interface BridgeSettingsRow {
   max_message_size_bytes: number;
   max_imap_sessions: number;
   log_level: 'debug' | 'info' | 'warn' | 'error';
+  webhook_enabled: number;
+  webhook_url_override: string | null;
 }
 
 function settingsRowToPayload(row: BridgeSettingsRow): BridgeSettings {
@@ -86,6 +88,8 @@ function settingsRowToPayload(row: BridgeSettingsRow): BridgeSettings {
     max_message_size_bytes: row.max_message_size_bytes,
     max_imap_sessions: row.max_imap_sessions,
     log_level: row.log_level,
+    webhook_enabled: row.webhook_enabled === 1,
+    webhook_url_override: row.webhook_url_override,
   };
 }
 

@@ -149,14 +149,6 @@ func (d *Descriptor) PreChecks(in setup.Input) []setup.PreCheck {
 				return adaptPreCheck(checkPolarisAPIReachable(ctx, concrete.PolarisAPIURL, deps.HTTPClient))
 			},
 		},
-		{
-			Name:        "public-url",
-			Required:    true,
-			Description: "Public URL is not a loopback address",
-			Run: func(_ context.Context) setup.PreCheckResult {
-				return adaptPreCheck(checkPublicURLNonLoopback(concrete.PublicURL))
-			},
-		},
 	}
 	if concrete.TLSSource == TLSMounted {
 		checks = append(checks, setup.PreCheck{

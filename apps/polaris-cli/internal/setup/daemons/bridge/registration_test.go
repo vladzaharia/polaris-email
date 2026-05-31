@@ -17,7 +17,6 @@ func TestPersistRegistration_SetsPerms(t *testing.T) {
 		BridgeName:    "bridge-iad-1",
 		Environment:   "prod",
 		PolarisAPIURL: "https://api.polaris.example.com",
-		PublicURL:     "https://mail.example.com",
 		TLSSource:     TLSMounted,
 		FQDN:          "mail.example.com",
 		ImageTag:      "v1.0.0",
@@ -77,7 +76,7 @@ func TestLoadRegistration_RoundTrip(t *testing.T) {
 	_ = os.Chmod(dir, 0o700)
 	in := &BridgeSetupInput{
 		Mode: ModeLocal, BridgeName: "bridge-1",
-		Environment: "prod", PolarisAPIURL: "https://x", PublicURL: "https://y",
+		Environment: "prod", PolarisAPIURL: "https://x",
 		TLSSource: TLSMounted, FQDN: "y", ImageTag: "v1", Dir: dir,
 	}
 	in.Defaults("v1")
@@ -102,7 +101,7 @@ func TestLoadRegistration_RemediatesMode(t *testing.T) {
 	_ = os.Chmod(dir, 0o700)
 	in := &BridgeSetupInput{
 		Mode: ModeLocal, BridgeName: "bridge-1",
-		Environment: "prod", PolarisAPIURL: "https://x", PublicURL: "https://y",
+		Environment: "prod", PolarisAPIURL: "https://x",
 		TLSSource: TLSMounted, FQDN: "y", ImageTag: "v1", Dir: dir,
 	}
 	in.Defaults("v1")

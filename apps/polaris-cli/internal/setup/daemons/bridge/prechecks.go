@@ -62,7 +62,6 @@ func PreFlight(ctx context.Context, in *BridgeSetupInput, deps *PreCheckDeps) []
 		checkPortFree(ctx, "imap", in.IMAPPort),
 		checkPortFree(ctx, "webhook", in.WebhookPort),
 		checkPolarisAPIReachable(ctx, in.PolarisAPIURL, deps.HTTPClient),
-		checkPublicURLNonLoopback(in.PublicURL),
 	}
 	if in.TLSSource == TLSMounted {
 		results = append(results, checkMountedTLSReadable(in.TLSDir))
@@ -136,17 +135,6 @@ func checkPolarisAPIReachable(ctx context.Context, baseURL string, client *http.
 	}
 	return PreCheckResult{Name: "polaris-api", Status: StatusFail,
 		Message: fmt.Sprintf("GET /healthz → %d", resp.StatusCode)}
-}
-
-func checkPublicURLNonLoopback(u string) PreCheckResult {
-	if u == "" {
-		return PreCheckResult{Name: "public-url", Status: StatusSkip}
-	}
-	if strings.Contains(u, "127.0.0.1") || strings.Contains(u, "localhost") || strings.Contains(u, "::1") {
-		return PreCheckResult{Name: "public-url", Status: StatusFail,
-			Message: "public_url is a loopback address; polaris fanout cannot reach it"}
-	}
-	return PreCheckResult{Name: "public-url", Status: StatusPass, Message: u}
 }
 
 func checkMountedTLSReadable(dir string) PreCheckResult {

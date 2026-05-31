@@ -11,7 +11,6 @@ func validInput() *BridgeSetupInput {
 		BridgeName:    "bridge-iad-1",
 		Environment:   "prod",
 		PolarisAPIURL: "https://api.polaris.example.com",
-		PublicURL:     "https://mail.example.com",
 		TLSSource:     TLSMounted,
 		FQDN:          "mail.example.com",
 		ImageTag:      "v1.2.3",
@@ -41,9 +40,6 @@ func TestValidate_TableErrors(t *testing.T) {
 		{"bad-env", func(in *BridgeSetupInput) { in.Environment = "qa" }, "environment \"qa\" invalid"},
 		{"missing-api-url", func(in *BridgeSetupInput) { in.PolarisAPIURL = "" }, "polaris_api_url"},
 		{"non-http-api-url", func(in *BridgeSetupInput) { in.PolarisAPIURL = "ftp://x" }, "polaris_api_url must be http(s)"},
-		{"missing-public-url", func(in *BridgeSetupInput) { in.PublicURL = "" }, "public_url"},
-		{"loopback-public-url", func(in *BridgeSetupInput) { in.PublicURL = "http://127.0.0.1:8080" }, "loopback"},
-		{"localhost-public-url", func(in *BridgeSetupInput) { in.PublicURL = "http://localhost:8080" }, "loopback"},
 		{"missing-tls-source", func(in *BridgeSetupInput) { in.TLSSource = "" }, "tls_source is required"},
 		{"bad-tls-source", func(in *BridgeSetupInput) { in.TLSSource = "weird" }, "tls_source \"weird\" invalid"},
 		{"local+tailscale-sidecar", func(in *BridgeSetupInput) {

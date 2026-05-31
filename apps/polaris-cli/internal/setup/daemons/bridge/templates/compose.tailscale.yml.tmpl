@@ -76,12 +76,14 @@ services:
       # cf-access.
       BRIDGE_ACCESS_CLIENT_ID: ${ACCESS_CLIENT_ID:-}
       BRIDGE_ACCESS_CLIENT_SECRET: ${ACCESS_CLIENT_SECRET:-}
-      # Public URL used by webhook bootstrap to compute target URLs.
-      BRIDGE_PUBLIC_URL: ${BRIDGE_PUBLIC_URL:-{{ .PublicURL }}}
-      # Listener toggles (default on; set to "false" to skip).
+      # Listener toggles are panel-controlled via bridge_settings; the env
+      # values below only seed the initial pre-heartbeat state. Webhook is
+      # off by default — enable from the panel (Bridges → Settings →
+      # Webhook receiver) once the bridge is talking to polaris. The bridge
+      # auto-derives its callback URL (tailnet MagicDNS → <name>.mail.plrs.im
+      # → raw IP); override in the panel only if you need a specific transport.
       BRIDGE_SMTPS_ENABLED: ${BRIDGE_SMTPS_ENABLED:-true}
       BRIDGE_IMAP_ENABLED: ${BRIDGE_IMAP_ENABLED:-true}
-      BRIDGE_WEBHOOK_ENABLED: ${BRIDGE_WEBHOOK_ENABLED:-true}
       # On-disk paths.
       BRIDGE_CREDSTORE_PATH: /var/lib/polaris-bridge/credstore.db
       BRIDGE_MIRROR_PATH: /var/lib/polaris-bridge/mirror.db

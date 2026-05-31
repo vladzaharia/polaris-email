@@ -108,7 +108,6 @@ func SnapshotInput(in *BridgeSetupInput) map[string]any {
 		"bridge_name":     in.BridgeName,
 		"environment":     in.Environment,
 		"polaris_api_url": in.PolarisAPIURL,
-		"public_url":      in.PublicURL,
 		"tls_source":      in.TLSSource,
 		"fqdn":            in.FQDN,
 		"smtps_port":      in.SMTPSPort,

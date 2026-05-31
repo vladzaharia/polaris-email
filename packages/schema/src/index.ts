@@ -1322,6 +1322,18 @@ export const BridgeSettings = z.object({
   max_message_size_bytes: z.number().int().positive(),
   max_imap_sessions: z.number().int().positive(),
   log_level: BridgeLogLevel,
+  // Inbound-webhook receiver. The bridge runs an HTTP server (default
+  // :8080) that polaris POSTs `message.received` to. Settings here
+  // replace the legacy BRIDGE_WEBHOOK_ENABLED / BRIDGE_PUBLIC_URL env
+  // vars so the panel can drive the receiver entirely.
+  //
+  // webhook_url_override:
+  //   null/empty → bridge auto-derives the most-specific reachable URL
+  //   (tailnet MagicDNS → <name>.mail.plrs.im → raw IP).
+  //   non-empty  → polaris registers this exact URL as the webhook
+  //   sub's delivery target.
+  webhook_enabled: z.boolean(),
+  webhook_url_override: z.string().nullable(),
 });
 export type BridgeSettings = z.infer<typeof BridgeSettings>;
 

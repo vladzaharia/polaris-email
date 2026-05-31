@@ -63,6 +63,14 @@ type Handler struct {
 	replay   map[string]int64
 }
 
+// HasSecret reports whether a webhook subscription secret has been
+// installed via SetSecret. False means the handler is in fail-closed
+// (503) mode — the supervisor uses this to decide whether to re-run
+// bootstrap when the webhook listener is enabled hot.
+func (h *Handler) HasSecret() bool {
+	return len(h.Secret) > 0
+}
+
 // SetSecret atomically updates the handler's HMAC secret. Used by the
 // bootstrap goroutine in main.go once subscriptions are issued.
 func (h *Handler) SetSecret(s []byte) {

@@ -545,6 +545,8 @@ interface BridgeSettingsRow {
   max_message_size_bytes: number;
   max_imap_sessions: number;
   log_level: 'debug' | 'info' | 'warn' | 'error';
+  webhook_enabled: number;
+  webhook_url_override: string | null;
   updated_at: string;
   updated_by: string;
 }
@@ -565,6 +567,8 @@ function settingsRowToResponse(row: BridgeSettingsRow): Record<string, unknown> 
     max_message_size_bytes: row.max_message_size_bytes,
     max_imap_sessions: row.max_imap_sessions,
     log_level: row.log_level,
+    webhook_enabled: row.webhook_enabled === 1,
+    webhook_url_override: row.webhook_url_override,
     updated_at: row.updated_at,
     updated_by: row.updated_by,
   };
@@ -592,6 +596,8 @@ interface SettingsPatch {
   max_message_size_bytes?: number;
   max_imap_sessions?: number;
   log_level?: 'debug' | 'info' | 'warn' | 'error';
+  webhook_enabled?: boolean;
+  webhook_url_override?: string | null;
 }
 
 const TLS_SOURCES = new Set(['auto', 'manual']);
@@ -603,7 +609,13 @@ function validateSettingsPatch(input: unknown): SettingsPatch | string {
   }
   const p = input as Record<string, unknown>;
   const out: SettingsPatch = {};
-  for (const k of ['smtps_enabled', 'smtp_enabled', 'imaps_enabled', 'imap_enabled'] as const) {
+  for (const k of [
+    'smtps_enabled',
+    'smtp_enabled',
+    'imaps_enabled',
+    'imap_enabled',
+    'webhook_enabled',
+  ] as const) {
     if (k in p) {
       if (typeof p[k] !== 'boolean') return `${k} must be boolean`;
       out[k] = p[k] as boolean;
@@ -644,6 +656,16 @@ function validateSettingsPatch(input: unknown): SettingsPatch | string {
     }
     out.log_level = v as 'debug' | 'info' | 'warn' | 'error';
   }
+  if ('webhook_url_override' in p) {
+    const v = p.webhook_url_override;
+    if (v === null || v === '') {
+      out.webhook_url_override = null;
+    } else if (typeof v === 'string' && /^https?:\/\//.test(v) && v.length <= 1024) {
+      out.webhook_url_override = v;
+    } else {
+      return 'webhook_url_override must be an http(s) URL ≤1024 chars, or null/empty for auto-derive';
+    }
+  }
   return out;
 }
 
@@ -666,19 +688,25 @@ bridges.put('/v1/admin/bridges/:id/settings', requireScope('admin:rotate'), asyn
   // Build the diff for audit + the SET clauses. Only emit a write +
   // version bump when at least one field actually changes.
   const updates: string[] = [];
-  const binds: (string | number)[] = [];
+  const binds: (string | number | null)[] = [];
   const diff: Record<string, { from: unknown; to: unknown }> = {};
   const set = <K extends keyof SettingsPatch>(
     col: K,
-    sqlVal: string | number,
+    sqlVal: string | number | null,
     rowVal: unknown,
   ): void => {
     updates.push(`${String(col)} = ?`);
     binds.push(sqlVal);
     diff[String(col)] = { from: rowVal, to: patch[col] };
   };
-  // Four enable toggles (encrypted + unencrypted variants per protocol).
-  for (const k of ['smtps_enabled', 'smtp_enabled', 'imaps_enabled', 'imap_enabled'] as const) {
+  // Five enable toggles (SMTPS/SMTP/IMAPS/IMAP + webhook).
+  for (const k of [
+    'smtps_enabled',
+    'smtp_enabled',
+    'imaps_enabled',
+    'imap_enabled',
+    'webhook_enabled',
+  ] as const) {
     if (patch[k] !== undefined && patch[k] !== (existing[k] === 1)) {
       set(k, patch[k] ? 1 : 0, existing[k] === 1);
     }
@@ -706,6 +734,17 @@ bridges.put('/v1/admin/bridges/:id/settings', requireScope('admin:rotate'), asyn
   }
   if (patch.log_level !== undefined && patch.log_level !== existing.log_level) {
     set('log_level', patch.log_level, existing.log_level);
+  }
+  if (
+    patch.webhook_url_override !== undefined &&
+    patch.webhook_url_override !== existing.webhook_url_override
+  ) {
+    // Caller sends null/empty for auto-derive; store as SQL NULL.
+    set(
+      'webhook_url_override',
+      patch.webhook_url_override ? patch.webhook_url_override : null,
+      existing.webhook_url_override,
+    );
   }
 
   if (updates.length === 0) {

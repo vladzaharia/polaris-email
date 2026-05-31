@@ -4,21 +4,8 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 )
-
-func TestPreflight_FlagsLoopbackPublicURL(t *testing.T) {
-	in := validInput()
-	in.PublicURL = "http://127.0.0.1:8080"
-	r := checkPublicURLNonLoopback(in.PublicURL)
-	if r.Status != StatusFail {
-		t.Fatalf("expected fail, got %+v", r)
-	}
-	if !strings.Contains(r.Message, "loopback") {
-		t.Fatalf("expected loopback message, got %q", r.Message)
-	}
-}
 
 func TestPreflight_PolarisAPIReachable(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

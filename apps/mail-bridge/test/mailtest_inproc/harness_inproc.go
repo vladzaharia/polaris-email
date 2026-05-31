@@ -159,6 +159,11 @@ func start(t *testing.T, opts mt.HarnessOpts, ca *mt.CA) mt.Harness {
 	// ports so any later UpdateSettings doesn't trigger restart-required
 	// Apply with mismatched production-default ports.
 	h.fake.SyncBridgePorts(h.bridge, h.smtpsPort, h.smtpPort, h.imapsPort, h.imapPort)
+	// Same for the webhook URL — the bridge boots with BRIDGE_PUBLIC_URL
+	// seeded into initialSettings.WebhookURLOverride; the fake's first
+	// heartbeat reply must echo it back or every boot triggers a
+	// restart-required diff.
+	h.fake.SyncBridgeWebhookURL(h.bridge, "http://127.0.0.1:"+strconv.Itoa(h.webhookPort))
 
 	return h
 }

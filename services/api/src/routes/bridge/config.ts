@@ -102,10 +102,23 @@ bridgeConfig.get('/v1/bridge/config', async (c) => {
     // container logs "no key available" and exits cleanly.
   }
 
+  // Tailnet MagicDNS name: the install-template hostname convention
+  // is `<bridge-name>-mail`, so the bridge's reachable MagicDNS name
+  // is `<bridge-name>-mail.<tailnet>.ts.net`. The tailnet domain is
+  // operator-configured via env (TS_MAGICDNS_DOMAIN, e.g.
+  // `cardinal-trout.ts.net`). When unset OR when the bridge isn't
+  // running with TS (ts_authkey_id NULL), return null and let the
+  // bridge fall back to fqdn/IP.
+  let tailnetFqdn: string | null = null;
+  if (tsRow?.ts_authkey_id && c.env.TS_MAGICDNS_DOMAIN) {
+    tailnetFqdn = `${row.name}-mail.${c.env.TS_MAGICDNS_DOMAIN}`;
+  }
+
   return c.json({
     cf_dns_token: cfDnsToken,
     cf_zone: 'mail.plrs.im',
     fqdn: `${row.name}.mail.plrs.im`,
+    tailnet_fqdn: tailnetFqdn,
     acme_email: c.env.ACME_EMAIL ?? '',
     ts_authkey: tsAuthkey,
   });

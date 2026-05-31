@@ -97,6 +97,8 @@ type SettingsPatch struct {
 	MaxMessageSizeBytes *int64
 	MaxIMAPSessions     *int
 	LogLevel            *string
+	WebhookEnabled      *bool
+	WebhookURLOverride  *string
 }
 
 // BridgeSettingsOverride lets tests supply the initial settings the bridge

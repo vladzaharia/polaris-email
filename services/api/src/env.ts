@@ -147,6 +147,15 @@ export interface Env {
   TS_API_CLIENT_SECRET?: string;
 
   /**
+   * Tailnet MagicDNS domain (e.g. `cardinal-trout.ts.net`). Used by
+   * `/v1/bridge/config` to compute the per-bridge MagicDNS hostname
+   * (`<bridge-name>-mail.<TS_MAGICDNS_DOMAIN>`) which the bridge then
+   * uses as the auto-derived webhook receiver URL. Optional — bridges
+   * without a tailnet fall through to the public FQDN / raw-IP path.
+   */
+  TS_MAGICDNS_DOMAIN?: string;
+
+  /**
    * Public base URL of the bridge installer (e.g. `https://dl.mail.plrs.im`).
    * When set, the api worker accepts `<base>/<token>` as a short-form
    * installer URL on that hostname, and register/rotate responses surface

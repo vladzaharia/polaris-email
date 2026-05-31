@@ -209,6 +209,19 @@ func (f *FakeServer) SyncBridgePorts(b Bridge, smtpsPort, smtpPort, imapsPort, i
 	br.settings.IMAPPort = imapPort
 }
 
+// SyncBridgeWebhookURL seeds the per-bridge settings' webhook URL
+// override to match whatever the inproc/docker harness passed to the
+// bridge via BRIDGE_PUBLIC_URL. Without this, the first heartbeat
+// response would diff against the bridge's initial-settings override
+// and trigger a restart-required Apply on every boot.
+func (f *FakeServer) SyncBridgeWebhookURL(b Bridge, url string) {
+	f.state.mu.Lock()
+	defer f.state.mu.Unlock()
+	if br, ok := f.state.bridges[b.ID]; ok {
+		br.settings.WebhookURLOverride = url
+	}
+}
+
 // SetNextHeartbeatSeconds influences the bridge's adaptive cadence —
 // future heartbeat responses carry this value in NextHeartbeatInSeconds.
 // Used by H3.

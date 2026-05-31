@@ -65,6 +65,14 @@ type Settings struct {
 	MaxMessageSize  int64
 	MaxIMAPSessions int
 	LogLevel        string
+
+	// Inbound-webhook receiver. WebhookEnabled toggles the listener
+	// hot (no restart). WebhookURLOverride is observed by the bridge
+	// at boot to compute the install URL polaris registers against; a
+	// change here triggers restart-required so the registration gets
+	// re-bootstrapped against the new URL.
+	WebhookEnabled     bool
+	WebhookURLOverride string
 }
 
 // Deps bundles every dependency the supervisor needs to instantiate
@@ -82,6 +90,14 @@ type Deps struct {
 	// Webhook receiver
 	WebhookHandler    *webhook.Handler
 	WebhookListenAddr string
+	// WebhookRebootstrap is invoked when webhook_enabled flips off→on
+	// AND the handler doesn't yet have a secret. The supervisor only
+	// owns the listener lifecycle; the act of registering a sub with
+	// polaris (and threading the per-sub secret back to the handler)
+	// lives in webhook.Bootstrap, which main.go wires here as a
+	// closure. Optional — when nil, off→on just starts the listener
+	// without re-bootstrapping (existing 503 fail-closed behavior).
+	WebhookRebootstrap func(ctx context.Context)
 	// Shared
 	TLSSource   *bridgetls.Source
 	LogLevelVar *slog.LevelVar // optional; supervisor flips this on log_level apply
@@ -174,16 +190,19 @@ func (s *Supervisor) Apply(ctx context.Context, next Settings) (restartRequired 
 	}
 
 	// Restart-required diffs: ports + TLS source + message size + IMAP
-	// session cap. Those are baked into the listener's TLS config /
-	// SMTP server options at construction time and a clean re-bind on
-	// a fresh process is simpler than a hot rebind.
+	// session cap + webhook URL override. Those are baked into the
+	// listener's TLS config / SMTP server options at construction
+	// time and a clean re-bind on a fresh process is simpler than a
+	// hot rebind. Webhook URL change → re-bootstrap the sub against
+	// polaris, easier via restart than incremental.
 	if next.SMTPSPort != s.current.SMTPSPort ||
 		next.SMTPPort != s.current.SMTPPort ||
 		next.IMAPSPort != s.current.IMAPSPort ||
 		next.IMAPPort != s.current.IMAPPort ||
 		next.TLSSource != s.current.TLSSource ||
 		next.MaxMessageSize != s.current.MaxMessageSize ||
-		next.MaxIMAPSessions != s.current.MaxIMAPSessions {
+		next.MaxIMAPSessions != s.current.MaxIMAPSessions ||
+		next.WebhookURLOverride != s.current.WebhookURLOverride {
 		return true, nil
 	}
 
@@ -216,11 +235,33 @@ func (s *Supervisor) reconcileLocked(ctx context.Context) error {
 		start func(context.Context) error
 		stop  func(context.Context)
 	}
+	// stopWebhookLocked / startWebhookLocked have a (ctx) signature
+	// that matches the per-protocol shape — wrap so the table is
+	// uniform.
+	startWebhook := func(ctx context.Context) error {
+		if err := s.startWebhookLocked(ctx); err != nil {
+			return err
+		}
+		// off→on transition AND no secret yet → re-run bootstrap so
+		// polaris registers a sub against the current URL. Fire off
+		// the goroutine; the callback owns its own context + error
+		// handling. We can't pass ctx here because reconcile may be
+		// called from a heartbeat tick whose ctx is shorter-lived
+		// than the bootstrap RTT; the closure carries its own.
+		if s.deps.WebhookRebootstrap != nil &&
+			s.deps.WebhookHandler != nil &&
+			!s.deps.WebhookHandler.HasSecret() {
+			go s.deps.WebhookRebootstrap(context.Background())
+		}
+		return nil
+	}
+	stopWebhook := func(ctx context.Context) { s.stopWebhookLocked(ctx) }
 	entries := []entry{
 		{s.current.SMTPSEnabled, s.smtps != nil, s.startSMTPSLocked, s.stopSMTPSLocked},
 		{s.current.SMTPEnabled, s.smtp != nil, s.startSMTPLocked, s.stopSMTPLocked},
 		{s.current.IMAPSEnabled, s.imaps != nil, s.startIMAPSLocked, s.stopIMAPSLocked},
 		{s.current.IMAPEnabled, s.imap != nil, s.startIMAPLocked, s.stopIMAPLocked},
+		{s.current.WebhookEnabled, s.webhook != nil, startWebhook, stopWebhook},
 	}
 	for _, e := range entries {
 		switch {
@@ -248,13 +289,9 @@ func (s *Supervisor) Shutdown(ctx context.Context) {
 // ---------- internals ----------
 
 func (s *Supervisor) bringUpLocked(ctx context.Context) error {
-	if err := s.reconcileLocked(ctx); err != nil {
-		return err
-	}
-	if err := s.startWebhookLocked(ctx); err != nil {
-		return fmt.Errorf("webhook: %w", err)
-	}
-	return nil
+	// reconcileLocked now also handles the webhook listener via its
+	// entries table; no separate startWebhookLocked call needed here.
+	return s.reconcileLocked(ctx)
 }
 
 func (s *Supervisor) tearDownLocked(ctx context.Context) {

@@ -42,6 +42,8 @@ interface BridgeSettings {
   max_message_size_bytes: number;
   max_imap_sessions: number;
   log_level: 'debug' | 'info' | 'warn' | 'error';
+  webhook_enabled: boolean;
+  webhook_url_override: string | null;
   updated_at: string;
   updated_by: string;
 }
@@ -97,7 +99,8 @@ export function BridgeSettingsCard({ bridgeId }: BridgeSettingsCardProps) {
     draft.imap_port !== current.imap_port ||
     draft.tls_source !== current.tls_source ||
     draft.max_message_size_bytes !== current.max_message_size_bytes ||
-    draft.max_imap_sessions !== current.max_imap_sessions;
+    draft.max_imap_sessions !== current.max_imap_sessions ||
+    (draft.webhook_url_override ?? '') !== (current.webhook_url_override ?? '');
 
   return (
     <section className="space-y-6">
@@ -165,6 +168,45 @@ export function BridgeSettingsCard({ bridgeId }: BridgeSettingsCardProps) {
           options={TLS_SOURCES}
           onChange={(v) => setDraft({ ...draft, tls_source: v as BridgeSettings['tls_source'] })}
         />
+      </div>
+
+      <div className="rounded-md border border-[var(--color-border)] p-4">
+        <div className="mb-2 flex items-start justify-between gap-2">
+          <div>
+            <h2 className="text-base font-semibold">Webhook receiver</h2>
+            <p className="text-xs text-[var(--color-muted-foreground)]">
+              Inbound mail push from polaris. When enabled, the bridge listens on :8080 and
+              registers a per-mailbox webhook subscription so IMAP IDLE clients see new mail
+              immediately. URL is auto-derived (tailnet MagicDNS →{' '}
+              <code>&lt;name&gt;.mail.plrs.im</code> → raw IP); override below only if you need a
+              specific transport.
+            </p>
+          </div>
+          <Switch
+            id="webhook_enabled"
+            checked={draft.webhook_enabled}
+            onCheckedChange={(v) => setDraft({ ...draft, webhook_enabled: v })}
+          />
+        </div>
+        <div className="mt-3">
+          <Label htmlFor="webhook_url_override" className="text-xs">
+            URL override (optional)
+          </Label>
+          <Input
+            id="webhook_url_override"
+            type="url"
+            placeholder="auto-derive (recommended)"
+            value={draft.webhook_url_override ?? ''}
+            disabled={!draft.webhook_enabled}
+            onChange={(e) => {
+              const v = e.target.value.trim();
+              setDraft({ ...draft, webhook_url_override: v === '' ? null : v });
+            }}
+          />
+          <p className="mt-1 text-xs text-[var(--color-muted-foreground)]">
+            Changing the URL re-registers the subscription with polaris on next bridge restart.
+          </p>
+        </div>
       </div>
 
       <div className="rounded-md border border-[var(--color-border)] p-4">
@@ -351,7 +393,9 @@ function shallowEqual(a: BridgeSettings, b: BridgeSettings): boolean {
     a.tls_source === b.tls_source &&
     a.max_message_size_bytes === b.max_message_size_bytes &&
     a.max_imap_sessions === b.max_imap_sessions &&
-    a.log_level === b.log_level
+    a.log_level === b.log_level &&
+    a.webhook_enabled === b.webhook_enabled &&
+    (a.webhook_url_override ?? '') === (b.webhook_url_override ?? '')
   );
 }
 
@@ -372,5 +416,9 @@ function diff(prev: BridgeSettings, next: BridgeSettings): Partial<BridgeSetting
   cmp('max_message_size_bytes');
   cmp('max_imap_sessions');
   cmp('log_level');
+  cmp('webhook_enabled');
+  if ((prev.webhook_url_override ?? '') !== (next.webhook_url_override ?? '')) {
+    out.webhook_url_override = next.webhook_url_override;
+  }
   return out;
 }

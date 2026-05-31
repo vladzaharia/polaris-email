@@ -30,11 +30,10 @@ services:
     container_name: polaris-mail-bridge
     # Bind the protocol ports directly on the host. Operator controls firewall.
     #
-    # Port 8080 is the webhook receiver (BRIDGE_PUBLIC_URL must point at a
-    # routable address polaris can hit). Plain HTTP by default — operators
-    # that need TLS termination on the public webhook URL should put a
-    # reverse proxy (caddy / nginx / cloudflared) in front of :8080 and
-    # set BRIDGE_PUBLIC_URL to the proxy's HTTPS URL.
+    # Port 8080 is the webhook receiver. Webhooks are off by default
+    # — enable from the panel (Bridges → Settings → Webhook receiver). The
+    # bridge auto-derives its callback URL (tailnet MagicDNS → <name>.mail.plrs.im
+    # → raw IP); override in the panel only if you need a specific transport.
     ports:
       - '${BRIDGE_SMTPS_PORT:-465}:465'
       - '${BRIDGE_IMAP_PORT:-993}:993'
@@ -53,13 +52,10 @@ services:
       # plane.
       BRIDGE_ACCESS_CLIENT_ID: ${ACCESS_CLIENT_ID:-}
       BRIDGE_ACCESS_CLIENT_SECRET: ${ACCESS_CLIENT_SECRET:-}
-      # Public URL used by webhook bootstrap to compute target URLs (the
-      # operator's reverse-proxy hostname or the host's public address).
-      BRIDGE_PUBLIC_URL: ${BRIDGE_PUBLIC_URL:-https://mail.example.com}
-      # Listener toggles (default on).
+      # Listener toggles are panel-controlled via bridge_settings; the env
+      # values below only seed the initial pre-heartbeat state.
       BRIDGE_SMTPS_ENABLED: ${BRIDGE_SMTPS_ENABLED:-true}
       BRIDGE_IMAP_ENABLED: ${BRIDGE_IMAP_ENABLED:-true}
-      BRIDGE_WEBHOOK_ENABLED: ${BRIDGE_WEBHOOK_ENABLED:-true}
       # On-disk paths.
       BRIDGE_CREDSTORE_PATH: /var/lib/polaris-bridge/credstore.db
       BRIDGE_MIRROR_PATH: /var/lib/polaris-bridge/mirror.db

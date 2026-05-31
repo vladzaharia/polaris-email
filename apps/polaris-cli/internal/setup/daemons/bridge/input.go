@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net"
 	"net/url"
 	"os"
 	"strings"
@@ -56,10 +55,6 @@ type BridgeSetupInput struct {
 
 	// PolarisAPIURL is the control-plane base URL the bridge talks to.
 	PolarisAPIURL string `json:"polaris_api_url" yaml:"polaris_api_url"`
-
-	// PublicURL is the operator-routable URL polaris fanout POSTs the
-	// webhook to. Loopback-only addresses are rejected.
-	PublicURL string `json:"public_url" yaml:"public_url"`
 
 	// TLSSource picks the source of TLS material. Valid combinations
 	// with Mode are enforced by Validate.
@@ -150,16 +145,6 @@ func (in *BridgeSetupInput) Validate() error {
 	if !strings.HasPrefix(in.PolarisAPIURL, "http://") && !strings.HasPrefix(in.PolarisAPIURL, "https://") {
 		return fmt.Errorf("polaris_api_url must be http(s)://...")
 	}
-	pub, err := url.Parse(in.PublicURL)
-	if err != nil || in.PublicURL == "" {
-		return fmt.Errorf("public_url %q invalid: %v", in.PublicURL, err)
-	}
-	if pub.Scheme != "http" && pub.Scheme != "https" {
-		return fmt.Errorf("public_url must be http(s)://...")
-	}
-	if isLoopbackHost(pub.Hostname()) {
-		return fmt.Errorf("public_url %q points at loopback; polaris fanout cannot reach it from outside this host", in.PublicURL)
-	}
 	switch in.TLSSource {
 	case TLSMounted, TLSLego, TLSTailscaleSidecar:
 	case "":
@@ -213,21 +198,6 @@ func isValidBridgeName(s string) bool {
 		}
 	}
 	return true
-}
-
-// isLoopbackHost rejects host:port URLs that resolve to 127.0.0.0/8, ::1
-// or "localhost".
-func isLoopbackHost(host string) bool {
-	if host == "" {
-		return false
-	}
-	if strings.EqualFold(host, "localhost") {
-		return true
-	}
-	if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
-		return true
-	}
-	return false
 }
 
 // LoadInputFile parses --from-file payload (json or yaml).

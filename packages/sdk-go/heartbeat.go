@@ -130,6 +130,13 @@ type BridgeSettings struct {
 	MaxMessageSizeBytes int64  `json:"max_message_size_bytes"`
 	MaxIMAPSessions     int    `json:"max_imap_sessions"`
 	LogLevel            string `json:"log_level"`
+	// Inbound-webhook receiver. WebhookEnabled toggles the :8080
+	// listener; WebhookURLOverride sets a specific URL polaris will
+	// POST events to (empty string = bridge auto-derives, picking
+	// the most-specific reachable address: tailnet MagicDNS →
+	// <name>.mail.plrs.im → raw IP).
+	WebhookEnabled     bool   `json:"webhook_enabled"`
+	WebhookURLOverride string `json:"webhook_url_override"`
 }
 
 // BridgeDirective is the discriminated union of server-issued one-shot

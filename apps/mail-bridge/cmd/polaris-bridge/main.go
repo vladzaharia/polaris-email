@@ -172,25 +172,38 @@ func main() {
 	// backends bump them inline; the ticker just reads.
 	metricsReg := metrics.New()
 
-	// Webhook subscription bootstrap. Auto-registers a sub on polaris that
-	// posts to this bridge's /internal/webhook/message-received path.
+	// Webhook URL resolution.
 	//
-	// Phase 4b.4: when the webhook receiver is enabled, BRIDGE_PUBLIC_URL
-	// MUST be a routable URL polaris can reach. The previous default of
-	// "https://localhost" silently registered an unreachable subscription
-	// polaris would queue every event into a delivery loop that never
-	// succeeded. Fail fast at startup so the operator notices immediately.
-	publicURL := os.Getenv("BRIDGE_PUBLIC_URL")
-	if enabled("BRIDGE_WEBHOOK_ENABLED", true) {
-		allowLoopback := enabled("BRIDGE_PUBLIC_URL_ALLOW_LOOPBACK", false)
-		if err := validatePublicWebhookURL(publicURL, allowLoopback); err != nil {
-			log.Fatalf("polaris-bridge: BRIDGE_PUBLIC_URL invalid: %v", err)
-		}
-	}
+	// The bridge prefers settings-driven config (BRIDGE_WEBHOOK_ENABLED /
+	// webhook_url_override delivered via the heartbeat response), but
+	// also accepts a startup-time BRIDGE_PUBLIC_URL env override for
+	// boot before the first heartbeat lands. If neither is set, the
+	// bridge auto-derives a URL from the hints in /v1/bridge/config:
+	// tailnet MagicDNS → public FQDN → raw IP. The auto-derive path
+	// replaces the old hard-fail-on-empty-BRIDGE_PUBLIC_URL flow that
+	// stranded a lot of operators on first install.
+	publicURL := strings.TrimSpace(os.Getenv("BRIDGE_PUBLIC_URL"))
 	if publicURL == "" {
-		// Webhook disabled; placeholder keeps Bootstrap.Run from blowing up
-		// on URL parse, though the goroutine that runs it is gated below.
-		publicURL = "https://localhost"
+		publicURL = webhook.AutoDeriveURL(webhook.AutoDeriveInput{
+			TailnetFQDN: bridgeCfg.TailnetFQDN,
+			FQDN:        bridgeCfg.FQDN,
+			IP:          acme.DetectBridgeIP(),
+			ListenPort:  getenvInt("BRIDGE_WEBHOOK_LISTEN_PORT", 8080),
+		})
+	}
+	allowLoopback := enabled("BRIDGE_PUBLIC_URL_ALLOW_LOOPBACK", false)
+	if publicURL != "" {
+		if err := validatePublicWebhookURL(publicURL, allowLoopback); err != nil {
+			// Don't fatal — log and continue with an empty URL. The
+			// bridge's heartbeat will deliver a settings update that
+			// overrides whatever we couldn't validate here, and the
+			// receiver listens regardless; only sub registration is
+			// gated on a usable URL.
+			log.Printf("polaris-bridge: derived webhook URL invalid (%v); continuing — settings update may correct it", err)
+			publicURL = ""
+		} else {
+			log.Printf("polaris-bridge: webhook URL = %s", publicURL)
+		}
 	}
 	bootstrap := &webhook.Bootstrap{
 		Client:    sdkClient,
@@ -242,11 +255,16 @@ func main() {
 	// leaving the handler running with `Secret == nil` which made
 	// VerifyWebhook a no-op against an empty key — every replay would have
 	// been admitted.
-	go func() {
-		// Pragmatic stub: enumerate mailboxes from polaris and register
-		// subs for each. Full implementation lives in webhook.Bootstrap.
-		// On error we log and continue — the rest of the bridge is
-		// independent of webhook delivery.
+	// runWebhookBootstrap encapsulates the bootstrap goroutine logic so
+	// it can be called both at startup AND by the supervisor when
+	// webhook_enabled flips off→on (the supervisor's WebhookRebootstrap
+	// callback below). Ignores ctx cancellation on its own — bootstrap
+	// failures log and return; the supervisor doesn't retry.
+	runWebhookBootstrap := func(ctx context.Context) {
+		if bootstrap.PublicURL == "" {
+			log.Printf("polaris-bridge: webhook bootstrap skipped — no PublicURL yet; awaiting settings update")
+			return
+		}
 		// Integration tests can pre-seed the mailbox list via the
 		// BRIDGE_WEBHOOK_BOOTSTRAP_MAILBOXES env var (comma-separated).
 		// Once production has a mailbox-discovery endpoint, this knob
@@ -273,7 +291,11 @@ func main() {
 			// lost. Surface clearly so the operator notices.
 			log.Printf("polaris-bridge: webhook bootstrap reused %d existing sub(s) — secret unknown locally; webhook handler will reject until secret is rotated", len(results))
 		}
-	}()
+	}
+	// Initial bootstrap in a background goroutine so startup doesn't
+	// block on polaris RTT. The supervisor's WebhookRebootstrap
+	// (wired below) reuses runWebhookBootstrap for the off→on toggle.
+	go runWebhookBootstrap(ctx)
 
 	// TLS source — points at the cert dir the embedded ACME renewer
 	// just populated. Source.GetCertificate does its own 30s reload
@@ -340,15 +362,16 @@ func main() {
 		MaxBodyBytes: cfg.R2BodyMaxBytes,
 	}
 	supervisor := listeners.New(listeners.Deps{
-		SMTPBackend:       smtpBackend,
-		SMTPDomain:        cfg.BridgeName,
-		TLSCertPath:       cfg.TLSCertPath(),
-		TLSKeyPath:        cfg.TLSKeyPath(),
-		IMAPBackend:       imapBackend,
-		WebhookHandler:    wh,
-		WebhookListenAddr: getenvDefault("BRIDGE_WEBHOOK_LISTEN_ADDR", ":8080"),
-		TLSSource:         tlsSrc,
-		LogLevelVar:       logLevelVar,
+		SMTPBackend:        smtpBackend,
+		SMTPDomain:         cfg.BridgeName,
+		TLSCertPath:        cfg.TLSCertPath(),
+		TLSKeyPath:         cfg.TLSKeyPath(),
+		IMAPBackend:        imapBackend,
+		WebhookHandler:     wh,
+		WebhookListenAddr:  getenvDefault("BRIDGE_WEBHOOK_LISTEN_ADDR", ":8080"),
+		WebhookRebootstrap: runWebhookBootstrap,
+		TLSSource:          tlsSrc,
+		LogLevelVar:        logLevelVar,
 	})
 	// Boot defaults — encrypted on, unencrypted off. The supervisor
 	// replays these into actual listener binds; the first heartbeat
@@ -370,6 +393,11 @@ func main() {
 		MaxMessageSize:  cfg.MaxMessageSize,
 		MaxIMAPSessions: 200,
 		LogLevel:        "info",
+		// Webhook default OFF — operator opts in via the panel once
+		// they've decided on transport (tailnet / public URL / IP).
+		// The DB-side default for new bridges matches.
+		WebhookEnabled:     enabled("BRIDGE_WEBHOOK_ENABLED", false),
+		WebhookURLOverride: strings.TrimSpace(os.Getenv("BRIDGE_PUBLIC_URL")),
 	}
 	if err := supervisor.Start(ctx, initialSettings); err != nil {
 		log.Fatalf("polaris-bridge: supervisor start: %v", err)

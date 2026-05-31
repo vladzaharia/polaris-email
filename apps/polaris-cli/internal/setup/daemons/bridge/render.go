@@ -23,7 +23,6 @@ type RenderContext struct {
 	BridgeName         string
 	Environment        string
 	PolarisAPIURL      string
-	PublicURL          string
 	TLSSource          string
 	TLSMode            string // bridge.toml: "local" | "tailscale"
 	FQDN               string
@@ -56,7 +55,6 @@ func NewRenderContext(in *BridgeSetupInput, cliVersion, accessClientID, accessCl
 		BridgeName:         in.BridgeName,
 		Environment:        in.Environment,
 		PolarisAPIURL:      in.PolarisAPIURL,
-		PublicURL:          in.PublicURL,
 		TLSSource:          string(in.TLSSource),
 		TLSMode:            tlsMode,
 		FQDN:               in.FQDN,

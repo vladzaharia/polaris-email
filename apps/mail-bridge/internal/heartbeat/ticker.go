@@ -177,19 +177,21 @@ func tick(ctx context.Context, deps Deps, st *state) time.Duration {
 		st.settingsVersion = resp.Settings.Version
 		if deps.Supervisor != nil {
 			restartRequired, err := deps.Supervisor.Apply(ctx, listeners.Settings{
-				Version:         resp.Settings.Version,
-				SMTPSEnabled:    resp.Settings.SMTPSEnabled,
-				SMTPSPort:       resp.Settings.SMTPSPort,
-				SMTPEnabled:     resp.Settings.SMTPEnabled,
-				SMTPPort:        resp.Settings.SMTPPort,
-				IMAPSEnabled:    resp.Settings.IMAPSEnabled,
-				IMAPSPort:       resp.Settings.IMAPSPort,
-				IMAPEnabled:     resp.Settings.IMAPEnabled,
-				IMAPPort:        resp.Settings.IMAPPort,
-				TLSSource:       resp.Settings.TLSSource,
-				MaxMessageSize:  resp.Settings.MaxMessageSizeBytes,
-				MaxIMAPSessions: resp.Settings.MaxIMAPSessions,
-				LogLevel:        resp.Settings.LogLevel,
+				Version:            resp.Settings.Version,
+				SMTPSEnabled:       resp.Settings.SMTPSEnabled,
+				SMTPSPort:          resp.Settings.SMTPSPort,
+				SMTPEnabled:        resp.Settings.SMTPEnabled,
+				SMTPPort:           resp.Settings.SMTPPort,
+				IMAPSEnabled:       resp.Settings.IMAPSEnabled,
+				IMAPSPort:          resp.Settings.IMAPSPort,
+				IMAPEnabled:        resp.Settings.IMAPEnabled,
+				IMAPPort:           resp.Settings.IMAPPort,
+				TLSSource:          resp.Settings.TLSSource,
+				MaxMessageSize:     resp.Settings.MaxMessageSizeBytes,
+				MaxIMAPSessions:    resp.Settings.MaxIMAPSessions,
+				LogLevel:           resp.Settings.LogLevel,
+				WebhookEnabled:     resp.Settings.WebhookEnabled,
+				WebhookURLOverride: resp.Settings.WebhookURLOverride,
 			})
 			if err != nil {
 				log.Printf("heartbeat: supervisor.Apply: %v", err)

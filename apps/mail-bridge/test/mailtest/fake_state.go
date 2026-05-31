@@ -178,6 +178,10 @@ func defaultSettings() polarissdk.BridgeSettings {
 		MaxMessageSizeBytes: 25 * 1024 * 1024,
 		MaxIMAPSessions:     200,
 		LogLevel:            "info",
+		// Mirror the inproc harness's BRIDGE_WEBHOOK_ENABLED=1 default so
+		// the first server-side heartbeat reply doesn't immediately
+		// disable the receiver under existing webhook tests.
+		WebhookEnabled: true,
 	}
 }
 
@@ -220,6 +224,12 @@ func applyPatch(s polarissdk.BridgeSettings, p SettingsPatch) polarissdk.BridgeS
 	}
 	if p.LogLevel != nil {
 		out.LogLevel = *p.LogLevel
+	}
+	if p.WebhookEnabled != nil {
+		out.WebhookEnabled = *p.WebhookEnabled
+	}
+	if p.WebhookURLOverride != nil {
+		out.WebhookURLOverride = *p.WebhookURLOverride
 	}
 	return out
 }

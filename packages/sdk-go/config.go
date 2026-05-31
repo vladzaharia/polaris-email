@@ -37,7 +37,13 @@ type BridgeConfig struct {
 	CFDnsToken string `json:"cf_dns_token"`
 	CFZone     string `json:"cf_zone"`
 	FQDN       string `json:"fqdn"`
-	AcmeEmail  string `json:"acme_email"`
+	// TailnetFQDN is the bridge's MagicDNS hostname when the api
+	// worker has TS_MAGICDNS_DOMAIN configured AND this bridge was
+	// minted with a TS auth key. Empty otherwise. The bridge uses it
+	// as the first-choice auto-derived webhook URL host (tailnet →
+	// FQDN → raw IP, in priority order).
+	TailnetFQDN string `json:"tailnet_fqdn"`
+	AcmeEmail   string `json:"acme_email"`
 	// Per-bridge Tailscale auth key. Empty string when TS minting
 	// isn't configured server-side. The bridge's bootstrap-tailscale
 	// subcommand reads this and writes it to /run/secrets/ts_authkey
