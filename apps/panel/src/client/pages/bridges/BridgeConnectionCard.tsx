@@ -53,10 +53,7 @@ interface BridgeConnectionCardProps {
 
 const HMAC_PLACEHOLDER = '<paste-HMAC-key-here>';
 const API_URL = 'https://api.mail.plrs.im';
-// :edge publishes on every push-to-main; :latest only on semver tag
-// pushes. For pre-production where main moves daily, :edge is the right
-// snippet — using :latest pins to a frozen image from the last tag.
-const IMAGE = 'ghcr.io/vladzaharia/polaris-mail-bridge:edge';
+const IMAGE = 'ghcr.io/vladzaharia/polaris-mail-bridge:latest';
 
 function fqdnFor(bridgeName: string): string {
   return `${bridgeName}.mail.plrs.im`;

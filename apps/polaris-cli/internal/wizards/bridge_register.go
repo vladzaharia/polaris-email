@@ -141,7 +141,7 @@ func RenderInstallSnippet(w io.Writer, form string, r *client.BridgeRegisterResp
 var composeTpl = template.Must(template.New("compose").Parse(`# Add to your docker-compose.yml. Secrets shown ONCE — store them now.
 services:
   bridge:
-    image: ghcr.io/vladzaharia/polaris-mail-bridge:edge
+    image: ghcr.io/vladzaharia/polaris-mail-bridge:latest
     network_mode: service:ts
     environment:
       API_BASE_URL: "{{.APIURL}}"

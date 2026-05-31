@@ -82,11 +82,7 @@ async function handleInstaller(
     hmac_key: hmac,
     mode,
     api_url: c.env.API_BASE_URL,
-    // :edge publishes on every push-to-main; :latest only on semver tag
-    // pushes (see .github/workflows/mail-bridge-image.yml). For pre-
-    // production where main moves daily, :edge is the right install
-    // target — using :latest pins to a frozen image from the last tag.
-    image: 'ghcr.io/vladzaharia/polaris-mail-bridge:edge',
+    image: 'ghcr.io/vladzaharia/polaris-mail-bridge:latest',
   });
   return new Response(script, {
     headers: {
