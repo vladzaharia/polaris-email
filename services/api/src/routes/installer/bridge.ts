@@ -288,7 +288,8 @@ function composeTailscale(p: RenderArgs): string {
 # Bootstrap init: the bridge image is reused as a short-lived sibling
 # that fetches the per-bridge Tailscale auth key from the polaris API
 # (HMAC-authed) and writes it to the \`bridge-runtime\` docker volume.
-# The TS sidecar reads from the same volume via TS_AUTHKEY_FILE.
+# The TS sidecar loads it into TS_AUTHKEY via an entrypoint shim
+# (containerboot has no file-based authkey form).
 #
 # Why a docker volume (not the operator's ./secrets/ bind mount): the
 # host secrets dir is mode 0711, owned by the operator UID — the
@@ -327,11 +328,22 @@ services:
     networks: [polaris-mail-net]
     cap_add: [NET_ADMIN, NET_RAW]
     devices: ['/dev/net/tun:/dev/net/tun']
+    # containerboot reads the auth key ONLY from the TS_AUTHKEY env var —
+    # there is no file/secret form upstream (cmd/containerboot/settings.go
+    # reads TS_AUTHKEY/TS_AUTH_KEY as literal strings). The bootstrap
+    # sibling wrote the per-bridge key to the shared bridge-runtime volume,
+    # so load it into TS_AUTHKEY at start with a tiny shell shim, then exec
+    # the image's normal entrypoint (alpine base → /bin/sh present;
+    # containerboot at /usr/local/bin). $$ escapes compose interpolation
+    # so the command substitution runs in the container, not at parse time.
+    entrypoint:
+      - /bin/sh
+      - -c
+      - 'export TS_AUTHKEY="$$(cat /run/bridge-runtime/ts_authkey)"; exec /usr/local/bin/containerboot'
     environment:
       TS_STATE_DIR: /var/lib/tailscale
       TS_USERSPACE: 'false'
       TS_EXTRA_ARGS: --advertise-tags=tag:mail-bridge
-      TS_AUTHKEY_FILE: /run/bridge-runtime/ts_authkey
       # Only log in if not already logged in. The per-bridge auth key is
       # single-use; without this, containerboot re-runs \`tailscale up\` with
       # the (now consumed) key on every restart and falls back to an

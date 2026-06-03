@@ -234,6 +234,27 @@ describe('bridge bootstrap window', () => {
     expect(expiredRes.status).toBe(404);
   });
 
+  it('tailscale installer loads TS_AUTHKEY via an entrypoint shim (containerboot has no file form)', async () => {
+    const b = await registerBridge('win-tsmode');
+    // ts_authkey_id presence flips the installer into tailscale mode.
+    await testEnv.DB.prepare(`UPDATE bridges SET ts_authkey_id = ? WHERE id = ?`)
+      .bind('tskey_test', b.id)
+      .run();
+    const res = await callWorker(
+      new Request(`https://x/v1/installer/bridge/${b.id}/${b.hmac_key}`),
+    );
+    expect(res.status).toBe(200);
+    const script = await res.text();
+    // containerboot only reads TS_AUTHKEY (no TS_AUTHKEY_FILE). The shim
+    // must cat the bootstrap-written file into the env var and exec
+    // containerboot — otherwise the sidecar falls back to interactive auth.
+    // $$ is the docker-compose escape for a literal $ — the container's
+    // shell sees $(cat ...) after compose interpolation.
+    expect(script).toContain('export TS_AUTHKEY="$$(cat /run/bridge-runtime/ts_authkey)"');
+    expect(script).toContain('exec /usr/local/bin/containerboot');
+    expect(script).not.toContain('TS_AUTHKEY_FILE');
+  });
+
   it('first heartbeat closes the installer window and sets the tenure anchor', async () => {
     const b = await registerBridge('win-firstbeat');
     const hb = await heartbeat(b.id, b.hmac_key);

@@ -21,7 +21,7 @@
 //	                                    writes fullchain.pem + privkey.pem here)
 //	BRIDGE_SMTPS_LISTEN_ADDR            optional, default ":465"
 //	BRIDGE_POLL_INTERVAL                optional, default 5s
-//	BRIDGE_MAX_MESSAGE_SIZE             optional, default 25 MiB
+//	BRIDGE_MAX_MESSAGE_SIZE             optional, default 50 MiB
 //	BRIDGE_CREDSTORE_PATH               optional, default /var/lib/polaris-bridge/credstore.db
 //	BRIDGE_LOGGING_FILE                 optional, default /var/log/polaris-bridge/audit.jsonl
 //	BRIDGE_R2_BODY_MAX_BYTES            optional, default 64 MiB (IMAP body fetch cap)
@@ -71,6 +71,16 @@ func (c *Config) TLSCertPath() string { return filepath.Join(c.TLSCertDir, "full
 // TLSKeyPath returns the path the renewer writes the private key to.
 func (c *Config) TLSKeyPath() string { return filepath.Join(c.TLSCertDir, "privkey.pem") }
 
+// DefaultMaxMessageSizeBytes is the boot-time SMTP message cap used when
+// BRIDGE_MAX_MESSAGE_SIZE is unset. It MUST equal the server's
+// bridge_settings.max_message_size_bytes DEFAULT (migration
+// 0013_bridge_settings_dual_listeners.sql). The heartbeat sends the
+// server's authoritative value; the supervisor treats a message-size
+// change as restart-required, but a restart re-seeds this same default —
+// so if it disagrees with the server, the bridge exits and restarts on
+// every heartbeat forever (no convergence). Keep the two in lockstep.
+const DefaultMaxMessageSizeBytes int64 = 52428800 // 50 MiB
+
 // Load reads the environment and returns a populated Config or an error
 // listing every missing/invalid field.
 func Load() (*Config, error) {
@@ -114,7 +124,7 @@ func Load() (*Config, error) {
 			poll = d
 		}
 	}
-	maxSize := int64(26214400)
+	maxSize := DefaultMaxMessageSizeBytes
 	if v := get("BRIDGE_MAX_MESSAGE_SIZE"); v != "" {
 		n, perr := strconv.ParseInt(v, 10, 64)
 		if perr != nil {

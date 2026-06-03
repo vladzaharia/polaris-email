@@ -13,7 +13,8 @@
 //      `/v1/bridge/config` — no Lego sidecar needed. Auth key: a
 //      bootstrap init container HMAC-fetches the per-bridge tailnet
 //      auth key and writes it to a shared docker volume the TS
-//      sidecar reads via TS_AUTHKEY_FILE — nothing operator-procured.
+//      sidecar loads into TS_AUTHKEY via an entrypoint shim —
+//      nothing operator-procured.
 //
 //   2. Docker (public host). Bridge binds host ports directly.
 //      Suitable when the host is already publicly reachable. No TS
@@ -98,8 +99,8 @@ function composeTailscale(bridgeName: string): string {
 #
 # Bootstrap init: a short-lived sibling container fetches the per-
 # bridge Tailscale auth key from the polaris API (HMAC-authed) and
-# writes it to the bridge-runtime docker volume. The TS sidecar reads
-# from the same volume via TS_AUTHKEY_FILE. Operators never handle the
+# writes it to the bridge-runtime docker volume. The TS sidecar loads
+# it into TS_AUTHKEY via an entrypoint shim. Operators never handle the
 # TS auth key themselves; only ./secrets/bridge_id +
 # ./secrets/hmac_key need to exist before compose up.
 networks:
@@ -128,11 +129,20 @@ services:
     networks: [polaris-mail-net]
     cap_add: [NET_ADMIN, NET_RAW]
     devices: ['/dev/net/tun:/dev/net/tun']
+    # containerboot reads the auth key only from TS_AUTHKEY (no file form
+    # upstream); the bootstrap sibling wrote it to the bridge-runtime
+    # volume, so load it into TS_AUTHKEY via a shell shim then exec the
+    # normal entrypoint. $$ escapes docker-compose interpolation.
+    entrypoint:
+      - /bin/sh
+      - -c
+      - 'export TS_AUTHKEY="$$(cat /run/bridge-runtime/ts_authkey)"; exec /usr/local/bin/containerboot'
     environment:
       TS_STATE_DIR: /var/lib/tailscale
       TS_USERSPACE: 'false'
       TS_EXTRA_ARGS: --advertise-tags=tag:mail-bridge
-      TS_AUTHKEY_FILE: /run/bridge-runtime/ts_authkey
+      # Spend the single-use key only on first join; reuse ts-state after.
+      TS_AUTH_ONCE: 'true'
     volumes:
       - ts-state:/var/lib/tailscale
       - bridge-runtime:/run/bridge-runtime:ro
