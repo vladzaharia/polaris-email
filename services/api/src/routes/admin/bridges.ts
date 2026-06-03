@@ -337,11 +337,20 @@ bridges.post('/v1/admin/bridges/:id/rotate', requireScope('admin:rotate'), async
   //   window during which both old and new HMACs are valid. Server
   //   queues a roll_hmac directive; bridge applies + acks on next
   //   heartbeat. CF DNS + TS tokens get rotated immediately (the bridge
-  //   picks them up on next /v1/bridge/config fetch or restart).
-  // mode=emergency — Immediate HMAC revocation + disable. The bridge
-  //   stops working until reinstall + Enable. For "we think this
-  //   bridge is compromised, lock it out NOW" scenarios.
-  const mode: 'staged' | 'emergency' = c.req.query('mode') === 'emergency' ? 'emergency' : 'staged';
+  //   picks them up on next /v1/bridge/config fetch or restart). Needs a
+  //   live bridge to ack — rejected for a disabled/deregistered node.
+  // mode=now — Immediate HMAC swap, no grace window. The old key stops
+  //   verifying at once; the operator reinstalls via the fresh install
+  //   URL. The enable state is left untouched (an enabled bridge stays
+  //   enabled; a disabled one stays disabled). This is the right roll
+  //   for a disabled/deregistered node, where a grace window buys
+  //   nothing (no live bridge to deliver the staged key to).
+  // mode=emergency — `now` PLUS disable. The bridge is locked out until
+  //   reinstall + Enable. For "we think this bridge is compromised, cut
+  //   it off NOW" scenarios.
+  const modeParam = c.req.query('mode');
+  const mode: 'staged' | 'now' | 'emergency' =
+    modeParam === 'emergency' ? 'emergency' : modeParam === 'now' ? 'now' : 'staged';
   const graceSeconds = parseGraceSeconds(c.req.query('grace_seconds'));
 
   const existing = await c.env.DB.prepare(
@@ -358,6 +367,16 @@ bridges.post('/v1/admin/bridges/:id/rotate', requireScope('admin:rotate'), async
       hmac_pending_rotated_at: string | null;
     }>();
   if (!existing) return buildError(c, 'not_found', 'bridge not found');
+  // A staged roll relies on the bridge heartbeating to ack the new key.
+  // A disabled/deregistered node won't, so the grace window is dead time
+  // and the old key would linger needlessly — force an immediate roll.
+  if (mode === 'staged' && existing.disabled_at != null) {
+    return buildError(
+      c,
+      'conflict',
+      'staged roll needs a live bridge to ack; use mode=now for a disabled bridge',
+    );
+  }
   if (mode === 'staged' && existing.hmac_pending_rotated_at) {
     return buildError(
       c,
@@ -407,11 +426,13 @@ bridges.post('/v1/admin/bridges/:id/rotate', requireScope('admin:rotate'), async
     });
     graceExpiresAt = new Date(Date.now() + graceSeconds * 1000).toISOString();
     directiveId = ulid();
+    // Staged is enabled-only (guarded above), so the enable state is
+    // already clear — don't touch disabled_at here.
     await c.env.DB.batch([
       c.env.DB.prepare(
         `UPDATE bridges
            SET cf_dns_token_id = ?, ts_authkey_id = ?,
-               hmac_pending_rotated_at = ?, disabled_at = NULL,
+               hmac_pending_rotated_at = ?,
                installer_window_expires_at = ?
          WHERE id = ?`,
       ).bind(cfMinted.tokenId, tsMinted.key?.id ?? null, nowIso, installerWindowExpiry(nowIso), id),
@@ -428,9 +449,13 @@ bridges.post('/v1/admin/bridges/:id/rotate', requireScope('admin:rotate'), async
       ),
     ]);
   } else {
-    // Emergency: replace HMAC + disable in one transaction. Drop any
-    // pending-roll plaintext so a stale staged roll doesn't keep the
-    // old key alive.
+    // Immediate roll (now | emergency): swap the HMAC in place — no
+    // grace window, the old key stops verifying at once. Drop any
+    // pending-roll plaintext so a stale staged roll doesn't keep the old
+    // key alive. `emergency` also disables the bridge (lock-out NOW);
+    // `now` preserves the existing enable state (re-key a live bridge, or
+    // re-key a node that's already disabled/deregistered).
+    const newDisabledAt = mode === 'emergency' ? nowIso : existing.disabled_at;
     await c.env.DB.prepare(
       `UPDATE bridges
          SET hmac_key_secret_name = ?, cf_dns_token_id = ?, ts_authkey_id = ?,
@@ -443,7 +468,7 @@ bridges.post('/v1/admin/bridges/:id/rotate', requireScope('admin:rotate'), async
         cfMinted.tokenId,
         tsMinted.key?.id ?? null,
         nowIso,
-        nowIso,
+        newDisabledAt,
         installerWindowExpiry(nowIso),
         id,
       )
@@ -506,14 +531,6 @@ bridges.post('/v1/admin/bridges/:id/rotate', requireScope('admin:rotate'), async
         kind: 'roll_hmac',
         grace_expires_at: graceExpiresAt,
       },
-    });
-  }
-  if (mode === 'staged' && wasDisabled) {
-    await audit(c.env, {
-      actor: actorOf(c),
-      action: 'bridge.enable',
-      target: id,
-      meta: { name: existing.name, reason: 'rotate' },
     });
   }
   if (mode === 'emergency' && !wasDisabled) {

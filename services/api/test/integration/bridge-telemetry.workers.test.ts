@@ -777,6 +777,100 @@ describe('bridge telemetry', () => {
     expect(revokeCalls.length).toBeGreaterThanOrEqual(0);
   });
 
+  it('staged roll is rejected for a disabled bridge', async () => {
+    const admin = sharedAdmin;
+    const bridge = await registerBridge(admin, 'roll-disabled-staged');
+    // Soft-disable via DELETE (no ?hard) — sets disabled_at.
+    await callWorker(
+      await signedRequest(
+        `https://x/v1/admin/bridges/${bridge.id}`,
+        '',
+        'DELETE',
+        admin.admin_key_secret,
+        admin.admin_key_id,
+      ),
+    );
+    const res = await callWorker(
+      await signedRequest(
+        `https://x/v1/admin/bridges/${bridge.id}/rotate?mode=staged`,
+        '{}',
+        'POST',
+        admin.admin_key_secret,
+        admin.admin_key_id,
+      ),
+    );
+    expect(res.status).toBe(409);
+    // No staged directive should have been queued.
+    const dir = await testEnv.DB.prepare(
+      `SELECT COUNT(*) AS n FROM bridge_directives WHERE bridge_id = ? AND kind = 'roll_hmac'`,
+    )
+      .bind(bridge.id)
+      .first<{ n: number }>();
+    expect(dir?.n).toBe(0);
+  });
+
+  it('now roll on a disabled bridge swaps the HMAC immediately and keeps it disabled', async () => {
+    const admin = sharedAdmin;
+    const bridge = await registerBridge(admin, 'roll-disabled-now');
+    // Soft-disable via DELETE (no ?hard) — sets disabled_at.
+    await callWorker(
+      await signedRequest(
+        `https://x/v1/admin/bridges/${bridge.id}`,
+        '',
+        'DELETE',
+        admin.admin_key_secret,
+        admin.admin_key_id,
+      ),
+    );
+    const res = await callWorker(
+      await signedRequest(
+        `https://x/v1/admin/bridges/${bridge.id}/rotate?mode=now`,
+        '{}',
+        'POST',
+        admin.admin_key_secret,
+        admin.admin_key_id,
+      ),
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { hmac_key: string; grace_expires_at: string | null };
+    expect(body.hmac_key).not.toBe(bridge.hmac_key);
+    expect(body.grace_expires_at).toBeNull();
+    // Immediate roll: no grace window, so no roll_hmac directive, and the
+    // new plaintext is live in KV under the current (not next) key.
+    const dir = await testEnv.DB.prepare(
+      `SELECT COUNT(*) AS n FROM bridge_directives WHERE bridge_id = ? AND kind = 'roll_hmac'`,
+    )
+      .bind(bridge.id)
+      .first<{ n: number }>();
+    expect(dir?.n).toBe(0);
+    expect(await testEnv.KV_KEY_CACHE.get(`bridge_plain:${bridge.id}`)).toBe(body.hmac_key);
+    expect(await testEnv.KV_KEY_CACHE.get(`bridge_plain_next:${bridge.id}`)).toBeNull();
+    // `now` leaves the enable state untouched — the bridge stays disabled.
+    const row = await testEnv.DB.prepare(`SELECT disabled_at FROM bridges WHERE id = ?`)
+      .bind(bridge.id)
+      .first<{ disabled_at: string | null }>();
+    expect(row?.disabled_at).not.toBeNull();
+  });
+
+  it('now roll on an enabled bridge swaps immediately and stays enabled', async () => {
+    const admin = sharedAdmin;
+    const bridge = await registerBridge(admin, 'roll-enabled-now');
+    const res = await callWorker(
+      await signedRequest(
+        `https://x/v1/admin/bridges/${bridge.id}/rotate?mode=now`,
+        '{}',
+        'POST',
+        admin.admin_key_secret,
+        admin.admin_key_id,
+      ),
+    );
+    expect(res.status).toBe(200);
+    const row = await testEnv.DB.prepare(`SELECT disabled_at FROM bridges WHERE id = ?`)
+      .bind(bridge.id)
+      .first<{ disabled_at: string | null }>();
+    expect(row?.disabled_at).toBeNull();
+  });
+
   it('hard-delete revokes the bridge CF token before removing the row', async () => {
     const admin = sharedAdmin;
     const bridge = await registerBridge(admin, 'cf-hd');

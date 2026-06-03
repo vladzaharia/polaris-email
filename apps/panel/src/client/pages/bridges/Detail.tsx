@@ -235,10 +235,12 @@ export function BridgeDetail() {
     { invalidateKeys: [bridgeKeys.all], successMessage: 'Bridge re-enabled.' },
   );
   // POST /v1/admin/bridges/:id/rotate — mints a fresh HMAC + install URL.
-  // Two modes: staged (delivered via heartbeat with a grace window;
-  // bridge applies seamlessly) or emergency (immediate revoke + the
-  // bridge gets disabled — operator must reinstall via curl|sh).
-  type RollMode = 'staged' | 'emergency';
+  // Three modes: staged (delivered via heartbeat with a grace window;
+  // bridge applies seamlessly — live bridges only), now (immediate swap,
+  // no grace window, operator reinstalls; enable state untouched), or
+  // emergency (now + disable — operator must reinstall via curl|sh +
+  // re-enable). A disabled/deregistered bridge can only roll `now`.
+  type RollMode = 'staged' | 'now' | 'emergency';
   type GraceWindow = '600' | '3600' | '86400' | 'until-acked';
   const [rollMode, setRollMode] = useState<RollMode>('staged');
   const [rollGrace, setRollGrace] = useState<GraceWindow>('3600');
@@ -311,7 +313,12 @@ export function BridgeDetail() {
             <Button
               size="sm"
               variant="outline"
-              onClick={() => setConfirmRoll(true)}
+              onClick={() => {
+                // Disabled bridge: no live heartbeat to ack a staged
+                // roll, so an immediate swap is the only sensible roll.
+                setRollMode('now');
+                setConfirmRoll(true);
+              }}
               disabled={rotate.isPending}
             >
               {rotate.isPending ? 'Rolling…' : 'Roll HMAC Secret'}
@@ -325,7 +332,10 @@ export function BridgeDetail() {
             <Button
               size="sm"
               variant="outline"
-              onClick={() => setConfirmRoll(true)}
+              onClick={() => {
+                setRollMode('staged');
+                setConfirmRoll(true);
+              }}
               disabled={rotate.isPending}
             >
               {rotate.isPending ? 'Rolling…' : 'Roll HMAC Secret'}
@@ -674,6 +684,7 @@ export function BridgeDetail() {
         open={confirmRoll}
         onOpenChange={setConfirmRoll}
         bridgeName={d.name}
+        disabledBridge={disabled}
         mode={rollMode}
         onModeChange={setRollMode}
         grace={rollGrace}
@@ -683,7 +694,7 @@ export function BridgeDetail() {
           const r = await rotate.mutateAsync(
             rollMode === 'staged'
               ? { mode: 'staged', grace_seconds: rollGrace }
-              : { mode: 'emergency' },
+              : { mode: rollMode },
           );
           setConfirmRoll(false);
           const now = Date.now();
@@ -888,19 +899,26 @@ function OverviewMiniCard({
 }
 
 // --- Roll HMAC Secret dialog ----------------------------------------------
-// Two modes the operator picks between:
+// Three modes the operator picks between:
 //   * Staged   — server delivers the new HMAC over the next heartbeat;
 //                old and new both verify for the chosen grace window.
-//                Seamless from the bridge's perspective.
-//   * Emergency — server immediately revokes the old HMAC AND disables
-//                 the bridge. The operator must reinstall via the new
-//                 curl|sh URL + re-enable. Locks the bridge out NOW.
+//                Seamless from the bridge's perspective. Live-only.
+//   * Now      — immediate HMAC swap, no grace window. The old key stops
+//                working at once; the operator reinstalls via the new
+//                URL. Enable state is untouched.
+//   * Emergency — `now` PLUS disable. The operator must reinstall + re-
+//                enable. Locks the bridge out NOW.
+//
+// A disabled/deregistered bridge has no live heartbeat to ack a staged
+// roll, so the dialog collapses to a single `now` path — no mode picker,
+// no grace window.
 function RollHMACDialog(props: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   bridgeName: string;
-  mode: 'staged' | 'emergency';
-  onModeChange: (m: 'staged' | 'emergency') => void;
+  disabledBridge: boolean;
+  mode: 'staged' | 'now' | 'emergency';
+  onModeChange: (m: 'staged' | 'now' | 'emergency') => void;
   grace: '600' | '3600' | '86400' | 'until-acked';
   onGraceChange: (g: '600' | '3600' | '86400' | 'until-acked') => void;
   isPending: boolean;
@@ -914,7 +932,15 @@ function RollHMACDialog(props: {
     if (!props.open) setTyped('');
   }, [props.open]);
 
-  const emergencyOk = props.mode === 'staged' || typed === props.bridgeName;
+  const emergencyOk = props.mode !== 'emergency' || typed === props.bridgeName;
+
+  const confirmLabel = props.isPending
+    ? 'Rolling…'
+    : props.mode === 'staged'
+      ? 'Roll (staged)'
+      : props.mode === 'emergency'
+        ? 'Roll & lock out (emergency)'
+        : 'Roll now';
 
   return (
     <Dialog open={props.open} onOpenChange={props.onOpenChange}>
@@ -922,76 +948,103 @@ function RollHMACDialog(props: {
         <DialogHeader>
           <DialogTitle>Roll HMAC Secret</DialogTitle>
           <DialogDescription>
-            Rotate the HMAC key for <span className="font-mono">{props.bridgeName}</span>. Pick a
-            mode below.
+            Rotate the HMAC key for <span className="font-mono">{props.bridgeName}</span>.{' '}
+            {props.disabledBridge
+              ? 'This bridge is disabled, so the new key applies immediately.'
+              : 'Pick a mode below.'}
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
-          <ToggleGroup
-            type="single"
-            value={props.mode}
-            onValueChange={(v) => {
-              if (v === 'staged' || v === 'emergency') props.onModeChange(v);
-            }}
-            className="w-full"
-          >
-            <ToggleGroupItem value="staged" className="flex-1">
-              Staged
-            </ToggleGroupItem>
-            <ToggleGroupItem value="emergency" className="flex-1">
-              Emergency
-            </ToggleGroupItem>
-          </ToggleGroup>
-          {props.mode === 'staged' ? (
+          {props.disabledBridge ? (
+            // Disabled bridge: no heartbeat to deliver a staged key to, so
+            // there's nothing to gain from a grace window. Single path.
             <div className="space-y-2 rounded-md border border-[var(--color-border)] p-3">
               <p className="text-xs text-[var(--color-muted-foreground)]">
-                Server delivers the new HMAC to the bridge over the next heartbeat. Old + new HMACs
-                both verify for the chosen grace window — the bridge applies seamlessly with no
-                downtime.
+                The new HMAC is applied immediately with no grace window. The bridge stays disabled
+                — re-enable it from this page once you've reinstalled with the new install URL.
               </p>
-              <div>
-                <Label htmlFor="roll-grace" className="text-xs">
-                  Grace window
-                </Label>
-                <Select
-                  value={props.grace}
-                  onValueChange={(v) =>
-                    props.onGraceChange(v as '600' | '3600' | '86400' | 'until-acked')
-                  }
-                >
-                  <SelectTrigger id="roll-grace">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="600">10 minutes</SelectItem>
-                    <SelectItem value="3600">1 hour (default)</SelectItem>
-                    <SelectItem value="86400">24 hours</SelectItem>
-                    <SelectItem value="until-acked">Until bridge acks (30d cap)</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
             </div>
           ) : (
-            <div className="space-y-2 rounded-md border border-[var(--color-destructive)] p-3">
-              <p className="text-xs text-[var(--color-foreground)]">
-                <strong>Locks the bridge out immediately.</strong> The current HMAC stops working
-                AND the bridge is disabled. Operator must reinstall via the new install URL and
-                re-enable. Use only when the existing credential is believed compromised.
-              </p>
-              <div>
-                <Label htmlFor="roll-confirm" className="text-xs">
-                  Type the bridge name to confirm
-                </Label>
-                <Input
-                  id="roll-confirm"
-                  value={typed}
-                  onChange={(e) => setTyped(e.target.value)}
-                  placeholder={props.bridgeName}
-                  autoComplete="off"
-                  spellCheck={false}
-                />
-              </div>
-            </div>
+            <>
+              <ToggleGroup
+                type="single"
+                value={props.mode}
+                onValueChange={(v) => {
+                  if (v === 'staged' || v === 'now' || v === 'emergency') props.onModeChange(v);
+                }}
+                className="w-full"
+              >
+                <ToggleGroupItem value="staged" className="flex-1">
+                  Staged
+                </ToggleGroupItem>
+                <ToggleGroupItem value="now" className="flex-1">
+                  Now
+                </ToggleGroupItem>
+                <ToggleGroupItem value="emergency" className="flex-1">
+                  Emergency
+                </ToggleGroupItem>
+              </ToggleGroup>
+              {props.mode === 'staged' ? (
+                <div className="space-y-2 rounded-md border border-[var(--color-border)] p-3">
+                  <p className="text-xs text-[var(--color-muted-foreground)]">
+                    Server delivers the new HMAC to the bridge over the next heartbeat. Old + new
+                    HMACs both verify for the chosen grace window — the bridge applies seamlessly
+                    with no downtime.
+                  </p>
+                  <div>
+                    <Label htmlFor="roll-grace" className="text-xs">
+                      Grace window
+                    </Label>
+                    <Select
+                      value={props.grace}
+                      onValueChange={(v) =>
+                        props.onGraceChange(v as '600' | '3600' | '86400' | 'until-acked')
+                      }
+                    >
+                      <SelectTrigger id="roll-grace">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="600">10 minutes</SelectItem>
+                        <SelectItem value="3600">1 hour (default)</SelectItem>
+                        <SelectItem value="86400">24 hours</SelectItem>
+                        <SelectItem value="until-acked">Until bridge acks (30d cap)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              ) : props.mode === 'now' ? (
+                <div className="space-y-2 rounded-md border border-[var(--color-border)] p-3">
+                  <p className="text-xs text-[var(--color-foreground)]">
+                    <strong>Applies the new HMAC immediately — no grace window.</strong> The current
+                    key stops working at once and the bridge stays enabled; reinstall on the host
+                    with the new install URL to bring it back.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-2 rounded-md border border-[var(--color-destructive)] p-3">
+                  <p className="text-xs text-[var(--color-foreground)]">
+                    <strong>Locks the bridge out immediately.</strong> The current HMAC stops
+                    working AND the bridge is disabled. Operator must reinstall via the new install
+                    URL and re-enable. Use only when the existing credential is believed
+                    compromised.
+                  </p>
+                  <div>
+                    <Label htmlFor="roll-confirm" className="text-xs">
+                      Type the bridge name to confirm
+                    </Label>
+                    <Input
+                      id="roll-confirm"
+                      value={typed}
+                      onChange={(e) => setTyped(e.target.value)}
+                      placeholder={props.bridgeName}
+                      autoComplete="off"
+                      spellCheck={false}
+                    />
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </div>
         <DialogFooter>
@@ -1004,11 +1057,7 @@ function RollHMACDialog(props: {
             disabled={!emergencyOk || props.isPending}
             onClick={() => void props.onConfirm()}
           >
-            {props.isPending
-              ? 'Rolling…'
-              : props.mode === 'staged'
-                ? 'Roll (staged)'
-                : 'Roll & lock out (emergency)'}
+            {confirmLabel}
           </Button>
         </DialogFooter>
       </DialogContent>
