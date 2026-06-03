@@ -639,14 +639,50 @@ describe('bridge credential mirror', () => {
       )
     ).json()) as { id: string; username: string; password: string };
 
+    // Register a bridge to obtain bridge HMAC credentials. CF/TS env vars
+    // are absent in the unit test env, so minting falls open (tokenId = null).
+    const bridge = (await (
+      await app.fetch(
+        await signedRequest(
+          'https://x/v1/admin/bridges',
+          JSON.stringify({ name: 'cred-mirror-bridge' }),
+          'POST',
+          admin.admin_key_secret,
+          admin.admin_key_id,
+        ),
+        env,
+        ctx,
+      )
+    ).json()) as { id: string; hmac_key: string };
+
+    // Call /v1/bridge/credentials with bridge HMAC auth, not admin key.
+    const credUrl = 'https://x/v1/bridge/credentials?since=0';
+    const cu = new URL(credUrl);
+    const cTs = String(Date.now());
+    const cNonce = generateNonce();
+    const cSig = await sign(
+      {
+        direction: 'polaris-api',
+        method: 'GET',
+        path: cu.pathname,
+        query: cu.search.slice(1),
+        ts: cTs,
+        nonce: cNonce,
+        body: '',
+      },
+      bridge.hmac_key,
+    );
     const r = await app.fetch(
-      await signedRequest(
-        'https://x/v1/bridge/credentials?since=0',
-        '',
-        'GET',
-        admin.admin_key_secret,
-        admin.admin_key_id,
-      ),
+      new Request(credUrl, {
+        method: 'GET',
+        headers: {
+          'content-type': 'application/json',
+          'x-polaris-bridge-id': bridge.id,
+          'x-polaris-ts': cTs,
+          'x-polaris-nonce': cNonce,
+          'x-polaris-sig': cSig,
+        },
+      }),
       env,
       ctx,
     );

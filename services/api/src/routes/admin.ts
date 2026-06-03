@@ -63,7 +63,12 @@ admin.use('/v1/admin/*', async (c, next) => {
 // sub-routers mounted in `services/api/src/index.ts`; we just need to
 // step out of the way here.
 admin.use('/v1/bridge/*', async (c, next) => {
-  if (c.req.path === '/v1/bridge/heartbeat' || c.req.path === '/v1/bridge/config') return next();
+  if (
+    c.req.path === '/v1/bridge/heartbeat' ||
+    c.req.path === '/v1/bridge/config' ||
+    c.req.path === '/v1/bridge/credentials'
+  )
+    return next();
   return adminHmac(c, next);
 });
 
@@ -389,61 +394,4 @@ admin.post('/v1/admin/webhook-subs', requireScope('admin:rotate'), async (c) => 
     },
   });
   return c.json({ id, secret }, 201);
-});
-
-// ---------- bridge credential mirror ----------
-
-admin.get('/v1/bridge/credentials', requireScope('admin:read'), async (c) => {
-  // The submission bridge polls this endpoint to mirror SMTP credentials
-  // locally. Returns a delta-style payload:
-  //   { updates: Credential[], deletions: string[], mirror_version: number }
-  // Where Credential is { id, username, bcrypt_hash, allowed_senders, mirror_version, ... }.
-  //
-  // After the cred-refactor, SMTP credentials are mailbox-scoped: a
-  // single credential is valid for any sender on its mailbox, so
-  // `allowed_senders` enumerates every enabled mailbox_senders row for
-  // the cred's mailbox. The bridge enforces MAIL FROM ∈ allowed_senders.
-  type CredRow = {
-    id: string;
-    mailbox_id: string;
-    prefix: string;
-    secret_hash: string;
-    disabled_at: string | null;
-    revoked_at: string | null;
-  };
-  type SenderRow = { mailbox_id: string; address: string };
-  let credRows: { results: CredRow[] } = { results: [] };
-  let senderRows: { results: SenderRow[] } = { results: [] };
-  try {
-    credRows = await c.env.DB.prepare(
-      `SELECT id, mailbox_id, prefix, secret_hash, disabled_at, revoked_at
-       FROM mailbox_credentials
-       WHERE type = 'smtp'`,
-    ).all<CredRow>();
-    senderRows = await c.env.DB.prepare(
-      `SELECT mailbox_id, address FROM mailbox_senders WHERE disabled_at IS NULL`,
-    ).all<SenderRow>();
-  } catch {
-    // Tables absent (degraded environment). Treat as empty.
-  }
-  const sendersByMailbox = new Map<string, string[]>();
-  for (const s of senderRows.results) {
-    const list = sendersByMailbox.get(s.mailbox_id) ?? [];
-    list.push(s.address);
-    sendersByMailbox.set(s.mailbox_id, list);
-  }
-  const mirrorVersion = Date.now();
-  const updates = credRows.results
-    .filter((r) => r.disabled_at == null && r.revoked_at == null)
-    .map((r) => ({
-      id: r.id,
-      username: `${r.prefix}${r.id}`,
-      bcrypt_hash: r.secret_hash,
-      allowed_senders: sendersByMailbox.get(r.mailbox_id) ?? [],
-      mirror_version: mirrorVersion,
-    }));
-  const deletions = credRows.results
-    .filter((r) => r.disabled_at != null || r.revoked_at != null)
-    .map((r) => r.id);
-  return c.json({ updates, deletions, mirror_version: mirrorVersion });
 });

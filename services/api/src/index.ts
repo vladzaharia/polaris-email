@@ -23,6 +23,7 @@ import { mtaStsPolicy } from './routes/mta-sts.js';
 import { unsub } from './routes/unsub.js';
 import { bridgeHeartbeat } from './routes/bridge/heartbeat.js';
 import { bridgeConfig } from './routes/bridge/config.js';
+import { bridgeCredentials } from './routes/bridge/credentials.js';
 import { bridgeInstaller } from './routes/installer/bridge.js';
 import { requestId } from '@polaris-mail/ids';
 import { buildError } from './errors.js';
@@ -58,10 +59,10 @@ app.route('/', messagesState);
 app.route('/', internalCfEvents);
 app.route('/', unsub);
 // Bridge self-fetch endpoints — mounted BEFORE admin so their
-// `/v1/bridge/*` handlers win routing. The admin router still owns the
-// rest of `/v1/bridge/*` (credential lookup) under admin-api-key auth.
+// `/v1/bridge/*` handlers win routing.
 app.route('/', bridgeHeartbeat);
 app.route('/', bridgeConfig);
+app.route('/', bridgeCredentials);
 // Bridge installer — public, one-shot bash installer. Two routes
 // share one handler:
 //   * /v1/installer/bridge/<token>   on api.mail.plrs.im (canonical)
