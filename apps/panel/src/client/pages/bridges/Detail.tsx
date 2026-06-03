@@ -490,7 +490,7 @@ export function BridgeDetail() {
           </div>
 
           {hb ? (
-            <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+            <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2 lg:col-span-2 lg:grid-cols-4">
               {/* Node */}
               <section className="rounded-md border border-[var(--color-border)] p-3">
                 <div className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-[var(--color-muted-foreground)]">
