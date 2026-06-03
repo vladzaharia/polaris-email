@@ -534,12 +534,11 @@ describe('services/api domain verify MTA-STS + TLS-RPT', () => {
     expect(mtaStsHint, 'mta-sts operator-action hint missing').toBeDefined();
     expect(mtaStsHint!.ok).toBe(false);
     expect(mtaStsHint!.expected).toContain(`policy_id=${policyId}`);
-    expect(mtaStsHint!.actual).toContain('POST /v1/admin/domains/');
-    expect(mtaStsHint!.actual).toContain('/mta-sts/enable');
+    expect(mtaStsHint!.actual).toContain('MTA-STS records require manual re-provisioning');
 
     const tlsRptHint = out.checks.find((c) => c.name.startsWith('tls-rpt:operator-action:'));
     expect(tlsRptHint).toBeDefined();
-    expect(tlsRptHint!.actual).toContain('/tls-rpt/enable');
+    expect(tlsRptHint!.ok).toBe(false);
 
     // Sub-block timestamps NOT persisted (everything failed).
     const row = await readDomainFull(id);
@@ -623,7 +622,7 @@ describe('services/api domain verify MTA-STS + TLS-RPT', () => {
     const hint = second.checks.find((c) => c.name.startsWith('mta-sts:operator-action:'));
     expect(hint, 'second verify should emit operator-action hint').toBeDefined();
     expect(hint!.expected).toContain(`policy_id=${newId}`);
-    expect(hint!.actual).toContain('/mta-sts/enable');
+    expect(hint!.actual).toContain('MTA-STS records require manual re-provisioning');
 
     // The TXT id check failed because old != new.
     const txtCheck = second.checks.find((c) => c.name === 'TXT _mta-sts id');

@@ -267,7 +267,7 @@ export async function verifyDomain(env: Env, id: string, actor: string): Promise
         name: `mta-sts:operator-action:${row.name}`,
         ok: false,
         expected: `mode=${row.mta_sts_mode}, policy_id=${row.mta_sts_policy_id ?? '(unset)'}`,
-        actual: `MTA-STS records require manual re-provisioning. Call POST /v1/admin/domains/${row.id}/mta-sts/enable to publish.`,
+        actual: `MTA-STS records require manual re-provisioning.`,
         required: false,
       });
     } else {
@@ -286,7 +286,7 @@ export async function verifyDomain(env: Env, id: string, actor: string): Promise
         name: `tls-rpt:operator-action:${row.name}`,
         ok: false,
         expected: `rua=${row.tlsrpt_rua ?? '(unset)'}`,
-        actual: `TLS-RPT records require manual re-provisioning. Call POST /v1/admin/domains/${row.id}/tls-rpt/enable to publish.`,
+        actual: `TLS-RPT records require manual re-provisioning.`,
         required: false,
       });
     } else {

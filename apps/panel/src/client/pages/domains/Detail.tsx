@@ -400,7 +400,8 @@ type ConfigureOpKind =
 
 interface FixSpec {
   kind: ConfigureOpKind;
-  title: string;
+  /** Confirm-dialog heading; takes the domain so it reads "… for <domain>". */
+  title: (domain: string) => string;
   /** Short label for the inline button (verb phrase, no period). */
   cta: string;
   /** Blast-radius bullets shown in the confirm dialog. */
@@ -411,7 +412,7 @@ interface FixSpec {
 const FIX_SPECS: Record<ConfigureOpKind, FixSpec> = {
   enable_routing: {
     kind: 'enable_routing',
-    title: 'Enable Cloudflare Email Routing',
+    title: (d) => `Enable receiving for ${d}`,
     cta: 'Enable routing',
     blast: [
       'Cloudflare auto-publishes inbound MX + SPF records and locks them.',
@@ -422,7 +423,7 @@ const FIX_SPECS: Record<ConfigureOpKind, FixSpec> = {
   },
   set_catch_all_worker: {
     kind: 'set_catch_all_worker',
-    title: 'Route catch-all to polaris-mail-in',
+    title: (d) => `Route catch-all for ${d} to polaris-mail-in`,
     cta: 'Fix catch-all',
     blast: [
       'Mail to addresses not matched by any named rule will deliver into Polaris.',
@@ -433,7 +434,7 @@ const FIX_SPECS: Record<ConfigureOpKind, FixSpec> = {
   },
   onboard_sender_domain: {
     kind: 'onboard_sender_domain',
-    title: 'Onboard sender domain',
+    title: (d) => `Onboard sending for ${d}`,
     cta: 'Onboard sender',
     blast: [
       'Adds missing DKIM CNAMEs, SPF, DMARC, and the cf-bounce MX to the zone.',
@@ -444,7 +445,7 @@ const FIX_SPECS: Record<ConfigureOpKind, FixSpec> = {
   },
   create_d1_mail_domain: {
     kind: 'create_d1_mail_domain',
-    title: 'Create the D1 mail_domains row',
+    title: (d) => `Create the D1 mailbox row for ${d}`,
     cta: 'Create D1 row',
     blast: [
       "Adds a `mail_domains` row in Polaris's D1 for this zone.",
@@ -611,7 +612,7 @@ function CfZoneCard({ domainName }: { domainName: string }) {
           <DestructiveActionDialog
             open={pendingFix != null}
             onOpenChange={(o) => !o && setPendingFix(null)}
-            action={pendingFix?.title ?? ''}
+            action={pendingFix ? pendingFix.title(domainName) : ''}
             blastRadius={pendingFix?.blast ?? []}
             reversible={pendingFix?.reversible ?? true}
             confirmLabel={pendingFix?.cta ?? 'Apply'}
@@ -1044,18 +1045,26 @@ function DmarcPromotionCard({
                 Resume auto-promotion
               </Button>
             )}
-            {(promotion.dmarc_promotion_state === 'quarantine_ready' ||
-              promotion.dmarc_promotion_state === 'reject_ready') && (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => advance.mutate(undefined)}
-                disabled={advance.isPending}
-                title="Send a policy-change command to Cloudflare DMARC Management. Effective at the DNS TTL."
-              >
-                Advance now
-              </Button>
-            )}
+            {promotion.dmarc_promotion_state !== 'reject' &&
+              promotion.dmarc_promotion_state !== 'paused' && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => advance.mutate(undefined)}
+                  disabled={advance.isPending}
+                  title={
+                    promotion.dmarc_promotion_state === 'quarantine_ready' ||
+                    promotion.dmarc_promotion_state === 'reject_ready'
+                      ? 'Send a policy-change command to Cloudflare DMARC Management. Effective at the DNS TTL.'
+                      : 'Promote the DMARC policy one step now, skipping the soak window. Effective at the DNS TTL.'
+                  }
+                >
+                  {promotion.dmarc_promotion_state === 'none' ||
+                  promotion.dmarc_promotion_state === 'quarantine_ready'
+                    ? 'Promote to quarantine'
+                    : 'Promote to reject'}
+                </Button>
+              )}
           </div>
         </div>
       )}

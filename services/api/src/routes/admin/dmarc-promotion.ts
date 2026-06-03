@@ -153,8 +153,16 @@ dmarcPromotion.post('/v1/admin/dmarc-promotion/run', requireScope('admin:rotate'
   return c.json(r);
 });
 
+// Operator advance is an explicit override: it walks the same policy ladder
+// (none → quarantine → reject) the cron does, but skips the soak-gated
+// `*_ready` checkpoints. Advancing from `none`/`quarantine` is the operator
+// taking responsibility for tightening the policy ahead of the auto schedule.
 function nextStateFor(state: string): { state: string; policy: 'quarantine' | 'reject' } | null {
-  if (state === 'quarantine_ready') return { state: 'quarantine', policy: 'quarantine' };
-  if (state === 'reject_ready') return { state: 'reject', policy: 'reject' };
+  if (state === 'none' || state === 'quarantine_ready') {
+    return { state: 'quarantine', policy: 'quarantine' };
+  }
+  if (state === 'quarantine' || state === 'reject_ready') {
+    return { state: 'reject', policy: 'reject' };
+  }
   return null;
 }
