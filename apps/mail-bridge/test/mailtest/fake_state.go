@@ -33,12 +33,12 @@ type bridgeState struct {
 	acked map[string]DirectiveAck
 
 	// Observers.
-	heartbeats        []Heartbeat
-	heartbeatCount    int // monotonic; baseline for WaitForHeartbeat
-	logHighWater      int64
-	submissions       []SubmittedMessage
-	patchedFlags      map[string][]string
-	deletedMessages   map[string]bool
+	heartbeats      []Heartbeat
+	heartbeatCount  int // monotonic; baseline for WaitForHeartbeat
+	logHighWater    int64
+	submissions     []SubmittedMessage
+	patchedFlags    map[string][]string
+	deletedMessages map[string]bool
 
 	// Webhook bootstrap result — set when the bridge calls
 	// POST /v1/admin/webhook-subs.
@@ -54,7 +54,6 @@ type bridgeState struct {
 	// heartbeats — the fake responds with 500 so the bridge's
 	// ticker has to retry. Used by H4 (fallback cadence).
 	heartbeatFailures int
-
 
 	// Mailboxes the bridge serves. The fake doesn't enforce
 	// bridge↔mailbox ownership (real production does); tests register
@@ -125,11 +124,11 @@ type fakeState struct {
 	mu   sync.Mutex
 	cond *sync.Cond
 
-	bridges     map[string]*bridgeState
-	mailboxes   map[string]*mailboxState
+	bridges        map[string]*bridgeState
+	mailboxes      map[string]*mailboxState
 	mailboxByOwner map[string]string // owner → mailbox id
-	messages    map[string]*messageState
-	credentials map[string]*credentialState // key: credKey(protocol, username)
+	messages       map[string]*messageState
+	credentials    map[string]*credentialState // key: credKey(protocol, username)
 
 	// idCounter for synthesizing bridge/mailbox/message/directive IDs.
 	idCounter int64
@@ -165,17 +164,21 @@ func (s *fakeState) nextID(prefix string) string {
 // reverting to 465/25/993/143 and triggering a restart-required Apply.
 func defaultSettings() polarissdk.BridgeSettings {
 	return polarissdk.BridgeSettings{
-		Version:             0,
-		SMTPSEnabled:        true,
-		SMTPSPort:           465,
-		SMTPEnabled:         false,
-		SMTPPort:            25,
-		IMAPSEnabled:        true,
-		IMAPSPort:           993,
-		IMAPEnabled:         false,
-		IMAPPort:            143,
-		TLSSource:           "auto",
-		MaxMessageSizeBytes: 25 * 1024 * 1024,
+		Version:      0,
+		SMTPSEnabled: true,
+		SMTPSPort:    465,
+		SMTPEnabled:  false,
+		SMTPPort:     25,
+		IMAPSEnabled: true,
+		IMAPSPort:    993,
+		IMAPEnabled:  false,
+		IMAPPort:     143,
+		TLSSource:    "auto",
+		// Mirror the real server default (migration 0013 = 50 MiB) and the
+		// bridge's boot default. A mismatch here is a restart-required diff
+		// on every first heartbeat, which loops the bridge and starves
+		// these multi-heartbeat tests (got 1 heartbeat, want ≥3).
+		MaxMessageSizeBytes: 50 * 1024 * 1024,
 		MaxIMAPSessions:     200,
 		LogLevel:            "info",
 		// Mirror the inproc harness's BRIDGE_WEBHOOK_ENABLED=1 default so
