@@ -8,12 +8,12 @@
 // Apply() takes a settings snapshot and reports whether the change is
 // satisfiable in-place. Phase 2 keeps the hot-reload list narrow:
 //
-//   * smtp_enabled / imap_enabled toggles  → hot (start or stop)
-//   * log_level                            → hot (slog level slider)
-//   * any other change (ports, TLS mode,   → restartRequired = true
+//   - smtp_enabled / imap_enabled toggles  → hot (start or stop)
+//   - log_level                            → hot (slog level slider)
+//   - any other change (ports, TLS mode,   → restartRequired = true
 //     limits)                                Caller exits; compose
-//                                            restarts the process so
-//                                            it re-reads its env.
+//     restarts the process so
+//     it re-reads its env.
 //
 // Boot-time ports + TLS mode still come from env in Phase 2; the
 // server-side `bridge_settings.smtp_port` etc. are tracked for the
@@ -45,34 +45,39 @@ import (
 // heartbeat response. Heartbeat v2.1 (migration 0013) splits each
 // protocol into its encrypted + unencrypted variants — the bridge
 // runs SMTPS + SMTP + IMAPS + IMAP listeners independently.
+//
+// JSON tags exist because the supervisor persists the last-applied
+// snapshot to disk (see persist.go) and re-seeds it at boot — that
+// closes the restart-required convergence loop. Tags are explicit +
+// stable so an on-disk file survives field reordering.
 type Settings struct {
-	Version int
+	Version int `json:"version"`
 
-	SMTPSEnabled bool
-	SMTPSPort    int
-	SMTPEnabled  bool
-	SMTPPort     int
+	SMTPSEnabled bool `json:"smtps_enabled"`
+	SMTPSPort    int  `json:"smtps_port"`
+	SMTPEnabled  bool `json:"smtp_enabled"`
+	SMTPPort     int  `json:"smtp_port"`
 
-	IMAPSEnabled bool
-	IMAPSPort    int
-	IMAPEnabled  bool
-	IMAPPort     int
+	IMAPSEnabled bool `json:"imaps_enabled"`
+	IMAPSPort    int  `json:"imaps_port"`
+	IMAPEnabled  bool `json:"imap_enabled"`
+	IMAPPort     int  `json:"imap_port"`
 
 	// Shared TLS source for SMTPS + IMAPS. "auto" = embedded ACME;
 	// "manual" = operator-supplied PEMs at TLSCertPath/TLSKeyPath.
-	TLSSource string
+	TLSSource string `json:"tls_source"`
 
-	MaxMessageSize  int64
-	MaxIMAPSessions int
-	LogLevel        string
+	MaxMessageSize  int64  `json:"max_message_size"`
+	MaxIMAPSessions int    `json:"max_imap_sessions"`
+	LogLevel        string `json:"log_level"`
 
 	// Inbound-webhook receiver. WebhookEnabled toggles the listener
 	// hot (no restart). WebhookURLOverride is observed by the bridge
 	// at boot to compute the install URL polaris registers against; a
 	// change here triggers restart-required so the registration gets
 	// re-bootstrapped against the new URL.
-	WebhookEnabled     bool
-	WebhookURLOverride string
+	WebhookEnabled     bool   `json:"webhook_enabled"`
+	WebhookURLOverride string `json:"webhook_url_override"`
 }
 
 // Deps bundles every dependency the supervisor needs to instantiate
@@ -101,6 +106,12 @@ type Deps struct {
 	// Shared
 	TLSSource   *bridgetls.Source
 	LogLevelVar *slog.LevelVar // optional; supervisor flips this on log_level apply
+	// SettingsPath, when non-empty, is where Apply persists the
+	// last-applied Settings snapshot. main.go re-seeds it at boot so a
+	// restart-required change actually converges (a fresh process boots
+	// with the server's values instead of re-deriving the same env
+	// defaults and looping). Empty ⇒ persistence disabled (tests).
+	SettingsPath string
 }
 
 // Supervisor coordinates the three listeners. Methods are safe to call
@@ -175,8 +186,8 @@ func (s *Supervisor) Resume(ctx context.Context) error {
 // compose brings the process back with the new config.
 //
 // Phase 2 hot-applied changes:
-//   * smtp_enabled / imap_enabled toggle
-//   * log_level (via the shared *slog.LevelVar, if Deps provides one)
+//   - smtp_enabled / imap_enabled toggle
+//   - log_level (via the shared *slog.LevelVar, if Deps provides one)
 //
 // Everything else flags restart-required.
 func (s *Supervisor) Apply(ctx context.Context, next Settings) (restartRequired bool, err error) {
@@ -203,6 +214,11 @@ func (s *Supervisor) Apply(ctx context.Context, next Settings) (restartRequired 
 		next.MaxMessageSize != s.current.MaxMessageSize ||
 		next.MaxIMAPSessions != s.current.MaxIMAPSessions ||
 		next.WebhookURLOverride != s.current.WebhookURLOverride {
+		// Persist BEFORE the caller exits so the fresh process boots
+		// seeded with these values and the version gate above closes the
+		// loop on its first heartbeat. Without this the restart is futile
+		// (same env defaults → same diff → infinite restart loop).
+		s.persistLocked(next)
 		return true, nil
 	}
 
@@ -218,11 +234,26 @@ func (s *Supervisor) Apply(ctx context.Context, next Settings) (restartRequired 
 		if err := s.reconcileLocked(ctx); err != nil {
 			return false, err
 		}
+		s.persistLocked(next)
 		return false, nil
 	}
 
 	s.current = next
+	s.persistLocked(next)
 	return false, nil
+}
+
+// persistLocked writes the applied snapshot to deps.SettingsPath (no-op
+// when unset). Persistence failure is logged, not fatal: the in-memory
+// apply already succeeded, and a stale/absent file only costs one extra
+// restart cycle to re-converge — far better than crashing the bridge.
+func (s *Supervisor) persistLocked(st Settings) {
+	if s.deps.SettingsPath == "" {
+		return
+	}
+	if err := SaveSettings(s.deps.SettingsPath, st); err != nil {
+		log.Printf("supervisor: persist settings to %s: %v", s.deps.SettingsPath, err)
+	}
 }
 
 // reconcileLocked starts or stops each listener variant so the running
@@ -230,8 +261,8 @@ func (s *Supervisor) Apply(ctx context.Context, next Settings) (restartRequired 
 // (initial Start / Resume).
 func (s *Supervisor) reconcileLocked(ctx context.Context) error {
 	type entry struct {
-		want bool
-		on   bool
+		want  bool
+		on    bool
 		start func(context.Context) error
 		stop  func(context.Context)
 	}

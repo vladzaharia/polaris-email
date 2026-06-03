@@ -123,16 +123,28 @@ func main() {
 	// listeners come up — falling back to plaintext would expose SMTP
 	// AUTH / IMAP LOGIN. Failure here is fatal.
 	//
-	// Retry the fetch once if it returns `key_propagating` — that's the
-	// expected transient when the operator rotated the bridge between
-	// process restart and our first call.
+	// On a fetch failure (`key_propagating` when the server's KV token
+	// cache expired, or a plain network blip) we fall back to the
+	// last-good config cached on disk rather than fatal-exiting — that
+	// failure mode is exactly the reported boot crash. Only when there's
+	// no cache either is the situation genuinely unrecoverable.
+	configCachePath := getenvDefault("BRIDGE_CONFIG_CACHE_PATH", "/var/lib/polaris-bridge/config.json")
 	configCtx, configCancel := context.WithTimeout(ctx, 60*time.Second)
 	bridgeCfg, err := sdkClient.GetBridgeConfig(configCtx)
 	configCancel()
 	if err != nil {
-		log.Fatalf("polaris-bridge: fetch bridge config: %v", err)
+		cached, cerr := loadBridgeConfig(configCachePath)
+		if cerr != nil {
+			log.Fatalf("polaris-bridge: fetch bridge config: %v (no cached fallback: %v)", err, cerr)
+		}
+		log.Printf("WARN: polaris-bridge: config fetch failed (%v); using cached config from %s", err, configCachePath)
+		bridgeCfg = cached
+	} else {
+		if serr := saveBridgeConfig(configCachePath, bridgeCfg); serr != nil {
+			log.Printf("WARN: polaris-bridge: cache bridge config: %v", serr)
+		}
+		log.Printf("polaris-bridge: bridge config fetched (fqdn=%s)", bridgeCfg.FQDN)
 	}
-	log.Printf("polaris-bridge: bridge config fetched (fqdn=%s)", bridgeCfg.FQDN)
 
 	// CF / ACME is optional. When the api worker isn't configured for
 	// CF token minting (CF_API_TOKEN unset), it returns
@@ -155,7 +167,7 @@ func main() {
 		}
 		renewer.Start(ctx)
 	} else {
-		log.Printf("polaris-bridge: CF DNS token not provided — embedded ACME disabled. " +
+		log.Printf("polaris-bridge: CF DNS token not provided — embedded ACME disabled. "+
 			"Listeners run plaintext unless PEMs are mounted at %s", cfg.TLSCertDir)
 	}
 
@@ -361,6 +373,7 @@ func main() {
 		SessionGauge: metricsReg.IMAP,
 		MaxBodyBytes: cfg.R2BodyMaxBytes,
 	}
+	settingsPath := getenvDefault("BRIDGE_SETTINGS_PATH", "/var/lib/polaris-bridge/settings.json")
 	supervisor := listeners.New(listeners.Deps{
 		SMTPBackend:        smtpBackend,
 		SMTPDomain:         cfg.BridgeName,
@@ -372,6 +385,7 @@ func main() {
 		WebhookRebootstrap: runWebhookBootstrap,
 		TLSSource:          tlsSrc,
 		LogLevelVar:        logLevelVar,
+		SettingsPath:       settingsPath,
 	})
 	// Boot defaults — encrypted on, unencrypted off. The supervisor
 	// replays these into actual listener binds; the first heartbeat
@@ -398,6 +412,17 @@ func main() {
 		// The DB-side default for new bridges matches.
 		WebhookEnabled:     enabled("BRIDGE_WEBHOOK_ENABLED", false),
 		WebhookURLOverride: strings.TrimSpace(os.Getenv("BRIDGE_PUBLIC_URL")),
+	}
+	// Re-seed from the last-applied snapshot (Option A: persisted wins
+	// over env). This is what makes a restart-required settings change
+	// converge — the fresh process binds the server's values instead of
+	// re-deriving the env defaults and looping. Absent file ⇒ first boot,
+	// use env defaults; a decode error ⇒ warn and fall back to defaults.
+	if persisted, found, err := listeners.LoadSettings(settingsPath, initialSettings); err != nil {
+		log.Printf("WARN: polaris-bridge: load persisted settings: %v — using boot defaults", err)
+	} else if found {
+		initialSettings = persisted
+		log.Printf("polaris-bridge: re-seeded settings v%d from %s", initialSettings.Version, settingsPath)
 	}
 	if err := supervisor.Start(ctx, initialSettings); err != nil {
 		log.Fatalf("polaris-bridge: supervisor start: %v", err)
