@@ -79,10 +79,21 @@ interface CreateOperatorResponse {
   login_token: string;
 }
 
-export function CreateOperatorDialog() {
+export function CreateOperatorDialog({
+  defaultName = '',
+  defaultEmail = '',
+  triggerLabel = 'Add operator',
+}: {
+  /** Pre-fills the Name field (e.g. self-service from the "You" page). */
+  defaultName?: string;
+  /** Pre-fills the Email field — must match the panel-login email to link. */
+  defaultEmail?: string;
+  /** Trigger button label. */
+  triggerLabel?: string;
+} = {}) {
   const [open, setOpen] = useState(false);
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
+  const [name, setName] = useState(defaultName);
+  const [email, setEmail] = useState(defaultEmail);
   const [pubkey, setPubkey] = useState('');
   const [fingerprint, setFingerprint] = useState('');
   const [fingerprintError, setFingerprintError] = useState<string | null>(null);
@@ -129,8 +140,8 @@ export function CreateOperatorDialog() {
   );
 
   function reset() {
-    setName('');
-    setEmail('');
+    setName(defaultName);
+    setEmail(defaultEmail);
     setPubkey('');
     setFingerprint('');
     setFingerprintError(null);
@@ -173,7 +184,7 @@ export function CreateOperatorDialog() {
       >
         <DialogTrigger asChild>
           <Button size="sm">
-            <Plus className="h-4 w-4" /> Add operator
+            <Plus className="h-4 w-4" /> {triggerLabel}
           </Button>
         </DialogTrigger>
         <DialogContent className="max-h-[85vh] overflow-y-auto">

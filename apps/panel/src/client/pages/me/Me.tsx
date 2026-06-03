@@ -6,10 +6,14 @@
 //
 // One page per operator. The hub does NOT manage other operators —
 // that lives behind `polaris-mail operator add` (CLI) for now.
+import { useState } from 'react';
+import { RotateCw } from 'lucide-react';
 import { PageCard } from '../../layouts/PageCard.js';
 import { Badge } from '../../components/ui/badge.js';
+import { Button } from '../../components/ui/button.js';
 import { Skeleton } from '../../components/ui/skeleton.js';
 import { EmptyState } from '../../components/EmptyState.js';
+import { SecretRevealDialog } from '../../components/SecretRevealDialog.js';
 import {
   Table,
   TableBody,
@@ -18,8 +22,9 @@ import {
   TableHeader,
   TableRow,
 } from '../../components/ui/table.js';
-import { useAdminQuery } from '../../hooks/useAdminApi.js';
-import { auditKeys } from '../../queryKeys.js';
+import { CreateOperatorDialog } from '../operators/CreateOperatorDialog.js';
+import { useAdminMutation, useAdminQuery } from '../../hooks/useAdminApi.js';
+import { auditKeys, operatorKeys } from '../../queryKeys.js';
 import { formatDate, formatRelative } from '../../lib/format.js';
 
 interface Me {
@@ -86,6 +91,23 @@ export function Me() {
     me.data?.email ? e.actor.includes(me.data.email) : false,
   );
 
+  const [rotatedToken, setRotatedToken] = useState<string | null>(null);
+  // rotate-key reuses the operator's existing scopes, so self-service rotation
+  // is no privilege change — just a fresh secret. The id is only read when the
+  // button renders (operator present), never when undefined.
+  const rotateKey = useAdminMutation<{ login_token: string }, undefined>(
+    () => ({ path: `/api/admin/operators/${myOperator?.id}/rotate-key`, method: 'POST' }),
+    {
+      invalidateKeys: [operatorKeys.all],
+      successMessage: 'Operator key rotated. Copy the new login token now.',
+    },
+  );
+
+  async function handleRotate(): Promise<void> {
+    const r = await rotateKey.mutateAsync(undefined);
+    setRotatedToken(r.login_token);
+  }
+
   return (
     <PageCard title="You" description="Identity, operator key, recent activity." decorative>
       <div className="space-y-6">
@@ -114,14 +136,45 @@ export function Me() {
         </section>
 
         <section>
-          <h2 className="mb-2 text-xl font-medium">Operator key</h2>
+          <div className="mb-2 flex items-center justify-between">
+            <h2 className="text-xl font-medium">Operator key</h2>
+            {myOperator && !myOperator.disabled_at ? (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  void handleRotate();
+                }}
+                disabled={rotateKey.isPending}
+              >
+                <RotateCw className="h-4 w-4" /> Rotate key
+              </Button>
+            ) : !operators.isLoading && !me.isLoading && !myOperator && me.data?.admin ? (
+              <CreateOperatorDialog
+                defaultName={me.data?.email ?? ''}
+                defaultEmail={me.data?.email ?? ''}
+                triggerLabel="Create my operator key"
+              />
+            ) : null}
+          </div>
           {operators.isLoading || me.isLoading ? (
             <Skeleton className="h-20 w-full" />
           ) : !myOperator ? (
             <p className="text-sm text-[var(--color-muted-foreground)]">
-              No operator row matches your email. Operator keys are minted by{' '}
-              <span className="font-mono">polaris-mail operator add</span>; ask an admin to onboard
-              you if you need CLI/SSH access.
+              No operator row matches your email.{' '}
+              {me.data?.admin ? (
+                <>
+                  Use <span className="font-medium">Create my operator key</span> above (you&apos;ll
+                  paste an SSH public key), or run{' '}
+                  <span className="font-mono">polaris-mail operator add</span>.
+                </>
+              ) : (
+                <>
+                  Operator keys are minted by{' '}
+                  <span className="font-mono">polaris-mail operator add</span>; ask an admin to
+                  onboard you if you need CLI/SSH access.
+                </>
+              )}
             </p>
           ) : (
             <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 text-sm">
@@ -184,6 +237,15 @@ export function Me() {
           )}
         </section>
       </div>
+
+      <SecretRevealDialog
+        open={rotatedToken !== null}
+        onOpenChange={(o) => !o && setRotatedToken(null)}
+        title="Operator key rotated"
+        secretLabel="Login token"
+        secret={rotatedToken}
+        note="Paste this into `polaris-mail login`. Polaris stores only its hash — there is no way to retrieve this value again."
+      />
     </PageCard>
   );
 }
