@@ -14,11 +14,7 @@ import { buildError } from '../../errors.js';
 import { ulid } from '@polaris-mail/ids';
 import { generateSecret } from '@polaris-mail/hmac';
 import { hashSecret } from '../../hashing.js';
-import {
-  bridgePlainKvKey,
-  bridgePlainNextKvKey,
-  BRIDGE_PLAIN_KV_TTL_SECONDS,
-} from '../../bridge-auth.js';
+import { bridgePlainKvKey, bridgePlainNextKvKey, FLOOR_S } from '../../bridge-auth.js';
 import {
   bridgeCfDnsPlainKvKey,
   BRIDGE_CF_DNS_PLAIN_KV_TTL_SECONDS,
@@ -47,6 +43,18 @@ function installerUrlFor(env: Env, bridgeId: string, hmac: string): string {
   const base = env.BRIDGE_INSTALLER_BASE_URL;
   if (base) return `${base.replace(/\/$/, '')}/bridge/${bridgeId}/${hmac}`;
   return `${env.API_BASE_URL}/v1/installer/bridge/${bridgeId}/${hmac}`;
+}
+
+// How long a freshly-issued install URL stays live. The installer route
+// 404s past this deadline; the first successful heartbeat closes it even
+// sooner (see routes/bridge/heartbeat.ts). 8h — matches the plaintext
+// cache floor, so a bridge that never phones home loses its leaky
+// download link on the same clock the api would forget its key.
+const INSTALLER_WINDOW_MS = 8 * 60 * 60 * 1000;
+
+/** ISO timestamp `INSTALLER_WINDOW_MS` after `nowIso`. */
+function installerWindowExpiry(nowIso: string): string {
+  return new Date(Date.parse(nowIso) + INSTALLER_WINDOW_MS).toISOString();
 }
 
 // Liveness thresholds (ms). Anything inside `LIVE_MS` is "live"; inside
@@ -166,9 +174,18 @@ bridges.post('/v1/admin/bridges', requireScope('admin:rotate'), async (c) => {
       c.env.DB.prepare(
         `INSERT INTO bridges
            (id, name, hmac_key_secret_name, cf_dns_token_id, ts_authkey_id,
-            created_at, hmac_rotated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      ).bind(id, body.name, hashed, cfMinted.tokenId, tsMinted.key?.id ?? null, nowIso, nowIso),
+            created_at, hmac_rotated_at, installer_window_expires_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).bind(
+        id,
+        body.name,
+        hashed,
+        cfMinted.tokenId,
+        tsMinted.key?.id ?? null,
+        nowIso,
+        nowIso,
+        installerWindowExpiry(nowIso),
+      ),
       c.env.DB.prepare(
         `INSERT INTO bridge_settings (bridge_id, updated_at, updated_by)
          VALUES (?, ?, ?)`,
@@ -182,9 +199,10 @@ bridges.post('/v1/admin/bridges', requireScope('admin:rotate'), async (c) => {
     throw e;
   }
   // Cache plaintext for HMAC verify lookups. The stored hash is one-way; on
-  // KV miss the bridge has to be rotated to repopulate (Phase 2h).
+  // KV miss the bridge has to be rotated to repopulate (Phase 2h). Seed at
+  // the floor — heartbeats ramp the TTL up as the bridge earns tenure.
   await c.env.KV_KEY_CACHE.put(bridgePlainKvKey(id), secret, {
-    expirationTtl: BRIDGE_PLAIN_KV_TTL_SECONDS,
+    expirationTtl: FLOOR_S,
   });
   if (cfMinted.plaintext) {
     // CF token plaintext — surfaced to the bridge via /v1/bridge/config.
@@ -393,9 +411,10 @@ bridges.post('/v1/admin/bridges/:id/rotate', requireScope('admin:rotate'), async
       c.env.DB.prepare(
         `UPDATE bridges
            SET cf_dns_token_id = ?, ts_authkey_id = ?,
-               hmac_pending_rotated_at = ?, disabled_at = NULL
+               hmac_pending_rotated_at = ?, disabled_at = NULL,
+               installer_window_expires_at = ?
          WHERE id = ?`,
-      ).bind(cfMinted.tokenId, tsMinted.key?.id ?? null, nowIso, id),
+      ).bind(cfMinted.tokenId, tsMinted.key?.id ?? null, nowIso, installerWindowExpiry(nowIso), id),
       c.env.DB.prepare(
         `INSERT INTO bridge_directives
            (id, bridge_id, kind, payload, queued_at, expires_at)
@@ -416,13 +435,21 @@ bridges.post('/v1/admin/bridges/:id/rotate', requireScope('admin:rotate'), async
       `UPDATE bridges
          SET hmac_key_secret_name = ?, cf_dns_token_id = ?, ts_authkey_id = ?,
              hmac_rotated_at = ?, hmac_pending_rotated_at = NULL,
-             disabled_at = ?
+             disabled_at = ?, installer_window_expires_at = ?
        WHERE id = ?`,
     )
-      .bind(hashed, cfMinted.tokenId, tsMinted.key?.id ?? null, nowIso, nowIso, id)
+      .bind(
+        hashed,
+        cfMinted.tokenId,
+        tsMinted.key?.id ?? null,
+        nowIso,
+        nowIso,
+        installerWindowExpiry(nowIso),
+        id,
+      )
       .run();
     await c.env.KV_KEY_CACHE.put(bridgePlainKvKey(id), secret, {
-      expirationTtl: BRIDGE_PLAIN_KV_TTL_SECONDS,
+      expirationTtl: FLOOR_S,
     });
     await c.env.KV_KEY_CACHE.delete(bridgePlainNextKvKey(id));
   }

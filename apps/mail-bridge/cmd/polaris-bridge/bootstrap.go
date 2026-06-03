@@ -2,6 +2,9 @@
 // docker-compose init container pattern.
 //
 // `polaris-bridge bootstrap-tailscale`:
+//   - Idempotent: if the ts_authkey file already exists on the
+//     persistent volume, it skips the API call and exits 0. This lets a
+//     second `compose up` succeed without re-hitting /v1/bridge/config.
 //   - Loads the minimum config needed to authenticate against the
 //     polaris API: bridge id + HMAC key (via `*_FILE` indirection from
 //     the docker secrets mount) + BRIDGE_POLARIS_API_URL.
@@ -40,6 +43,24 @@ const (
 )
 
 func runBootstrapTailscale() {
+	outPath := strings.TrimSpace(os.Getenv("TS_AUTHKEY_PATH"))
+	if outPath == "" {
+		outPath = defaultTSAuthkeyPath
+	}
+
+	// Idempotency: the bootstrap container reruns on every `compose up`,
+	// but the ts_authkey lives on the persistent `bridge-runtime` volume.
+	// If it's already there, skip the API call entirely — re-fetching
+	// would trip `key_propagating` once the install URL's plaintext cache
+	// window has closed, failing the second `up` for no reason. Exit 0 so
+	// the compose `service_completed_successfully` gate still passes. (To
+	// force a refetch after a roll, the operator clears the volume; TS
+	// auth keys are join-time only, so `ts-state` keeps the node attached.)
+	if fileNonEmpty(outPath) {
+		log.Printf("bootstrap-tailscale: ts_authkey already present at %s; skipping re-download", outPath)
+		return
+	}
+
 	apiURL := strings.TrimRight(strings.TrimSpace(os.Getenv("BRIDGE_POLARIS_API_URL")), "/")
 	if apiURL == "" {
 		log.Fatalf("bootstrap-tailscale: BRIDGE_POLARIS_API_URL required")
@@ -51,11 +72,6 @@ func runBootstrapTailscale() {
 	hmacKey, err := readKeyOrFile("BRIDGE_POLARIS_HMAC_KEY", "BRIDGE_POLARIS_HMAC_KEY_FILE")
 	if err != nil {
 		log.Fatalf("bootstrap-tailscale: %v", err)
-	}
-
-	outPath := strings.TrimSpace(os.Getenv("TS_AUTHKEY_PATH"))
-	if outPath == "" {
-		outPath = defaultTSAuthkeyPath
 	}
 
 	sdk := polarissdk.NewClient(apiURL)
@@ -112,6 +128,13 @@ func readKeyOrFile(direct, fileVar string) ([]byte, error) {
 		return []byte(strings.TrimSpace(string(b))), nil
 	}
 	return nil, fmt.Errorf("either %s or %s required", direct, fileVar)
+}
+
+// fileNonEmpty reports whether path exists, is a regular file, and has
+// non-zero size. Used to make bootstrap idempotent across compose reruns.
+func fileNonEmpty(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.Mode().IsRegular() && info.Size() > 0
 }
 
 func writeFileAtomic(dst string, data []byte, mode os.FileMode) error {

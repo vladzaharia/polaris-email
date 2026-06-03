@@ -36,7 +36,9 @@ import {
   bridgeHmacAuth,
   bridgePlainKvKey,
   bridgePlainNextKvKey,
-  BRIDGE_PLAIN_KV_TTL_SECONDS,
+  bridgePlainTtlSeconds,
+  updateAvailabilityEwma,
+  FLOOR_S,
 } from '../../bridge-auth.js';
 import { audit } from '../../audit.js';
 import { hashSecret } from '../../hashing.js';
@@ -164,26 +166,73 @@ bridgeHeartbeat.post('/v1/bridge/heartbeat', async (c) => {
   // and now). `disabled_at` IS allowed here — we deliver the signal in
   // the response. Read it explicitly so we can set `enabled` correctly.
   const bridgeRow = await c.env.DB.prepare(
-    `SELECT id, disabled_at, hmac_pending_rotated_at FROM bridges WHERE id = ?`,
+    `SELECT id, disabled_at, hmac_pending_rotated_at,
+            last_heartbeat_at, first_heartbeat_at, availability_ewma,
+            installer_window_expires_at
+       FROM bridges WHERE id = ?`,
   )
     .bind(bridgeId)
     .first<{
       id: string;
       disabled_at: string | null;
       hmac_pending_rotated_at: string | null;
+      last_heartbeat_at: string | null;
+      first_heartbeat_at: string | null;
+      availability_ewma: number | null;
+      installer_window_expires_at: string | null;
     }>();
   if (!bridgeRow) return buildError(c, 'unauthorized', 'bridge unknown');
 
-  // Diagnostics UPSERT — store the payload + bump telemetry columns.
+  // --- Self-healing plaintext cache + tenure bookkeeping --------------------
+  // Symmetric HMAC means the api can only verify this bridge while its
+  // plaintext lives in KV. Re-`put` it on every heartbeat with a TTL
+  // that ramps 8h → 7d as the bridge earns reliability, so the cache
+  // never silently expires under a live, reliable bridge.
+  const nowMs = Date.parse(nowIso);
+  const prevHbMs = bridgeRow.last_heartbeat_at ? Date.parse(bridgeRow.last_heartbeat_at) : null;
+  const gapMs = prevHbMs != null ? nowMs - prevHbMs : 0;
+  // First heartbeat ⇒ no prior EWMA: updateAvailabilityEwma(null, …) = 1.0.
+  const newEwma = updateAvailabilityEwma(
+    bridgeRow.last_heartbeat_at ? bridgeRow.availability_ewma : null,
+    gapMs,
+  );
+  const firstHbIso = bridgeRow.first_heartbeat_at ?? nowIso;
+  const tenureMs = nowMs - Date.parse(firstHbIso);
+  const plainTtl = bridgePlainTtlSeconds(newEwma, tenureMs);
+  await c.env.KV_KEY_CACHE.put(bridgePlainKvKey(bridgeId), c.get('bridgeSecret'), {
+    expirationTtl: plainTtl,
+  });
+
+  // Close the installer-link window: the first heartbeat after issuance
+  // proves the operator already has a working install, so the leaky
+  // download URL no longer needs to serve. Set to now when still future.
+  const windowExp = bridgeRow.installer_window_expires_at;
+  const closeWindow = windowExp != null && Date.parse(windowExp) > nowMs;
+  const newWindowExp = closeWindow ? nowIso : windowExp;
+
+  // Diagnostics UPSERT — store the payload + bump telemetry columns, and
+  // fold in the tenure/availability bookkeeping + installer-window close.
   await c.env.DB.prepare(
     `UPDATE bridges
        SET last_heartbeat_at = ?,
            last_heartbeat_json = ?,
            bridge_version = ?,
-           last_seen_at = ?
+           last_seen_at = ?,
+           first_heartbeat_at = ?,
+           availability_ewma = ?,
+           installer_window_expires_at = ?
      WHERE id = ?`,
   )
-    .bind(nowIso, canonical, body.bridge_version, nowIso, bridgeId)
+    .bind(
+      nowIso,
+      canonical,
+      body.bridge_version,
+      nowIso,
+      firstHbIso,
+      newEwma,
+      newWindowExp,
+      bridgeId,
+    )
     .run();
 
   // --- Log forwarding ---------------------------------------------------------
@@ -253,9 +302,11 @@ bridgeHeartbeat.post('/v1/bridge/heartbeat', async (c) => {
           dir.id,
         ),
       ]);
-      // Promote the staged plaintext: KV-move next → current, delete next.
+      // Promote the staged plaintext: KV-move next → current, delete
+      // next. Seed at the floor; subsequent heartbeats ramp the TTL back
+      // up as the rolled key accrues its own availability/tenure.
       await c.env.KV_KEY_CACHE.put(bridgePlainKvKey(bridgeId), newSecret, {
-        expirationTtl: BRIDGE_PLAIN_KV_TTL_SECONDS,
+        expirationTtl: FLOOR_S,
       });
       await c.env.KV_KEY_CACHE.delete(bridgePlainNextKvKey(bridgeId));
     } else if (dir.kind === 'restart') {

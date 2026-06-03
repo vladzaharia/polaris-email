@@ -18,11 +18,7 @@ import { ulid } from '@polaris-mail/ids';
 import { generateSecret } from '@polaris-mail/hmac';
 import type { Env } from '../env.js';
 import { audit } from '../audit.js';
-import {
-  bridgePlainNextKvKey,
-  bridgePlainKvKey,
-  BRIDGE_PLAIN_KV_TTL_SECONDS,
-} from '../bridge-auth.js';
+import { bridgePlainNextKvKey } from '../bridge-auth.js';
 import {
   bridgeCfDnsPlainKvKey,
   BRIDGE_CF_DNS_PLAIN_KV_TTL_SECONDS,
@@ -191,6 +187,4 @@ async function rollOne(
   // promotes the staged plaintext. No explicit refresh here so a
   // missed heartbeat lets the old key naturally fall out after its
   // current TTL elapses.
-  void BRIDGE_PLAIN_KV_TTL_SECONDS;
-  void bridgePlainKvKey;
 }

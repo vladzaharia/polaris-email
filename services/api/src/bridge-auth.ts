@@ -41,6 +41,10 @@ declare module 'hono' {
     // `bridge_plain:<id>` or 'next' from `bridge_plain_next:<id>`.
     // Set by `bridgeHmacAuth()` on success.
     bridgeUsedKey: 'current' | 'next';
+    // The plaintext secret that just verified the request. Stashed so
+    // the heartbeat handler can re-`put` it into KV with a fresh dynamic
+    // TTL without re-reading the cache. Set by `bridgeHmacAuth()`.
+    bridgeSecret: string;
   }
 }
 
@@ -58,8 +62,61 @@ export function bridgePlainNextKvKey(bridgeId: string): string {
   return `bridge_plain_next:${bridgeId}`;
 }
 
-/** TTL for the plaintext cache. Matches the api-key plaintext TTL convention. */
-export const BRIDGE_PLAIN_KV_TTL_SECONDS = 60 * 60;
+// --- Dynamic plaintext-cache TTL ---------------------------------------------
+// The `bridge_plain:<id>` cache is re-`put` on every successful heartbeat
+// (see routes/bridge/heartbeat.ts). The TTL ramps from an 8h floor to a
+// 7d ceiling as the bridge earns reliability, so a long-lived, reliably
+// up bridge can survive a longer outage before the api forgets it (and
+// the operator has to roll). A fresh bridge gets the floor; a bridge up
+// ~30d at ~100% availability gets the ceiling.
+
+/** Floor TTL (seconds) — a freshly-registered bridge gets this. 8h. */
+export const FLOOR_S = 8 * 60 * 60;
+/** Ceiling TTL (seconds) — a tenured, reliably-up bridge earns this. 7d. */
+export const CEIL_S = 7 * 24 * 60 * 60;
+/** Tenure (ms) at which the tenure factor saturates to 1.0. 30d. */
+export const TENURE_FULL_MS = 30 * 24 * 60 * 60 * 1000;
+/** EWMA time constant (ms) — older availability state decays with the gap. ~30d. */
+export const TAU_MS = 30 * 24 * 60 * 60 * 1000;
+/** Heartbeat gaps at or under this count as fully "up" (normal cadence). 10min. */
+export const GAP_GRACE_MS = 10 * 60 * 1000;
+
+function clamp(x: number, lo: number, hi: number): number {
+  return Math.min(hi, Math.max(lo, x));
+}
+
+/**
+ * Fold a new heartbeat gap into the rolling availability EWMA.
+ *
+ * `prev` is the stored EWMA (NULL on the first heartbeat ⇒ start at
+ * 1.0). `gapMs` is the wall-clock gap since the previous heartbeat. A
+ * normal ~60s gap is treated as fully "up" (uptimeFrac ≈ 1); a multi-day
+ * gap counts as mostly down (the bridge was unreachable for most of it),
+ * pulling the EWMA below 1. `alpha = exp(-gapMs/TAU)` decays the prior
+ * state proportionally to the gap, so a long silence both weights the
+ * new (low) sample heavily AND ages out stale optimism.
+ */
+export function updateAvailabilityEwma(prev: number | null, gapMs: number): number {
+  if (prev == null) return 1.0;
+  if (gapMs <= 0) return clamp(prev, 0, 1);
+  const up = Math.min(gapMs, GAP_GRACE_MS);
+  const uptimeFrac = up / gapMs;
+  const alpha = Math.exp(-gapMs / TAU_MS);
+  return clamp(alpha * prev + (1 - alpha) * uptimeFrac, 0, 1);
+}
+
+/**
+ * Map availability + tenure to a plaintext-cache TTL in seconds.
+ *
+ * `factor` blends earned reliability (`ewma`, 0..1) with tenure
+ * (saturating at `TENURE_FULL_MS`). A fresh bridge → FLOOR_S regardless
+ * of EWMA; a 30d bridge at ~100% availability → CEIL_S; a flaky bridge
+ * climbs slower because its EWMA holds the factor down.
+ */
+export function bridgePlainTtlSeconds(ewma: number, tenureMs: number): number {
+  const factor = clamp(ewma, 0, 1) * Math.min(1, Math.max(0, tenureMs) / TENURE_FULL_MS);
+  return Math.round(FLOOR_S + (CEIL_S - FLOOR_S) * factor);
+}
 
 export type BridgeSecretsOk = {
   ok: true;
@@ -205,6 +262,7 @@ export function bridgeHmacAuth(opts: BridgeAuthOptions = {}): MiddlewareHandler<
     c.set('bridgeId', bridgeId);
     if (submissionId) c.set('submissionId', submissionId);
     c.set('bridgeUsedKey', usedKey);
+    c.set('bridgeSecret', usedKey === 'current' ? lookup.current : (lookup.next ?? lookup.current));
     await next();
   };
 }

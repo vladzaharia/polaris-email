@@ -14,11 +14,7 @@
 
 import type { Env } from '../env.js';
 import { audit } from '../audit.js';
-import {
-  bridgePlainKvKey,
-  bridgePlainNextKvKey,
-  BRIDGE_PLAIN_KV_TTL_SECONDS,
-} from '../bridge-auth.js';
+import { bridgePlainKvKey, bridgePlainNextKvKey, FLOOR_S } from '../bridge-auth.js';
 import { hashSecret } from '../hashing.js';
 
 export interface RollExpireResult {
@@ -80,7 +76,7 @@ async function expireOne(
     env.DB.prepare(`UPDATE bridge_directives SET acked_at = ? WHERE id = ?`).bind(nowIso, row.id),
   ]);
   await env.KV_KEY_CACHE.put(bridgePlainKvKey(row.bridge_id), newSecret, {
-    expirationTtl: BRIDGE_PLAIN_KV_TTL_SECONDS,
+    expirationTtl: FLOOR_S,
   });
   await env.KV_KEY_CACHE.delete(bridgePlainNextKvKey(row.bridge_id));
   await audit(env, {

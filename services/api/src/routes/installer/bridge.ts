@@ -14,6 +14,12 @@
 // deliberate — operators only get an install URL via the rotate path,
 // so possessing a working URL is equivalent to possessing the current
 // HMAC.
+//
+// Teardown window: because the URL is a live credential, it only serves
+// for a bounded window after issuance (`bridges.installer_window_expires_at`,
+// opened on register/rotate, closed early by the first successful
+// heartbeat). Past the deadline we 404 with the same generic message as
+// a bad HMAC — operators rotate to mint a fresh link.
 
 import { Hono, type Context } from 'hono';
 import type { Env } from '../../env.js';
@@ -35,6 +41,7 @@ interface BridgeRowForInstaller {
   ts_authkey_id: string | null;
   disabled_at: string | null;
   hmac_pending_rotated_at: string | null;
+  installer_window_expires_at: string | null;
 }
 
 async function handleInstaller(
@@ -46,7 +53,8 @@ async function handleInstaller(
     return buildError(c, 'bad_request', 'invalid install URL format');
   }
   const row = await c.env.DB.prepare(
-    `SELECT id, name, hmac_key_secret_name, ts_authkey_id, disabled_at, hmac_pending_rotated_at
+    `SELECT id, name, hmac_key_secret_name, ts_authkey_id, disabled_at,
+            hmac_pending_rotated_at, installer_window_expires_at
      FROM bridges WHERE id = ?`,
   )
     .bind(bridgeId)
@@ -72,6 +80,17 @@ async function handleInstaller(
     }
   }
   if (!ok) return buildError(c, 'not_found', 'install URL invalid or bridge unavailable');
+
+  // Installer-link teardown. The install URL is a leaky credential (it
+  // carries the live HMAC), so it only serves for a bounded window after
+  // issuance: NULL window ⇒ already closed (legacy rows + post-heartbeat),
+  // past deadline ⇒ expired. Either way return the SAME generic 404 as a
+  // bad HMAC — never disclose that the credential was valid-but-expired.
+  // The operator rotates to mint a fresh link (which re-opens the window).
+  const windowExp = row.installer_window_expires_at;
+  if (windowExp == null || Date.now() >= Date.parse(windowExp)) {
+    return buildError(c, 'not_found', 'install URL invalid or bridge unavailable');
+  }
 
   // `ts_authkey_id` presence is our mode signal — same heuristic as
   // rotate. Tailscale bridges carry the column; public ones don't.
