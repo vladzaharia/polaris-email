@@ -327,6 +327,12 @@ services:
       TS_USERSPACE: 'false'
       TS_EXTRA_ARGS: --advertise-tags=tag:mail-bridge
       TS_AUTHKEY_FILE: /run/bridge-runtime/ts_authkey
+      # Only log in if not already logged in. The per-bridge auth key is
+      # single-use; without this, containerboot re-runs \`tailscale up\` with
+      # the (now consumed) key on every restart and falls back to an
+      # interactive auth URL. With it, the node identity in ts-state is
+      # reused and the key is only spent on the first join.
+      TS_AUTH_ONCE: 'true'
     volumes:
       - ts-state:/var/lib/tailscale
       - bridge-runtime:/run/bridge-runtime:ro

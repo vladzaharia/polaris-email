@@ -18,6 +18,10 @@ services:
       TS_STATE_DIR: /var/lib/tailscale
       TS_USERSPACE: 'false'
       TS_EXTRA_ARGS: --advertise-tags=tag:mail-bridge
+      # Reuse the persisted node identity in tailscale-state across restarts
+      # instead of re-running `tailscale up` with a (possibly single-use)
+      # key every boot, which otherwise falls back to interactive auth.
+      TS_AUTH_ONCE: 'true'
     volumes:
       - tailscale-state:/var/lib/tailscale
       - /dev/net/tun:/dev/net/tun
