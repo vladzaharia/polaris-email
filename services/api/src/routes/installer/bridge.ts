@@ -304,7 +304,12 @@ services:
   bootstrap:
     image: ${p.image}
     container_name: polaris-mail-bootstrap
-    command: ['polaris-bridge', 'bootstrap-tailscale']
+    # The image ENTRYPOINT already exec's the polaris-bridge binary and
+    # appends this list as its args, so pass ONLY the subcommand here —
+    # prefixing 'polaris-bridge' again makes os.Args[1] = "polaris-bridge",
+    # which misses the bootstrap-tailscale dispatch and silently runs the
+    # full bridge daemon instead of the one-shot authkey fetch.
+    command: ['bootstrap-tailscale']
     env_file: docker-compose.env
     environment:
       BRIDGE_POLARIS_BRIDGE_ID_FILE: /run/secrets/bridge_id
