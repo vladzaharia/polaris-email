@@ -28,7 +28,7 @@
     "oxlint": "^1.65.0",
     "typescript": "^6.0.3",
     "vitest": "^4.1.6",
-    "wrangler": "^4.92.0"
+    "wrangler": "^4.98.0"
   },
   "packageManager": "pnpm@9.0.0",
   "pnpm": {

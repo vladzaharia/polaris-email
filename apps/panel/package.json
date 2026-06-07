@@ -15,7 +15,7 @@
     "deploy": "polaris-mail setup infra deploy service panel"
   },
   "dependencies": {
-    "@cloudflare/workers-types": "^4.20260517.1",
+    "@cloudflare/workers-types": "^4.20260607.1",
     "@polaris-mail/hmac": "workspace:*",
     "@polaris-mail/schema": "workspace:*",
     "@polaris/sdk": "workspace:*",

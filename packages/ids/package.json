@@ -12,7 +12,7 @@
     "lint": "oxlint ."
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.20260517.1",
+    "@cloudflare/workers-types": "^4.20260607.1",
     "typescript": "^6.0.3",
     "vitest": "^4.1.6"
   }
