@@ -21,13 +21,13 @@
     "check": "pnpm typecheck && pnpm lint && pnpm fmt:check"
   },
   "devDependencies": {
-    "@cloudflare/vitest-pool-workers": "^0.16.0",
-    "@types/node": "^25.8.0",
+    "@cloudflare/vitest-pool-workers": "^0.16.13",
+    "@types/node": "^25.9.2",
     "lefthook": "^2.1.6",
     "oxfmt": "^0.49.0",
     "oxlint": "^1.65.0",
     "typescript": "^6.0.3",
-    "vitest": "^4.1.6",
+    "vitest": "^4.1.8",
     "wrangler": "^4.92.0"
   },
   "packageManager": "pnpm@9.0.0",
