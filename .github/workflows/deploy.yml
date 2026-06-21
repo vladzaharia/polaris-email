@@ -64,7 +64,7 @@ jobs:
             exit 1
           fi
 
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0 # need full history to diff against deployed/main
       - uses: ./.github/actions/setup-node-pnpm
@@ -80,7 +80,7 @@ jobs:
         id: restore-cli
         if: github.event_name == 'workflow_run'
         continue-on-error: true
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: polaris-cli-bin
           path: apps/polaris-cli/bin/
