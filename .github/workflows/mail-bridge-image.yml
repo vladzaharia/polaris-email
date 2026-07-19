@@ -50,7 +50,7 @@ jobs:
       IMAGE_NAME: ghcr.io/vladzaharia/polaris-mail-bridge
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
