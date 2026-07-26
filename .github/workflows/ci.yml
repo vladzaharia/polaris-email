@@ -25,8 +25,8 @@ jobs:
       docs: ${{ steps.f.outputs.docs }}
       cli-installer: ${{ steps.f.outputs.cli-installer }}
     steps:
-      - uses: actions/checkout@v6
-      - uses: dorny/paths-filter@v3
+      - uses: actions/checkout@v7
+      - uses: dorny/paths-filter@v4
         id: f
         with:
           filters: |
@@ -46,7 +46,7 @@ jobs:
   setup:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-node-pnpm
       - name: tar workspace node_modules
         # Single tarball preserves symlinks (pnpm's hoist-less layout depends
@@ -56,7 +56,7 @@ jobs:
           tar -cf workspace.tar \
             node_modules \
             $(find services apps packages -maxdepth 2 -name node_modules -type d 2>/dev/null)
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: pnpm-workspace
           path: workspace.tar
@@ -70,7 +70,7 @@ jobs:
     needs: setup
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/restore-pnpm-workspace
       - run: pnpm lint
 
@@ -78,7 +78,7 @@ jobs:
     needs: setup
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/restore-pnpm-workspace
       - run: pnpm fmt:check
 
@@ -86,15 +86,15 @@ jobs:
     needs: setup
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/restore-pnpm-workspace
       - run: pnpm -r run typecheck
 
   openapi-validate:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with: { python-version: '3.12' }
       - run: pip install --quiet pyyaml openapi-spec-validator
       - run: |
@@ -118,7 +118,7 @@ jobs:
     # `wrangler d1 migrations apply --remote`.
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - run: sudo apt-get update && sudo apt-get install -y sqlite3
       - run: "sqlite3 ':memory:' < services/api/migrations/0001_init.sql"
 
@@ -129,10 +129,10 @@ jobs:
     needs: setup
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/restore-pnpm-workspace
       - run: pnpm --filter @polaris-mail/test-vectors run generate
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: vectors-json
           path: packages/test-vectors/vectors.json
@@ -143,10 +143,10 @@ jobs:
     needs: setup
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/restore-pnpm-workspace
       - run: pnpm --filter @polaris-mail/panel run build
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: panel-dist
           path: apps/panel/dist/
@@ -158,11 +158,11 @@ jobs:
     if: needs.changes.outputs.docs == 'true' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/restore-pnpm-workspace
       - run: pnpm --filter @polaris-mail/docs run typecheck
       - run: pnpm --filter @polaris-mail/docs run build:client
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: docs-dist
           path: apps/docs/build/
@@ -172,13 +172,13 @@ jobs:
   build-polaris-cli:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-go-with-cache
         with:
           working-directory: apps/polaris-cli
       - working-directory: apps/polaris-cli
         run: make build
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: polaris-cli-bin
           path: apps/polaris-cli/bin/
@@ -192,7 +192,7 @@ jobs:
     needs: [setup, build-test-vectors]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/restore-pnpm-workspace
       - uses: ./.github/actions/restore-build-artifacts
         with: { vectors: 'true' }
@@ -205,7 +205,7 @@ jobs:
     needs: [setup, build-test-vectors]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/restore-pnpm-workspace
       - uses: ./.github/actions/restore-build-artifacts
         with: { vectors: 'true' }
@@ -215,7 +215,7 @@ jobs:
     needs: [setup, build-test-vectors]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-go-with-cache
         with:
           working-directory: packages/sdk-go
@@ -227,7 +227,7 @@ jobs:
   mail-bridge-test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-go-with-cache
         with:
           working-directory: apps/mail-bridge
@@ -247,7 +247,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-go-with-cache
         with:
           working-directory: apps/mail-bridge
@@ -263,7 +263,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-go-with-cache
         with:
           working-directory: apps/mail-bridge
@@ -282,7 +282,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/restore-pnpm-workspace
       - uses: ./.github/actions/setup-go-with-cache
         with:
@@ -295,7 +295,7 @@ jobs:
     # bridge wizard + platform helpers.
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-go-with-cache
         with:
           working-directory: apps/polaris-cli
@@ -312,7 +312,7 @@ jobs:
     # the example file directly (instead of the template) is caught at PR time.
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-go-with-cache
         with:
           working-directory: apps/polaris-cli
@@ -329,7 +329,7 @@ jobs:
     if: needs.changes.outputs.cli-installer == 'true' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/restore-pnpm-workspace
       - run: sudo apt-get update && sudo apt-get install -y shellcheck
       - run: pnpm --filter @polaris-mail/cli-installer run typecheck
@@ -341,7 +341,7 @@ jobs:
     if: needs.changes.outputs.docs == 'true' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/restore-build-artifacts
         with: { docs: 'true' }
       - name: link-check
